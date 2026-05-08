@@ -3,9 +3,13 @@
     "linear": {
       "command": "npx",
       "args": ["-y", "@tacticlaunch/mcp-linear"],
-      "env": { 
-        "LINEAR_API_KEY": "PASTE_YOUR_LINEAR_API_KEY_HERE" 
+      "env": {
+        "LINEAR_API_KEY": "PASTE_YOUR_LINEAR_API_KEY_HERE"
       }
+    },
+    "playwright": {
+      "command": "node",
+      "args": ["./scripts/playwright-mcp-launch.mjs"]
     }
   }
 }
