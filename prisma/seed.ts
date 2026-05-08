@@ -4384,6 +4384,57 @@ async function main() {
   await seedTrack8Data(org.id, [maya.id, james.id, sarah.id]);
 
   // ------------------------------------------------------------------
+  // Super-admin bootstrap allowlist
+  // ------------------------------------------------------------------
+  // Promotes any user whose email is in SUPER_ADMIN_BOOTSTRAP_EMAILS to the
+  // super_admin role on the synthetic "LeafJourney HQ" organization. Mirrors
+  // the runtime path in src/lib/auth/super-admin-bootstrap.ts so seeds and
+  // first-sign-in produce the same end state.
+  console.log("Seeding super-admin bootstrap allowlist...");
+  const allowlistRaw = process.env.SUPER_ADMIN_BOOTSTRAP_EMAILS ?? "";
+  const allowlistEmails = allowlistRaw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+
+  if (allowlistEmails.length > 0) {
+    const hqOrg = await prisma.organization.upsert({
+      where: { slug: "leafjourney-hq" },
+      update: {},
+      create: { slug: "leafjourney-hq", name: "LeafJourney HQ" },
+    });
+
+    for (const email of allowlistEmails) {
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true },
+      });
+      if (!user) {
+        console.log(`  - skipped: no user yet for ${email} (sign in once first)`);
+        continue;
+      }
+      await prisma.membership.upsert({
+        where: {
+          userId_organizationId_role: {
+            userId: user.id,
+            organizationId: hqOrg.id,
+            role: Role.super_admin,
+          },
+        },
+        update: {},
+        create: {
+          userId: user.id,
+          organizationId: hqOrg.id,
+          role: Role.super_admin,
+        },
+      });
+      console.log(`  - granted super_admin: ${email}`);
+    }
+  } else {
+    console.log("  - SUPER_ADMIN_BOOTSTRAP_EMAILS not set; skipping.");
+  }
+
+  // ------------------------------------------------------------------
   // Done
   // ------------------------------------------------------------------
   console.log("Seed complete.");
