@@ -95,6 +95,48 @@ export default clerkMiddleware(async (auth, req) => {
     // Authenticated — fall through to per-route role check downstream.
   }
 
+  // ── Origin check for state-changing /api/admin requests ──
+  // Defense-in-depth against CSRF. Clerk's session cookie is SameSite=Lax,
+  // which blocks the easiest cross-site form-post attack but does NOT
+  // block fetch() from a controlled origin. The admin routes mutate
+  // privilege grants and practice config — the cost of a bypass is high
+  // enough that we want a second check beyond cookie SameSite.
+  //
+  // We accept either:
+  //   - An exact match against APP_URL (set in env), or
+  //   - The Origin matches the current request's Host (fetch-from-same-page).
+  //
+  // Webhooks under /api/webhooks/** are NOT covered here — those have
+  // signature verification and explicitly accept cross-origin posts.
+  if (
+    pathname.startsWith("/api/admin/") &&
+    req.method !== "GET" &&
+    req.method !== "HEAD" &&
+    req.method !== "OPTIONS"
+  ) {
+    const origin = req.headers.get("origin");
+    const appUrl = process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "";
+    const sameHost = origin
+      ? (() => {
+          try {
+            return new URL(origin).host === host;
+          } catch {
+            return false;
+          }
+        })()
+      : false;
+    const matchesAppUrl = origin && appUrl && origin === appUrl.replace(/\/$/, "");
+
+    if (!origin || (!sameHost && !matchesAppUrl)) {
+      return NextResponse.json(
+        {
+          error: "FORBIDDEN",
+          message: "Origin mismatch — admin mutations require same-origin requests.",
+        },
+        { status: 403 },
+      );
+    }
+  }
 
   // ── Leafmart domain routing ──────────────────────────────
   if (isLeafmartHost(host)) {
