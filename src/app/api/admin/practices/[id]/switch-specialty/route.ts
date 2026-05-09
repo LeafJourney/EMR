@@ -21,9 +21,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
-import { requireSuperAdmin } from "@/lib/auth/super-admin";
-import { bootstrapSuperAdminIfAllowlisted } from "@/lib/auth/super-admin-bootstrap";
+import { requireApiAuth } from "@/lib/auth/api-gate";
 import { applyTemplateDefaults } from "@/lib/specialty-templates/registry";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 
@@ -39,14 +37,9 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } },
 ) {
-  let actor;
-  try {
-    await bootstrapSuperAdminIfAllowlisted(await requireUser());
-    actor = await requireSuperAdmin();
-  } catch (err) {
-    const code = err instanceof Error ? err.message : "FORBIDDEN";
-    return NextResponse.json({ error: code }, { status: code === "UNAUTHORIZED" ? 401 : 403 });
-  }
+  const gate = await requireApiAuth({ role: "super_admin" });
+  if (gate.error) return gate.error;
+  const actor = gate.actor;
 
   const configId = params.id;
   if (!configId) {

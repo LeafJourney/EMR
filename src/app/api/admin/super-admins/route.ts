@@ -11,12 +11,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
-import { requireSuperAdmin } from "@/lib/auth/super-admin";
-import {
-  bootstrapSuperAdminIfAllowlisted,
-  ensureLeafjourneyHq,
-} from "@/lib/auth/super-admin-bootstrap";
+import { requireApiAuth } from "@/lib/auth/api-gate";
+import { ensureLeafjourneyHq } from "@/lib/auth/super-admin-bootstrap";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 
 export const runtime = "nodejs";
@@ -27,13 +23,8 @@ const grantSchema = z.object({
 });
 
 export async function GET() {
-  try {
-    await bootstrapSuperAdminIfAllowlisted(await requireUser());
-    await requireSuperAdmin();
-  } catch (err) {
-    const code = err instanceof Error ? err.message : "FORBIDDEN";
-    return NextResponse.json({ error: code }, { status: code === "UNAUTHORIZED" ? 401 : 403 });
-  }
+  const gate = await requireApiAuth({ role: "super_admin" });
+  if (gate.error) return gate.error;
 
   const memberships = await prisma.membership.findMany({
     where: { role: "super_admin" },
@@ -77,14 +68,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  let actor;
-  try {
-    await bootstrapSuperAdminIfAllowlisted(await requireUser());
-    actor = await requireSuperAdmin();
-  } catch (err) {
-    const code = err instanceof Error ? err.message : "FORBIDDEN";
-    return NextResponse.json({ error: code }, { status: code === "UNAUTHORIZED" ? 401 : 403 });
-  }
+  const gate = await requireApiAuth({ role: "super_admin" });
+  if (gate.error) return gate.error;
+  const actor = gate.actor;
 
   let raw: unknown;
   try {
