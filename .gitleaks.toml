@@ -1,0 +1,63 @@
+# gitleaks rule config for the Leafjourney monorepo.
+#
+# Strategy: extend gitleaks's defaults (no [extend] disabling means defaults
+# run) and add three local concerns:
+#   1. Untracked-file patterns we've seen leak into the repo root
+#      (prod_dump.sql, env*.json, payload*.json) — make these blocking.
+#   2. Allowlists for known placeholder values so the scanner doesn't
+#      choke on .env.example or seed demo strings.
+#   3. Path allowlists for docs that intentionally show example tokens.
+#
+# False-positive workflow: add to [allowlist] with a narrow path or regex.
+# NEVER add commit-SHA-based allowlists — leaked secrets must be rotated,
+# not whitelisted in place.
+
+title = "Leafjourney gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Custom rules ─────────────────────────────────────────────────
+
+[[rules]]
+id = "leafjourney-prod-dump"
+description = "Production database dump committed to repo"
+regex = '''(?i)prod[_-]?dump[_-]?\d*\.sql'''
+path = '''.*'''
+tags = ["secret", "high"]
+
+[[rules]]
+id = "leafjourney-env-payload-json"
+description = "env or payload JSON file at repo root"
+regex = '''^(env|payload)([_-][a-z0-9]+)?\.json$'''
+path = '''^(env|payload)([_-][a-z0-9]+)?\.json$'''
+tags = ["secret", "high"]
+
+[[rules]]
+id = "leafjourney-render-secret-id"
+description = "Render envvar lookup with literal secret ID"
+regex = '''rnd_[A-Za-z0-9]{20,}'''
+tags = ["secret", "render"]
+
+# ── Allowlists (be narrow) ───────────────────────────────────────
+
+[allowlist]
+description = "Repo-wide false-positive pre-emption"
+
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)readme\.md$''',
+  '''^docs/security/.*\.md$''',
+  '''^docs/runbooks/.*\.md$''',
+]
+
+regexes = [
+  '''PASTE_YOUR_LINEAR_API_KEY_HERE''',
+  '''replace[_-]me''',
+  '''YOUR[_-][A-Z0-9_]+[_-]HERE''',
+  '''pk_test_[A-Za-z0-9]+''',
+  '''pk_live_[A-Za-z0-9]+''',
+  '''pk_(test|live)_[a-zA-Z0-9_-]+''',
+]
+
+commits = []

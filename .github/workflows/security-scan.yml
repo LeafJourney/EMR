@@ -1,0 +1,35 @@
+name: Security — Secret Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Block merging PRs that introduce hardcoded secrets. Runs gitleaks against
+# the full diff on a PR, and against the full history on push-to-main as a
+# defence-in-depth check.
+#
+# False-positive workflow: add a rule allowlist entry to .gitleaks.toml,
+# scoped narrowly to the file/path. Do NOT add commit-SHA exceptions —
+# secrets need to be rotated, not allowlisted in place.
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout (full history for diff scan)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
