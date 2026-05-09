@@ -249,6 +249,9 @@ export default async function ClinicHomePage() {
     //    Exclude encounters whose patient has been soft-deleted — otherwise
     //    the card would render with a ghost patient and the Prepare button
     //    would 404 downstream.
+    // Today's encounters — bounded by calendar day. 200/day is well past
+    // any realistic single-clinician schedule and serves as a defensive
+    // ceiling for multi-provider orgs sharing this dashboard view.
     prisma.encounter.findMany({
       where: {
         organizationId,
@@ -257,6 +260,7 @@ export default async function ClinicHomePage() {
       },
       include: { patient: { include: { chartSummary: true } } },
       orderBy: { scheduledFor: "asc" },
+      take: 200,
     }),
 
     // 2. Draft notes count
@@ -377,10 +381,13 @@ export default async function ClinicHomePage() {
       take: 5,
     }),
 
-    // 14. Chart summaries for avg readiness
+    // 14. Chart summaries for avg readiness. Cap matches the patient roster
+    // ceiling — past 500 active patients per org we should be sampling
+    // server-side, not dumping every score into memory for an average.
     prisma.chartSummary.findMany({
       where: { patient: { organizationId, status: "active" } },
       select: { completenessScore: true },
+      take: 500,
     }),
 
     // 15. Daily encounter counts for sparkline (last 7 days)
@@ -415,7 +422,10 @@ export default async function ClinicHomePage() {
       take: 50,
     }),
 
-    // 18. Pending AI drafts (fleet bridge — approval count per agent)
+    // 18. Pending AI drafts (fleet bridge — approval count per agent).
+    // Cap at 500 — if the queue is bigger than that the count widget
+    // should show "500+" and ops needs a real backlog dashboard, not a
+    // dropdown render dumping the full backlog.
     prisma.message.findMany({
       where: {
         status: "draft",
@@ -423,6 +433,7 @@ export default async function ClinicHomePage() {
         thread: { patient: { organizationId } },
       },
       select: { senderAgent: true },
+      take: 500,
     }),
 
     // 19. Recent unacknowledged clinical observations

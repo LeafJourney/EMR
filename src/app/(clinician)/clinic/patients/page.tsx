@@ -16,14 +16,31 @@ export default async function PatientsPage({
   const orgId = user.organizationId!;
 
   // Fetch all non-deleted patients with chart summary
+  // EMR-debt: hard cap. A single render of the roster ships every row to
+  // the client; a 500+ patient org needs server-side pagination, not a page
+  // dump. 500 is a defensive ceiling — most orgs are well under it. When a
+  // practice grows past this we fail loud (the count below) and add proper
+  // pagination + filter UI.
+  const PATIENT_ROSTER_CAP = 500;
   const patients = await prisma.patient.findMany({
     where: { organizationId: orgId, deletedAt: null },
     include: { chartSummary: true },
     orderBy: { lastName: "asc" },
+    take: PATIENT_ROSTER_CAP,
   });
+  if (patients.length === PATIENT_ROSTER_CAP) {
+    // eslint-disable-next-line no-console -- intentional: ops-relevant signal
+    console.warn(
+      `[patients-roster] hit cap (${PATIENT_ROSTER_CAP}) for org ${orgId} — ` +
+        `add server-side pagination before this org grows further.`,
+    );
+  }
 
   // Fetch pain outcome logs (last 7 per patient) for sparklines
   const patientIds = patients.map((p) => p.id);
+  // 7 sparkline points per patient × up to 500 patients = 3500. Anything
+  // older isn't rendered anyway, so capping the read avoids dragging years
+  // of pain logs into memory just to throw most of them away.
   const outcomeLogs = patientIds.length
     ? await prisma.outcomeLog.findMany({
         where: {
@@ -36,6 +53,7 @@ export default async function PatientsPage({
           value: true,
           loggedAt: true,
         },
+        take: 7 * PATIENT_ROSTER_CAP,
       })
     : [];
 
@@ -50,6 +68,10 @@ export default async function PatientsPage({
   }
 
   // Fetch last encounter (completed) per patient for "last visit" date
+  // We only consume the FIRST completed encounter per patient (line 67
+  // breaks once each patient is mapped). Capping the read keeps a patient
+  // with 10 years of completed visits from dragging thousands of rows into
+  // a render that uses one date per patient.
   const lastEncounters = patientIds.length
     ? await prisma.encounter.findMany({
         where: {
@@ -61,6 +83,7 @@ export default async function PatientsPage({
           patientId: true,
           completedAt: true,
         },
+        take: PATIENT_ROSTER_CAP * 5,
       })
     : [];
 

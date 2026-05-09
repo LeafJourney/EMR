@@ -97,7 +97,10 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         },
       },
     }),
-    // Flatten notes via encounters (separate query to keep the patient query lean)
+    // Flatten notes via encounters (separate query to keep the patient query lean).
+    // Cap: a patient with a decade of weekly visits has ~500 notes; the chart
+    // tab paginates anyway. 200 is the most-recent slice the UI actually
+    // renders before the user has to scroll.
     prisma.note.findMany({
       where: {
         encounter: {
@@ -109,6 +112,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         encounter: true,
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     }),
     prisma.messageThread.findMany({
       where: { patientId: params.id },
@@ -127,12 +131,16 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       where: { patientId: params.id },
       include: { assessment: true },
       orderBy: { submittedAt: "desc" },
+      take: 100,
     }),
-    // Cannabis dosing regimens with product info
+    // Cannabis dosing regimens with product info. 100 historical regimens
+    // is well past any realistic patient — capping protects against a row
+    // explosion without truncating real history.
     prisma.dosingRegimen.findMany({
       where: { patientId: params.id },
       include: { product: true },
       orderBy: { startDate: "desc" },
+      take: 100,
     }),
     // Recent dose logs
     prisma.doseLog.findMany({
@@ -141,15 +149,19 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       orderBy: { loggedAt: "desc" },
       take: 10,
     }),
-    // Organization's cannabis product formulary
+    // Organization's cannabis product formulary. 500 is a defensive ceiling
+    // for an active formulary on a single org — most are well under 100.
     prisma.cannabisProduct.findMany({
       where: { organizationId: user.organizationId!, active: true },
       orderBy: { name: "asc" },
+      take: 500,
     }),
-    // Patient's conventional medications
+    // Patient's conventional medications (active only). Cap at 100 — past
+    // that there's a polypharmacy review needed, not a render problem.
     prisma.patientMedication.findMany({
       where: { patientId: params.id, active: true },
       orderBy: { name: "asc" },
+      take: 100,
     }),
     // Agentic memory harness: longitudinal memories + recent observations
     prisma.patientMemory.findMany({
