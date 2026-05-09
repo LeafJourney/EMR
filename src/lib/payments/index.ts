@@ -26,10 +26,20 @@ export function resolvePaymentGateway(): PaymentGateway {
       cached = new PayabliGateway();
       return cached;
     } catch (err) {
-      console.error(
-        "[payments] Payabli gateway failed to initialize, falling back to stub:",
-        err instanceof Error ? err.message : err,
-      );
+      const msg =
+        "[payments] Payabli gateway failed to initialize: " +
+        (err instanceof Error ? err.message : String(err));
+
+      // Production: refuse to silently fall back. Crashing here is
+      // preferable to running the financial flow against a stub that
+      // accepts every signature (\`verifyWebhookSignature\` returns true).
+      // Earlier behaviour silently demoted to stub and was a forgery
+      // vector for /api/webhooks/payabli.
+      if (process.env.NODE_ENV === "production") {
+        throw new Error(msg);
+      }
+
+      console.error(msg, "— falling back to stub (non-production only)");
       cached = new StubPaymentGateway();
       return cached;
     }
