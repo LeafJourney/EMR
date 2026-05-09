@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db/prisma";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,8 @@ interface Bucket {
   resetAt: number;
 }
 
-// In-memory rate-limit store. Single-process only — fine for this stage.
+// In-memory rate-limit store. Single-process only — see linked issue for
+// the Supabase-backed replacement.
 const bucketsByIp = new Map<string, Bucket>();
 
 function getClientIp(req: Request): string {
@@ -47,7 +49,7 @@ const ALLOWED_PRODUCT_TYPES = new Set([
   "other",
 ]);
 
-interface VendorApplication {
+interface ValidatedApplication {
   companyName: string;
   contactName: string;
   email: string;
@@ -72,7 +74,7 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function validate(payload: unknown): { ok: true; data: VendorApplication } | { ok: false; errors: Record<string, string> } {
+function validate(payload: unknown): { ok: true; data: ValidatedApplication } | { ok: false; errors: Record<string, string> } {
   const errors: Record<string, string> = {};
 
   if (!payload || typeof payload !== "object") {
@@ -152,15 +154,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, errors: result.errors }, { status: 400 });
   }
 
-  // TODO: persist to DB or forward to email when wiring is ready.
-  // For now, log a structured record so it's discoverable in server output.
-  console.info("[leafmart/vendor-apply] received", {
-    at: new Date().toISOString(),
-    ip,
-    company: result.data.companyName,
-    email: result.data.email,
-    types: result.data.productTypes,
-    hasCoa: result.data.hasCoa,
+  await prisma.vendorApplication.create({
+    data: {
+      companyName: result.data.companyName,
+      contactName: result.data.contactName,
+      email: result.data.email,
+      phone: result.data.phone ?? null,
+      website: result.data.website ?? null,
+      productTypes: result.data.productTypes,
+      hasCoa: result.data.hasCoa,
+      description: result.data.description,
+      ip,
+    },
   });
 
   return NextResponse.json(
