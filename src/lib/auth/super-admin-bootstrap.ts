@@ -27,8 +27,35 @@ import type { AuthedUser } from "./session";
 export const LEAFJOURNEY_HQ_SLUG = "leafjourney-hq";
 const LEAFJOURNEY_HQ_NAME = "LeafJourney HQ";
 
+/**
+ * Returns the bootstrap email allowlist when bootstrap is *explicitly
+ * enabled* for this environment. Returns an empty set otherwise.
+ *
+ * Why two flags? Earlier behaviour treated SUPER_ADMIN_BOOTSTRAP_EMAILS
+ * as both the data and the kill-switch — leaving the var populated in
+ * prod meant every request to a super-admin surface was a potential
+ * silent grant. We now require an explicit \`SUPER_ADMIN_BOOTSTRAP_ENABLED=1\`
+ * flag in production. Non-production environments can run with just the
+ * email list (developer ergonomics).
+ *
+ * Operational pattern in prod:
+ *   1. Set both vars, deploy.
+ *   2. Sign in once → gets promoted, audit row written.
+ *   3. Unset SUPER_ADMIN_BOOTSTRAP_ENABLED, redeploy.
+ *   4. Bootstrap is closed; further admins must be granted through
+ *      the /admin console by an existing super_admin.
+ */
 function bootstrapAllowlist(): Set<string> {
   const raw = process.env.SUPER_ADMIN_BOOTSTRAP_EMAILS ?? "";
+  const enabled = process.env.SUPER_ADMIN_BOOTSTRAP_ENABLED === "1";
+  const isProd = process.env.NODE_ENV === "production";
+
+  // Production requires the explicit enable flag. Non-production trusts
+  // the email list alone so dev environments don't need an extra var.
+  if (isProd && !enabled) {
+    return new Set();
+  }
+
   return new Set(
     raw
       .split(",")
@@ -84,5 +111,39 @@ export async function bootstrapSuperAdminIfAllowlisted(
     },
   });
   user.roles = [...user.roles, "super_admin"];
+
+  // Emit a controller-audit row so this silent-grant path is observable.
+  // Logged with subject = the promoted user, actor = the same user (the
+  // grant is initiated by the request itself, not by another admin).
+  // Imported lazily to avoid a circular dep between session.ts and
+  // audit-stub.ts at module init.
+  try {
+    const { logControllerAction } = await import("./audit-stub");
+    await logControllerAction({
+      actor: {
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        organizationId: user.organizationId,
+      },
+      action: "controller.super_admin.bootstrap_grant",
+      targetId: user.id,
+      after: { email: user.email, hqOrgId },
+      reason:
+        "Lazy-promote via SUPER_ADMIN_BOOTSTRAP_EMAILS allowlist " +
+        "(NODE_ENV=" + (process.env.NODE_ENV ?? "unset") + ").",
+    });
+  } catch (err) {
+    // Don't block the grant on a failed audit row — but make sure the
+    // failure is loud. Silently-promoted super-admins with no audit
+    // trail is the exact failure mode this module is supposed to avoid.
+    console.error(
+      "[super-admin-bootstrap] FAILED to write audit row for promotion of " +
+        user.email +
+        " — investigate immediately.",
+      err,
+    );
+  }
+
   return true;
 }
