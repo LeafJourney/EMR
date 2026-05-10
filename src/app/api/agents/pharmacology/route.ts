@@ -2,6 +2,8 @@ import {
   isModelError,
   resolveModelClient,
 } from "@/lib/orchestration/model-client";
+import { requireApiAuth } from "@/lib/auth/api-gate";
+import { agentInvocationLimiter } from "@/lib/auth/rate-limit";
 
 /**
  * POST /api/agents/pharmacology
@@ -236,6 +238,17 @@ async function pumpView(
 }
 
 export async function POST(request: Request) {
+  // Auth + rate limit BEFORE we touch the body — an unauthed caller
+  // shouldn't even consume the request stream, let alone reach the
+  // upstream LLM that this endpoint fans out to.
+  const gate = await requireApiAuth({
+    rateLimit: {
+      limiter: agentInvocationLimiter,
+      bucket: "agent.pharmacology",
+    },
+  });
+  if (gate.error) return gate.error;
+
   let body: { diagnosis?: unknown; icd10?: unknown };
   try {
     body = (await request.json()) as typeof body;

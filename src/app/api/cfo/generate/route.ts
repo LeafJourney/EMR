@@ -24,15 +24,41 @@ const bodySchema = z.object({
   inline: z.boolean().optional(),
 });
 
-function authorized(req: Request) {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return true; // dev: open
-  const header = req.headers.get("authorization");
-  return header === `Bearer ${expected}`;
+// Auth: cron-style shared-secret in the Authorization header. Production
+// requires a match against CRON_SECRET — fail closed even if the env var
+// itself is missing (the previous version returned `true` when CRON_SECRET
+// was unset, which silently opened the endpoint in any env where the var
+// hadn't been provisioned). Non-production logs and falls through so dev
+// tooling can hit the route without the env var.
+function authorized(req: Request): { ok: true } | { ok: false; reason: string } {
+  const expected = process.env.CRON_SECRET ?? "";
+  const header = req.headers.get("authorization") ?? "";
+  const wanted = expected ? `Bearer ${expected}` : null;
+
+  if (process.env.NODE_ENV === "production") {
+    if (!wanted) return { ok: false, reason: "cron_secret_not_configured" };
+    if (header !== wanted) return { ok: false, reason: "bad_authorization" };
+    return { ok: true };
+  }
+
+  // Non-prod: accept but warn so missing CRON_SECRET in staging is visible.
+  if (!wanted || header !== wanted) {
+    // eslint-disable-next-line no-console
+    console.warn("[cfo/generate] non-prod call without valid CRON_SECRET");
+  }
+  return { ok: true };
 }
 
+const ORG_FANOUT_CAP = 250;
+
 export async function POST(req: Request) {
-  if (!authorized(req)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const auth = authorized(req);
+  if (!auth.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized", reason: auth.reason },
+      { status: 401 },
+    );
+  }
 
   const json = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(json);
@@ -44,8 +70,22 @@ export async function POST(req: Request) {
   if (organizationId) {
     orgIds = [organizationId];
   } else {
-    const orgs = await prisma.organization.findMany({ select: { id: true } });
+    // Cap the cron fan-out — a multi-hundred-org tenant base would
+    // otherwise dispatch the CFO agent across every row in one tick,
+    // which is both an LLM cost spike and an N-way DB hammer. Above
+    // this cap, ops needs to shard the cron by tenant slice.
+    const orgs = await prisma.organization.findMany({
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+      take: ORG_FANOUT_CAP,
+    });
     orgIds = orgs.map((o) => o.id);
+    if (orgIds.length === ORG_FANOUT_CAP) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[cfo/generate] org fan-out hit cap (${ORG_FANOUT_CAP}); shard the cron`,
+      );
+    }
   }
 
   if (inline) {

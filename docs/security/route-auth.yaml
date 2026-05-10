@@ -164,24 +164,21 @@ routes:
   # ── Agents (LLM-backed, $$ implications) ─────────────────
   agents/pharmacology:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: agents
-    review_due: 2026-05-16
-    notes: "🚨 LLM agent endpoint, no auth detected. Unmetered prompt = unmetered cost. Must require auth + rate-limit before any prod traffic."
+    notes: "Closed 2026-05-09: requireApiAuth + agentInvocationLimiter (30/min/actor). Bucket: agent.pharmacology. Streams SSE; gate runs BEFORE the body is consumed."
 
   cindy:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: agents
-    review_due: 2026-05-16
-    notes: "🚨 LLM agent endpoint, no auth detected. Same risk as agents/pharmacology."
+    notes: "Closed 2026-05-09: requireApiAuth + agentInvocationLimiter (30/min/actor). Bucket: agent.cindy."
 
   cfo/generate:
     methods: [GET, POST]
-    auth: needs_review
+    auth: cron
     owner: agents
-    review_due: 2026-05-16
-    notes: "🚨 CFO report generation, no auth detected. Both LLM cost and PHI/financial-data exposure risk."
+    notes: "Cron-style. POST validates Bearer CRON_SECRET, fail-closed in prod when env unset (PR S — same hardening pattern as cron/reminders). Org fan-out capped at 250."
 
   feedback/whisper:
     methods: [GET, POST]
