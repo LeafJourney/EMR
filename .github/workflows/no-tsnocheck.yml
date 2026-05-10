@@ -1,0 +1,40 @@
+name: Code Health — No @ts-nocheck
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Fails when any file under src/ starts with `// @ts-nocheck`.
+#
+# Background: the night EPIC 3.1 closed, every @ts-nocheck file
+# that was fixed in place turned out to be hiding a real, user-
+# visible bug — silent HIPAA audit-log loss, dead Download buttons
+# on COA documents, FORBIDDEN-on-every-request team-members page,
+# fake-success demo-request form, and more. See PRs #243, #247,
+# #251, #254, #258, #259 for the full list.
+#
+# This rule is what prevents the count from going back up. Adding
+# a new @ts-nocheck without first fixing the underlying type
+# errors is exactly the trade-off that produced those bugs.
+#
+# If a real exception is needed, add an entry to the ALLOWLIST in
+# scripts/check-no-tsnocheck.mjs with owner + expires fields.
+# Silent additions are the failure mode.
+
+jobs:
+  check-no-tsnocheck:
+    name: no-@ts-nocheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate
+        run: node scripts/check-no-tsnocheck.mjs
