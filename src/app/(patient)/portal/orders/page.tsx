@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/session";
@@ -13,23 +12,56 @@ import { Button } from "@/components/ui/button";
 
 export const metadata = { title: "Order History" };
 
+const ORDERS_CAP = 100;
+
+// OrderItem in the schema doesn't carry a `name` or `price` directly —
+// it has unitPrice / totalPrice and the user-facing label lives on the
+// related Product (with an optional variant override). The previous
+// version of this file used `// @ts-nocheck` on top and accessed
+// `item.name` / `item.price` directly, rendering "undefined × $NaN"
+// for every line item in production. Real Prisma include + safe
+// fallbacks now.
+type OrderTone = "success" | "info" | "danger" | "warning";
+
+function statusTone(status: string): OrderTone {
+  if (status === "delivered") return "success";
+  if (status === "shipped") return "info";
+  if (status === "cancelled") return "danger";
+  return "warning";
+}
+
+function statusLabel(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 export default async function OrdersPage() {
   const user = await requireRole("patient");
 
   const patient = await prisma.patient.findUnique({
     where: { userId: user.id },
+    select: { id: true },
   });
 
   if (!patient) {
     redirect("/portal/intake");
   }
 
+  // Cap the read — patients with multi-year purchase history shouldn't
+  // dump every row into one render. 100 is well past any realistic
+  // tenured-patient backlog; when a patient genuinely has more, we'll
+  // wire pagination then.
   const orders = await prisma.order.findMany({
     where: { patientId: patient.id },
     orderBy: { createdAt: "desc" },
+    take: ORDERS_CAP,
     include: {
-      items: true,
-      organization: true,
+      organization: { select: { name: true } },
+      items: {
+        include: {
+          product: { select: { name: true } },
+          variant: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -68,43 +100,54 @@ export default async function OrdersPage() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <LeafSprig size={14} className="text-accent" />
-                    <CardTitle className="text-base">Order #{order.id.slice(-8).toUpperCase()}</CardTitle>
+                    <CardTitle className="text-base">
+                      Order #{order.id.slice(-8).toUpperCase()}
+                    </CardTitle>
                   </div>
                   <p className="text-xs text-text-muted">
-                    Placed on {formatDate(order.createdAt)} • {order.organization?.name || "Leafmart"}
+                    Placed on {formatDate(order.createdAt)} • {order.organization?.name ?? "Leafmart"}
                   </p>
                 </div>
                 <div className="flex flex-col sm:items-end gap-2">
-                  <Badge 
-                    tone={
-                      order.status === "delivered" ? "success" : 
-                      order.status === "shipped" ? "info" : 
-                      order.status === "cancelled" ? "danger" : "warning"
-                    }
-                  >
-                    {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                  </Badge>
+                  <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
                   <p className="font-display text-lg font-medium">{formatUSD(order.total)}</p>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
                 <ul className="divide-y divide-[var(--border)]">
-                  {order.items.map((item) => (
-                    <li key={item.id} className="flex items-center justify-between px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="font-medium text-text text-sm mb-1">{item.name}</span>
-                        <span className="text-xs text-text-muted">Qty: {item.quantity} × {formatUSD(item.price)}</span>
-                      </div>
-                      <div className="text-sm font-medium text-text">
-                        {formatUSD(item.price * item.quantity)}
-                      </div>
-                    </li>
-                  ))}
+                  {order.items.map((item) => {
+                    // Prefer the variant name when present (size/strain
+                    // distinction), fall back to the product name, then
+                    // to a placeholder so a missing relation doesn't
+                    // render "undefined".
+                    const label =
+                      item.variant?.name ?? item.product?.name ?? "Unnamed product";
+                    return (
+                      <li
+                        key={item.id}
+                        className="flex items-center justify-between px-6 py-4"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium text-text text-sm mb-1">
+                            {label}
+                          </span>
+                          <span className="text-xs text-text-muted">
+                            Qty: {item.quantity} × {formatUSD(item.unitPrice)}
+                          </span>
+                        </div>
+                        <div className="text-sm font-medium text-text">
+                          {formatUSD(item.totalPrice)}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
                 <div className="bg-surface-raised px-6 py-4 flex justify-end gap-4 border-t border-[var(--border)]">
-                   <Link href={`/leafmart/shop`}>
-                     <Button variant="secondary" size="sm">Buy Again</Button>
-                   </Link>
+                  <Link href="/leafmart/shop">
+                    <Button variant="secondary" size="sm">
+                      Buy Again
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
