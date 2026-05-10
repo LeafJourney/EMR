@@ -29,6 +29,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Worktrees
+.worktrees/
+.claude/worktrees/
+
 # Claude Code local state — ignore everything except shared project config
 .claude/*
 !.claude/settings.json

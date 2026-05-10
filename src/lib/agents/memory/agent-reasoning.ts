@@ -28,6 +28,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import type { AgentReasoning } from "@prisma/client";
+import { logger } from "@/lib/observability/log";
 
 export interface ReasoningStep {
   step: string;
@@ -110,9 +111,10 @@ export function startReasoning(
         // Reasoning persistence is best-effort. A failure here should
         // NEVER take down the agent run. The trace is a nice-to-have
         // for transparency; the actual output has already been produced.
-        console.warn("[agent-reasoning] persist failed", {
+        logger.warn({
+          event: "agent.reasoning.persist_failed",
           agentName,
-          error: err instanceof Error ? err.message : String(err),
+          err,
         });
         return null;
       }

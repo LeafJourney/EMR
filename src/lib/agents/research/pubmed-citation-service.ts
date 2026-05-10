@@ -11,6 +11,7 @@ import {
   type PubMedArticle,
 } from "@/lib/domain/pubmed";
 import type { Citation, StudyType, EvidenceLevel } from "@/lib/domain/chatcb";
+import { logger } from "@/lib/observability/log";
 
 export interface FetchCitationsOptions {
   /** Max number of PubMed records to return. Defaults to 5. */
@@ -61,7 +62,7 @@ export async function fetchPubMedCitations(
   try {
     searchResult = await searchPubMed(trimmed, maxResults);
   } catch (err) {
-    console.error("[pubmed-citation-service] searchPubMed failed:", err);
+    logger.error({ event: "agent.pubmed.search_failed", query: trimmed, err });
     return { query: trimmed, totalResults: 0, citations: [], searchTime: 0 };
   }
 
