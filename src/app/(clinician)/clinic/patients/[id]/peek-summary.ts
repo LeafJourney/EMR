@@ -3,6 +3,7 @@ import "server-only";
 import { resolveModelClient } from "@/lib/orchestration/model-client";
 import { formatPersonaForPrompt, resolvePersona } from "@/lib/agents/persona";
 import type { TabKey, TabPeeks, PeekEntry } from "./chart-tabs";
+import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
 // Per-tab AI summaries for the chart hover-peek popovers (slice 3).
@@ -90,7 +91,7 @@ export async function loadPeekSummaries(
         const summary = await summarizeTab(tab, patientFirstName, entries);
         return { tab, summary };
       } catch (err) {
-        console.warn(`[peek-summary] ${tab} summarization failed:`, err);
+        logger.warn({ event: "clinic.peek_summary.tab_failed", tab, err });
         return { tab, summary: undefined };
       }
     }),

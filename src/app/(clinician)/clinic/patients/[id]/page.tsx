@@ -36,6 +36,7 @@ import {
 } from "@/lib/utils/patient-age";
 import { CarePlanSection } from "@/components/patient/CarePlanSection";
 import { ChartTaskList } from "@/components/patient/ChartTaskList";
+import { logger } from "@/lib/observability/log";
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -330,7 +331,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
   try {
     peekSummaries = await loadPeekSummaries(patient.firstName, tabPeeks);
   } catch (err) {
-    console.error("[patient-chart] peek summary generation failed:", err);
+    logger.error({ event: "clinic.patient_chart.peek_summary_failed", err });
     peekSummaries = undefined;
   }
 

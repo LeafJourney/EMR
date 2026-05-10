@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { checkInteractions } from "@/lib/domain/drug-interactions";
 import { dispatch } from "@/lib/orchestration/dispatch";
+import { logger } from "@/lib/observability/log";
 
 const schema = z.object({
   patientId: z.string(),
@@ -299,7 +300,7 @@ export async function createPrescriptionAction(
       prescribedById: user.id,
     });
   } catch (err) {
-    console.error("[prescribe] failed to create regimen:", err);
+    logger.error({ event: "clinic.prescribe.regimen_create_failed", err });
     return {
       ok: false,
       error:

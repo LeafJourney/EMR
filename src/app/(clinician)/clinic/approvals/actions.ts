@@ -8,6 +8,7 @@ import {
   recordFeedback,
   computeEditDelta,
 } from "@/lib/agents/memory/agent-feedback";
+import { logger } from "@/lib/observability/log";
 
 /**
  * Parse a `senderAgent` field like "correspondenceNurse:1.0.0" into its
@@ -104,7 +105,7 @@ export async function approveMessageDraft(
       });
     }
   } catch (err) {
-    console.warn("[approvals] recordFeedback(approved) failed", err);
+    logger.warn({ event: "clinic.approvals.feedback_approved_failed", err });
   }
 
   revalidatePath("/clinic/approvals");
@@ -184,10 +185,10 @@ export async function editAndApproveMessageDraft(
       });
     }
   } catch (err) {
-    console.warn(
-      "[approvals] recordFeedback(approved_with_edits) failed",
+    logger.warn({
+      event: "clinic.approvals.feedback_approved_with_edits_failed",
       err,
-    );
+    });
   }
 
   revalidatePath("/clinic/approvals");
@@ -283,10 +284,10 @@ export async function batchApproveMessages(
           });
         }
       } catch (err) {
-        console.warn("[approvals] batch recordFeedback(approved) failed", err);
+        logger.warn({ event: "clinic.approvals.batch_feedback_approved_failed", err });
       }
     } catch (err) {
-      console.error("[approvals] batch approve failed for", draft.id, err);
+      logger.error({ event: "clinic.approvals.batch_approve_failed", draftId: draft.id, err });
       errors.push(`Could not send draft ${draft.id}.`);
     }
   }
@@ -353,10 +354,10 @@ export async function batchRejectMessages(
           });
         }
       } catch (err) {
-        console.warn("[approvals] batch recordFeedback(rejected) failed", err);
+        logger.warn({ event: "clinic.approvals.batch_feedback_rejected_failed", err });
       }
     } catch (err) {
-      console.error("[approvals] batch reject failed for", draft.id, err);
+      logger.error({ event: "clinic.approvals.batch_reject_failed", draftId: draft.id, err });
       errors.push(`Could not discard draft ${draft.id}.`);
     }
   }
@@ -430,7 +431,7 @@ export async function rejectMessageDraft(
       });
     }
   } catch (err) {
-    console.warn("[approvals] recordFeedback(rejected) failed", err);
+    logger.warn({ event: "clinic.approvals.feedback_rejected_failed", err });
   }
 
   revalidatePath("/clinic/approvals");

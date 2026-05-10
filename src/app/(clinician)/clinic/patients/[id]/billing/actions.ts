@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolvePaymentGateway } from "@/lib/payments";
+import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
 // Collect payment — records a patient payment against open balance
@@ -141,7 +142,7 @@ export async function collectPayment(
     gatewayLast4 = intent.last4;
     gatewayBrand = intent.brand;
   } catch (err) {
-    console.error("[collectPayment] gateway error:", err);
+    logger.error({ event: "clinic.billing.gateway_failed", err });
     return {
       ok: false,
       error:
@@ -217,7 +218,7 @@ export async function collectPayment(
     revalidatePath(`/ops/billing`);
     return { ok: true, paymentId: payment.id, gatewayIntentId };
   } catch (err) {
-    console.error("[collectPayment] persistence error:", err);
+    logger.error({ event: "clinic.billing.persist_failed", err });
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Payment persistence failed",

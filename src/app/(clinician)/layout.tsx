@@ -17,6 +17,7 @@ import {
   getActiveAgentActivity,
   indexActivityByHref,
 } from "@/lib/domain/nav-agent-activity";
+import { logger } from "@/lib/observability/log";
 
 export default async function ClinicianLayout({
   children,
@@ -34,7 +35,7 @@ export default async function ClinicianLayout({
     try {
       return await fn();
     } catch (err) {
-      console.error("[clinician-layout] count failed, defaulting to 0:", err);
+      logger.error({ event: "clinician.layout.count_failed", err });
       return 0;
     }
   };

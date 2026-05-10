@@ -15,6 +15,7 @@ import {
   freezeNoteSnapshot,
   type NoteSnapshot,
 } from "@/lib/agents/guardrails/note-guardrails";
+import { logger } from "@/lib/observability/log";
 
 // ── Result types ───────────────────────────────────────────────
 
@@ -275,7 +276,7 @@ ${summaryMd}
       confidence: Math.min(confidence, hallucination.confidence),
     };
   } catch (err) {
-    console.error("[processTranscript]", err);
+    logger.error({ event: "clinic.voice_chart.process_transcript_failed", err });
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to process transcript.",

@@ -5,6 +5,7 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { generateLeafletData, generateLeafletNarrative } from "./actions";
 import { LeafletEditor } from "./leaflet-editor";
 import { buildDeterministicNarrative } from "@/lib/domain/leaflet";
+import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Leaflet — After Visit Summary" };
 
@@ -63,7 +64,7 @@ export default async function LeafletPage({
     result = await generateLeafletData(encounterId);
   } catch (err) {
     // Query or data assembly error — show a friendly message
-    console.error("[Leaflet] generateLeafletData error:", err);
+    logger.error({ event: "clinic.leaflet.generate_failed", err });
     return (
       <PageShell maxWidth="max-w-[800px]">
         <div className="text-center py-16">

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { dispatch } from "@/lib/orchestration/dispatch";
+import { logger } from "@/lib/observability/log";
 
 /**
  * Start a visit: find or create an in-progress encounter for today,
@@ -82,7 +83,7 @@ export async function startVisit(patientId: string) {
     }
   } catch (err) {
     // Timeout or error — the job is still in the queue.
-    console.error("[startVisit] inline run:", err instanceof Error ? err.message : err);
+    logger.error({ event: "clinic.start_visit.inline_failed", err });
   }
 
   // Query for the note the scribe just created (if any) and redirect

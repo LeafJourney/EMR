@@ -5,6 +5,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RefillsView, type RefillRow } from "./refills-view";
 import { evaluateRefill } from "@/lib/agents/refill-copilot-agent";
+import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Refill Queue" };
 
@@ -45,7 +46,7 @@ export default async function RefillsPage() {
     await Promise.all(
       toEvaluate.map((r) =>
         evaluateRefill(r.id).catch((err) => {
-          console.error("[refills] copilot evaluation failed", r.id, err);
+          logger.error({ event: "clinic.refills.copilot_eval_failed", refillId: r.id, err });
         })
       )
     );

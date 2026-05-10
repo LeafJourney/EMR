@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { PatientListClient } from "./patient-list-client";
 import Link from "next/link";
+import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
 
@@ -29,11 +30,13 @@ export default async function PatientsPage({
     take: PATIENT_ROSTER_CAP,
   });
   if (patients.length === PATIENT_ROSTER_CAP) {
-    // eslint-disable-next-line no-console -- intentional: ops-relevant signal
-    console.warn(
-      `[patients-roster] hit cap (${PATIENT_ROSTER_CAP}) for org ${orgId} — ` +
-        `add server-side pagination before this org grows further.`,
-    );
+    logger.warn({
+      event: "clinic.patients_roster.cap_hit",
+      cap: PATIENT_ROSTER_CAP,
+      orgId,
+      message:
+        "Add server-side pagination before this org grows further.",
+    });
   }
 
   // Fetch pain outcome logs (last 7 per patient) for sparklines

@@ -18,6 +18,7 @@ import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatRelative } from "@/lib/utils/format";
 import { RecentPatients } from "@/components/shell/recent-patients";
 import { withTimeout } from "@/lib/utils/with-timeout";
+import { logger } from "@/lib/observability/log";
 
 // EMR-205: guard the mission-control fan-out so a single hung query
 // can never wedge the Suspense boundary and strand clinicians on the
@@ -448,7 +449,7 @@ export default async function ClinicHomePage() {
       take: 6,
     }),
   ]).catch((err) => {
-    console.warn("[clinic.home] mission-control fan-out rejected:", err);
+    logger.warn({ event: "clinic.home.fan_out_rejected", err });
     return MISSION_CONTROL_FALLBACK;
   }),
     MISSION_CONTROL_TIMEOUT_MS,

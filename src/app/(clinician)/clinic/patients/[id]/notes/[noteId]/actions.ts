@@ -12,6 +12,7 @@ import {
 } from "@/lib/orchestration/model-client";
 import { z } from "zod";
 import { freezeNoteSnapshot } from "@/lib/agents/guardrails/note-guardrails";
+import { logger } from "@/lib/observability/log";
 
 const blockSchema = z.object({
   heading: z.string(),
@@ -393,14 +394,15 @@ Return ONLY the refined text — no JSON, no markdown, no explanation. Just the 
     // the friendly message to the client. Raw provider JSON must never
     // reach the clinician's screen (Art. VI §2: "no cryptic error messages").
     if (isModelError(err)) {
-      console.warn("[refineSection] model error", {
+      logger.warn({
+        event: "clinic.refine_section.model_error",
         code: err.code,
         status: err.status,
         providerBody: err.providerBody,
       });
       return { ok: false, error: err.friendly, code: err.code };
     }
-    console.warn("[refineSection] unexpected error", err);
+    logger.warn({ event: "clinic.refine_section.unexpected_error", err });
     return {
       ok: false,
       error: "AI refinement failed. Try again in a moment.",
