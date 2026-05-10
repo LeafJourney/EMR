@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { resolvePaymentGateway } from "@/lib/payments";
+import { logger } from "@/lib/observability/log";
 
 /**
  * Payabli webhook handler.
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
   try {
     event = gateway.parseWebhook(rawBody);
   } catch (err) {
-    console.error("[webhook/payabli] parse error:", err);
+    logger.error({ event: "webhook.payabli.parse_failed", err });
     return NextResponse.json(
       { ok: false, error: "invalid payload" },
       { status: 400 },
@@ -252,7 +253,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[webhook/payabli] processing error:", err);
+    logger.error({ event: "webhook.payabli.processing_failed", err });
     return NextResponse.json(
       { ok: false, error: "processing error" },
       { status: 500 },

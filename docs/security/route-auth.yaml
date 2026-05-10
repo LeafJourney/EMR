@@ -58,7 +58,7 @@
 
 generated_at: 2026-05-09
 generated_against: origin/main@e2ec08a
-total_routes: 62
+total_routes: 63
 
 routes:
 
@@ -444,3 +444,9 @@ routes:
     auth: required
     owner: integrations
     notes: "Uses requireUser. Surfaces Linear issue context."
+
+  contact:
+    methods: [POST]
+    auth: public
+    owner: marketing
+    notes: "Public contact form submission route."

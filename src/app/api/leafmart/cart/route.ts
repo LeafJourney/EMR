@@ -20,6 +20,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { ensureLeafmartOrganization, ensurePatientForUser } from "@/lib/leafmart/sync";
 import { mapProductToLeafmart } from "@/lib/leafmart/products";
+import { logger } from "@/lib/observability/log";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,7 +68,7 @@ export async function GET() {
     if (!cart) return NextResponse.json({ items: [] });
     return NextResponse.json({ items: await loadCartItems(cart.id) });
   } catch (err) {
-    console.error("[leafmart/cart] GET failed:", err);
+    logger.error({ event: "leafmart.cart.get_failed", err });
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 }
@@ -140,7 +141,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ items: await loadCartItems(cart.id) });
   } catch (err) {
-    console.error("[leafmart/cart] POST failed:", err);
+    logger.error({ event: "leafmart.cart.post_failed", err });
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 }
@@ -162,7 +163,7 @@ export async function DELETE() {
     }
     return NextResponse.json({ items: [] });
   } catch (err) {
-    console.error("[leafmart/cart] DELETE failed:", err);
+    logger.error({ event: "leafmart.cart.delete_failed", err });
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 }

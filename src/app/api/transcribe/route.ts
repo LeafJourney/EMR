@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/observability/log";
 import { requireUser } from "@/lib/auth/session";
 import {
   transcribeAudio,
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       );
     }
     if (err instanceof TranscriptionFailedError) {
-      console.error("[api/transcribe] provider failure:", err.message);
+      logger.error({ event: "transcribe.provider_failed", err });
       return NextResponse.json(
         {
           error: "transcription_failed",
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
-    console.error("[api/transcribe] unexpected error:", err);
+    logger.error({ event: "transcribe.unexpected_error", err });
     return NextResponse.json(
       {
         error: "internal_error",

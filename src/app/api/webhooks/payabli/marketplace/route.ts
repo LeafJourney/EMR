@@ -19,6 +19,7 @@ import {
   dispatchWebhookEvent,
 } from "@/lib/leafmart/payabli/webhook";
 import type { PayabliWebhookEvent } from "@/lib/leafmart/payabli/types";
+import { logger } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,8 @@ export async function POST(req: Request) {
     await dispatchWebhookEvent(event);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("[payabli:webhook:marketplace] handler failed", {
+    logger.error({
+      event: "webhook.payabli.marketplace.handler_failed",
       eventType: event.eventType,
       message: err instanceof Error ? err.message : String(err),
     });

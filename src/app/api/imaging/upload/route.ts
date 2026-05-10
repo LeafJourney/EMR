@@ -22,6 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/observability/log";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
         { status },
       );
     }
-    console.error("[imaging/upload] internal error", err);
+    logger.error({ event: "imaging.upload_failed", err });
     return NextResponse.json(
       { error: "internal_error" },
       { status: 500 },

@@ -4,6 +4,7 @@ import {
 } from "@/lib/orchestration/model-client";
 import { requireApiAuth } from "@/lib/auth/api-gate";
 import { agentInvocationLimiter } from "@/lib/auth/rate-limit";
+import { logger } from "@/lib/observability/log";
 
 /**
  * POST /api/agents/pharmacology
@@ -303,7 +304,7 @@ export async function POST(request: Request) {
             : "AI generation failed.";
         const code = isModelError(err) ? err.code : "unknown";
         emit({ type: "error", code, message: friendly });
-        console.error("[api/agents/pharmacology] stream error:", err);
+        logger.error({ event: "agent.pharmacology.stream_failed", err });
       } finally {
         closed = true;
         abort.abort();

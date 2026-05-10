@@ -17,13 +17,14 @@ import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 import type { WebhookEvent } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db/prisma";
+import { logger } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   const secret = process.env.CLERK_WEBHOOK_SECRET;
   if (!secret) {
-    console.error("[Clerk Webhook] CLERK_WEBHOOK_SECRET not set");
+    logger.error({ event: "webhook.clerk.secret_missing" });
     return new NextResponse("Webhook not configured", { status: 500 });
   }
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
       "svix-signature": svixSignature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error("[Clerk Webhook] Signature verification failed:", err);
+    logger.error({ event: "webhook.clerk.sig_verification_failed", err });
     return new NextResponse("Invalid signature", { status: 401 });
   }
 

@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import { logger } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function GET(req: Request) {
     // Dev: accept but log. Helps catch "we shipped to staging without
     // setting CRON_SECRET" before it bites prod.
     // eslint-disable-next-line no-console
-    console.warn("[cron/reminders] non-prod call without valid CRON_SECRET");
+    logger.warn({ event: "cron.reminders.dev_bypass" });
   }
 
   // Find appointments scheduled between 24 and 48 hours from now
@@ -162,7 +163,7 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("[cron/reminders] failed:", error);
+    logger.error({ event: "cron.reminders.failed", err: error });
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }

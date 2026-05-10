@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { cfoAgent } from "@/lib/agents/cfo-agent";
 import { createLightContext } from "@/lib/orchestration/context";
+import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
 // POST /api/cfo/generate — fire the CFO agent for every org (or a single one).
@@ -44,7 +45,7 @@ function authorized(req: Request): { ok: true } | { ok: false; reason: string } 
   // Non-prod: accept but warn so missing CRON_SECRET in staging is visible.
   if (!wanted || header !== wanted) {
     // eslint-disable-next-line no-console
-    console.warn("[cfo/generate] non-prod call without valid CRON_SECRET");
+    logger.warn({ event: "cfo.generate.dev_bypass" });
   }
   return { ok: true };
 }
