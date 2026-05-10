@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { SiteHeader } from "@/components/marketing/SiteHeader";
 import { SiteFooter } from "@/components/marketing/SiteFooter";
 import { Eyebrow } from "@/components/ui/ornament";
@@ -8,8 +7,21 @@ import { ArrowLeft, Share2, Bookmark } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-// Mock CMS data for V1
-const ARTICLES: Record<string, any> = {
+// Mock CMS data for V1. Replace this block with a real CMS query
+// (Sanity, Contentful, etc.) before promoting the slug route past the
+// hardcoded set. The shape lives next to the data so a real CMS adapter
+// can target it directly.
+interface Article {
+  title: string;
+  description: string;
+  author: string;
+  date: string;
+  category: string;
+  /** HTML body — sanitize at the CMS layer before this lands here. */
+  content: string;
+}
+
+const ARTICLES: Record<string, Article> = {
   "terpenes-101": {
     title: "Terpenes 101: The Aromatherapy of Cannabis",
     description: "Discover how terpenes shape the effects of your cannabis experience beyond just THC and CBD.",
@@ -87,10 +99,10 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
               <span className="font-medium text-text">{article.author}</span>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <Button variant="ghost" size="sm" aria-label="Action" className="h-9 w-9 p-0 rounded-full">
                 <Bookmark className="w-4 h-4 text-text-muted" />
               </Button>
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <Button variant="ghost" size="sm" aria-label="Action" className="h-9 w-9 p-0 rounded-full">
                 <Share2 className="w-4 h-4 text-text-muted" />
               </Button>
             </div>

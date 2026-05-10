@@ -1,29 +1,39 @@
-// @ts-nocheck
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+
+const STORAGE_KEY = "leafjourney-cookie-consent";
 
 export function CookieConsent() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    // Check if the user has already consented
-    const consent = localStorage.getItem("leafjourney-cookie-consent");
-    if (!consent) {
-      // Delay showing it slightly to not overwhelm on load
-      const timer = setTimeout(() => setShow(true), 1500);
-      return () => clearTimeout(timer);
+    // SSR safety: localStorage is only on the client.
+    if (typeof window === "undefined") return;
+
+    let consent: string | null = null;
+    try {
+      consent = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      // Some browsers (private mode, restrictive ITP) throw on access.
+      // Treat as "not consented yet" rather than silently swallowing.
+      consent = null;
     }
+
+    if (consent) return;
+
+    const timer = setTimeout(() => setShow(true), 1500);
+    return () => clearTimeout(timer);
   }, []);
 
-  const handleAccept = () => {
-    localStorage.setItem("leafjourney-cookie-consent", "true");
-    setShow(false);
-  };
-
-  const handleDecline = () => {
-    localStorage.setItem("leafjourney-cookie-consent", "false");
+  const setConsent = (value: "accepted" | "declined") => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, value);
+    } catch {
+      // If we can't persist, at least dismiss the banner for this
+      // session so the user isn't stuck looking at it.
+    }
     setShow(false);
   };
 
@@ -37,14 +47,24 @@ export function CookieConsent() {
             We value your privacy
           </h3>
           <p className="text-sm text-text-muted leading-relaxed">
-            We use cookies to enhance your browsing experience, serve personalized content, and analyze our traffic. By clicking &quot;Accept All&quot;, you consent to our use of cookies as outlined in our Privacy Policy.
+            We use cookies to enhance your browsing experience, serve
+            personalized content, and analyze our traffic. By clicking
+            &quot;Accept All&quot;, you consent to our use of cookies as
+            outlined in our Privacy Policy.
           </p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
-          <Button variant="outline" onClick={handleDecline} className="w-full sm:w-auto">
+          <Button
+            variant="secondary"
+            onClick={() => setConsent("declined")}
+            className="w-full sm:w-auto"
+          >
             Decline
           </Button>
-          <Button onClick={handleAccept} className="w-full sm:w-auto bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">
+          <Button
+            onClick={() => setConsent("accepted")}
+            className="w-full sm:w-auto"
+          >
             Accept All
           </Button>
         </div>

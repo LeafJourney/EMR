@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import React, { useState } from "react";
@@ -94,10 +93,15 @@ export function COAViewer({
                 <Button onClick={() => setIsExpanded(true)} className="min-w-[140px]">
                   <FileText className="w-4 h-4 mr-2" /> View PDF
                 </Button>
-                <Button variant="outline" asChild>
-                  <a href={pdfUrl} download target="_blank" rel="noopener noreferrer">
-                    <Download className="w-4 h-4 mr-2" /> Download
-                  </a>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.open(pdfUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  <Download className="w-4 h-4 mr-2" /> Download
                 </Button>
               </div>
             </div>
@@ -106,10 +110,16 @@ export function COAViewer({
         
         {isExpanded && (
           <div className="border-t border-[var(--border)] p-4 bg-[var(--surface-muted)]/30 flex justify-end">
-             <Button variant="outline" asChild className="mr-3">
-                <a href={pdfUrl} download target="_blank" rel="noopener noreferrer">
-                  <Download className="w-4 h-4 mr-2" /> Download Original
-                </a>
+             <Button
+                variant="secondary"
+                className="mr-3"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+                  }
+                }}
+              >
+                <Download className="w-4 h-4 mr-2" /> Download Original
               </Button>
              <Button variant="secondary" onClick={() => setIsExpanded(false)}>
                Collapse Document

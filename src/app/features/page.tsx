@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { SiteHeader } from "@/components/marketing/SiteHeader";
 import { SiteFooter } from "@/components/marketing/SiteFooter";
 import { Eyebrow } from "@/components/ui/ornament";
@@ -95,7 +94,7 @@ export default function FeaturesPage() {
               </li>
             </ul>
             <Link href="/security">
-              <Button variant="outline" size="lg">Read our Security Whitepaper</Button>
+              <Button variant="secondary" size="lg">Read our Security Whitepaper</Button>
             </Link>
           </div>
           <div className="relative">

@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState } from "react";
@@ -58,10 +57,10 @@ export default function ReferPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <Button variant="outline" className="w-full flex items-center justify-center gap-2">
+                <Button variant="secondary" className="w-full flex items-center justify-center gap-2">
                   <Mail className="w-4 h-4" /> Email
                 </Button>
-                <Button variant="outline" className="w-full flex items-center justify-center gap-2">
+                <Button variant="secondary" className="w-full flex items-center justify-center gap-2">
                   <Share2 className="w-4 h-4" /> Share
                 </Button>
               </div>
