@@ -231,7 +231,7 @@ function PracticePicker({
             return (
               <li key={p.id}>
                 <Link
-                  href={`/dashboard?practiceId=${encodeURIComponent(p.id)}`}
+                  href={`/practice-admin/dashboard?practiceId=${encodeURIComponent(p.id)}`}
                   className="inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   aria-current={isActive ? "page" : undefined}
                 >
