@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { deleteDocumentAction } from "./actions";
+import { DocumentActions } from "@/components/patient/document-actions";
 
 type BadgeTone = "accent" | "highlight" | "info" | "danger" | "neutral" | "warning";
 
@@ -214,32 +215,7 @@ export function DocumentCard({ doc }: { doc: DocumentData }) {
                   View
                 </Button>
               </a>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => window.print()}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="mr-1">
-                  <path d="M3.5 5V1.5H10.5V5M3.5 10H2C1.45 10 1 9.55 1 9V6C1 5.45 1.45 5 2 5H12C12.55 5 13 5.45 13 6V9C13 9.55 12.55 10 12 10H10.5M3.5 8H10.5V12.5H3.5V8Z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/>
-                </svg>
-                Print
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  const subject = encodeURIComponent(`Document: ${doc.originalName}`);
-                  const body = encodeURIComponent(
-                    `Here is my ${KIND_LABEL[doc.kind].toLowerCase()} document "${doc.originalName}" from Leafjourney.\n\nUploaded: ${formatDate(doc.createdAt)}\nType: ${doc.mimeType}\n\n— Sent from Leafjourney Patient Portal`
-                  );
-                  window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="mr-1">
-                  <path d="M1 3.5L7 7.5L13 3.5M1 3.5V10.5C1 11.05 1.45 11.5 2 11.5H12C12.55 11.5 13 11.05 13 10.5V3.5M1 3.5C1 2.95 1.45 2.5 2 2.5H12C12.55 2.5 13 2.95 13 3.5" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/>
-                </svg>
-                Email
-              </Button>
+              <DocumentActions documentId={doc.id} documentName={doc.originalName} />
               <Button
                 variant="danger"
                 size="sm"

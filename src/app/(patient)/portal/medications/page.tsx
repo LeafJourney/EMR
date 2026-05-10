@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatDate } from "@/lib/utils/format";
-import { DosingView } from "../dosing/dosing-view";
+import { DosingDisplay } from "@/components/prescription/dosing-display";
 
 export const metadata = { title: "My Medications & Dosing Plan" };
 
@@ -325,7 +325,7 @@ export default async function MedicationsPage() {
           current medications, and outcome trends. Your care team will review
           and finalize.
         </p>
-        <DosingView />
+        <DosingDisplay />
       </section>
 
       <EditorialRule className="my-10" />
@@ -378,7 +378,7 @@ export default async function MedicationsPage() {
           Built from your health profile, current medications, and outcome
           trends. Your care team will review and finalize.
         </p>
-        <DosingView />
+        <DosingDisplay />
       </section>
     </PageShell>
   );

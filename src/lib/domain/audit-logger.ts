@@ -7,6 +7,7 @@ export type AuditActionType =
   | "organization.member_removed"
   | "patient.chart_exported"
   | "patient.phi_accessed"
+  | "patient.engagement_tracked"
   | "prescription.issued"
   | "prescription.voided";
 

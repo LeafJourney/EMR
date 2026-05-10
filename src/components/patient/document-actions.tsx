@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Printer, Mail, Share2, FileText, Check, Download } from "lucide-react";
+import { logPatientEngagement } from "@/app/(patient)/portal/wellness/actions";
 
 export interface DocumentActionsProps {
   documentId: string;
@@ -25,10 +26,12 @@ export function DocumentActions({
     // In a real app, this would trigger a window.print() or generate a printable PDF view
     window.print();
     setIsOpen(false);
+    void logPatientEngagement("DocumentActions", "print", { documentId, documentName });
   };
 
   const handleEmail = () => {
     setActionStatus("sending");
+    void logPatientEngagement("DocumentActions", "email", { documentId, documentName, patientEmail });
     // Mock API call
     setTimeout(() => {
       setActionStatus("success");
@@ -43,6 +46,7 @@ export function DocumentActions({
     // Mock download action
     console.log(`Downloading document: ${documentId}`);
     setIsOpen(false);
+    void logPatientEngagement("DocumentActions", "download", { documentId, documentName });
   };
 
   return (

@@ -1,9 +1,10 @@
 /**
  * EMR-038: Cannabis Book Integration (Justin Kander)
  */
+import { logger } from "@/lib/observability/log";
 export class CorpusBookIndexer {
   async ingestBookContent(pdfPath: string) {
-    console.log(`[Indexer] Ingesting book from ${pdfPath}...`);
+    logger.info({ event: "agent.indexer.ingest", pdfPath });
     // AI vectorization pipeline for RAG integration
     return {
       vectorsCreated: 15420,

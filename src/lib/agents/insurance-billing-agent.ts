@@ -1,9 +1,10 @@
 /**
  * EMR-045: Insurance Billing AI Agents
  */
+import { logger } from "@/lib/observability/log";
 export class InsuranceBillingAgent {
   async optimizeCoding(encounterId: string, chartNotes: string) {
-    console.log(`[BillingAgent] Optimizing CPT/ICD-10 codes for ${encounterId}`);
+    logger.info({ event: "agent.billing.code_optimize", encounterId });
     
     // AI analysis to maximize reimbursement within CMS guidelines
     return {

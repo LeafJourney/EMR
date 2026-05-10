@@ -1,9 +1,10 @@
 /**
  * Patient Explainer Agent (EMR-009)
- * 
+ *
  * This agent translates complex clinical notes, diagnoses, and medical jargon
  * into a highly accessible, 3rd-grade reading level explanation for patients.
  */
+import { logger } from "@/lib/observability/log";
 
 export interface ExplainerRequest {
   clinicalText: string;
@@ -25,7 +26,7 @@ export class PatientExplainerAgent {
    */
   async explainClinicalNotes(request: ExplainerRequest): Promise<ExplainerResponse> {
     // Scaffold: Simulated LLM call
-    console.log(`[Explainer Agent] Processing notes for ${request.patientAge}yo patient...`);
+    logger.info({ event: "agent.explainer.processing", patientAge: request.patientAge });
     
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 1000));

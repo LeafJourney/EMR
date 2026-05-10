@@ -12,6 +12,7 @@ import {
   getClinicianPicks,
   getCategories,
 } from "@/lib/marketplace/queries";
+import { AffiliateProductCard } from "@/components/store/affiliate-product-card";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +89,40 @@ export default async function ShopPage() {
           Featured
         </h2>
         <ProductGrid products={featured} columns={4} />
+      </section>
+
+      {/* ── Partner Deals ──────────────────────────────────────────────── */}
+      <section className="mb-14">
+        <h2 className="text-xl font-semibold tracking-tight text-text mb-6">
+          Partner Deals
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <AffiliateProductCard 
+            product={{
+              id: "vape-1",
+              name: "Pax Plus Vaporizer",
+              brand: "PAX",
+              category: "Hardware",
+              price: 200,
+              imageUrl: "",
+              affiliateUrl: "https://pax.com",
+              rating: 4.8,
+              discountBadge: "15% Off"
+            }} 
+          />
+          <AffiliateProductCard 
+            product={{
+              id: "scale-1",
+              name: "Precision Scale 0.01g",
+              brand: "AWS",
+              category: "Hardware",
+              price: 25,
+              imageUrl: "",
+              affiliateUrl: "https://amazon.com",
+              rating: 4.5
+            }} 
+          />
+        </div>
       </section>
 
       {/* ── Clinician Picks ───────────────────────────────────────────── */}

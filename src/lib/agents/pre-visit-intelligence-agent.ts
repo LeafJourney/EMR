@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "@/lib/observability/log";
 import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
@@ -51,7 +52,7 @@ function daysAgo(date: Date): number {
  * contract is to return the briefing to the caller; persistence is a
  * side-effect that lets downstream surfaces (Schedule tile brief line, scribe
  * pre-seed) read it without re-running the agent. On failure we log via
- * `console.warn` with a clear prefix so the issue surfaces in server logs
+ * `logger.warn` with a structured event so the issue surfaces in server logs
  * without breaking the calling flow.
  */
 async function persistBriefingToEncounter(
@@ -65,11 +66,11 @@ async function persistBriefingToEncounter(
       data: { briefingContext: briefing as any },
     });
   } catch (err) {
-    console.warn(
-      "[preVisitIntelligence] persistence failed:",
-      err instanceof Error ? err.message : String(err),
-      { encounterId },
-    );
+    logger.warn({
+      event: "agent.previsit.persist_failed",
+      encounterId,
+      err,
+    });
   }
 }
 

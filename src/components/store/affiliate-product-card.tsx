@@ -1,5 +1,6 @@
 import React from "react";
 import { ExternalLink, Star, Tag, ShoppingBag } from "lucide-react";
+import { logPatientEngagement } from "@/app/(patient)/portal/wellness/actions";
 
 export interface AffiliateProductProps {
   id: string;
@@ -75,6 +76,7 @@ export function AffiliateProductCard({ product }: { product: AffiliateProductPro
             href={product.affiliateUrl}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => logPatientEngagement("AffiliateProductCard", "click_buy_now", { productId: product.id, productName: product.name })}
             className="flex items-center gap-1.5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-600 dark:hover:bg-emerald-400 transition-colors"
           >
             Buy Now

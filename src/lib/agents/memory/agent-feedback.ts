@@ -13,6 +13,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import type { AgentFeedback, FeedbackAction } from "@prisma/client";
+import { logger } from "@/lib/observability/log";
 
 export interface RecordFeedbackInput {
   agentName: string;
@@ -47,10 +48,11 @@ export async function recordFeedback(
       },
     });
   } catch (err) {
-    console.warn("[agent-feedback] persist failed", {
+    logger.warn({
+      event: "agent.feedback.persist_failed",
       agentName: input.agentName,
       action: input.action,
-      error: err instanceof Error ? err.message : String(err),
+      err,
     });
     return null;
   }

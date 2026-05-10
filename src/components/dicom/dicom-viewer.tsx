@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from "react";
 import { ZoomIn, ZoomOut, Maximize, FileImage, Settings2, Play } from "lucide-react";
 

@@ -21,6 +21,13 @@ import {
   type EventKind,
 } from "./timeline-card";
 
+import { SleepHygieneCard } from "@/components/lifestyle/sleep-hygiene-card";
+import { MealPlanCard } from "@/components/lifestyle/meal-plan-card";
+import { ExerciseRegimenCard } from "@/components/lifestyle/exercise-regimen-card";
+import { StressReductionCard } from "@/components/lifestyle/stress-reduction-card";
+import { HabitFormationCard } from "@/components/lifestyle/habit-formation-card";
+import { SocialConnectivityCard } from "@/components/lifestyle/social-connectivity-card";
+
 export const metadata = { title: "Health Roadmap" };
 
 // ---------------------------------------------------------------------------
@@ -501,6 +508,26 @@ export default async function RoadmapPage() {
           </CardContent>
         </Card>
       )}
+
+      <EditorialRule className="mb-8" />
+
+      {/* ================================================================
+          Lifestyle Care Plans (Wave 1 Expansion)
+          ================================================================ */}
+      <section className="mb-10">
+        <div className="flex items-center gap-3 mb-6">
+          <h2 className="font-display text-xl text-text tracking-tight">
+            Lifestyle Care Plans
+          </h2>
+          <Badge tone="accent">Recommended</Badge>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SleepHygieneCard />
+          <MealPlanCard />
+          <ExerciseRegimenCard />
+          <StressReductionCard />
+        </div>
+      </section>
 
       <EditorialRule className="mb-8" />
 

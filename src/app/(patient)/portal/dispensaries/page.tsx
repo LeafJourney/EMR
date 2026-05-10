@@ -20,8 +20,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, LeafSprig } from "@/components/ui/ornament";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { listDispensariesForOrg, filterNearby } from "@/lib/dispensary";
+import { filterNearby, listDispensariesForOrg } from "@/lib/dispensary";
 import { ROLE_HOME } from "@/lib/rbac/roles";
+import { LocatorMap } from "@/components/dispensary/locator-map";
 import Link from "next/link";
 
 export const metadata = { title: "Find a dispensary" };
@@ -81,12 +82,9 @@ export default async function PatientDispensariesPage() {
           />
         </Card>
       ) : (
-        <Card tone="raised" className="mb-6">
-          <CardContent className="py-4 text-xs text-text-muted">
-            Map view will appear here once the practice configures a Google
-            Maps API key. Address details are listed below.
-          </CardContent>
-        </Card>
+        <div className="mb-6">
+          <LocatorMap />
+        </div>
       )}
 
       {nearby.length === 0 ? (

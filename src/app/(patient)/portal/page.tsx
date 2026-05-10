@@ -19,6 +19,10 @@ import { formatDate, formatRelative } from "@/lib/utils/format";
 import { OnboardingTour } from "@/components/ui/onboarding-tour";
 import { WellnessTipWidget } from "@/components/ui/wellness-tip-widget";
 import { QuickSymptomFab } from "@/components/ui/quick-symptom-fab";
+import { VitalsCard } from "@/components/patient/vitals-card";
+import { HealthRoadmap } from "@/components/patient/health-roadmap";
+import { PositiveInputPrompt } from "@/components/patient/positive-input-prompt";
+import { DicomViewer } from "@/components/dicom/dicom-viewer";
 import { withTimeout } from "@/lib/utils/with-timeout";
 
 // EMR-205: guard the home-page queries so a hung downstream call can
@@ -356,6 +360,11 @@ export default async function PatientHome() {
         </div>
       </div>
 
+      {/* ── Daily Vitals ── */}
+      <div className="mb-6 md:mb-8">
+        <VitalsCard vitals={{ heartRate: 72, bloodPressureSys: 120, bloodPressureDia: 80, respiratoryRate: 16, oxygenSaturation: 98, temperature: 98.6, lastUpdated: "Today at 9:00 AM" }} />
+      </div>
+
       {/* ── Top row: Health grade + Lifestyle bars + AI tips ── */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
         {/* Health Grade */}
@@ -619,6 +628,25 @@ export default async function PatientHome() {
         </Card>
       </div>
 
+      {/* ── High-Level Health Roadmap ── */}
+      <div className="mb-6 md:mb-8">
+        <HealthRoadmap />
+      </div>
+
+      {/* ── Recent Imaging (DICOM Viewer) ── */}
+      <div className="mb-6 md:mb-8">
+        <Eyebrow className="mb-3">Recent Scan</Eyebrow>
+        <DicomViewer 
+          image={{
+            id: "scan-123",
+            name: "LUMBAR SPINE MRI",
+            date: "Oct 24, 2023",
+            modality: "MRI",
+            imageUrl: "" // empty URL shows the radar mock
+          }} 
+        />
+      </div>
+
       {/* ── Progress (goals, streaks, efficacy, recap) ── */}
       <div className="mb-3 mt-2">
         <Eyebrow>Your progress</Eyebrow>
@@ -692,6 +720,11 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
+      </div>
+
+      {/* ── Check-in Prompt ── */}
+      <div className="mt-8 mb-4">
+        <PositiveInputPrompt />
       </div>
     </PageShell>
   );

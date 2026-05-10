@@ -5,6 +5,8 @@ import { requireRole } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
 import { EducationView } from "./education-view";
+import { ComboWheelShell } from "@/components/education/combo-wheel-shell";
+import { KanderResources } from "@/components/education/kander-resources";
 
 export const metadata = { title: "My Care Guide" };
 
@@ -41,6 +43,11 @@ export default async function EducationPage() {
       </div>
 
       <EducationView />
+
+      <div className="mt-12 space-y-12 print:hidden">
+        <ComboWheelShell />
+        <KanderResources />
+      </div>
     </PageShell>
   );
 }

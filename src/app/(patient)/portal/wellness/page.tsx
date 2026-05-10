@@ -18,6 +18,16 @@ import { computePlantHealth } from "@/lib/domain/plant-health";
 import { LIFESTYLE_DOMAINS, LIFESTYLE_TIPS } from "@/lib/domain/lifestyle";
 import { LifestyleToolkit } from "../lifestyle/lifestyle-toolkit";
 
+import { PlantCompanion } from "@/components/gamification/plant-companion";
+import { HealthRings } from "@/components/gamification/health-rings";
+import { HabitFormationCard } from "@/components/lifestyle/habit-formation-card";
+import { SocialConnectivityCard } from "@/components/lifestyle/social-connectivity-card";
+
+import { SleepHygieneCard } from "@/components/lifestyle/sleep-hygiene-card";
+import { MealPlanCard } from "@/components/lifestyle/meal-plan-card";
+import { ExerciseRegimenCard } from "@/components/lifestyle/exercise-regimen-card";
+import { StressReductionCard } from "@/components/lifestyle/stress-reduction-card";
+
 export const metadata = { title: "Wellness Hub" };
 
 // EMR-161 — Unified Wellness Hub
@@ -298,6 +308,45 @@ export default async function WellnessHubPage() {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      <EditorialRule className="mb-10" />
+
+      {/* Gamification & Adherence */}
+      <section className="mb-10">
+        <Eyebrow className="mb-3">Gamification &amp; Adherence</Eyebrow>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <PlantCompanion 
+            stats={{
+              level: plantHealth.leafCount >= 10 ? 3 : plantHealth.leafCount >= 5 ? 2 : 1,
+              health: plantHealth.score,
+              watered: consecutiveDays > 0,
+              sunlight: Math.min(100, unlockedCount * 20)
+            }}
+          />
+          <HealthRings 
+            rings={{
+              move: { value: sources[0]?.summary?.steps || 3000, max: 10000 },
+              meds: { value: consecutiveDays > 0 ? 2 : 0, max: 2 },
+              sleep: { value: sources[0]?.summary?.sleepHours || 6, max: 8 }
+            }}
+          />
+        </div>
+      </section>
+
+      <EditorialRule className="mb-10" />
+
+      {/* Structured Care Plans */}
+      <section className="mb-10">
+        <Eyebrow className="mb-3">Lifestyle Care Plans</Eyebrow>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SleepHygieneCard />
+          <MealPlanCard />
+          <ExerciseRegimenCard />
+          <StressReductionCard />
+          <HabitFormationCard />
+          <SocialConnectivityCard />
         </div>
       </section>
 
