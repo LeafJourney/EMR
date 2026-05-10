@@ -368,7 +368,11 @@ model ChartSummary {
   generatedBy       String // agent name:version
   generatedAt       DateTime @default(now())
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)  // ChartSummary has no indexes today. The clinic dashboard reads
+  // every active patient's score for the avg-readiness widget.
+  // Without an index on patientId the join sequential-scans every
+  // ChartSummary row. Index audit pass 2 2026-05-10.
+  @@index([patientId])
 }
 
 // --------------------------------------------------------------
@@ -410,6 +414,10 @@ model Document {
 
   @@index([patientId, kind])
   @@index([organizationId, needsReview])
+  // Clinic dashboard "recent documents" activity feed (clinic/page.tsx).
+  // Filters by org + deletedAt=null, orders by createdAt desc.
+  // Index audit pass 2 2026-05-10.
+  @@index([organizationId, deletedAt, createdAt])
 }
 
 // --------------------------------------------------------------
@@ -457,6 +465,14 @@ model Encounter {
   // Filters by organizationId + nulls-not-null on charting timestamps, orders
   // by chartingCompletedAt. Index audit 2026-05-09.
   @@index([organizationId, chartingCompletedAt])
+  // Clinic dashboard "today's calendar", "this week's count", and the
+  // 7-day per-day sparkline (clinic/page.tsx). All filter by org +
+  // scheduledFor range. Index audit pass 2 2026-05-10.
+  @@index([organizationId, scheduledFor])
+  // Clinic dashboard "recent completed encounters" activity feed.
+  // Filters by org + status='complete', orders by completedAt desc.
+  // Index audit pass 2 2026-05-10.
+  @@index([organizationId, status, completedAt])
 }
 
 enum NoteStatus {
@@ -484,6 +500,10 @@ model Note {
   codingSuggestion CodingSuggestion?
 
   @@index([encounterId, status])
+  // Clinic dashboard "recently finalized notes" activity feed
+  // (clinic/page.tsx). Filters status='finalized', orders by
+  // finalizedAt desc. Index audit pass 2 2026-05-10.
+  @@index([status, finalizedAt])
 }
 
 model CodingSuggestion {
@@ -1670,6 +1690,10 @@ model AgentJob {
   @@index([status, runAfter])
   @@index([organizationId, status])
   @@index([workflowName, status])
+  // Clinic dashboard "fleet bridge" recent-jobs widget (clinic/page.tsx).
+  // Filters org + status IN [...] + completedAt > 24h, orders by
+  // completedAt desc. Index audit pass 2 2026-05-10.
+  @@index([organizationId, status, completedAt])
 }
 
 // --------------------------------------------------------------
