@@ -16,7 +16,7 @@ const NAV = [
 
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+    <main id="main-content" className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       <div className="max-w-[920px] mx-auto px-6 lg:px-10 py-12 lg:py-16">
         <p className="eyebrow text-[var(--text-soft)] mb-3">Legal</p>
         <nav aria-label="Legal documents" className="mb-10 flex flex-wrap gap-x-6 gap-y-2 text-[13.5px]">
@@ -44,6 +44,6 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
           {children}
         </article>
       </div>
-    </div>
+    </main>
   );
 }

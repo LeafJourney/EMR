@@ -100,6 +100,7 @@ export default function StorePage() {
       />
 
       <SiteHeader />
+      <main id="main-content">
 
       {/* Hero */}
       <section className="max-w-[1280px] mx-auto px-6 lg:px-12 pt-12 pb-10 text-center">
@@ -245,6 +246,7 @@ export default function StorePage() {
         </div>
       )}
 
+      </main>
       <SiteFooter />
     </div>
   );

@@ -86,6 +86,7 @@ export default function MarketplacePage({
       />
 
       <SiteHeader />
+      <main id="main-content">
 
       {/* Hero / search */}
       <section className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-12 pt-10 pb-8">
@@ -266,6 +267,7 @@ export default function MarketplacePage({
         </div>
       </section>
 
+      </main>
       <SiteFooter />
     </div>
   );

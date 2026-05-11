@@ -141,6 +141,7 @@ export default function SecurityPage() {
       />
 
       <SiteHeader />
+      <main id="main-content">
 
       {/* Hero */}
       <section className="max-w-[1280px] mx-auto px-6 lg:px-12 pt-12 pb-16">
@@ -342,6 +343,7 @@ export default function SecurityPage() {
         </div>
       </section>
 
+      </main>
       <SiteFooter />
     </div>
   );
