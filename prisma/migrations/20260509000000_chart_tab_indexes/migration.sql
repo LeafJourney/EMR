@@ -20,21 +20,21 @@
 --    Read: where patientId, orderBy createdAt desc. Existing compound
 --    indexes start with patientId but require a category/severity
 --    predicate to be useful. This one covers the bare patientId+order.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "ClinicalObservation_patientId_createdAt_idx"
+CREATE INDEX IF NOT EXISTS "ClinicalObservation_patientId_createdAt_idx"
   ON "ClinicalObservation" ("patientId", "createdAt");
 
 -- 2. Claim open-claim count for the chart tab.
 --    Read: count where patientId AND status IN (...). Existing
 --    patientId+serviceDate index doesn't cover a status filter when
 --    serviceDate isn't in the predicate.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Claim_patientId_status_idx"
+CREATE INDEX IF NOT EXISTS "Claim_patientId_status_idx"
   ON "Claim" ("patientId", "status");
 
 -- 3. Task chart-tab open-task list.
 --    Read: where patientId AND status='open', orderBy dueAt asc.
 --    Existing indexes are on (organizationId, status) and
 --    (assigneeUserId, status) — neither leads with patientId.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Task_patientId_status_dueAt_idx"
+CREATE INDEX IF NOT EXISTS "Task_patientId_status_dueAt_idx"
   ON "Task" ("patientId", "status", "dueAt");
 
 -- 4. Encounter charting-time benchmark.
@@ -42,12 +42,12 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "Task_patientId_status_dueAt_idx"
 --    chartingCompletedAt IS NOT NULL, orderBy chartingCompletedAt desc.
 --    Existing organizationId+status+createdAt index is on the wrong
 --    sort column.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Encounter_organizationId_chartingCompletedAt_idx"
+CREATE INDEX IF NOT EXISTS "Encounter_organizationId_chartingCompletedAt_idx"
   ON "Encounter" ("organizationId", "chartingCompletedAt");
 
 -- 5. DosingRegimen chart-tab history.
 --    Read: where patientId, orderBy startDate desc. Existing
 --    patientId+active index doesn't cover the ordering when `active`
 --    isn't in the predicate.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "DosingRegimen_patientId_startDate_idx"
+CREATE INDEX IF NOT EXISTS "DosingRegimen_patientId_startDate_idx"
   ON "DosingRegimen" ("patientId", "startDate");
