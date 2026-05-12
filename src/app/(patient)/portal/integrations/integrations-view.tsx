@@ -37,7 +37,7 @@ const INTEGRATIONS: Integration[] = [
     icon: "💍",
     blurb: "Readiness scores, sleep quality, HRV, and body temperature trends.",
     dataTypes: ["Sleep quality", "HRV", "Readiness", "Body temperature"],
-    available: false,
+    available: true,
   },
   {
     id: "garmin",
@@ -45,7 +45,47 @@ const INTEGRATIONS: Integration[] = [
     icon: "🏃",
     blurb: "Training load, stress tracking, and detailed activity metrics.",
     dataTypes: ["Training load", "Stress", "Body battery", "VO2 max"],
-    available: false,
+    available: true,
+  },
+  {
+    id: "dexcom",
+    name: "Dexcom",
+    icon: "📉",
+    blurb: "Continuous glucose monitoring and time-in-range tracking.",
+    dataTypes: ["EGV", "Time in range", "Average glucose"],
+    available: true,
+  },
+  {
+    id: "libre",
+    name: "FreeStyle Libre",
+    icon: "🩸",
+    blurb: "Continuous glucose trends and critical event tracking.",
+    dataTypes: ["Glucose levels", "Hyper/Hypo alerts", "Time in range"],
+    available: true,
+  },
+  {
+    id: "whoop",
+    name: "Whoop",
+    icon: "⚡",
+    blurb: "Strain, recovery, and sleep performance tracking.",
+    dataTypes: ["Strain", "Recovery", "Sleep performance", "HRV"],
+    available: true,
+  },
+  {
+    id: "medtronic",
+    name: "Medtronic Guardian",
+    icon: "🛡️",
+    blurb: "Advanced sensor glucose tracking and clinical alerts.",
+    dataTypes: ["Sensor Glucose", "Rate of Change", "Time in range"],
+    available: true,
+  },
+  {
+    id: "eversense",
+    name: "Eversense",
+    icon: "🧬",
+    blurb: "Implantable CGM with estimated A1C and trend arrows.",
+    dataTypes: ["Interstitial Glucose", "eA1C", "Trend Arrows"],
+    available: true,
   },
 ];
 
@@ -60,6 +100,11 @@ export function IntegrationsView() {
     fitbit: { connected: false, lastSync: null },
     oura: { connected: false, lastSync: null },
     garmin: { connected: false, lastSync: null },
+    dexcom: { connected: false, lastSync: null },
+    libre: { connected: false, lastSync: null },
+    whoop: { connected: false, lastSync: null },
+    medtronic: { connected: false, lastSync: null },
+    eversense: { connected: false, lastSync: null },
   });
 
   const toggle = (id: string) => {
