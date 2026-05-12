@@ -97,6 +97,7 @@ export function StatusView() {
   );
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
+  const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -107,12 +108,47 @@ export function StatusView() {
 
   const allOk = SERVICES.every((s) => s.health === "operational");
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  // Status-page email subscription. Posts through /api/contact (the
+  // same intake the marketing forms use) with role="status_subscribe"
+  // so ops can grep one place for all inbound user-supplied emails.
+  //
+  // Earlier this handler was a setTimeout fake-success — same silent-
+  // drop bug pattern PR #258 fixed in /book-demo, surfaced again by
+  // find-and-fix pass 5.
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
-    setSubscribed(true);
-    setEmail("");
-    setTimeout(() => setSubscribed(false), 3000);
+    const trimmed = email.trim();
+    if (!trimmed) return;
+
+    setSubscribeError(null);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed.split("@")[0] || "Status subscriber",
+          email: trimmed,
+          subject: "Status updates subscription",
+          role: "status_subscribe",
+          message:
+            "User opted in to receive notifications when status changes on " +
+            (typeof window !== "undefined" ? window.location.origin : "") +
+            "/status.",
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("non-2xx response from /api/contact");
+      }
+      setSubscribed(true);
+      setEmail("");
+      setTimeout(() => setSubscribed(false), 3000);
+    } catch (err) {
+      setSubscribeError(
+        err instanceof Error
+          ? "We could not record your subscription. Please email status@leafjourney.com."
+          : "Subscription failed.",
+      );
+    }
   };
 
   return (
@@ -251,16 +287,26 @@ export function StatusView() {
               Thanks — you'll get a confirmation email shortly.
             </div>
           ) : (
-            <form onSubmit={handleSubscribe} className="flex gap-2">
-              <Input
-                type="email"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <Button type="submit">Subscribe</Button>
-            </form>
+            <>
+              <form onSubmit={handleSubscribe} className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <Button type="submit">Subscribe</Button>
+              </form>
+              {subscribeError && (
+                <p
+                  role="alert"
+                  className="mt-2 rounded-md border border-highlight/30 bg-highlight-soft px-3 py-2 text-xs text-text"
+                >
+                  {subscribeError}
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
