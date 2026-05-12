@@ -11,7 +11,7 @@ export default function StatusPage() {
   return (
     <div className="min-h-screen bg-bg flex flex-col">
       <SiteHeader />
-      <main className="flex-1 max-w-[1080px] w-full mx-auto px-6 lg:px-12 py-12">
+      <main id="main-content" className="flex-1 max-w-[1080px] w-full mx-auto px-6 lg:px-12 py-12">
         <StatusView />
       </main>
       <SiteFooter />

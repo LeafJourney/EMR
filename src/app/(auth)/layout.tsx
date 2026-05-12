@@ -28,7 +28,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </Link>
       </nav>
 
-      <main className="flex-1 flex items-start justify-center px-6 pt-8 pb-24">
+      <main id="main-content" className="flex-1 flex items-start justify-center px-6 pt-8 pb-24">
         <div className="w-full max-w-[440px]">
           <div className="bg-surface-raised border border-border rounded-2xl shadow-md px-8 py-10 relative overflow-hidden">
             {/* corner leaf garnish */}

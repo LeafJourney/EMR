@@ -100,7 +100,7 @@ export default function BookDemoPage() {
     <div className="min-h-screen bg-bg">
       <SiteHeader />
 
-      <main className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-20 pb-28">
+      <main id="main-content" className="max-w-[1200px] mx-auto px-6 lg:px-12 pt-20 pb-28">
         <div className="grid lg:grid-cols-2 gap-16 items-start">
           {/* Left Column: Copy & Social Proof */}
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">

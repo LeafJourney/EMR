@@ -14,7 +14,7 @@ export default function ContactPage() {
   return (
     <div className="min-h-screen bg-bg flex flex-col">
       <SiteHeader />
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <div className="max-w-[920px] mx-auto px-6 lg:px-12 pt-16 pb-24">
           <div className="text-center max-w-2xl mx-auto mb-12">
             <Eyebrow className="justify-center mb-5">Contact us</Eyebrow>

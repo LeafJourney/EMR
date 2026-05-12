@@ -55,7 +55,7 @@ export default function FoundationPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-[1100px] px-6 py-12">
+      <main id="main-content" className="mx-auto max-w-[1100px] px-6 py-12">
         <header className="mb-10 max-w-3xl">
           <p className="text-xs uppercase tracking-[0.2em] text-emerald-700">501(c)(3) Public Charity</p>
           <h1 className="mt-3 font-display text-4xl tracking-tight md:text-5xl">Leafjourney Charitable Foundation</h1>

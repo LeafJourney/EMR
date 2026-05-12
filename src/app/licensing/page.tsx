@@ -25,7 +25,7 @@ export default function PublicLicensingPage() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-[920px] px-6 py-16">
+      <main id="main-content" className="mx-auto max-w-[920px] px-6 py-16">
         <header className="text-center mb-12">
           <p className="text-[11px] uppercase tracking-[0.18em] text-text-subtle">
             Edition {MENU_VERSION}

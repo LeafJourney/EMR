@@ -46,7 +46,7 @@ export default function FeaturesPage() {
     <div className="min-h-screen bg-bg">
       <SiteHeader />
 
-      <main className="max-w-[1320px] mx-auto px-6 lg:px-12 pt-20 pb-28">
+      <main id="main-content" className="max-w-[1320px] mx-auto px-6 lg:px-12 pt-20 pb-28">
         <div className="text-center max-w-3xl mx-auto mb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <Eyebrow className="justify-center mb-6">Platform Capabilities</Eyebrow>
           <h1 className="font-display text-5xl md:text-6xl text-text leading-[1.05] tracking-tight mb-6">
