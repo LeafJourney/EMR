@@ -144,20 +144,22 @@ function ChartReadinessRing({
   );
 }
 
-/** Status dot with optional pulse animation. */
+/** Status dot with optional pulse animation. Wraps in a Link when `href` is provided. */
 function StatusDot({
   color,
   pulse = false,
   label,
   count,
+  href,
 }: {
   color: string;
   pulse?: boolean;
   label: string;
   count: number;
+  href?: string;
 }) {
-  return (
-    <div className="flex items-center gap-2" title={label}>
+  const body = (
+    <>
       <span className="relative flex h-2.5 w-2.5">
         {pulse && (
           <span
@@ -170,12 +172,31 @@ function StatusDot({
           style={{ backgroundColor: color }}
         />
       </span>
-      <span className="font-display text-lg font-medium tabular-nums leading-none text-text">
+      <span className="font-display text-lg font-medium tabular-nums leading-none text-text group-hover:text-accent transition-colors">
         {count}
       </span>
-      <span className="text-[11px] text-text-subtle tracking-wide hidden sm:inline">
+      <span className="text-[11px] text-text-subtle tracking-wide hidden sm:inline group-hover:text-text transition-colors">
         {label}
       </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        aria-label={`${label}: ${count}`}
+        title={label}
+        className="group flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 -my-1 transition-colors hover:bg-surface-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2" title={label}>
+      {body}
     </div>
   );
 }
@@ -568,18 +589,21 @@ export default async function ClinicHomePage() {
               color="var(--accent)"
               count={todaysEncounters.length}
               label="Patients today"
+              href="/clinic/schedule"
             />
             <StatusDot
               color="var(--highlight)"
               pulse={notesToSign > 0}
               count={notesToSign}
               label="Notes to sign"
+              href="/clinic/sign-off"
             />
             <StatusDot
               color="var(--highlight)"
               pulse={approvalJobs > 0}
               count={approvalJobs}
               label="Approvals"
+              href="/clinic/approvals"
             />
             <StatusDot
               color="var(--text-subtle)"

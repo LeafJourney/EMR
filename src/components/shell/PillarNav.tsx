@@ -74,10 +74,10 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
   }, [sections, activePillar]);
 
   return (
-    <div className="flex" data-nav-rail>
+    <div className="flex h-full" data-nav-rail>
       <aside className="relative z-50 flex w-16 shrink-0 flex-col items-center border-r border-border bg-surface">
         {header}
-        <div className="flex-1 w-full">
+        <div className="flex-1 w-full min-h-0 overflow-y-auto">
           <IconRail
             sections={sections}
             activePillar={activePillar}

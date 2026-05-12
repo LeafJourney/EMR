@@ -63,7 +63,7 @@ export function AppShell({
         data-role={activeRole}
       >
         {useRail ? (
-          <div className="hidden md:block">
+          <div className="hidden md:block md:sticky md:top-0 md:self-start md:h-screen z-40">
             <PillarNav
               sections={resolved}
               header={
@@ -81,7 +81,7 @@ export function AppShell({
             />
           </div>
         ) : (
-          <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-surface relative">
+          <aside className="hidden md:flex md:sticky md:top-0 md:self-start md:h-screen z-40 w-64 shrink-0 flex-col border-r border-border bg-surface relative">
             <div
               aria-hidden="true"
               className="pointer-events-none absolute inset-x-0 top-0 h-40 opacity-70"
