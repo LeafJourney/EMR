@@ -78,10 +78,13 @@ export function ContactForm() {
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <label className="block text-sm font-medium text-text mb-1.5">
+          <label htmlFor="contact-name" className="block text-sm font-medium text-text mb-1.5">
             Your name
           </label>
           <input
+            id="contact-name"
+            name="name"
+            autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -89,11 +92,14 @@ export function ContactForm() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-text mb-1.5">
+          <label htmlFor="contact-email" className="block text-sm font-medium text-text mb-1.5">
             Email
           </label>
           <input
+            id="contact-email"
+            name="email"
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -102,10 +108,12 @@ export function ContactForm() {
         </div>
       </div>
       <div className="mt-5">
-        <label className="block text-sm font-medium text-text mb-1.5">
+        <label htmlFor="contact-subject" className="block text-sm font-medium text-text mb-1.5">
           Subject
         </label>
         <input
+          id="contact-subject"
+          name="subject"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
           placeholder="What's this about?"
@@ -113,10 +121,12 @@ export function ContactForm() {
         />
       </div>
       <div className="mt-5">
-        <label className="block text-sm font-medium text-text mb-1.5">
+        <label htmlFor="contact-message" className="block text-sm font-medium text-text mb-1.5">
           Message
         </label>
         <textarea
+          id="contact-message"
+          name="message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           required

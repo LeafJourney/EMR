@@ -110,16 +110,42 @@ function NewsletterSignup() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage(null);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmed)) {
       setStatus("error");
       setMessage("Enter a valid email");
       return;
     }
     setStatus("submitting");
-    await new Promise((r) => setTimeout(r, 400));
-    setStatus("success");
-    setMessage("You're on the list. Watch your inbox.");
-    setEmail("");
+    // Earlier this handler was a setTimeout fake-success — same silent-
+    // drop pattern PR #258 fixed in /book-demo and pass 5 fixed in
+    // /status. Newsletter subscriptions from the site-wide footer were
+    // silently dropped on every marketing page since launch.
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed.split("@")[0] || "Newsletter subscriber",
+          email: trimmed,
+          subject: "Newsletter subscription",
+          role: "newsletter_subscribe",
+          message:
+            "User opted in to the marketing newsletter via the site " +
+            "footer. Surface: " +
+            (typeof window !== "undefined" ? window.location.pathname : ""),
+        }),
+      });
+      if (!res.ok) throw new Error(`POST /api/contact returned ${res.status}`);
+      setStatus("success");
+      setMessage("You're on the list. Watch your inbox.");
+      setEmail("");
+    } catch {
+      setStatus("error");
+      setMessage(
+        "We could not record your subscription. Try again or email hello@leafjourney.com.",
+      );
+    }
   }
 
   return (
