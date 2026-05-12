@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/auth/api-gate";
 import { z } from "zod";
 import {
   deleteAnnotation,
@@ -47,6 +48,9 @@ const AnnotationSchema = z.object({
 });
 
 export async function GET(req: NextRequest, { params }: Ctx) {
+  const gate = await requireApiAuth();
+  if (gate.error) return gate.error;
+
   const patientVisibleOnly =
     req.nextUrl.searchParams.get("scope") === "patient";
   const study = getStudy(params.id);
@@ -59,6 +63,9 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
+  const gate = await requireApiAuth();
+  if (gate.error) return gate.error;
+
   const study = getStudy(params.id);
   if (!study) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -84,6 +91,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, { params }: Ctx) {
+  const gate = await requireApiAuth();
+  if (gate.error) return gate.error;
+
   const annId = req.nextUrl.searchParams.get("annotationId");
   if (!annId) {
     return NextResponse.json({ error: "missing_annotation_id" }, { status: 400 });
