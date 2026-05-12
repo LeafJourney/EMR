@@ -56,7 +56,7 @@
 #   3. Changing a route's auth kind requires a security-review label on
 #      the PR.
 
-generated_at: 2026-05-09
+generated_at: 2026-05-12
 generated_against: origin/main@e2ec08a
 total_routes: 63
 
@@ -123,10 +123,9 @@ routes:
 
   configs/[id]/apply-specialty:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: onboarding-controller
-    review_due: 2026-05-23
-    notes: "Detected NO auth helper in route. Other controller routes use requireImplementationAdmin — confirm and align or document why this is exempt."
+    notes: "Closed 2026-05-12 via find-and-fix pass 4 evidence. Probe returned 403 FORBIDDEN — middleware coarse-gates /api/configs as a controller surface, route handler trusts middleware."
 
   configs/by-practice/[practiceId]:
     methods: [GET]
@@ -156,10 +155,9 @@ routes:
 
   specialty-templates:
     methods: [GET]
-    auth: needs_review
+    auth: public
     owner: onboarding-controller
-    review_due: 2026-05-23
-    notes: "Read-only manifest. Probably safe public, but confirm — exposes specialty/version metadata."
+    notes: "Closed 2026-05-12 via find-and-fix pass 4. Returns specialty metadata only (slug, name, description, version). No PHI; safe public — needed by the public onboarding wizard."
 
   # ── Agents (LLM-backed, $$ implications) ─────────────────
   agents/pharmacology:
@@ -190,24 +188,21 @@ routes:
   # ── Imaging (PHI) ────────────────────────────────────────
   imaging/studies:
     methods: [GET]
-    auth: needs_review
+    auth: required
     owner: imaging
-    review_due: 2026-05-16
-    notes: "🚨 PHI surface, no auth detected. MUST be authed before prod."
+    notes: "Closed 2026-05-12 via PR fix/imaging-routes-add-auth. Find-and-fix pass 4 confirmed this route returned a list of imaging studies including patientId, modality, body part, and indication to anonymous callers. Now gated with requireApiAuth()."
 
   imaging/studies/[id]:
     methods: [GET]
-    auth: needs_review
+    auth: required
     owner: imaging
-    review_due: 2026-05-16
-    notes: "🚨 PHI surface, no auth detected."
+    notes: "Closed 2026-05-12 via PR fix/imaging-routes-add-auth. Gate added at top of handler."
 
   imaging/studies/[id]/annotations:
     methods: [GET, POST, DELETE]
-    auth: needs_review
+    auth: required
     owner: imaging
-    review_due: 2026-05-16
-    notes: "🚨 PHI surface, no auth detected. State-changing on POST/DELETE."
+    notes: "Closed 2026-05-12 via PR fix/imaging-routes-add-auth. All three handlers now gate before reading state."
 
   imaging/upload:
     methods: [GET, POST]
@@ -355,17 +350,15 @@ routes:
   # ── Cron (inbound triggers) ───────────────────────────────
   cron/coa-tracker:
     methods: [POST]
-    auth: needs_review
+    auth: cron
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "🚨 No secret-header validation detected. Public-callable cron is a remote-trigger vector."
+    notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — handler validates a cron secret header. Audit assumption was wrong; the gate exists."
 
   cron/reminders:
     methods: [GET]
-    auth: needs_review
+    auth: cron
     owner: scheduling
-    review_due: 2026-05-16
-    notes: "🚨 No secret-header validation detected. File starts with @ts-nocheck — broader hygiene issue."
+    notes: "Closed via PR #243 — prod hard-refuses without CRON_SECRET, non-prod logs and falls through (200 in dev). Find-and-fix pass 4 confirmed dev fall-through; prod path is gated by NODE_ENV check."
 
   # ── Token-URL access ──────────────────────────────────────
   emergency/[token]:
@@ -401,10 +394,9 @@ routes:
 
   vendor-portal/auth/totp/enroll:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "TOTP enrollment — must require an authenticated session before enrolling. Confirm."
+    notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 no_session — handler requires an established vendor session."
 
   # ── Public infra ──────────────────────────────────────────
   health:
@@ -433,10 +425,9 @@ routes:
 
   dispensary/ingest:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: integrations
-    review_due: 2026-05-16
-    notes: "🚨 Ingest endpoint with no auth detected. Either token-validate or require auth."
+    notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — gate exists."
 
   integrations/linear/issues/[identifier]:
     methods: [GET]
