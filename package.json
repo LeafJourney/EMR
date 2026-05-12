@@ -54,6 +54,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
     "@capacitor/cli": "^8.3.1",
     "@playwright/test": "^1.59.1",
     "@types/bcryptjs": "^2.4.6",
