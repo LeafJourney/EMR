@@ -64,7 +64,7 @@ const BP_RE = /\b(?:bp|blood pressure)[:\s]*(\d{2,3})\s*\/\s*(\d{2,3})/i;
 const HR_RE = /\b(?:hr|heart rate|pulse)[:\s]*(\d{2,3})/i;
 const TEMP_RE = /\b(?:temp|temperature)[:\s]*(\d{2,3}(?:\.\d)?)\s*°?\s*[fF]?/;
 const WEIGHT_RE = /\b(?:wt|weight)[:\s]*(\d{2,3}(?:\.\d)?)\s*(lbs?|kg)/i;
-const HEIGHT_RE = /\b(?:ht|height)[:\s]*(\d)['ʹ]\s*(\d{1,2})/;
+const HEIGHT_RE = /\b(?:ht|height)[:\s]*(\d)['ʹ]\s*(\d{1,2})/i;
 const ALLERGY_LINE_RE = /\b(?:allerg(?:y|ies))[:\s]*([^\n]{0,180})/i;
 const MED_LINE_RE =
   /^\s*[-•*]?\s*([A-Z][a-zA-Z][a-zA-Z\-]+(?:\s+[A-Z]?[a-zA-Z\-]+)?)\s+(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|units?|iu)\b/m;
