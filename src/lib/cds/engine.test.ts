@@ -4,7 +4,7 @@ import { evaluatePatientCDS } from "./engine";
 
 describe("evaluatePatientCDS", () => {
   it("should return a CDSTrigger when overtraining rule is met", () => {
-    const recentLogs = [];
+    const recentLogs = [] as any;
     const recentObservations = [
       {
         patientId: "p1",
@@ -28,7 +28,7 @@ describe("evaluatePatientCDS", () => {
   });
 
   it("should return empty array when no rules are met", () => {
-    const recentLogs = [];
+    const recentLogs = [] as any;
     const recentObservations = [
       {
         patientId: "p1",
