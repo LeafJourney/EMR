@@ -1,19 +1,14 @@
-/**
- * EMR-063 — Pharmacy communication with dual sign-off
- *
- * Workflow center for clarification calls, refill auths, and prior
- * auth packets that need to leave the EMR for a pharmacy. Every
- * message that goes out the door requires two clinician signatures
- * before it transmits — provider plus a designated co-signer.
- *
- * The dual sign-off applies to controlled substances and to anything
- * tagged "high-risk" (anticoagulant changes, insulin, methotrexate,
- * etc). Routine refills can be single-signed but still flow through
- * this queue for tracking.
- */
+// EMR-063 — Pharmacy communication console with dual sign-off.
+//
+// Lists every active pharmacy thread for the org, surfaces any
+// medication-change requests waiting on the provider's signature, and
+// links into the thread detail page where messages and sign-offs
+// happen. The dual sign-off state machine is enforced server-side in
+// src/lib/pharmacy/dual-signoff.ts; this page is a read-only fan-out.
 
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
+import { prisma } from "@/lib/db/prisma";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import {
   Card,
@@ -26,123 +21,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { EmptyState } from "@/components/ui/empty-state";
+import { formatRelative } from "@/lib/utils/format";
+import { statusLabel } from "@/lib/pharmacy/dual-signoff";
 
 export const metadata = { title: "Pharmacy" };
-
-type PharmacyKind =
-  | "refill_auth"
-  | "clarification"
-  | "prior_auth"
-  | "discontinue"
-  | "transfer";
-
-interface PharmacyMessage {
-  id: string;
-  kind: PharmacyKind;
-  patientName: string;
-  pharmacyName: string;
-  drug: string;
-  summary: string;
-  /** "draft" | "awaiting_cosign" | "ready_to_send" | "sent" | "acked" | "rejected" */
-  status: "draft" | "awaiting_cosign" | "ready_to_send" | "sent" | "acked" | "rejected";
-  /** Whether this transmission requires a second clinician's signature. */
-  requiresCosign: boolean;
-  primarySigner?: string;
-  cosignSigner?: string;
-  ageHours: number;
-  controlled?: boolean;
-}
-
-const SAMPLE_MESSAGES: PharmacyMessage[] = [
-  {
-    id: "rx-001",
-    kind: "refill_auth",
-    patientName: "Williams, J.",
-    pharmacyName: "CVS — Costa Mesa",
-    drug: "Atorvastatin 40mg, 90 days",
-    summary: "Annual refill, stable on dose, last lipid panel in range.",
-    status: "ready_to_send",
-    requiresCosign: false,
-    primarySigner: "Dr. Patel",
-    ageHours: 2,
-  },
-  {
-    id: "rx-002",
-    kind: "clarification",
-    patientName: "Garcia, R.",
-    pharmacyName: "Walgreens — Tustin",
-    drug: "Warfarin 5mg",
-    summary:
-      "Pharmacy flagging dose discrepancy: chart says 5mg M/W/F, 7.5mg T/Th/Sa/Su. Confirm titration.",
-    status: "awaiting_cosign",
-    requiresCosign: true,
-    primarySigner: "Dr. Patel",
-    ageHours: 6,
-  },
-  {
-    id: "rx-003",
-    kind: "prior_auth",
-    patientName: "Hassan, K.",
-    pharmacyName: "Hoag Specialty",
-    drug: "Adalimumab 40mg",
-    summary: "PA packet to BCBS — failed methotrexate, rheum recommendation attached.",
-    status: "awaiting_cosign",
-    requiresCosign: true,
-    primarySigner: "Dr. Patel",
-    ageHours: 30,
-  },
-  {
-    id: "rx-004",
-    kind: "discontinue",
-    patientName: "Nguyen, L.",
-    pharmacyName: "CVS — Anaheim",
-    drug: "Tramadol 50mg PRN",
-    summary: "Discontinue — patient transitioned to cannabis-led pain plan.",
-    status: "ready_to_send",
-    requiresCosign: true,
-    controlled: true,
-    primarySigner: "Dr. Patel",
-    cosignSigner: "Dr. Brennan",
-    ageHours: 1,
-  },
-  {
-    id: "rx-005",
-    kind: "transfer",
-    patientName: "Olafsson, B.",
-    pharmacyName: "Costco — Tustin",
-    drug: "Levothyroxine 75mcg",
-    summary: "Transfer from Walgreens — patient request, no clinical change.",
-    status: "sent",
-    requiresCosign: false,
-    primarySigner: "Dr. Patel",
-    ageHours: 28,
-  },
-  {
-    id: "rx-006",
-    kind: "refill_auth",
-    patientName: "Patel, A.",
-    pharmacyName: "Mail-order Express Scripts",
-    drug: "Lisinopril 20mg",
-    summary: "90-day, stable.",
-    status: "acked",
-    requiresCosign: false,
-    primarySigner: "Dr. Patel",
-    ageHours: 72,
-  },
-  {
-    id: "rx-007",
-    kind: "clarification",
-    patientName: "Rivera, M.",
-    pharmacyName: "Walgreens — Irvine",
-    drug: "Methotrexate 15mg weekly",
-    summary:
-      "Pharmacist verifying weekly (not daily) dosing — flagged automatically by their system.",
-    status: "draft",
-    requiresCosign: true,
-    primarySigner: "Dr. Patel",
-    ageHours: 0.5,
-  },
-];
 
 export default async function PharmacyPage() {
   const user = await requireUser();
@@ -154,25 +36,51 @@ export default async function PharmacyPage() {
     );
   }
 
-  const awaitingCosign = SAMPLE_MESSAGES.filter(
-    (m) => m.status === "awaiting_cosign"
+  const orgId = user.organizationId;
+
+  const [threads, awaitingProvider, awaitingPharmacist, fullySigned] =
+    await Promise.all([
+      prisma.pharmacyCommThread.findMany({
+        where: { organizationId: orgId, status: { not: "cancelled" } },
+        orderBy: { lastMessageAt: "desc" },
+        take: 24,
+        include: {
+          patient: { select: { firstName: true, lastName: true } },
+          pharmacyContact: { select: { name: true, phone: true } },
+          medication: { select: { name: true, dosage: true } },
+          changeRequests: {
+            select: { id: true, status: true, kind: true, rationale: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      }),
+      prisma.medicationChangeRequest.count({
+        where: { organizationId: orgId, status: "pharmacist_signed" },
+      }),
+      prisma.medicationChangeRequest.count({
+        where: { organizationId: orgId, status: "provider_signed" },
+      }),
+      prisma.medicationChangeRequest.count({
+        where: { organizationId: orgId, status: "fully_signed" },
+      }),
+    ]);
+
+  const openThreads = threads.filter((t) =>
+    ["open", "awaiting_pharmacist", "awaiting_provider"].includes(t.status),
   );
-  const readyToSend = SAMPLE_MESSAGES.filter((m) => m.status === "ready_to_send");
-  const drafts = SAMPLE_MESSAGES.filter((m) => m.status === "draft");
-  const inFlight = SAMPLE_MESSAGES.filter(
-    (m) => m.status === "sent" || m.status === "acked"
-  );
+  const resolvedThreads = threads.filter((t) => t.status === "resolved");
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
       <PageHeader
         eyebrow="Pharmacy"
         title="Pharmacy communications"
-        description="Clarifications, refill auths, prior auths, transfers, and discontinue orders. Controlled substances and high-risk drugs require dual sign-off before they transmit."
+        description="Direct line to the pharmacist for clarifications and medication recommendations. Every medication change needs both pharmacist AND provider sign-off before it touches the chart."
         actions={
           <Link href="/clinic/pharmacy/new">
             <Button variant="primary" size="sm">
-              New message
+              New thread
             </Button>
           </Link>
         }
@@ -180,89 +88,66 @@ export default async function PharmacyPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <MetricTile
-          label="Awaiting co-sign"
-          value={awaitingCosign.length}
-          accent={awaitingCosign.length > 0 ? "amber" : "none"}
-          hint="Second signature required"
+          label="Waiting on you"
+          value={awaitingProvider}
+          accent={awaitingProvider > 0 ? "amber" : "none"}
+          hint="Pharmacist signed — provider sign-off pending"
         />
         <MetricTile
-          label="Ready to send"
-          value={readyToSend.length}
+          label="Waiting on pharmacist"
+          value={awaitingPharmacist}
+          accent="none"
+          hint="You signed — pharmacist sign-off pending"
+        />
+        <MetricTile
+          label="Ready to apply"
+          value={fullySigned}
           accent="forest"
           hint="Both signatures captured"
         />
         <MetricTile
-          label="Drafts"
-          value={drafts.length}
+          label="Open threads"
+          value={openThreads.length}
           accent="none"
-          hint="Not yet signed"
-        />
-        <MetricTile
-          label="In flight"
-          value={inFlight.length}
-          accent="forest"
-          hint="Sent + acked by pharmacy"
+          hint="Active conversations"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Awaiting co-sign</CardTitle>
-            <CardDescription>
-              Controlled substances and high-risk drugs need a second clinician
-              signature before they transmit.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {awaitingCosign.length === 0 ? (
-              <EmptyState
-                title="Co-sign queue clear"
-                description="Nothing waiting on a second signature."
-              />
-            ) : (
-              awaitingCosign.map((m) => (
-                <PharmacyRow key={m.id} message={m} highlight />
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Ready to send</CardTitle>
-            <CardDescription>
-              Fully signed messages staged for transmission to the pharmacy.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {readyToSend.length === 0 ? (
-              <EmptyState
-                title="Send queue clear"
-                description="Sign messages from the awaiting-cosign queue to stage them here."
-              />
-            ) : (
-              readyToSend.map((m) => <PharmacyRow key={m.id} message={m} />)
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <Card tone="raised" className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Open threads</CardTitle>
+          <CardDescription>
+            Latest message first. Click into a thread to read, reply, or sign off
+            on a medication change.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          {openThreads.length === 0 ? (
+            <EmptyState
+              title="No open pharmacy threads"
+              description="Start one from a patient's medication list or use the New thread button above."
+            />
+          ) : (
+            openThreads.map((t) => <ThreadRow key={t.id} thread={t} />)
+          )}
+        </CardContent>
+      </Card>
 
       <Card tone="raised">
         <CardHeader>
-          <CardTitle className="text-base">Recent activity</CardTitle>
+          <CardTitle className="text-base">Recently resolved</CardTitle>
           <CardDescription>
-            Sent and acknowledged messages from the last 7 days.
+            Threads closed in the last 30 days — kept for audit trail.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {inFlight.length === 0 ? (
+        <CardContent className="space-y-1">
+          {resolvedThreads.length === 0 ? (
             <EmptyState
               title="No recent activity"
-              description="Sent messages will appear here once the pharmacy acknowledges them."
+              description="Resolved threads will appear here."
             />
           ) : (
-            inFlight.map((m) => <PharmacyRow key={m.id} message={m} />)
+            resolvedThreads.map((t) => <ThreadRow key={t.id} thread={t} />)
           )}
         </CardContent>
       </Card>
@@ -270,112 +155,143 @@ export default async function PharmacyPage() {
   );
 }
 
-function PharmacyRow({
-  message,
-  highlight = false,
-}: {
-  message: PharmacyMessage;
-  highlight?: boolean;
-}) {
+interface ThreadRowData {
+  id: string;
+  subject: string;
+  status: string;
+  lastMessageAt: Date;
+  patient: { firstName: string; lastName: string };
+  pharmacyContact: { name: string };
+  medication: { name: string; dosage: string | null } | null;
+  changeRequests: { id: string; status: string; kind: string; rationale: string }[];
+}
+
+function ThreadRow({ thread }: { thread: ThreadRowData }) {
+  const latestRequest = thread.changeRequests[0];
   return (
-    <div
-      className={
-        "grid grid-cols-1 md:grid-cols-[1fr_180px_180px_140px] items-center gap-3 rounded-lg px-3 py-3 " +
-        (highlight ? "bg-highlight-soft/40" : "hover:bg-surface-muted")
-      }
+    <Link
+      href={`/clinic/pharmacy/${thread.id}`}
+      className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr_180px_140px] items-center gap-3 rounded-lg px-3 py-3 hover:bg-surface-muted"
     >
       <div className="min-w-0">
-        <p className="text-sm text-text">
-          {message.patientName}{" "}
-          <span className="text-text-subtle">· {message.drug}</span>
+        <p className="text-sm text-text font-medium truncate">
+          {thread.patient.lastName}, {thread.patient.firstName.charAt(0)}.{" "}
+          <span className="text-text-subtle font-normal">— {thread.subject}</span>
         </p>
-        <p className="text-[11px] text-text-subtle truncate">{message.summary}</p>
-        <p className="text-[11px] text-text-subtle">
-          → {message.pharmacyName}
-          {message.controlled && (
-            <Badge tone="danger" className="ml-2">
-              CII–CV
-            </Badge>
-          )}
-        </p>
-      </div>
-      <div className="space-y-1">
-        <Badge tone={kindTone(message.kind)}>
-          {kindLabel(message.kind)}
-        </Badge>
-        {message.requiresCosign && (
-          <p className="text-[10px] uppercase tracking-[0.14em] text-text-subtle">
-            Dual sign-off
+        {thread.medication && (
+          <p className="text-[11px] text-text-subtle truncate">
+            {thread.medication.name}
+            {thread.medication.dosage ? ` · ${thread.medication.dosage}` : ""}
           </p>
         )}
-      </div>
-      <SigState message={message} />
-      <p className="text-xs text-text-subtle tabular-nums">
-        {formatAge(message.ageHours)}
-      </p>
-    </div>
-  );
-}
-
-function SigState({ message }: { message: PharmacyMessage }) {
-  return (
-    <div className="text-[11px] text-text-muted">
-      <p>
-        Primary:{" "}
-        {message.primarySigner ? (
-          <span className="text-text">{message.primarySigner} ✓</span>
-        ) : (
-          <span className="text-text-subtle">unsigned</span>
-        )}
-      </p>
-      {message.requiresCosign && (
-        <p>
-          Co-sign:{" "}
-          {message.cosignSigner ? (
-            <span className="text-text">{message.cosignSigner} ✓</span>
-          ) : (
-            <span className="text-text-subtle">awaiting</span>
-          )}
+        <p className="text-[11px] text-text-subtle truncate">
+          → {thread.pharmacyContact.name}
         </p>
-      )}
-    </div>
+      </div>
+      <div className="min-w-0">
+        {latestRequest ? (
+          <>
+            <Badge tone={requestTone(latestRequest.status)}>
+              {kindLabel(latestRequest.kind)}
+            </Badge>
+            <p className="text-[11px] text-text-subtle truncate mt-1">
+              {statusLabel(latestRequest.status as never)}
+            </p>
+          </>
+        ) : (
+          <p className="text-[11px] text-text-subtle">No change proposed yet</p>
+        )}
+      </div>
+      <Badge tone={threadTone(thread.status)}>{statusReadable(thread.status)}</Badge>
+      <p className="text-xs text-text-subtle tabular-nums">
+        {formatRelative(thread.lastMessageAt)}
+      </p>
+    </Link>
   );
 }
 
-function kindLabel(kind: PharmacyKind): string {
+function statusReadable(status: string): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "awaiting_pharmacist":
+      return "Awaiting pharmacist";
+    case "awaiting_provider":
+      return "Awaiting you";
+    case "resolved":
+      return "Resolved";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return status;
+  }
+}
+
+function threadTone(
+  status: string,
+):
+  | "success"
+  | "warning"
+  | "danger"
+  | "neutral"
+  | "info"
+  | "highlight"
+  | "accent" {
+  switch (status) {
+    case "awaiting_provider":
+      return "warning";
+    case "awaiting_pharmacist":
+      return "info";
+    case "resolved":
+      return "success";
+    case "cancelled":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+function kindLabel(kind: string): string {
   switch (kind) {
-    case "refill_auth":
-      return "Refill auth";
-    case "clarification":
-      return "Clarification";
-    case "prior_auth":
-      return "Prior auth";
+    case "new_medication":
+      return "New medication";
+    case "dose_change":
+      return "Dose change";
     case "discontinue":
       return "Discontinue";
-    case "transfer":
-      return "Transfer";
+    case "switch_product":
+      return "Switch";
+    case "formulary_substitute":
+      return "Formulary sub";
+    case "refill_clarification":
+      return "Refill clarification";
+    default:
+      return kind;
   }
 }
 
-function kindTone(
-  kind: PharmacyKind
-): "success" | "warning" | "danger" | "neutral" | "info" | "highlight" | "accent" {
-  switch (kind) {
-    case "discontinue":
+function requestTone(
+  status: string,
+):
+  | "success"
+  | "warning"
+  | "danger"
+  | "neutral"
+  | "info"
+  | "highlight"
+  | "accent" {
+  switch (status) {
+    case "fully_signed":
+    case "applied":
+      return "success";
+    case "rejected":
+    case "withdrawn":
       return "danger";
-    case "prior_auth":
-      return "highlight";
-    case "clarification":
-      return "warning";
-    case "refill_auth":
+    case "provider_signed":
       return "info";
-    case "transfer":
-      return "accent";
+    case "pharmacist_signed":
+      return "warning";
+    default:
+      return "neutral";
   }
-}
-
-function formatAge(hours: number): string {
-  if (hours < 1) return `${Math.round(hours * 60)}m ago`;
-  if (hours < 24) return `${Math.round(hours)}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }

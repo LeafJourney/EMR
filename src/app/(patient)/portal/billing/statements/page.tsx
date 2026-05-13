@@ -376,9 +376,11 @@ function StatementCard({
         {statement.status !== "paid" && remaining > 0 && (
           <div className="flex flex-wrap gap-2">
             <Button size="sm">Pay {formatMoney(remaining)}</Button>
-            <Button variant="secondary" size="sm">
-              Questions?
-            </Button>
+            <Link href="/portal/billing/disputes">
+              <Button variant="secondary" size="sm">
+                Something looks wrong
+              </Button>
+            </Link>
             <Button variant="ghost" size="sm">
               Download PDF
             </Button>

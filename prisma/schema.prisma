@@ -106,6 +106,14 @@ model Organization {
   dispensaries             Dispensary[]
   supplyProducts           SupplyProduct[]
   dispensaryReimbursements DispensaryReimbursement[]
+  // EMR-063 — Pharmacy comms & dual sign-off
+  pharmacyContacts         PharmacyContact[]
+  pharmacyThreads          PharmacyCommThread[]
+  // EMR-091 — Cannabis dispensary
+  mmjCards                 MedicalCannabisCard[]
+  cannabisRxs              CannabisRx[]
+  dispenses                DispensaryDispense[]
+  pdmpChecks               CuresPdmpCheck[]
   // EMR-420 — Practice Onboarding Controller
   // Multiple practice locations / sub-entities can roll up under one
   // Organization. The Practice is the unit of clinical configuration
@@ -117,16 +125,16 @@ model Organization {
   // Practice Onboarding wizard. Optional so the field can land before the
   // PracticeConfiguration draft (EMR-409) catches up; required at the
   // Zod input layer in the API route.
-  legalName             String?
-  brandName             String?
-  primaryContactName    String?
-  primaryContactEmail   String?
-  npi                   String? // 10-digit org NPI (free-form here; validated in API)
-  street                String?
-  city                  String?
-  state                 String?
-  postalCode            String?
-  timeZone              String? // IANA tz, e.g. "America/Los_Angeles"
+  legalName           String?
+  brandName           String?
+  primaryContactName  String?
+  primaryContactEmail String?
+  npi                 String? // 10-digit org NPI (free-form here; validated in API)
+  street              String?
+  city                String?
+  state               String?
+  postalCode          String?
+  timeZone            String? // IANA tz, e.g. "America/Los_Angeles"
 }
 
 // EMR-420 — A Practice is a single clinical location/group under an
@@ -134,21 +142,21 @@ model Organization {
 // pair; downstream steps (specialty, modules, branding) populate a
 // PracticeConfiguration owned by EMR-409.
 model Practice {
-  id                  String   @id @default(cuid())
-  organizationId      String
-  name                String
-  npi                 String? // optional group NPI
-  street              String?
-  city                String?
-  state               String?
-  postalCode          String?
-  timeZone            String? // IANA tz, default-handled at the input layer
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  npi            String? // optional group NPI
+  street         String?
+  city           String?
+  state          String?
+  postalCode     String?
+  timeZone       String? // IANA tz, default-handled at the input layer
   // Free-text label only — the canonical specialty is selected in Step 2
   // and persisted on PracticeConfiguration. NEVER use this field to drive
   // clinical behavior or feature gating.
-  specialtyHint       String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  specialtyHint  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -167,28 +175,41 @@ model User {
   updatedAt    DateTime  @updatedAt
   lastLoginAt  DateTime?
 
-  memberships             Membership[]
-  patientProfile          Patient?                 @relation("PatientUser")
-  providerProfile         Provider?                @relation("ProviderUser")
-  sentMessages            Message[]                @relation("MessageSender")
-  auditLogs               AuditLog[]
-  approvedJobs            AgentJob[]               @relation("JobApprovedBy")
-  notifications           Notification[]
-  communicationPreference CommunicationPreference?
-  signedLabResults        LabResult[]              @relation("LabResultSigner")
-  approvedLabOutreach     LabOutreach[]            @relation("LabOutreachApprover")
-  signedRefills           RefillRequest[]          @relation("RefillSigner")
+  memberships               Membership[]
+  patientProfile            Patient?                    @relation("PatientUser")
+  providerProfile           Provider?                   @relation("ProviderUser")
+  sentMessages              Message[]                   @relation("MessageSender")
+  auditLogs                 AuditLog[]
+  approvedJobs              AgentJob[]                  @relation("JobApprovedBy")
+  notifications             Notification[]
+  communicationPreference   CommunicationPreference?
+  signedLabResults          LabResult[]                 @relation("LabResultSigner")
+  approvedLabOutreach       LabOutreach[]               @relation("LabOutreachApprover")
+  signedRefills             RefillRequest[]             @relation("RefillSigner")
   // Communications track
-  providerThreadsCreated     ProviderMessageThread[]    @relation("ProviderThreadCreator")
-  providerThreadParticipant  ProviderThreadParticipant[] @relation("ProviderThreadParticipant")
-  providerMessagesSent       ProviderMessage[]          @relation("ProviderMessageSender")
-  callsInitiated             CallLog[]                  @relation("CallInitiator")
-  callCounterpartyAs         CallLog[]                  @relation("CallCounterpartyProvider")
-  transcriptsReviewed        CallTranscript[]           @relation("TranscriptReviewer")
-  faxesInitiated             FaxRecord[]                @relation("FaxInitiator")
-  outreachCampaignsCreated   OutreachCampaign[]         @relation("OutreachCreator")
-  voicemailsAssigned         Voicemail[]                @relation("VoicemailAssignee")
-  voicemailsListened         Voicemail[]                @relation("VoicemailListener")
+  providerThreadsCreated    ProviderMessageThread[]     @relation("ProviderThreadCreator")
+  providerThreadParticipant ProviderThreadParticipant[] @relation("ProviderThreadParticipant")
+  providerMessagesSent      ProviderMessage[]           @relation("ProviderMessageSender")
+  callsInitiated            CallLog[]                   @relation("CallInitiator")
+  callCounterpartyAs        CallLog[]                   @relation("CallCounterpartyProvider")
+  transcriptsReviewed       CallTranscript[]            @relation("TranscriptReviewer")
+  faxesInitiated            FaxRecord[]                 @relation("FaxInitiator")
+  outreachCampaignsCreated  OutreachCampaign[]          @relation("OutreachCreator")
+  voicemailsAssigned        Voicemail[]                 @relation("VoicemailAssignee")
+  voicemailsListened        Voicemail[]                 @relation("VoicemailListener")
+  // EMR-063 — Pharmacy comms & dual sign-off
+  pharmacyThreadsOpened     PharmacyCommThread[]        @relation("PharmacyThreadOpener")
+  pharmacyMessagesSent      PharmacyCommMessage[]       @relation("PharmacyMessageSender")
+  medChangeProposed         MedicationChangeRequest[]   @relation("MedChangeProposer")
+  medChangeApplied          MedicationChangeRequest[]   @relation("MedChangeApplier")
+  medChangeSignoffs         MedicationChangeSignoff[]   @relation("MedChangeSigner")
+  // EMR-068 — Statement disputes
+  disputesResolved          StatementDispute[]          @relation("DisputeResolver")
+  // EMR-091 — Cannabis dispensary
+  mmjCardsVerified          MedicalCannabisCard[]       @relation("MmjCardVerifier")
+  cannabisRxsWritten        CannabisRx[]                @relation("CannabisRxProvider")
+  pdmpChecksRequested       CuresPdmpCheck[]            @relation("PdmpRequester")
+  pdmpChecksAcknowledged    CuresPdmpCheck[]            @relation("PdmpAcknowledger")
 }
 
 model Membership {
@@ -301,6 +322,16 @@ model Patient {
   voicemails               Voicemail[]
   // Phase 8 Track 3 — Pharmacology & Commerce
   dispensaryReimbursements DispensaryReimbursement[]
+  // EMR-063 — Pharmacy comms
+  pharmacyThreads          PharmacyCommThread[]
+  medChangeRequests        MedicationChangeRequest[] @relation("MedChangePatient")
+  // EMR-068 — Billing disputes
+  statementDisputes        StatementDispute[]        @relation("DisputePatient")
+  // EMR-091 — Cannabis dispensary
+  mmjCards                 MedicalCannabisCard[]     @relation("MmjCardPatient")
+  cannabisRxs              CannabisRx[]              @relation("CannabisRxPatient")
+  dispenses                DispensaryDispense[]      @relation("DispensePatient")
+  pdmpChecks               CuresPdmpCheck[]          @relation("PdmpPatient")
 
   @@index([organizationId, status])
   @@index([lastName, firstName])
@@ -368,7 +399,8 @@ model ChartSummary {
   generatedBy       String // agent name:version
   generatedAt       DateTime @default(now())
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)  // ChartSummary has no indexes today. The clinic dashboard reads
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade) // ChartSummary has no indexes today. The clinic dashboard reads
+
   // every active patient's score for the avg-readiness widget.
   // Without an index on patientId the join sequential-scans every
   // ChartSummary row. Index audit pass 2 2026-05-10.
@@ -1036,7 +1068,8 @@ model Statement {
   plainLanguageSummary String? // AI-generated explanation
   createdAt            DateTime        @default(now())
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient  Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  disputes StatementDispute[]
 
   @@index([patientId, status])
   @@index([organizationId, status, dueDate])
@@ -1269,12 +1302,12 @@ model ProviderMessageThread {
   lastMessageAt  DateTime @default(now())
   createdAt      DateTime @default(now())
 
-  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  patient      Patient?                  @relation(fields: [patientId], references: [id], onDelete: SetNull)
-  createdBy    User                      @relation("ProviderThreadCreator", fields: [createdById], references: [id])
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient?                    @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  createdBy    User                        @relation("ProviderThreadCreator", fields: [createdById], references: [id])
   participants ProviderThreadParticipant[]
   messages     ProviderMessage[]
-  callLogs     CallLog[]                 @relation("CallProviderThread")
+  callLogs     CallLog[]                   @relation("CallProviderThread")
 
   @@index([organizationId, lastMessageAt])
   @@index([patientId])
@@ -1337,37 +1370,37 @@ enum CallStatus {
 }
 
 model CallLog {
-  id              String        @id @default(cuid())
-  organizationId  String
-  channel         CommChannel
-  direction       CallDirection
-  status          CallStatus    @default(initiated)
-  initiatorUserId String?
+  id                      String        @id @default(cuid())
+  organizationId          String
+  channel                 CommChannel
+  direction               CallDirection
+  status                  CallStatus    @default(initiated)
+  initiatorUserId         String?
   // Targets — exactly one of patientId / providerUserId / externalNumber is set.
-  patientId       String?
-  providerUserId  String?
-  externalNumber  String?
+  patientId               String?
+  providerUserId          String?
+  externalNumber          String?
   // Optional thread linkage (when a call is launched from a message thread).
   messageThreadId         String?
   providerMessageThreadId String?
-  startedAt       DateTime      @default(now())
-  endedAt         DateTime?
-  durationSeconds Int?
+  startedAt               DateTime      @default(now())
+  endedAt                 DateTime?
+  durationSeconds         Int?
   // Twilio / WebRTC reference — opaque session identifier.
-  externalSessionId String?
+  externalSessionId       String?
   // EMR-143 — HIPAA-compliant Zoom meeting metadata.
   // The HIPAA-config Zoom account creates meetings with end-to-end
   // encryption, waiting rooms, and disabled cloud recording. The
   // passcode is encrypted at rest via the same MESSAGE_ENCRYPTION_KEY
   // envelope used for provider-to-provider message bodies.
-  zoomMeetingId       String?  @unique
-  zoomTopic           String?
-  zoomJoinUrl         String?
-  zoomHostJoinUrl     String?
-  zoomPasscodeCipher  String?
-  zoomScheduledAt     DateTime?
-  zoomDurationMinutes Int?
-  notes             String?
+  zoomMeetingId           String?       @unique
+  zoomTopic               String?
+  zoomJoinUrl             String?
+  zoomHostJoinUrl         String?
+  zoomPasscodeCipher      String?
+  zoomScheduledAt         DateTime?
+  zoomDurationMinutes     Int?
+  notes                   String?
 
   organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   initiator             User?                  @relation("CallInitiator", fields: [initiatorUserId], references: [id])
@@ -1401,26 +1434,26 @@ enum TranscriptStatus {
 }
 
 model CallTranscript {
-  id                   String           @id @default(cuid())
-  callLogId            String           @unique
-  organizationId       String
+  id                    String           @id @default(cuid())
+  callLogId             String           @unique
+  organizationId        String
   // Pertinent-info-only summary, ready for clinician review.
-  pertinentSummary     String
+  pertinentSummary      String
   // Discrete bullet list of clinical extractions (symptoms, meds, plan).
-  clinicalBullets      String[]         @default([])
+  clinicalBullets       String[]         @default([])
   // What the redactor stripped (count + categories) for transparency.
-  redactedCategories   String[]         @default([])
-  status               TranscriptStatus @default(pending_review)
-  reviewedByUserId     String?
-  reviewedAt           DateTime?
-  reviewerNote         String?
+  redactedCategories    String[]         @default([])
+  status                TranscriptStatus @default(pending_review)
+  reviewedByUserId      String?
+  reviewedAt            DateTime?
+  reviewerNote          String?
   // Whether the approved transcript was attached to the patient chart.
   attachedToEncounterId String?
-  createdAt            DateTime         @default(now())
+  createdAt             DateTime         @default(now())
 
-  call         CallLog       @relation(fields: [callLogId], references: [id], onDelete: Cascade)
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  reviewedBy   User?         @relation("TranscriptReviewer", fields: [reviewedByUserId], references: [id])
+  call         CallLog      @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reviewedBy   User?        @relation("TranscriptReviewer", fields: [reviewedByUserId], references: [id])
 
   @@index([organizationId, status, createdAt])
 }
@@ -1443,20 +1476,20 @@ enum FaxStatus {
 }
 
 model FaxRecord {
-  id              String       @id @default(cuid())
-  organizationId  String
-  direction       FaxDirection
-  status          FaxStatus    @default(queued)
-  fromNumber      String
-  toNumber        String
-  pageCount       Int?
-  documentStorageKey String?   // pointer to the rendered PDF in object storage
-  patientId       String?
-  initiatorUserId String?
-  externalRef     String?      // provider-side fax reference (e.g. Phaxio job id)
-  errorMessage    String?
-  createdAt       DateTime     @default(now())
-  completedAt     DateTime?
+  id                 String       @id @default(cuid())
+  organizationId     String
+  direction          FaxDirection
+  status             FaxStatus    @default(queued)
+  fromNumber         String
+  toNumber           String
+  pageCount          Int?
+  documentStorageKey String? // pointer to the rendered PDF in object storage
+  patientId          String?
+  initiatorUserId    String?
+  externalRef        String? // provider-side fax reference (e.g. Phaxio job id)
+  errorMessage       String?
+  createdAt          DateTime     @default(now())
+  completedAt        DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: SetNull)
@@ -1497,20 +1530,20 @@ enum OutreachRecipientStatus {
 }
 
 model OutreachCampaign {
-  id              String          @id @default(cuid())
-  organizationId  String
-  name            String
-  channel         OutreachChannel
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  channel        OutreachChannel
   // Plain template body — supports `{{firstName}}` interpolation.
-  bodyTemplate    String
+  bodyTemplate   String
   // Saved cohort filter — JSON describing which patients to target.
-  audienceFilter  Json?
-  status          OutreachStatus  @default(draft)
-  scheduledFor    DateTime?
-  createdById     String
-  createdAt       DateTime        @default(now())
-  startedAt       DateTime?
-  completedAt     DateTime?
+  audienceFilter Json?
+  status         OutreachStatus  @default(draft)
+  scheduledFor   DateTime?
+  createdById    String
+  createdAt      DateTime        @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    User                @relation("OutreachCreator", fields: [createdById], references: [id])
@@ -1520,12 +1553,12 @@ model OutreachCampaign {
 }
 
 model OutreachRecipient {
-  id          String                  @id @default(cuid())
-  campaignId  String
-  patientId   String
-  status      OutreachRecipientStatus @default(pending)
-  sentAt      DateTime?
-  deliveredAt DateTime?
+  id           String                  @id @default(cuid())
+  campaignId   String
+  patientId    String
+  status       OutreachRecipientStatus @default(pending)
+  sentAt       DateTime?
+  deliveredAt  DateTime?
   errorMessage String?
 
   campaign OutreachCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -1570,11 +1603,11 @@ model Voicemail {
   listenedAt          DateTime?
   createdAt           DateTime        @default(now())
 
-  call         CallLog       @relation(fields: [callLogId], references: [id], onDelete: Cascade)
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  patient      Patient?      @relation(fields: [patientId], references: [id], onDelete: SetNull)
-  assignedTo   User?         @relation("VoicemailAssignee", fields: [assignedToUserId], references: [id])
-  listenedBy   User?         @relation("VoicemailListener", fields: [listenedByUserId], references: [id])
+  call         CallLog      @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient?     @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  assignedTo   User?        @relation("VoicemailAssignee", fields: [assignedToUserId], references: [id])
+  listenedBy   User?        @relation("VoicemailListener", fields: [listenedByUserId], references: [id])
 
   @@index([organizationId, status, createdAt])
   @@index([assignedToUserId, status])
@@ -1727,20 +1760,20 @@ model AuditLog {
 // by the app should NOT have UPDATE / DELETE on this table; ops applies
 // `append-only.sql` from the migration directory after deploy.
 model ControllerAuditLog {
-  id              String   @id @default(cuid())
-  at              DateTime @default(now())
-  actorUserId     String
-  actorEmail      String?
-  actorRoles      Role[]
-  organizationId  String?
+  id             String   @id @default(cuid())
+  at             DateTime @default(now())
+  actorUserId    String
+  actorEmail     String?
+  actorRoles     Role[]
+  organizationId String?
   /// Dot-namespaced — e.g. "controller.config.publish"
-  action          String
+  action         String
   /// Always "controller" for v1; reserved for "modality", "template" later.
-  subjectType     String   @default("controller")
-  subjectId       String
-  before          Json?
-  after           Json?
-  reason          String?
+  subjectType    String   @default("controller")
+  subjectId      String
+  before         Json?
+  after          Json?
+  reason         String?
 
   @@index([subjectId, at])
   @@index([organizationId, at])
@@ -2086,8 +2119,11 @@ model PatientMedication {
   notes       String?
   createdAt   DateTime       @default(now())
 
-  patient        Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  refillRequests RefillRequest[]
+  patient           Patient                   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  refillRequests    RefillRequest[]
+  // EMR-063 — Pharmacy comms & dual sign-off
+  pharmacyThreads   PharmacyCommThread[]      @relation("PharmacyThreadMed")
+  medChangeRequests MedicationChangeRequest[] @relation("MedChangeMed")
 
   @@index([patientId, active])
 }
@@ -3844,6 +3880,9 @@ model Dispensary {
   organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   skus           DispensarySku[]
   reimbursements DispensaryReimbursement[]
+  // EMR-091 — Cannabis dispensary
+  cannabisRxs    CannabisRx[]              @relation("CannabisRxDispensary")
+  dispenses      DispensaryDispense[]      @relation("DispenseDispensary")
 
   @@index([organizationId, status])
   @@index([licenseState])
@@ -3880,8 +3919,11 @@ model DispensarySku {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dispensary Dispensary @relation(fields: [dispensaryId], references: [id], onDelete: Cascade)
-  strain     Strain?    @relation(fields: [strainId], references: [id])
+  dispensary  Dispensary           @relation(fields: [dispensaryId], references: [id], onDelete: Cascade)
+  strain      Strain?              @relation(fields: [strainId], references: [id])
+  // EMR-091 — Cannabis dispensary
+  cannabisRxs CannabisRx[]
+  dispenses   DispensaryDispense[] @relation("DispenseSku")
 
   @@unique([dispensaryId, sku])
   @@index([dispensaryId, active, inStock])
@@ -4044,7 +4086,6 @@ model SupplementCompound {
 
 // --------------------------------------------------------------
 
-
 enum PracticeConfigurationStatus {
   draft
   published
@@ -4052,27 +4093,27 @@ enum PracticeConfigurationStatus {
 }
 
 model PracticeConfiguration {
-  id                            String   @id @default(cuid())
-  organizationId                String
-  practiceId                    String
-  selectedSpecialty             String?
-  selectedSpecialtyVersion      String?
-  careModel                     String?
-  enabledModalities             String[] @default([])
-  disabledModalities            String[] @default([])
-  workflowTemplateIds           String[] @default([])
-  chartingTemplateIds           String[] @default([])
-  rolePermissionTemplateIds     String[] @default([])
-  physicianShellTemplateId      String?
-  patientShellTemplateId        String?
-  migrationProfileId            String?
-  regulatoryFlags               Json     @default("{}")
-  status                        PracticeConfigurationStatus @default(draft)
-  version                       Int      @default(1)
-  publishedAt                   DateTime?
-  publishedBy                   String?
-  createdAt                     DateTime @default(now())
-  updatedAt                     DateTime @updatedAt
+  id                        String                      @id @default(cuid())
+  organizationId            String
+  practiceId                String
+  selectedSpecialty         String?
+  selectedSpecialtyVersion  String?
+  careModel                 String?
+  enabledModalities         String[]                    @default([])
+  disabledModalities        String[]                    @default([])
+  workflowTemplateIds       String[]                    @default([])
+  chartingTemplateIds       String[]                    @default([])
+  rolePermissionTemplateIds String[]                    @default([])
+  physicianShellTemplateId  String?
+  patientShellTemplateId    String?
+  migrationProfileId        String?
+  regulatoryFlags           Json                        @default("{}")
+  status                    PracticeConfigurationStatus @default(draft)
+  version                   Int                         @default(1)
+  publishedAt               DateTime?
+  publishedBy               String?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
 
   @@index([practiceId, status])
   @@index([organizationId])
@@ -4098,17 +4139,17 @@ model PracticeConfigurationVersion {
 // canonical TS shape). Field-mapping detail lands in EMR-454; runtime import
 // execution lands in EMR-456.
 model MigrationProfile {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   configurationId String
   /// "csv" | "json" | "ehr-export" | "manual" | null (greenfield)
   sourceType      String?
   /// Array of category rows. See type definition below.
-  categories      Json     @default("[]")
+  categories      Json      @default("[]")
   /// "draft" | "configured" | "completed" | "archived"
-  status          String   @default("draft")
+  status          String    @default("draft")
   createdBy       String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   /// Soft delete only. Null until archived.
   archivedAt      DateTime?
 
@@ -4124,7 +4165,7 @@ model ChemovarRecord {
   id                   String   @id @default(cuid())
   internalId           String   @unique
   displayName          String
-  chemotype            Int      // 1: THC dominant, 2: Mixed, 3: CBD dominant
+  chemotype            Int // 1: THC dominant, 2: Mixed, 3: CBD dominant
   terpeneProfile       String
   therapeuticTags      String[]
   externalReferenceUrl String?
@@ -4151,4 +4192,453 @@ model VendorApplication {
 
   @@index([email])
   @@index([createdAt])
+}
+
+// --------------------------------------------------------------
+// EMR-063 — Pharmacy Communication Module with Dual Sign-Off
+// --------------------------------------------------------------
+// External pharmacy directory + secure threads between the practice
+// and a pharmacist. Any *medication change* proposed in a thread (new
+// med, dose change, discontinue, switch) is materialized as a
+// MedicationChangeRequest and requires BOTH pharmacist AND provider
+// e-signatures before it can be applied. Apply writes the change to
+// PatientMedication and emits an AuditLog row.
+// --------------------------------------------------------------
+
+enum PharmacyCommThreadStatus {
+  open
+  awaiting_pharmacist
+  awaiting_provider
+  resolved
+  cancelled
+}
+
+enum PharmacyMessageSenderRole {
+  provider
+  pharmacist
+  agent
+  patient
+  system
+}
+
+enum MedicationChangeKind {
+  new_medication
+  dose_change
+  discontinue
+  switch_product
+  formulary_substitute
+  refill_clarification
+}
+
+enum MedicationChangeStatus {
+  proposed
+  pharmacist_signed
+  provider_signed
+  fully_signed
+  applied
+  rejected
+  withdrawn
+}
+
+enum SignoffParty {
+  pharmacist
+  provider
+}
+
+/// External pharmacy directory entry. Decoupled from `DEMO_PHARMACIES`
+/// in src/lib/domain/e-prescribe.ts so practices can maintain their
+/// own pharmacist contacts and the dual sign-off harness can attribute
+/// signatures back to a specific licensed pharmacist by NPI.
+model PharmacyContact {
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  npi              String?
+  licenseNumber    String?
+  licenseState     String?
+  phone            String?
+  fax              String?
+  email            String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  postalCode       String?
+  preferredChannel String?  @default("portal") // portal | fax | email | phone
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  threads      PharmacyCommThread[]
+
+  @@index([organizationId, active])
+  @@index([npi])
+}
+
+/// A single conversation between a provider and a pharmacist about
+/// one patient. `medicationId` is set when the thread is anchored to
+/// an existing PatientMedication (most common); null when it's a
+/// formulary / general consult thread.
+model PharmacyCommThread {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  patientId         String
+  medicationId      String?
+  pharmacyContactId String
+  subject           String
+  status            PharmacyCommThreadStatus @default(open)
+  openedById        String
+  closedAt          DateTime?
+  lastMessageAt     DateTime                 @default(now())
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient         Patient                   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  medication      PatientMedication?        @relation("PharmacyThreadMed", fields: [medicationId], references: [id])
+  pharmacyContact PharmacyContact           @relation(fields: [pharmacyContactId], references: [id])
+  openedBy        User                      @relation("PharmacyThreadOpener", fields: [openedById], references: [id])
+  messages        PharmacyCommMessage[]
+  changeRequests  MedicationChangeRequest[]
+
+  @@index([organizationId, status, lastMessageAt])
+  @@index([patientId, status])
+}
+
+/// Individual message in a pharmacy thread. Pharmacists post via the
+/// pharmacist-side portal (out of scope here — for v1 they reply via
+/// fax/phone and a clinic user transcribes); providers post via the
+/// clinician pharmacy console.
+model PharmacyCommMessage {
+  id           String                    @id @default(cuid())
+  threadId     String
+  senderRole   PharmacyMessageSenderRole
+  senderUserId String?
+  senderName   String
+  body         String
+  attachments  Json                      @default("[]") // [{ url, name, mimeType }]
+  createdAt    DateTime                  @default(now())
+
+  thread     PharmacyCommThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderUser User?              @relation("PharmacyMessageSender", fields: [senderUserId], references: [id])
+
+  @@index([threadId, createdAt])
+}
+
+/// A proposed medication change that MUST be signed by both the
+/// pharmacist and the provider before it can be applied. The state
+/// machine is enforced in src/lib/pharmacy/dual-signoff.ts.
+model MedicationChangeRequest {
+  id             String                    @id @default(cuid())
+  organizationId String
+  threadId       String
+  patientId      String
+  medicationId   String?
+  proposedById   String
+  proposedByRole PharmacyMessageSenderRole
+  kind           MedicationChangeKind
+  status         MedicationChangeStatus    @default(proposed)
+  rationale      String
+  /// Snapshot of the medication state BEFORE the proposed change.
+  /// Used for rollback and audit. Always populated when applying.
+  beforeJson     Json?
+  /// Proposed AFTER state — applied to PatientMedication if both
+  /// parties sign and `applyMedicationChange` is called.
+  afterJson      Json
+  appliedAt      DateTime?
+  appliedById    String?
+  rejectedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  thread     PharmacyCommThread        @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  patient    Patient                   @relation("MedChangePatient", fields: [patientId], references: [id], onDelete: Cascade)
+  medication PatientMedication?        @relation("MedChangeMed", fields: [medicationId], references: [id])
+  proposedBy User                      @relation("MedChangeProposer", fields: [proposedById], references: [id])
+  appliedBy  User?                     @relation("MedChangeApplier", fields: [appliedById], references: [id])
+  signoffs   MedicationChangeSignoff[]
+
+  @@index([organizationId, status])
+  @@index([threadId])
+  @@index([patientId, status])
+}
+
+/// Per-party signature row on a MedicationChangeRequest. The state
+/// machine requires exactly one row per party (pharmacist + provider)
+/// with `decision = "approve"` before the change is considered fully
+/// signed. A `decision = "reject"` from either party transitions the
+/// parent request to `rejected`.
+model MedicationChangeSignoff {
+  id         String       @id @default(cuid())
+  requestId  String
+  party      SignoffParty
+  signedById String
+  signedName String
+  npi        String?
+  decision   String // "approve" | "reject"
+  comments   String?
+  signedAt   DateTime     @default(now())
+
+  request  MedicationChangeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  signedBy User                    @relation("MedChangeSigner", fields: [signedById], references: [id])
+
+  @@unique([requestId, party])
+  @@index([requestId])
+}
+
+// --------------------------------------------------------------
+// EMR-068 — Patient Billing Portal: Statement Disputes
+// --------------------------------------------------------------
+// Patients can flag a Statement they believe is wrong (e.g. a charge
+// they don't recognize, insurance was supposed to cover it, etc.).
+// The dispute opens a workflow row that the billing team works
+// through; the patient sees plain-language status updates in their
+// portal.
+
+enum StatementDisputeStatus {
+  submitted
+  under_review
+  awaiting_patient
+  resolved_corrected
+  resolved_upheld
+  withdrawn
+}
+
+enum StatementDisputeReason {
+  charge_unrecognized
+  service_not_received
+  insurance_should_cover
+  duplicate_charge
+  wrong_amount
+  wrong_diagnosis
+  identity_concern
+  other
+}
+
+/// EMR-068 — Patient-filed dispute on a Statement. Most disputes get
+/// routed to the billing team's queue; the AI billing agent drafts a
+/// proposed resolution that staff approves before it ships back to
+/// the patient. State transitions are deterministic and audited.
+model StatementDispute {
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  patientId           String
+  statementId         String
+  reason              StatementDisputeReason
+  status              StatementDisputeStatus @default(submitted)
+  patientNarrative    String
+  disputedAmountCents Int?
+  /// AI-drafted plain-language summary of what we believe happened
+  /// and the proposed next step. Reviewed by billing before sending.
+  aiDraftResolution   String?
+  resolutionNote      String?
+  resolvedAt          DateTime?
+  resolvedById        String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  patient    Patient   @relation("DisputePatient", fields: [patientId], references: [id], onDelete: Cascade)
+  statement  Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  resolvedBy User?     @relation("DisputeResolver", fields: [resolvedById], references: [id])
+
+  @@index([organizationId, status, createdAt])
+  @@index([patientId, status])
+  @@index([statementId])
+}
+
+// --------------------------------------------------------------
+// EMR-091 — Medical Cannabis Dispensary Module
+// --------------------------------------------------------------
+// Medicinal-only flow. The chain is:
+//   1. Patient has an active MedicalCannabisCard (state-issued).
+//   2. Provider writes a CannabisRx referencing an actual DispensarySku.
+//   3. Dispensary fulfils with a DispensaryDispense event that captures
+//      a budtender e-signature.
+//   4. Dispense auto-creates / updates the patient's PatientMedication
+//      so it appears on the chart and feeds outcome tracking.
+//   5. For high-abuse-risk patients we run an optional CuresPdmpCheck.
+//
+// Recreational cannabis is explicitly excluded — every entry in this
+// graph is gated by an active medical card.
+// --------------------------------------------------------------
+
+enum CannabisCardStatus {
+  active
+  expired
+  revoked
+  pending
+}
+
+enum CannabisRxStatus {
+  draft
+  sent_to_dispensary
+  approved_by_dispensary
+  rejected_by_dispensary
+  partially_dispensed
+  fully_dispensed
+  cancelled
+  expired
+}
+
+enum CuresPdmpFlag {
+  conflicting_scripts
+  early_refill
+  multiple_prescribers
+  multiple_pharmacies
+  controlled_substance_combo
+  no_findings
+}
+
+/// Patient's state-issued medical cannabis card. REQUIRED before the
+/// patient can be on the receiving end of any DispensaryDispense or
+/// CannabisRx. We track expiry so the UI can warn the provider before
+/// they write an Rx the dispensary will reject.
+model MedicalCannabisCard {
+  id                    String             @id @default(cuid())
+  patientId             String
+  organizationId        String
+  issuingState          String // 2-letter USPS state code
+  cardNumber            String
+  status                CannabisCardStatus @default(active)
+  issuedOn              DateTime
+  expiresOn             DateTime
+  qualifyingConditions  String[]           @default([])
+  recommendingPhysician String?
+  /// Front + back of the card stored as object URLs. Optional — some
+  /// states (e.g. CA) issue purely digital cards keyed by number.
+  cardFrontUrl          String?
+  cardBackUrl           String?
+  verifiedAt            DateTime?
+  verifiedById          String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  patient      Patient      @relation("MmjCardPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  verifiedBy   User?        @relation("MmjCardVerifier", fields: [verifiedById], references: [id])
+
+  rxs       CannabisRx[]
+  dispenses DispensaryDispense[]
+
+  @@unique([issuingState, cardNumber])
+  @@index([patientId, status])
+  @@index([expiresOn])
+}
+
+/// Provider-issued cannabis Rx pointing at a specific DispensarySku
+/// in a specific dispensary's inventory. Sent electronically to the
+/// dispensary's queue; the dispensary approves/rejects.
+model CannabisRx {
+  id               String           @id @default(cuid())
+  organizationId   String
+  patientId        String
+  providerId       String
+  cardId           String
+  dispensaryId     String
+  skuId            String? // optional when prescribing by category
+  productName      String
+  productFormat    String // tincture | flower | edible | vape | topical | etc.
+  thcMgPerUnit     Float?
+  cbdMgPerUnit     Float?
+  quantity         Int
+  unit             String // "grams" | "mg" | "units" | etc.
+  refills          Int              @default(0)
+  daysSupply       Int?
+  doseInstructions String
+  diagnosisCodes   String[]         @default([])
+  status           CannabisRxStatus @default(draft)
+  rejectedReason   String?
+  signedAt         DateTime?
+  sentAt           DateTime?
+  approvedAt       DateTime?
+  expiresOn        DateTime?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient              @relation("CannabisRxPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  provider     User                 @relation("CannabisRxProvider", fields: [providerId], references: [id])
+  card         MedicalCannabisCard  @relation(fields: [cardId], references: [id])
+  dispensary   Dispensary           @relation("CannabisRxDispensary", fields: [dispensaryId], references: [id])
+  sku          DispensarySku?       @relation(fields: [skuId], references: [id])
+  dispenses    DispensaryDispense[]
+
+  @@index([organizationId, status])
+  @@index([patientId, status])
+  @@index([dispensaryId, status])
+}
+
+/// Actual product handoff at the dispensary. Records the budtender's
+/// e-signature, what was dispensed, and links back to the Rx + the
+/// patient's medical card. Forwarded to the state registry by the
+/// nightly cron in /api/dispensary/state-registry-sync.
+model DispensaryDispense {
+  id                       String    @id @default(cuid())
+  organizationId           String
+  dispensaryId             String
+  patientId                String
+  cardId                   String
+  rxId                     String?
+  skuId                    String?
+  productName              String
+  productSku               String
+  quantity                 Int
+  unit                     String
+  totalCents               Int
+  thcMgPerUnit             Float?
+  cbdMgPerUnit             Float?
+  /// Required — captured from the budtender's tablet at point-of-sale.
+  budtenderName            String
+  budtenderLicense         String?
+  budtenderSignature       String // base64 PNG or signed JWT
+  dispensedAt              DateTime  @default(now())
+  /// Tracks whether the row has been forwarded to the state medical
+  /// cannabis registry. Cron sets these once forwarding succeeds.
+  stateRegistryForwardedAt DateTime?
+  stateRegistryReference   String?
+  notes                    String?
+  createdAt                DateTime  @default(now())
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dispensary   Dispensary          @relation("DispenseDispensary", fields: [dispensaryId], references: [id])
+  patient      Patient             @relation("DispensePatient", fields: [patientId], references: [id], onDelete: Cascade)
+  card         MedicalCannabisCard @relation(fields: [cardId], references: [id])
+  rx           CannabisRx?         @relation(fields: [rxId], references: [id])
+  sku          DispensarySku?      @relation("DispenseSku", fields: [skuId], references: [id])
+
+  @@index([organizationId, dispensedAt])
+  @@index([patientId, dispensedAt])
+  @@index([dispensaryId, dispensedAt])
+  @@index([stateRegistryForwardedAt])
+}
+
+/// Optional CURES / PDMP check result for high-abuse-risk patients or
+/// patients on scheduled meds. Flags are normalized so the prescriber
+/// can dismiss/acknowledge each independently before writing the Rx.
+model CuresPdmpCheck {
+  id               String          @id @default(cuid())
+  organizationId   String
+  patientId        String
+  requestedById    String
+  /// ISO state code where the PDMP query ran (e.g. "CA" for CURES).
+  jurisdiction     String
+  /// PDMP system identifier — "cures.doj.gov" for California, etc.
+  pdmpSystem       String
+  queryReference   String?
+  flags            CuresPdmpFlag[]
+  rawResponse      Json?
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  createdAt        DateTime        @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient        Patient      @relation("PdmpPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy    User         @relation("PdmpRequester", fields: [requestedById], references: [id])
+  acknowledgedBy User?        @relation("PdmpAcknowledger", fields: [acknowledgedById], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([patientId, createdAt])
 }
