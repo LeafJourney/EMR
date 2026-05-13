@@ -4,8 +4,10 @@ import { ProductSilhouette } from "@/components/leafmart/ProductSilhouette";
 import { LeafmartProductGrid } from "@/components/leafmart/LeafmartProductCard";
 import { Portrait } from "@/components/leafmart/PortraitPlaceholder";
 import { CategoryIcon } from "@/components/leafmart/CategoryIcon";
+import { HeroSearchBar } from "@/components/leafmart/HeroSearchBar";
 import { TESTIMONIALS, TRUST_STEPS } from "@/components/leafmart/demo-data";
 import { getProducts, getCategories, getVendors } from "@/lib/leafmart/products";
+import { buildSuggestions } from "@/lib/leafmart/search-suggestions";
 
 export const metadata: Metadata = {
   title: "Leafmart — Physician-curated cannabis wellness",
@@ -64,6 +66,8 @@ export default async function LeafmartHomePage() {
     getCategories(),
     getVendors(),
   ]);
+  // EMR-281 — hero search suggestion universe.
+  const searchSuggestions = buildSuggestions(products);
 
   return (
     <>
@@ -134,6 +138,17 @@ export default async function LeafmartHomePage() {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── SEARCH (EMR-281) ─────────────────────────────── */}
+      <section className="px-4 sm:px-6 lg:px-14 pb-8 sm:pb-10 max-w-[1440px] mx-auto -mt-4 sm:-mt-6 relative z-10">
+        <div className="flex flex-col items-center gap-3">
+          <HeroSearchBar suggestions={searchSuggestions} />
+          <p className="text-[12.5px] text-[var(--text-subtle)] text-center max-w-md">
+            Try &ldquo;sleep&rdquo;, &ldquo;CBD tincture&rdquo;, &ldquo;limonene&rdquo;,
+            or a brand name. We&apos;ll surface products, symptoms, terpenes, and more.
+          </p>
         </div>
       </section>
 
