@@ -81,7 +81,7 @@ export default async function PracticesLandingPage({
             value={`$${(totalPaidCents / 100).toLocaleString(undefined, {
               maximumFractionDigits: 0,
             })}`}
-            sub="Sum of payments"
+            sub="Posted to claims"
           />
         </div>
       )}

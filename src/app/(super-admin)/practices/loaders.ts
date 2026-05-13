@@ -7,81 +7,15 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { LEAFJOURNEY_HQ_SLUG } from "@/lib/auth/super-admin-bootstrap";
+import {
+  ZERO_KPI,
+  type PracticeCardData,
+  type PracticeKpi,
+  type PracticeStakeholder,
+} from "./types";
 
-export type PracticeStakeholder = {
-  userId: string;
-  name: string;
-  email: string;
-  role: string;
-  title?: string | null;
-};
-
-export type PracticeKpi = {
-  providerCount: number;
-  activeProviderCount: number;
-  patientCount: number;
-  claimCount: number;
-  claimsLast30: number;
-  billedCents: number;
-  paidCents: number;
-  gatewayChargeCents: number;
-  encounterCount: number;
-  encountersLast30: number;
-};
-
-export type PracticeCardData = {
-  practiceId: string | null;
-  configId: string | null;
-  organizationId: string;
-  organizationName: string;
-  practiceName: string;
-  brandName: string | null;
-  legalName: string | null;
-  city: string | null;
-  state: string | null;
-  timeZone: string | null;
-  primaryContactName: string | null;
-  primaryContactEmail: string | null;
-  specialty: string | null;
-  specialtyVersion: string | null;
-  careModel: string | null;
-  enabledModalities: string[];
-  status: string;
-  publishedAt: string | null;
-  updatedAt: string | null;
-  officeManagers: PracticeStakeholder[];
-  leadProviders: PracticeStakeholder[];
-  kpi: PracticeKpi;
-};
-
-const ZERO_KPI: PracticeKpi = {
-  providerCount: 0,
-  activeProviderCount: 0,
-  patientCount: 0,
-  claimCount: 0,
-  claimsLast30: 0,
-  billedCents: 0,
-  paidCents: 0,
-  gatewayChargeCents: 0,
-  encounterCount: 0,
-  encountersLast30: 0,
-};
-
-/** Pretty-print a slug like "primary-care@1" → "Primary care". */
-export function humanizeSpecialty(slug: string | null | undefined): string {
-  if (!slug) return "Specialty not selected";
-  const base = slug.split("@")[0] ?? slug;
-  return base
-    .split("-")
-    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
-    .join(" ");
-}
-
-/** Pretty-print a care-model slug like "in_person" → "In person". */
-export function humanizeCareModel(value: string | null | undefined): string {
-  if (!value) return "—";
-  return value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
-}
+export type { PracticeCardData, PracticeKpi, PracticeStakeholder } from "./types";
+export { humanizeCareModel, humanizeSpecialty } from "./types";
 
 /**
  * Top-level loader. Returns one card per published-or-in-flight
@@ -126,7 +60,6 @@ export async function loadPracticeLandingCards(): Promise<PracticeCardData[]> {
     providers,
     claimsGroup,
     claimsLast30Group,
-    paymentsRaw,
     chargesGroup,
     encountersGroup,
     encountersLast30Group,
@@ -209,10 +142,6 @@ export async function loadPracticeLandingCards(): Promise<PracticeCardData[]> {
       },
       _count: { _all: true },
     }),
-    prisma.payment.findMany({
-      where: { claim: { organizationId: { in: orgIds } } },
-      select: { amountCents: true, claim: { select: { organizationId: true } } },
-    }),
     prisma.charge.groupBy({
       by: ["organizationId"],
       where: { organizationId: { in: orgIds } },
@@ -283,10 +212,6 @@ export async function loadPracticeLandingCards(): Promise<PracticeCardData[]> {
   }
   for (const row of claimsLast30Group) {
     ensureKpi(row.organizationId).claimsLast30 = row._count._all;
-  }
-  for (const row of paymentsRaw) {
-    if (!row.claim?.organizationId) continue;
-    ensureKpi(row.claim.organizationId).paidCents += row.amountCents;
   }
   for (const row of chargesGroup) {
     ensureKpi(row.organizationId).gatewayChargeCents = row._sum.feeAmountCents ?? 0;

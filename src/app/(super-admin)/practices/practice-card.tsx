@@ -15,8 +15,8 @@ import { ChevronDown, MapPin, Users, Stethoscope, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
-import type { PracticeCardData } from "./loaders";
-import { humanizeCareModel, humanizeSpecialty } from "./loaders";
+import type { PracticeCardData } from "./types";
+import { humanizeCareModel, humanizeSpecialty } from "./types";
 
 function formatDollars(cents: number): string {
   const dollars = cents / 100;
@@ -208,7 +208,7 @@ export function PracticeCard({ practice }: { practice: PracticeCardData }) {
             <Kpi
               label="Collected"
               value={formatDollars(practice.kpi.paidCents)}
-              sub="Sum of payments"
+              sub="Posted to claims"
             />
             <Kpi
               label="Gateway GM"
