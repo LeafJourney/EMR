@@ -13,6 +13,7 @@ import type {
   ProductReview,
   ProductFormat,
 } from "./types";
+import { deriveEffectTags } from "./effects";
 
 const productInclude = {
   variants: { orderBy: { sortOrder: "asc" } },
@@ -72,6 +73,15 @@ function mapProduct(p: ProductRow): MarketplaceProduct {
     useCases: p.useCases,
     onsetTime: p.onsetTime ?? undefined,
     duration: p.duration ?? undefined,
+    effectTags: deriveEffectTags({
+      strainType: (p.strainType ?? undefined) as MarketplaceProduct["strainType"],
+      thcContent: p.thcContent ?? undefined,
+      cbdContent: p.cbdContent ?? undefined,
+      cbnContent: p.cbnContent ?? undefined,
+      terpeneProfile: terpene,
+      symptoms: p.symptoms,
+      useCases: p.useCases,
+    }),
     dosageGuidance: p.dosageGuidance ?? undefined,
     beginnerFriendly: p.beginnerFriendly,
     labVerified: p.labVerified,
