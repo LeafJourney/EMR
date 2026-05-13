@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 
 type EmailFrequency = "instant" | "daily" | "weekly" | "off";
+type ContactWindow = "anytime" | "business_hours" | "no_weekends";
+type LanguagePref = "en" | "es" | "fr" | "zh" | "ko" | "vi" | "ar" | "ht";
 
 interface NotificationCategory {
   id: string;
@@ -22,6 +24,24 @@ interface NotificationCategory {
   email: boolean;
   sms: boolean;
 }
+
+// EMR-175 additions
+const CONTACT_WINDOW_OPTIONS: { value: ContactWindow; label: string; helper: string }[] = [
+  { value: "anytime", label: "Anytime", helper: "Always OK to reach you" },
+  { value: "business_hours", label: "Business hours", helper: "Mon-Fri 9-5 in your timezone" },
+  { value: "no_weekends", label: "No weekends", helper: "Weekdays only" },
+];
+
+const LANGUAGE_OPTIONS: { value: LanguagePref; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Español" },
+  { value: "fr", label: "Français" },
+  { value: "zh", label: "中文" },
+  { value: "ko", label: "한국어" },
+  { value: "vi", label: "Tiếng Việt" },
+  { value: "ar", label: "العربية" },
+  { value: "ht", label: "Kreyòl ayisyen" },
+];
 
 const EMAIL_FREQUENCY_OPTIONS: { value: EmailFrequency; label: string }[] = [
   { value: "instant", label: "Instant" },
@@ -76,6 +96,11 @@ export function CommunicationPreferences() {
     useState<NotificationCategory[]>(DEFAULT_CATEGORIES);
   const [quietStart, setQuietStart] = useState("22:00");
   const [quietEnd, setQuietEnd] = useState("07:00");
+  // EMR-175 additions — stored in the CommunicationPreference.preferences JSON.
+  const [contactWindow, setContactWindow] = useState<ContactWindow>("anytime");
+  const [language, setLanguage] = useState<LanguagePref>("en");
+  const [emergencyOverride, setEmergencyOverride] = useState(true);
+  const [marketingOptOut, setMarketingOptOut] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -273,6 +298,108 @@ export function CommunicationPreferences() {
                 className="w-32"
               />
             </div>
+          </div>
+        </div>
+
+        {/* ── Contact window (EMR-175) ── */}
+        <div>
+          <p className="text-sm font-medium text-text mb-1">When to contact you</p>
+          <p className="text-xs text-text-subtle mb-3">
+            Combines with quiet hours. We always honor the more restrictive setting.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {CONTACT_WINDOW_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setContactWindow(opt.value)}
+                className={cn(
+                  "text-left rounded-lg border p-3 transition-colors duration-200",
+                  contactWindow === opt.value
+                    ? "border-accent bg-accent-soft/40 ring-1 ring-accent/30"
+                    : "border-border bg-surface hover:border-accent/40",
+                )}
+              >
+                <p className="text-sm font-medium text-text">{opt.label}</p>
+                <p className="text-xs text-text-subtle mt-0.5">{opt.helper}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Language (EMR-175) ── */}
+        <div>
+          <p className="text-sm font-medium text-text mb-1">Language</p>
+          <p className="text-xs text-text-subtle mb-3">
+            All patient-facing messages will be sent in this language when possible.
+          </p>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as LanguagePref)}
+            aria-label="Preferred language"
+            className="h-10 px-3 rounded-md border border-border bg-surface text-sm text-text focus:outline-none focus:border-accent"
+          >
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ── Marketing opt-out (EMR-175 / TCPA) ── */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text">No marketing messages</p>
+            <p className="text-xs text-text-subtle mt-0.5">
+              Keep clinical and account messages, opt out of promotional content.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={marketingOptOut}
+            onClick={() => setMarketingOptOut(!marketingOptOut)}
+            className={cn(
+              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2",
+              marketingOptOut ? "bg-accent" : "bg-border-strong",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+                marketingOptOut ? "translate-x-6" : "translate-x-1",
+              )}
+            />
+          </button>
+        </div>
+
+        {/* ── Emergency override (EMR-175) ── */}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-amber-900">
+                Emergency contact override
+              </p>
+              <p className="text-xs text-amber-800/80 mt-0.5">
+                Always allow your care team to reach you in a clinical emergency, regardless
+                of the preferences above. Recommended.
+              </p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={emergencyOverride}
+              onClick={() => setEmergencyOverride(!emergencyOverride)}
+              className={cn(
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 focus-visible:ring-offset-2",
+                emergencyOverride ? "bg-amber-500" : "bg-amber-200",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+                  emergencyOverride ? "translate-x-6" : "translate-x-1",
+                )}
+              />
+            </button>
           </div>
         </div>
 
