@@ -3886,6 +3886,7 @@ model Dispensary {
   // EMR-091 — Cannabis dispensary
   cannabisRxs    CannabisRx[]              @relation("CannabisRxDispensary")
   dispenses      DispensaryDispense[]      @relation("DispenseDispensary")
+  inventory      CannabisInventory[]
 
   @@index([organizationId, status])
   @@index([licenseState])
@@ -3924,6 +3925,7 @@ model DispensarySku {
 
   dispensary  Dispensary           @relation(fields: [dispensaryId], references: [id], onDelete: Cascade)
   strain      Strain?              @relation(fields: [strainId], references: [id])
+  inventory   CannabisInventory[]
   // EMR-091 — Cannabis dispensary
   cannabisRxs CannabisRx[]
   dispenses   DispensaryDispense[] @relation("DispenseSku")
@@ -3932,6 +3934,37 @@ model DispensarySku {
   @@index([dispensaryId, active, inStock])
   @@index([format])
   @@index([strainId])
+}
+
+/// EMR-184 — Dispensary stock management for METRC/BioTrack compliance.
+/// Tracks physical stock lots of a `DispensarySku` for seed-to-sale reporting.
+model CannabisInventory {
+  id           String  @id @default(cuid())
+  dispensaryId String
+  skuId        String
+  /// The METRC Package Tag / RFID or BioTrack Barcode ID.
+  packageId    String  @unique
+  /// Production batch or harvest ID from the cultivator/manufacturer.
+  batchId      String?
+
+  /// Current physical quantity in stock for this package.
+  quantity      Float
+  /// E.g. "g", "oz", "unit", "ml".
+  unitOfMeasure String
+
+  receivedAt     DateTime  @default(now())
+  expirationDate DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dispensary Dispensary    @relation(fields: [dispensaryId], references: [id], onDelete: Cascade)
+  sku        DispensarySku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@index([dispensaryId, skuId])
+  @@index([packageId])
+  @@index([expirationDate])
 }
 
 /// EMR-018 — Strain reference table. Models the Leafly-style strain
