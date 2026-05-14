@@ -180,10 +180,9 @@ routes:
 
   feedback/whisper:
     methods: [GET, POST]
-    auth: needs_review
+    auth: public
     owner: agents
-    review_due: 2026-05-16
-    notes: "🚨 Whisper audio transcription. Unmetered cost vector. Must require auth + rate-limit."
+    notes: "EMR-594. Universal feedback FAB mounted in the root layout — fires from every surface including signed-out marketing/leafmart. Logged-in user info is attached when present via getCurrentUser(); anonymous submissions are accepted by design so storefront visitors can also reach the founders. The earlier 'unmetered audio transcription' concern no longer applies — text-only since EMR-365. Follow-up: rate-limit + per-IP cap before scale."
 
   # ── Imaging (PHI) ────────────────────────────────────────
   imaging/studies:
