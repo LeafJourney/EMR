@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { PatientSectionNav } from "@/components/shell/PatientSectionNav";
@@ -83,6 +84,30 @@ export default async function SettingsPage() {
                 </p>
               </div>
               <MotionToggle />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* EMR-073: deeper customization (accent palette + portal home order) */}
+        <Card tone="raised">
+          <CardHeader>
+            <CardTitle>Customize your portal</CardTitle>
+            <CardDescription>
+              Pick an accent palette, reorder your portal home, and hide widgets
+              you do not use.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-text-muted">
+                Open the dedicated customization page for the full editor.
+              </p>
+              <Link
+                href="/portal/settings/portal-customization"
+                className="inline-flex items-center justify-center h-8 px-3.5 text-sm font-medium rounded-md bg-surface-raised border border-border-strong/70 shadow-sm hover:bg-surface-muted hover:border-border-strong text-text"
+              >
+                Customize portal →
+              </Link>
             </div>
           </CardContent>
         </Card>

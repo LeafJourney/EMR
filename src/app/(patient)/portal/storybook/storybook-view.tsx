@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import { cn } from "@/lib/utils/cn";
+import { ShareButton } from "@/components/portal/share-button";
+import { SoundtrackPicker } from "@/components/portal/soundtrack-picker";
+import { SHARE_PRESETS } from "@/lib/portal/social-share";
 
 // ---------------------------------------------------------------------------
 // Storybook view (v2 polish)
@@ -140,6 +143,11 @@ export function StorybookView() {
         &ldquo;{story.openingLine}&rdquo;
       </p>
 
+      {/* Soundtrack picker (EMR-074) */}
+      <div className="max-w-2xl mx-auto px-6">
+        <SoundtrackPicker chapterHeadings={story.chapters.map((c) => c.heading)} />
+      </div>
+
       {/* Chapter timeline (jump nav) */}
       <nav
         aria-label="Chapter timeline"
@@ -248,6 +256,10 @@ export function StorybookView() {
         <Button onClick={handleRegenerate} variant="secondary" disabled={isPending}>
           {isPending ? "Writing..." : "Generate a new chapter"}
         </Button>
+        <ShareButton
+          milestone={SHARE_PRESETS.storybook(story.chapters.length)}
+          label="Share story"
+        />
       </div>
 
       {/* Generation footer */}

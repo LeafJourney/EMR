@@ -1,6 +1,6 @@
 "use client";
 
-// Wellness toolkit checkbox dropdown — EMR-191 + EMR-19
+// Wellness toolkit checkbox dropdown — EMR-191 + EMR-19 + plant-growth wiring (EMR-072)
 //
 // EMR-19 redesign: the colored left-border "ribbon" on each card was
 // distracting and clashed with the rest of the wellness hub. It's gone,
@@ -9,13 +9,26 @@
 // patient can see their effort move the number — score lives at the
 // top of the toolkit, weighted by difficulty (easy=1, moderate=2,
 // challenging=3).
+//
+// EMR-072: Every check feeds a plant-growth event log that powers the
+// "Your growth" preview below — leaves, stems, and flowers. The growth math
+// lives in `@/lib/domain/lifestyle-growth` so it's unit-tested independently.
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { LifestyleDomain, LifestyleTip } from "@/lib/domain/lifestyle";
+import {
+  computeLifestyleGrowth,
+  type LifestyleCheckEvent,
+  LEAF_CAP,
+  STEM_CAP,
+  FLOWER_STREAK_DAYS,
+} from "@/lib/domain/lifestyle-growth";
 
 const STORAGE_KEY = "lj-lifestyle-checked";
+const EVENTS_STORAGE_KEY = "lj-lifestyle-check-events";
+const EVENT_RETENTION_DAYS = FLOWER_STREAK_DAYS + 7;
 
 const DIFFICULTY_TONE: Record<
   LifestyleTip["difficulty"],
@@ -73,16 +86,47 @@ function writeChecked(state: Record<string, true>) {
   }
 }
 
+function readEvents(): LifestyleCheckEvent[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(EVENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const cutoff = Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    return parsed.filter(
+      (e): e is LifestyleCheckEvent =>
+        typeof e?.tipKey === "string" &&
+        typeof e?.domainId === "string" &&
+        typeof e?.checkedAt === "string" &&
+        new Date(e.checkedAt).getTime() > cutoff,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeEvents(events: LifestyleCheckEvent[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(events));
+  } catch {
+    // ignore quota
+  }
+}
+
 function tipKey(domainId: string, tipTitle: string): string {
   return `${domainId}::${tipTitle}`;
 }
 
 export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
   const [checked, setChecked] = useState<Record<string, true>>({});
+  const [events, setEvents] = useState<LifestyleCheckEvent[]>([]);
   const [openDomain, setOpenDomain] = useState<string | null>(domains[0]?.id ?? null);
 
   useEffect(() => {
     setChecked(readChecked());
+    setEvents(readEvents());
   }, []);
 
   const total = useMemo(
@@ -109,12 +153,35 @@ export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
     return Math.round((earned / possible) * 100);
   }, [checked, domains, tips]);
 
-  function toggle(key: string) {
+  const growth = useMemo(
+    () =>
+      computeLifestyleGrowth({
+        events,
+        categories: domains.map((d) => d.id),
+      }),
+    [events, domains],
+  );
+
+  function toggle(key: string, domainId: string) {
     setChecked((prev) => {
       const next = { ...prev };
-      if (next[key]) delete next[key];
+      const wasChecked = !!next[key];
+      if (wasChecked) delete next[key];
       else next[key] = true;
       writeChecked(next);
+
+      // Append a check event only on the toggle-ON edge — un-checking does
+      // not retract a growth event the patient already earned today.
+      if (!wasChecked) {
+        setEvents((evs) => {
+          const updated = [
+            ...evs,
+            { tipKey: key, domainId, checkedAt: new Date().toISOString() },
+          ];
+          writeEvents(updated);
+          return updated;
+        });
+      }
       return next;
     });
   }
@@ -177,6 +244,48 @@ export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
           {checkedCount}/{total} active
         </Badge>
       </div>
+
+      {/* EMR-072: plant growth preview */}
+      <Card tone="raised" className="mb-5">
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <div className="flex items-baseline gap-2">
+              <span className="font-display text-sm text-text">Your growth</span>
+              <span className="text-[11px] text-text-subtle">
+                · every check grows a leaf, full days grow a stem
+              </span>
+            </div>
+            {growth.hasFlowers && (
+              <Badge tone="success" className="text-[10px]">
+                in bloom 🌸
+              </Badge>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <GrowthStat
+              emoji="\u{1F343}"
+              label="Leaves"
+              value={growth.leafCount}
+              cap={LEAF_CAP}
+            />
+            <GrowthStat
+              emoji="\u{1F33F}"
+              label="Stems"
+              value={growth.stemCount}
+              cap={STEM_CAP}
+            />
+            <GrowthStat
+              emoji="\u{1F525}"
+              label="Day streak"
+              value={growth.streakDays}
+              cap={FLOWER_STREAK_DAYS}
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-3 leading-relaxed text-center">
+            {growth.nextNudge}
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="space-y-3">
         {domains.map((domain) => {
@@ -246,7 +355,7 @@ export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
                             <input
                               type="checkbox"
                               checked={on}
-                              onChange={() => toggle(key)}
+                              onChange={() => toggle(key, domain.id)}
                               className="mt-1 h-4 w-4 rounded border-border-strong text-accent focus:ring-accent/40"
                             />
                             <span className="flex-1 min-w-0">
@@ -288,5 +397,46 @@ export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
         })}
       </div>
     </section>
+  );
+}
+
+function GrowthStat({
+  emoji,
+  label,
+  value,
+  cap,
+}: {
+  emoji: string;
+  label: string;
+  value: number;
+  cap: number;
+}) {
+  const pct = cap === 0 ? 0 : Math.min(100, (value / cap) * 100);
+  return (
+    <div>
+      <span className="text-2xl block" aria-hidden="true">
+        {emoji}
+      </span>
+      <p className="font-display text-2xl text-text tabular-nums">
+        {value}
+        <span className="text-xs text-text-subtle ml-1">/ {cap}</span>
+      </p>
+      <p className="text-[10px] uppercase tracking-[0.14em] text-text-subtle mt-0.5">
+        {label}
+      </p>
+      <div
+        className="h-1 rounded-full bg-surface-muted overflow-hidden mt-1.5"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={cap}
+        aria-valuenow={value}
+        aria-label={`${label} progress`}
+      >
+        <div
+          className="h-full rounded-full bg-accent transition-all duration-300"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }

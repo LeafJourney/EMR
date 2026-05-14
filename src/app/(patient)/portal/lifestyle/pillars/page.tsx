@@ -6,6 +6,8 @@ import { PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow, EditorialRule } from "@/components/ui/ornament";
 import { computeFourPillars, PILLAR_DEFS } from "@/lib/domain/four-pillars";
+import { ShareButton } from "@/components/portal/share-button";
+import { SHARE_PRESETS } from "@/lib/portal/social-share";
 
 export const metadata = { title: "Four Pillars of Health" };
 
@@ -57,13 +59,16 @@ export default async function FourPillarsPage() {
             Physical, mental, emotional, spiritual. Each bar is built from your
             own check-ins, visits, and daily practice. Stronger bars are better.
           </p>
-          <div className="mt-6 flex items-baseline gap-3">
-            <span className="font-display text-5xl text-accent tabular-nums">
-              {overall}
-            </span>
-            <span className="text-[11px] uppercase tracking-[0.18em] text-text-subtle">
-              Overall pillar average
-            </span>
+          <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-5xl text-accent tabular-nums">
+                {overall}
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.18em] text-text-subtle">
+                Overall pillar average
+              </span>
+            </div>
+            <ShareButton milestone={SHARE_PRESETS.pillarStreak(overall)} />
           </div>
         </div>
       </Card>

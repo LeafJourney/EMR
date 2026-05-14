@@ -467,7 +467,6 @@ routes:
     auth: required
     owner: scheduling
     notes: "Patient calendar ICS download."
-
   cron/sync-wearables:
     methods: [GET]
     auth: cron

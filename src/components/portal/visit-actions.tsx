@@ -30,9 +30,21 @@ export function VisitActions({ encounterId, isConfirmed = false }: VisitActionsP
     });
   }
 
+  const calendarHref = `/api/portal/encounters/${encounterId}/calendar.ics`;
+  const calendarLink = (
+    <a
+      href={calendarHref}
+      download
+      className="inline-flex items-center justify-center gap-1.5 h-8 px-3.5 text-sm font-medium rounded-md text-text-muted hover:bg-surface-muted hover:text-text transition-colors"
+    >
+      <span aria-hidden="true">{"📅"}</span>
+      Add to calendar
+    </a>
+  );
+
   if (confirmed) {
     return (
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-4 flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 text-sm text-accent font-medium">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-accent">
             <path
@@ -45,6 +57,7 @@ export function VisitActions({ encounterId, isConfirmed = false }: VisitActionsP
           </svg>
           Confirmed
         </div>
+        {calendarLink}
         <Button size="sm" variant="ghost">
           Change
         </Button>
@@ -54,7 +67,7 @@ export function VisitActions({ encounterId, isConfirmed = false }: VisitActionsP
 
   return (
     <div className="mt-4">
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button
           size="sm"
           onClick={handleConfirm}
@@ -62,6 +75,7 @@ export function VisitActions({ encounterId, isConfirmed = false }: VisitActionsP
         >
           {isPending ? "Confirming…" : "Confirm"}
         </Button>
+        {calendarLink}
         <Button size="sm" variant="ghost">
           Change
         </Button>

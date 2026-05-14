@@ -30,6 +30,8 @@ import {
   type PhotoJournalEntry,
   type HarvestLogEntry,
 } from "@/lib/lifestyle/grow-guide";
+import { ShareButton } from "@/components/portal/share-button";
+import { SHARE_PRESETS } from "@/lib/portal/social-share";
 
 export const metadata = { title: "My Garden" };
 
@@ -97,6 +99,11 @@ export default async function GardenPage() {
           <p className="text-sm text-text-subtle mt-4 italic max-w-sm">
             {STAGE_ENCOURAGEMENT[health.stage]}
           </p>
+
+          {/* Social share (EMR-075) */}
+          <div className="mt-5">
+            <ShareButton milestone={SHARE_PRESETS.plantHealth(health.score)} />
+          </div>
         </div>
       </section>
 

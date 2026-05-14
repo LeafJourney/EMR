@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
@@ -187,6 +188,30 @@ export default async function LifestylePage() {
 
       <EditorialRule className="my-10" />
 
+      {/* Deeper tracking surfaces — pillars, spiritual, recipes */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <LifestyleLink
+          href="/portal/lifestyle/pillars"
+          emoji="\u{1F4CA}"
+          title="Four Pillars"
+          description="Physical, mental, emotional, spiritual — all on one chart."
+        />
+        <LifestyleLink
+          href="/portal/lifestyle/spiritual"
+          emoji="\u{1F54A}\u{FE0F}"
+          title="Spiritual"
+          description="Faith, charity, family, meditation, nature — weekly check-in."
+        />
+        <LifestyleLink
+          href="/portal/lifestyle/recipes"
+          emoji="\u{1F374}"
+          title="Cannabis kitchen"
+          description="Mediterranean, Ayurvedic, Mexican, Italian, vegan, keto."
+        />
+      </section>
+
+      <EditorialRule className="my-10" />
+
       <Card>
         <CardContent className="py-8 text-center">
           <p className="font-display text-xl text-text tracking-tight mb-2">
@@ -243,5 +268,32 @@ function WearableMetric({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] uppercase tracking-[0.14em] text-text-subtle">{label}</p>
       <p className="font-display text-lg text-text tabular-nums">{value}</p>
     </div>
+  );
+}
+
+function LifestyleLink({
+  href,
+  emoji,
+  title,
+  description,
+}: {
+  href: string;
+  emoji: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="block rounded-2xl border border-border bg-surface-raised p-5 hover:border-accent/50 hover:shadow-sm transition-all"
+    >
+      <span className="text-3xl block mb-2" aria-hidden="true">
+        {emoji}
+      </span>
+      <p className="font-display text-lg text-text">{title}</p>
+      <p className="text-sm text-text-muted leading-relaxed mt-1">
+        {description}
+      </p>
+    </Link>
   );
 }
