@@ -190,6 +190,75 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
       { type: "objective", heading: "Objective", body: "Vitals: BP [BP], HR [HR]\nFocused exam: [inspection, palpation, ROM, strength, neuro]\nProvocative tests: [relevant special tests]\nFunctional: [lift, carry, bend]" },
     ],
   },
+  // ─── Internal Medicine templates (EMR-468) ───────────────────────
+  // Five default IM visit types with structured fields covering problem
+  // list, medications, vitals, ROS, and plan. The picker automatically
+  // surfaces these alongside the cannabis-medicine templates above.
+
+  {
+    id: "im-new-patient",
+    name: "IM — New Patient Visit",
+    visitType: "New patient",
+    emoji: "🩺",
+    blocks: [
+      { type: "subjective", heading: "Subjective", body: "Patient is a [age]-year-old [sex] establishing primary care. Chief complaint: [reason for visit]. HPI: [duration, character, severity, modifying factors].\n\nPast medical history: [chronic conditions, prior hospitalizations, surgeries].\n\nMedications: [current list with dose + frequency]. Allergies: [list with reaction]. Immunization status: [up-to-date / overdue items].\n\nFamily history: [first-degree relatives — cardiovascular, cancer, diabetes, mental health].\n\nSocial history: tobacco [pack-years], alcohol [drinks/week], substance use [list], occupation [job], living situation, exercise [type/freq], diet [pattern].\n\nReview of systems:\n• Constitutional: [fevers, weight change, fatigue]\n• HEENT: [vision, hearing, dentition]\n• Cardiovascular: [chest pain, palpitations, edema]\n• Respiratory: [cough, dyspnea, wheeze]\n• GI: [appetite, reflux, bowel changes]\n• GU: [urinary symptoms, sexual health]\n• Musculoskeletal: [pain, stiffness, swelling]\n• Neurological: [headache, weakness, numbness]\n• Psychiatric: [mood, sleep, anxiety]\n• Skin: [rashes, lesions, changes]\n• Endocrine: [polyuria, polydipsia, heat/cold]\n• Heme/lymph: [bleeding, lumps]" },
+      { type: "objective", heading: "Objective", body: "Vitals: BP [BP], HR [HR], RR [RR], T [T °F], SpO2 [SpO2 %], Wt [weight], Ht [height], BMI [BMI].\n\nGeneral: [appearance, distress level]\nHEENT: [PERRLA, EOMI, oropharynx, neck]\nCardiovascular: [rate, rhythm, S1S2, murmurs, peripheral pulses]\nLungs: [breath sounds, adventitious sounds]\nAbdomen: [bowel sounds, tenderness, organomegaly]\nMSK: [gait, ROM, deformities]\nNeuro: [CN II-XII, motor 5/5, sensation, reflexes 2+]\nSkin: [color, lesions, turgor]\nPsych: [mood, affect, thought process]" },
+      { type: "assessment", heading: "Assessment", body: "Problem list:\n1. [Active problem #1] — [status]\n2. [Active problem #2] — [status]\n3. [Health maintenance gap if present]\n\nClinical impression: [synthesis paragraph linking HPI/exam/risk factors to the active problems and what's driving today's visit]." },
+      { type: "plan", heading: "Plan", body: "By problem:\n\n1. [Problem #1]\n   - Diagnostic: [labs/imaging]\n   - Therapeutic: [med adjustments]\n   - Patient education: [topic]\n\n2. [Problem #2]\n   - [same structure]\n\nPreventive care:\n• Vaccines due: [list]\n• Screenings due: [colon, mammo, bone density, etc.]\n• Counseling: [tobacco, alcohol, diet, exercise]\n\nReferrals: [specialty, reason]\nMedication reconciliation: [changes documented]\nFollow-up: [interval]\nPatient portal: lab/result follow-up plan documented." },
+    ],
+  },
+
+  {
+    id: "im-annual-wellness",
+    name: "IM — Annual Wellness Visit (AWV)",
+    visitType: "Annual",
+    emoji: "🪓",
+    blocks: [
+      { type: "subjective", heading: "Subjective", body: "Patient presents for Medicare/commercial annual wellness visit. Interval history since last AWV: [any new diagnoses, hospitalizations, ER visits, falls, advanced care planning changes].\n\nHealth Risk Assessment completed: [yes/no].\n\nFunctional status:\n• ADLs: [independent / needs assistance — specify]\n• IADLs: [independent / needs assistance — specify]\n• Mobility: [independent / cane / walker / wheelchair]\n• Hearing: [no problems / hearing aids / impaired]\n• Vision: [no problems / corrected / impaired]\n\nDepression screen (PHQ-2/-9): [score, classification]\nCognitive screen (Mini-Cog or similar): [score, classification]\nFall risk screen: [number of falls in past 12 months, gait assessment]\n\nLifestyle:\n• Tobacco: [status]\n• Alcohol: [drinks/week]\n• Diet: [pattern]\n• Physical activity: [minutes/week]\n• Sleep: [hours/night, quality]\n\nAdvance care planning: [POLST, healthcare proxy, prior conversations]." },
+      { type: "objective", heading: "Objective", body: "Vitals: BP [BP], HR [HR], BMI [BMI], waist circumference [cm].\n\nFocused exam appropriate for age/risk:\n• Cardiovascular: [rhythm, murmurs, pulses]\n• Respiratory: [breath sounds]\n• Skin: [skin cancer screen, lesions]\n• MSK: [gait, balance — Timed Up and Go if fall risk]\n• Neuro: [if cognitive screen flagged]" },
+      { type: "assessment", heading: "Assessment", body: "Annual wellness assessment.\n\nProblem list reviewed and updated. Health maintenance status:\n• Vaccines: [status — flu, Tdap, shingles, pneumococcal, COVID, RSV]\n• Cancer screening: [colon, breast, cervical, prostate, lung, skin]\n• Cardiovascular screening: [BP, lipids, diabetes, AAA if indicated]\n• Bone health: [DEXA status]\n• Behavioral health: [depression, anxiety, alcohol, tobacco screens]\n\nGaps identified: [list]\nNew problems uncovered today: [if any]." },
+      { type: "plan", heading: "Plan", body: "Personalized prevention plan:\n\n1. Address screening gaps:\n   - [Order/refer for each gap]\n2. Vaccines today: [list]\n3. Lifestyle counseling provided: [topics]\n4. Medication reconciliation completed.\n5. Advance care planning: [conversation documented / referral made / forms updated]\n6. Care plan summary handed to patient (CMS requirement for AWV).\n\nFollow-up: [interval — typically annual, sooner if new findings]." },
+    ],
+  },
+
+  {
+    id: "im-chronic-followup",
+    name: "IM — Chronic Disease Follow-Up",
+    visitType: "Follow-up",
+    emoji: "🩼",
+    blocks: [
+      { type: "subjective", heading: "Subjective", body: "Patient returns for [primary condition(s)] follow-up. Interval: [time since last visit].\n\nSymptom diary / patient-reported outcomes since last visit:\n• [Symptom 1]: [trend]\n• [Symptom 2]: [trend]\n\nMedication adherence: [good/fair/poor — specifics]\nSide effects: [list]\nSelf-monitoring: home BP [readings], home glucose [readings], peak flows [if applicable].\n\nLifestyle factors since last visit: diet [change], exercise [change], weight [change], sleep [change], stress [change].\n\nReview of systems pertinent to active problems: [focused ROS]." },
+      { type: "objective", heading: "Objective", body: "Vitals: BP [BP] (target [target]), HR [HR], BMI [BMI], Wt [weight] (Δ from last visit [delta]).\n\nProblem-focused exam:\n• [Relevant system #1]: [findings]\n• [Relevant system #2]: [findings]\n\nLab/study results reviewed today: [A1c, lipids, BMP, microalbumin, etc. with values and dates].\n\nIn-office tests: [foot exam for diabetes, monofilament, etc.]" },
+      { type: "assessment", heading: "Assessment", body: "1. [Chronic problem #1] — [at goal / above goal / worsening]. Target: [target]. Most recent value: [value].\n2. [Chronic problem #2] — [at goal / above goal / worsening].\n3. [Comorbid issue if relevant].\n\nDrivers of any uncontrolled markers: [adherence, lifestyle, intercurrent illness, side effect, etc.]." },
+      { type: "plan", heading: "Plan", body: "By problem:\n\n1. [Problem #1]\n   - Continue [med] at [dose] / increase [med] to [dose] / start [med] [dose]\n   - Rationale: [why]\n   - Labs at next visit: [list]\n   - Lifestyle goal for this period: [specific, measurable]\n\n2. [Problem #2]\n   - [same structure]\n\nPreventive care opportunities this visit: [vaccines, screenings]\nReferrals: [specialty, reason]\nPatient education provided: [topic]\nFollow-up: [interval, sooner if new symptoms]\nPatient understands when to seek urgent care: [yes — specific red flags reviewed]." },
+    ],
+  },
+
+  {
+    id: "im-acute-visit",
+    name: "IM — Acute Visit",
+    visitType: "Acute",
+    emoji: "⚡️",
+    blocks: [
+      { type: "subjective", heading: "Subjective", body: "[Age]-year-old [sex] presents with [chief complaint] x [duration].\n\nHPI:\n• Onset: [sudden / gradual] [time]\n• Location: [where]\n• Duration: [how long]\n• Character: [quality]\n• Aggravating: [factors]\n• Relieving: [factors / what's been tried]\n• Timing: [pattern]\n• Severity: [0-10 / impact on function]\n• Associated symptoms: [list]\n\nPertinent context:\n• Recent travel / exposures: [yes/no]\n• Sick contacts: [yes/no]\n• Recent procedures or new meds: [yes/no]\n• Pregnancy status if applicable: [yes/no/unknown]\n• Anticoagulation: [yes/no]\n\nPertinent past medical history: [conditions that change differential — cardiac, immunocompromised, etc.]\nCurrent medications + allergies confirmed.\n\nFocused ROS: [system-specific positives and pertinent negatives]." },
+      { type: "objective", heading: "Objective", body: "Vitals: BP [BP], HR [HR], RR [RR], T [T °F], SpO2 [SpO2 %], pain [0-10].\n\nGeneral: [acute distress / non-toxic / ill-appearing]\nFocused exam by system:\n• [System #1 based on CC]: [detailed findings]\n• [System #2]: [detailed findings]\n• [System #3]: [detailed findings]\n\nIn-office tests / point-of-care: [strep, flu, UA, EKG, blood glucose, etc. with results]." },
+      { type: "assessment", heading: "Assessment", body: "[Primary diagnosis or differential]: [reasoning].\n\nDifferential considered: [list with reasoning for/against each].\nRed flag features assessed: [list and rule-in/out].\nClinical decision: [diagnosis confirmed / requires workup / requires escalation]." },
+      { type: "plan", heading: "Plan", body: "1. Treatment:\n   - [Medication, dose, duration]\n   - [Non-pharmacologic interventions]\n\n2. Workup if indicated:\n   - [Labs / imaging / referrals]\n\n3. Return precautions reviewed:\n   - Worsening or new [specific symptoms] → ED or call clinic immediately\n\n4. Follow-up:\n   - [Interval] for recheck or sooner PRN\n   - Specific instructions on completing course of treatment\n\n5. Work / school note: [yes/no — duration]\n\n6. Documentation of shared decision-making and verbal teach-back of plan." },
+    ],
+  },
+
+  {
+    id: "im-telehealth-followup",
+    name: "IM — Telehealth Follow-Up",
+    visitType: "Telehealth",
+    emoji: "💻",
+    blocks: [
+      { type: "subjective", heading: "Subjective", body: "Telehealth follow-up via [audio-video / audio-only] platform. Patient identity verified by [DOB + photo ID / known clinician relationship]. Patient location at start of visit: [state, address as required by state law]. Patient consents to telehealth visit and understands limitations of remote exam.\n\nReason for visit: [follow-up of {condition} / specific concern].\n\nInterval history: [what's changed since last visit].\nMedication adherence + tolerance: [report].\nHome monitoring data: [BP readings, glucose, weight — patient-reported or device-uploaded].\n\nSymptom review: [focused to the follow-up topic]." },
+      { type: "objective", heading: "Objective", body: "Visual assessment via video: [general appearance, work of breathing, distress, skin if visible].\nPatient-reported vitals: BP [BP], HR [HR], Wt [weight], home glucose [if applicable].\n\nLimitations of telehealth exam documented: [no hands-on auscultation, palpation, neuro exam]. Components requiring in-person follow-up: [list if any].\n\nIn-platform tools used: [shared screen for lab review, e-prescribe, patient portal walk-through]." },
+      { type: "assessment", heading: "Assessment", body: "[Condition] — [stable / improving / worsening] based on history + visual assessment + patient-reported objective data.\n\nClinical judgment that this visit can be completed via telehealth: [yes — rationale / no — in-person scheduling indicated]." },
+      { type: "plan", heading: "Plan", body: "1. Medication / treatment plan:\n   - [Continue/adjust] [med, dose, route]\n   - E-prescription sent to [pharmacy] if applicable\n\n2. Labs / studies ordered: [list, where to obtain]\n\n3. Patient education provided via [verbal review / portal message / shared resource link].\n\n4. Return precautions: when to seek in-person care, when to call clinic.\n\n5. Follow-up: [next visit type — in-person vs telehealth — and interval]\n\n6. Telehealth-specific documentation:\n   - Originating site, distant site, modality, consent obtained, duration of visit [min]\n   - CPT codes appropriate to time/MDM" },
+    ],
+  },
 ];
 
 export function getTemplate(id: string): NoteTemplate | null {
