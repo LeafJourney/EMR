@@ -461,3 +461,15 @@ routes:
     owner: integrations
     review_due: 2026-05-30
     notes: "Scaffolded route for testing Garmin integration."
+
+  portal/encounters/[id]/calendar.ics:
+    methods: [GET]
+    auth: required
+    owner: scheduling
+    notes: "Patient calendar ICS download."
+
+  cron/sync-wearables:
+    methods: [GET]
+    auth: cron
+    owner: platform-security
+    notes: "Cron daemon for syncing wearables."
