@@ -20,7 +20,7 @@ const RING_CAP = 500;
 const ring: ClassifiedWhisper[] = [];
 
 const FOUNDER_RECIPIENTS = [
-  "neil@leafjourney.com",
+  "neal@leafjourney.com",
   "scott@leafjourney.com",
 ];
 
