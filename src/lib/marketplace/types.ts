@@ -28,6 +28,10 @@ export interface MarketplaceProduct {
   useCases: string[];
   onsetTime?: string;
   duration?: string;
+  // EMR-278 — descriptive effect tags ("uplifting", "relaxing", "cerebral").
+  // Optional; PDP falls back to deriving from strain/cannabinoid/terpene
+  // profile when missing.
+  effectTags?: string[];
 
   // EMR-282 — grow-accessory products (lights, tents, fans, fertilizer,
   // trim tools) trigger a state-aware cultivation legality banner + hard

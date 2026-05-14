@@ -370,9 +370,9 @@ export default async function ProductDetailPage({ params }: SlugPageProps) {
           </Card>
         )}
 
-        {/* Onset & Duration */}
-        {(product.onsetTime || product.duration) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Onset · Duration · Effect (EMR-278) */}
+        {(product.onsetTime || product.duration || (product.effectTags && product.effectTags.length > 0)) && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {product.onsetTime && (
               <div className="rounded-lg border border-border bg-surface p-4">
                 <p className="text-xs uppercase tracking-wide text-text-subtle mb-1">
@@ -391,6 +391,23 @@ export default async function ProductDetailPage({ params }: SlugPageProps) {
                 <p className="text-sm font-medium text-text">
                   {product.duration}
                 </p>
+              </div>
+            )}
+            {product.effectTags && product.effectTags.length > 0 && (
+              <div className="rounded-lg border border-border bg-surface p-4">
+                <p className="text-xs uppercase tracking-wide text-text-subtle mb-2">
+                  Effect
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.effectTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-[var(--accent)]/10 text-[var(--accent)] text-[11.5px] font-medium px-2 py-0.5 capitalize"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
           </div>

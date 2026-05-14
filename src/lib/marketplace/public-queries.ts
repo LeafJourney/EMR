@@ -20,6 +20,7 @@ import type {
   ProductVariant,
   ProductReview,
 } from "./types";
+import { deriveEffectTags } from "./effects";
 
 const publicProductInclude = {
   variants: { orderBy: { sortOrder: "asc" } },
@@ -89,6 +90,15 @@ function mapPublicProduct(p: PublicProductRow): MarketplaceProduct {
     useCases: p.useCases,
     onsetTime: p.onsetTime ?? undefined,
     duration: p.duration ?? undefined,
+    effectTags: deriveEffectTags({
+      strainType: (p.strainType ?? undefined) as MarketplaceProduct["strainType"],
+      thcContent: p.thcContent ?? undefined,
+      cbdContent: p.cbdContent ?? undefined,
+      cbnContent: p.cbnContent ?? undefined,
+      terpeneProfile: terpene,
+      symptoms: p.symptoms,
+      useCases: p.useCases,
+    }),
     // Dosage guidance intentionally stripped on the public surface —
     // surface it only in authenticated portal contexts.
     dosageGuidance: undefined,
