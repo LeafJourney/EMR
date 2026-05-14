@@ -8,7 +8,11 @@ import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
 
-export default async function PatientsPage() {
+export default async function PatientsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string };
+}) {
   const user = await requireUser();
   const orgId = user.organizationId!;
 
@@ -163,6 +167,7 @@ export default async function PatientsPage() {
         patients={serialized}
         statusCounts={statusCounts}
         avgReadiness={avgReadiness}
+        initialSearch={searchParams.q ?? ""}
       />
     </PageShell>
   );

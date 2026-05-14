@@ -40,6 +40,7 @@ interface Props {
   patients: PatientRow[];
   statusCounts: StatusCounts;
   avgReadiness: number;
+  initialSearch?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -217,8 +218,9 @@ export function PatientListClient({
   patients,
   statusCounts,
   avgReadiness,
+  initialSearch = "",
 }: Props) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
 

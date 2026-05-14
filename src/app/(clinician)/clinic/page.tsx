@@ -614,13 +614,20 @@ export default async function ClinicHomePage() {
 
           {/* Right: Quick actions */}
           <div className="flex items-center gap-3 shrink-0">
-            <form action="/clinic/patients" method="get" className="hidden md:block">
+            <form
+              action="/clinic/patients"
+              method="get"
+              className="hidden md:flex items-center gap-2"
+            >
               <input
                 type="search"
                 name="q"
-                placeholder="Search patients..."
-                className="h-9 w-48 rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 transition-colors"
+                placeholder="Search name, DOB, or phone..."
+                className="h-9 w-56 rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 transition-colors"
               />
+              <Button type="submit" variant="secondary" size="sm">
+                Search
+              </Button>
             </form>
             <Link href="/clinic/patients?new=1">
               <Button size="sm">New visit</Button>
