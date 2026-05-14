@@ -8,56 +8,58 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileText, ArrowRight, Video, Sparkles, HelpCircle, Activity, ShieldCheck } from "lucide-react";
 
+// Every topic deep-links into the Educational Library (/portal/learn).
+// The library page reads ?tab to preselect the right section.
 const LEARN_TOPICS = [
-  { 
-    title: "What is CBD?", 
-    desc: "A beginner's guide to cannabidiol — the non-psychoactive cannabinoid changing medicine.", 
-    href: "/portal/education",
+  {
+    title: "What is CBD?",
+    desc: "A beginner's guide to cannabidiol — the non-psychoactive cannabinoid changing medicine.",
+    href: "/portal/learn?tab=cannabinoids",
     icon: Sparkles,
     color: "text-leaf",
     bg: "bg-mint",
     border: "border-mint"
   },
-  { 
-    title: "How to dose cannabis", 
-    desc: "Start low, go slow. Learn the principles of safe, effective cannabis dosing.", 
-    href: "/portal/dosing",
+  {
+    title: "How to dose cannabis",
+    desc: "Start low, go slow. Learn the principles of safe, effective cannabis dosing.",
+    href: "/portal/learn?tab=conditions",
     icon: Activity,
     color: "text-leaf",
     bg: "bg-sage",
     border: "border-sage"
   },
-  { 
-    title: "Routes of administration", 
-    desc: "Oral, sublingual, inhaled, topical — which delivery method is right for you?", 
-    href: "/portal/education",
+  {
+    title: "Routes of administration",
+    desc: "Oral, sublingual, inhaled, topical — which delivery method is right for you?",
+    href: "/portal/learn?tab=delivery",
     icon: FileText,
     color: "text-ink",
     bg: "bg-lilac",
     border: "border-lilac"
   },
-  { 
-    title: "Understanding terpenes", 
-    desc: "The aromatic compounds that shape each strain's unique therapeutic effects.", 
-    href: "/portal/education",
+  {
+    title: "Understanding terpenes",
+    desc: "The aromatic compounds that shape each strain's unique therapeutic effects.",
+    href: "/portal/learn?tab=terpenes",
     icon: Sparkles,
     color: "text-highlight-hover",
     bg: "bg-butter",
     border: "border-butter"
   },
-  { 
-    title: "Cannabis & your medications", 
-    desc: "Important drug interactions every patient and caregiver should know.", 
-    href: "/portal/education",
+  {
+    title: "Cannabis & your medications",
+    desc: "Important drug interactions every patient and caregiver should know.",
+    href: "/portal/learn?tab=conditions",
     icon: ShieldCheck,
     color: "text-danger",
     bg: "bg-rose",
     border: "border-rose"
   },
-  { 
-    title: "Legal considerations", 
-    desc: "State laws, federal status, and what it means for your workplace and travel.", 
-    href: "/portal/qa",
+  {
+    title: "Legal considerations",
+    desc: "State laws, federal status, and what it means for your workplace and travel.",
+    href: "/portal/learn",
     icon: HelpCircle,
     color: "text-text-muted",
     bg: "bg-peach",
@@ -151,7 +153,7 @@ export function LearnTab() {
       </Card>
       
       <div className="text-center pt-8">
-        <Link href="/portal/education">
+        <Link href="/portal/learn">
           <Button variant="secondary" size="lg" className="rounded-xl font-bold border-2 text-text hover:bg-surface-muted">
             Browse Full Library
             <ArrowRight className="w-5 h-5 ml-2" />

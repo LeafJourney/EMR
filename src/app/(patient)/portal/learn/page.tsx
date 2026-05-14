@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { PatientSectionNav } from "@/components/shell/PatientSectionNav";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -28,9 +29,26 @@ const EVIDENCE_TONE: Record<string, "success" | "info" | "warning" | "neutral"> 
   anecdotal: "neutral",
 };
 
+const TAB_VALUES: readonly Tab[] = ["conditions", "cannabinoids", "terpenes", "delivery"];
+
+function parseTab(raw: string | null): Tab | null {
+  if (!raw) return null;
+  return (TAB_VALUES as readonly string[]).includes(raw) ? (raw as Tab) : null;
+}
+
 export default function LearnPage() {
-  const [tab, setTab] = useState<Tab>("conditions");
+  const searchParams = useSearchParams();
+  const initialTab = parseTab(searchParams.get("tab")) ?? "conditions";
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [search, setSearch] = useState("");
+
+  // Re-sync tab when the user navigates between deep links from
+  // the Education hub without a full page reload.
+  useEffect(() => {
+    const next = parseTab(searchParams.get("tab"));
+    if (next && next !== tab) setTab(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const searchResults = useMemo(() => {
     if (search.length < 2) return null;
