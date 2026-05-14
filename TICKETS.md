@@ -1245,7 +1245,7 @@ Full medical-cannabis dispensary integration. **Medicinal use only — recreatio
 ### EMR-092: Dual Treatment Protocols — Western + Eastern (Holistic) Medicine
 **Priority:** 2 — High
 **Source:** Dr. Patel
-**Status:** in_progress
+**Status:** blocked (Needs more detail from Dr. Patel)
 **Description:**
 For EVERY medical diagnosis in the system, provide TWO treatment protocols side-by-side:
 
