@@ -28,6 +28,8 @@ import { withTimeout } from "@/lib/utils/with-timeout";
 import { FadeInWidget, StaggerContainer, FadeInItem } from "@/components/ui/fade-in-widget";
 import { StreakFlame } from "@/components/portal/streak-flame";
 import { HealthRings } from "@/components/portal/health-rings";
+import { FreezeTokenStore } from "@/components/portal/freeze-token-store";
+import { applyFreezeTokenAction } from "@/app/(patient)/portal/apply-freeze-action";
 
 // EMR-205: guard the home-page queries so a hung downstream call can
 // never wedge the Suspense boundary again. Tight timeouts give the user
@@ -198,6 +200,9 @@ export default async function PatientHome() {
             include: { product: true },
           },
           dailyStreak: true,
+          freezeTokens: {
+            where: { isUsed: false },
+          },
         },
       }).catch((err) => {
         console.warn("[portal.home] patient.findUnique rejected:", err);
@@ -341,6 +346,12 @@ export default async function PatientHome() {
               longestStreak={longestStreak} 
               hasCheckedInToday={hasCheckedInToday} 
             />
+            {patient.freezeTokens && patient.freezeTokens.length > 0 && (
+              <FreezeTokenStore 
+                availableTokens={patient.freezeTokens.length} 
+                onApplyFreeze={applyFreezeTokenAction} 
+              />
+            )}
           </div>
           <h1 className="font-display text-2xl sm:text-3xl md:text-4xl leading-[1.1] tracking-tight text-text">
             {greeting()},{" "}

@@ -61,3 +61,40 @@ export async function getActiveFreezeTokens(patientId: string) {
     },
   });
 }
+
+export async function applyFreezeToken(patientId: string) {
+  const token = await prisma.freezeToken.findFirst({
+    where: { patientId, isUsed: false },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (!token) return { ok: false, error: "No available freeze tokens." };
+
+  const streak = await prisma.dailyCheckInStreak.findUnique({
+    where: { patientId },
+  });
+
+  if (!streak || !streak.lastCheckInDate) return { ok: false, error: "No streak to repair." };
+
+  // Repair the streak by moving lastCheckInDate up by one day
+  const newDate = new Date(streak.lastCheckInDate);
+  newDate.setDate(newDate.getDate() + 1);
+  const newDateStr = newDate.toISOString().split("T")[0];
+
+  await prisma.$transaction([
+    prisma.freezeToken.update({
+      where: { id: token.id },
+      data: { isUsed: true, usedOnDate: newDateStr, usedAt: new Date() },
+    }),
+    prisma.dailyCheckInStreak.update({
+      where: { patientId },
+      data: {
+        lastCheckInDate: newDateStr,
+        currentStreak: streak.currentStreak + 1,
+        longestStreak: Math.max(streak.longestStreak, streak.currentStreak + 1),
+      },
+    }),
+  ]);
+
+  return { ok: true };
+}
