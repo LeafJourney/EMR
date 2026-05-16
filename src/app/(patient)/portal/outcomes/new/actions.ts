@@ -10,6 +10,8 @@ const METRICS: OutcomeMetric[] = ["pain", "sleep", "anxiety", "mood", "nausea"];
 
 const metricSchema = z.coerce.number().int().min(0).max(10);
 
+import { recordDailyCheckIn } from "@/lib/gamification/streaks";
+
 export type OutcomeResult = { ok: true } | { ok: false; error: string };
 
 export async function submitOutcomeAction(
@@ -60,6 +62,8 @@ export async function submitOutcomeAction(
       })
     )
   );
+
+  await recordDailyCheckIn(patient.id);
 
   revalidatePath("/portal/outcomes");
   revalidatePath("/portal");

@@ -26,6 +26,8 @@ import { PositiveInputPrompt } from "@/components/patient/positive-input-prompt"
 import { DicomViewer } from "@/components/dicom/dicom-viewer";
 import { withTimeout } from "@/lib/utils/with-timeout";
 import { FadeInWidget, StaggerContainer, FadeInItem } from "@/components/ui/fade-in-widget";
+import { StreakFlame } from "@/components/portal/streak-flame";
+import { HealthRings } from "@/components/portal/health-rings";
 
 // EMR-205: guard the home-page queries so a hung downstream call can
 // never wedge the Suspense boundary again. Tight timeouts give the user
@@ -195,6 +197,7 @@ export default async function PatientHome() {
             where: { active: true },
             include: { product: true },
           },
+          dailyStreak: true,
         },
       }).catch((err) => {
         console.warn("[portal.home] patient.findUnique rejected:", err);
@@ -313,6 +316,11 @@ export default async function PatientHome() {
     hasRegimen: patient.dosingRegimens.length > 0,
   });
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const currentStreak = patient.dailyStreak?.currentStreak ?? 0;
+  const longestStreak = patient.dailyStreak?.longestStreak ?? 0;
+  const hasCheckedInToday = patient.dailyStreak?.lastCheckInDate === todayStr;
+
   return (
     <PageShell maxWidth="max-w-[1040px]">
       <OnboardingTour />
@@ -320,13 +328,20 @@ export default async function PatientHome() {
       {/* ── Hero greeting ────────────────────────────── */}
       <section className="relative overflow-hidden rounded-2xl md:rounded-3xl liquid-glass-strong mb-6 md:mb-8">
         <div className="relative px-6 sm:px-8 md:px-12 py-8 md:py-12 max-w-2xl">
-          <Eyebrow className="mb-3">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </Eyebrow>
+          <div className="flex items-center gap-4 mb-3">
+            <Eyebrow className="mb-0">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </Eyebrow>
+            <StreakFlame 
+              currentStreak={currentStreak} 
+              longestStreak={longestStreak} 
+              hasCheckedInToday={hasCheckedInToday} 
+            />
+          </div>
           <h1 className="font-display text-2xl sm:text-3xl md:text-4xl leading-[1.1] tracking-tight text-text">
             {greeting()},{" "}
             <span className="italic text-accent">{patient.firstName}</span>.
@@ -369,19 +384,29 @@ export default async function PatientHome() {
 
       {/* ── Top row: Health grade + Lifestyle bars + AI tips ── */}
       <StaggerContainer className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
-        {/* Health Grade */}
+        {/* Health Rings */}
         <FadeInItem className="md:col-span-3 h-full">
           <Card tone="glass" className="h-full text-center">
-            <CardContent className="py-8">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-3">
-                Health grade
+            <CardContent className="py-6 flex flex-col items-center justify-center h-full">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-4">
+                Daily Rings
               </p>
-              <div className={`inline-flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${healthGrade.color}`}>
-                <span className="font-display text-5xl font-bold">{healthGrade.grade}</span>
+              <HealthRings 
+                checkinProgress={hasCheckedInToday ? 1 : 0} 
+                adherenceProgress={latestAdherence !== null ? latestAdherence / 100 : 0.2} 
+                intakeProgress={intakeComplete / 100} 
+                size={120} 
+                strokeWidth={12} 
+              />
+              <div className="mt-5 flex gap-3 text-[10px] text-text-subtle justify-center text-left">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-accent"></div>Check-in</div>
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-highlight"></div>Adherence</div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500"></div>Intake</div>
+                </div>
               </div>
-              <p className="text-sm text-text-muted mt-4 leading-relaxed px-2">
-                {healthGrade.message}
-              </p>
             </CardContent>
           </Card>
         </FadeInItem>

@@ -336,6 +336,10 @@ model Patient {
   pdmpChecks               CuresPdmpCheck[]          @relation("PdmpPatient")
   OutboundReferral         OutboundReferral[]
 
+  // EMR-086 — Gamification Engine
+  dailyStreak  DailyCheckInStreak?
+  freezeTokens FreezeToken[]
+
   @@index([organizationId, status])
   @@index([lastName, firstName])
 }
@@ -4753,4 +4757,36 @@ model OutboundReferral {
 
   @@index([organizationId, status])
   @@index([patientId, status])
+}
+
+// --------------------------------------------------------------
+// EMR-086 — Gamification Engine (Streaks & Freeze Tokens)
+// --------------------------------------------------------------
+
+model DailyCheckInStreak {
+  id              String  @id @default(cuid())
+  patientId       String  @unique
+  currentStreak   Int     @default(0) // Consecutive days
+  longestStreak   Int     @default(0) // All-time high
+  lastCheckInDate String? // YYYY-MM-DD
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model FreezeToken {
+  id         String  @id @default(cuid())
+  patientId  String
+  source     String // e.g. "7_day_perfect_week", "admin_granted"
+  isUsed     Boolean @default(false)
+  usedOnDate String? // YYYY-MM-DD when it was applied to save a streak
+
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, isUsed])
 }
