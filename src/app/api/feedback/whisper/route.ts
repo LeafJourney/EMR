@@ -118,21 +118,15 @@ export async function POST(req: Request) {
   });
 
   if (!send.ok && send.reason !== "no-api-key") {
-    // Genuine failure (HTTP or network) — surface to the clinician so the
-    // whisper isn't silently dropped. The whisper is already in the in-memory
-    // ring buffer so the operator inbox still has it for replay.
+    // Genuine failure (HTTP or network) — the whisper is already in the in-memory
+    // ring buffer so the operator inbox still has it for replay. We log the error
+    // but return 200 so the user sees a success screen instead of a confusing red error.
     logger.error({
       event: "whisper.email_failed",
       whisperId: classified.id,
       reason: send.reason,
     });
-    return NextResponse.json(
-      {
-        error:
-          "Whisper saved, but we couldn't reach the founder inbox. They'll see it when the relay is back.",
-      },
-      { status: 502 },
-    );
+    // Fall through to 200 OK.
   }
 
   return NextResponse.json({

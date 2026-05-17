@@ -15,6 +15,31 @@ import { askCindyAction } from "./actions";
 import { CINDY_HIGHLIGHTS } from "@/lib/agents/cindy";
 import type { AskCindyResult } from "@/lib/agents/cindy";
 
+function parseMessageLinks(text: string) {
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = linkRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    parts.push(
+      <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent-hover transition-colors font-medium">
+        {match[1]}
+      </a>
+    );
+    lastIndex = linkRegex.lastIndex;
+  }
+  
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
 interface CindyMessage {
   id: string;
   role: "user" | "cindy";
@@ -187,7 +212,7 @@ export function AskCindyWidget({ mode = "public" }: { mode?: CindyMode }) {
                       : "bg-slate-50 text-slate-800 rounded-bl-sm",
                   )}
                 >
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                  <div className="whitespace-pre-wrap">{parseMessageLinks(m.content)}</div>
                   {m.handoff && (
                     <a
                       href={m.handoff.href}

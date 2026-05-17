@@ -1,0 +1,26 @@
+<h2>Leafly Integration Architecture</h2>
+<p class="subtitle">How do you envision the data flowing into Verdant Apothecary?</p>
+
+<div class="options">
+  <div class="option" data-choice="api" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Official API (Real-time)</h3>
+      <p>Direct integration with Leafly's B2B API to pull strain data dynamically.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="scraper" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Automated Scraper</h3>
+      <p>A background worker (e.g. Puppeteer/Cheerio) that crawls Leafly periodically to build our internal database.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="batch" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Batch Import (Static)</h3>
+      <p>Admin uploads CSVs or JSON files manually to seed the strain database, mapping columns to our schema.</p>
+    </div>
+  </div>
+</div>

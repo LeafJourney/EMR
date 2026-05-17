@@ -1,0 +1,26 @@
+<h2>Data Synchronization Strategy</h2>
+<p class="subtitle">How should we store the API data within Verdant Apothecary?</p>
+
+<div class="options">
+  <div class="option" data-choice="sync_and_store" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Sync & Store (Recommended)</h3>
+      <p>We fetch from Leafly API and save them as native `ChemovarRecord`s in our Postgres DB. Gives us full control, fast local searches, and lets us add custom tags.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="fetch_on_demand" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Fetch On-Demand</h3>
+      <p>We query Leafly in real-time when a user searches. No need to manage DB storage or syncing, but relies 100% on their API uptime and limits.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid / Caching</h3>
+      <p>Fetch on demand, but cache the result in our DB for 30 days. Balances storage with performance.</p>
+    </div>
+  </div>
+</div>
