@@ -18,26 +18,40 @@ export function ChatCB() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    setMessages((prev) => [...prev, { role: "user", content: input }]);
+    const userMessage = input;
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setInput("");
     setIsLoading(true);
 
-    // Mock response
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          content: "Based on recent multi-source analysis, the combined efficacy of CBD and THC in a 1:1 ratio has shown statistically significant improvements in neuropathic pain management compared to placebo.",
-          sources: ["PubMed: 12345678", "Verdant Pharmacopeia v2.1", "ClinicalTrials.gov: NCT000000"]
-        }
-      ]);
+    try {
+      const res = await fetch("/api/agents/chat-cb", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage }),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        setMessages((prev) => [...prev, { role: "ai", content: "Error: " + data.error }]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "ai",
+            content: data.content,
+            sources: data.sources,
+          }
+        ]);
+      }
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "ai", content: "Failed to connect to ChatCB service." }]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
