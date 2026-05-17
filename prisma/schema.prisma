@@ -4207,6 +4207,31 @@ model MigrationProfile {
   @@index([status])
 }
 
+// EMR-732 — Per-practice composite health score (0–100).
+//
+// Denormalized snapshot recomputed at most every 5 minutes by the
+// cron at `src/app/api/cron/practice-health/route.ts`. The HQ
+// dashboard (E1) reads `score` and `breakdown` directly off this
+// table rather than running aggregate queries at request time.
+//
+// `breakdown` is a stable JSON shape:
+//   { publish: number, agentErrors: number, billing: number, loginFailures: number }
+// Any change to the keys is a contract break for the HQ dashboard.
+//
+// PHI posture: rates and integer subscores only — never names, IDs
+// beyond `organizationId`, claim numbers, or any patient field.
+model PracticeHealth {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  score          Int
+  breakdown      Json
+  computedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([score])
+}
+
 // --------------------------------------------------------------
 // Leafly Integrations & Strain Parsers
 // --------------------------------------------------------------

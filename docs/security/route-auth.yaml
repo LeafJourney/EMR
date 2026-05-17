@@ -392,6 +392,12 @@ routes:
     owner: scheduling
     notes: "Closed via PR #243 — prod hard-refuses without CRON_SECRET, non-prod logs and falls through (200 in dev). Find-and-fix pass 4 confirmed dev fall-through; prod path is gated by NODE_ENV check."
 
+  cron/practice-health:
+    methods: [POST]
+    auth: cron
+    owner: super-admin
+    notes: "EMR-732. Bearer CRON_SECRET, prod-only fail-closed, dev fall-through (matches cron/credential-check). Per-org cooldown via PRACTICE_HEALTH_MIN_AGE_SECONDS (default 300s); batch capped at 200 organizations per invocation."
+
   # ── Token-URL access ──────────────────────────────────────
   emergency/[token]:
     methods: [GET]
