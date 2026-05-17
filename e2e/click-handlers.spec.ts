@@ -160,6 +160,14 @@ async function probeElements(page: Page): Promise<ElementProbe[]> {
         if (rect.width === 0 || rect.height === 0) return;
         const style = window.getComputedStyle(el);
         if (style.visibility === "hidden" || style.display === "none") return;
+        // Skip elements that the page has explicitly disabled for
+        // pointer input — e.g., footer column titles that are accordion
+        // toggles on mobile but render as plain headings on desktop
+        // via `sm:pointer-events-none`. Without this we record bogus
+        // "click_threw" findings because Playwright's click times out
+        // on something the page intentionally made non-interactive at
+        // the current viewport. (EMR-718)
+        if (style.pointerEvents === "none") return;
         seen.add(el);
         interactive.push(el);
       });
