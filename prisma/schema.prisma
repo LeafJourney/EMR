@@ -4946,3 +4946,65 @@ model ControllerAuditExport {
   @@index([runAt])
 }
 
+// --------------------------------------------------------------
+// EMR-734 — Anomaly Detector Framework
+// --------------------------------------------------------------
+// Detectors are pure functions that scan recent state and emit zero or more
+// `Anomaly` rows. Each row carries a severity, TTL, target `practiceId` (or
+// null for fleet-wide), a stable `kind` (the detector identifier), a human
+// `message`, a `deeplinkUrl` for the HQ surface, raw `context` JSON, and an
+// `idempotencyKey` that is unique within a kind — re-detection on the next
+// sweep is upserted, NOT duplicated.
+//
+// Lifecycle states (see src/lib/anomaly/framework.ts for the full state
+// machine):
+//   - live              → resolvedAt = null, expiresAt > now
+//   - resolved-by-ttl   → resolvedAt = null, expiresAt < now  (filtered from feed)
+//   - resolved-by-detector → resolvedAt != null               (kept for audit)
+//
+// Concrete detectors land in EMR-737 / EMR-740 / EMR-741. This model + the
+// framework + the sweep cron are the v1 substrate; the registry starts empty.
+
+enum AnomalySeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Anomaly {
+  id             String          @id @default(cuid())
+  /// Stable URL slug for the HQ feed. Unique across the table.
+  slug           String          @unique
+  /// Detector identifier — e.g. "stuck_publish", "webhook_health". Pairs
+  /// with `idempotencyKey` for upsert.
+  kind           String
+  severity       AnomalySeverity
+  /// Null = fleet-wide anomaly (e.g. webhook-provider outage). Otherwise
+  /// the practice the anomaly targets. Untyped String to match the
+  /// PracticeConfiguration precedent — no FK, since practice ids may
+  /// reference rows the anomaly detector doesn't own.
+  practiceId     String?
+  message        String
+  deeplinkUrl    String
+  context        Json
+  /// Stable key the detector generates for this anomaly instance. Same key
+  /// across sweeps = same anomaly; bumps `lastSeenAt` + `expiresAt` instead
+  /// of creating a new row. Unique within (kind, idempotencyKey).
+  idempotencyKey String
+  /// TTL in seconds, captured at emission. Used by the sweep to compute
+  /// `expiresAt = lastSeenAt + ttlSeconds` on every upsert.
+  ttlSeconds     Int
+  firstSeenAt    DateTime        @default(now())
+  lastSeenAt     DateTime        @default(now())
+  expiresAt      DateTime
+  /// Set when the detector stops emitting the anomaly on a subsequent
+  /// sweep (auto-resolve). Once set, the row is retained for the audit
+  /// trail but filtered from the active HQ feed.
+  resolvedAt     DateTime?
+
+  @@unique([kind, idempotencyKey])
+  @@index([resolvedAt, severity, lastSeenAt(sort: Desc)])
+  @@index([practiceId, resolvedAt])
+  @@index([kind, resolvedAt])
+}
+

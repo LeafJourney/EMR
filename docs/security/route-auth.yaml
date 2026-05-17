@@ -374,6 +374,13 @@ routes:
     notes: "HMAC-SHA256 timing-safe verification, fail-closed on missing secret."
 
   # ── Cron (inbound triggers) ───────────────────────────────
+  cron/anomaly-sweep:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    rate_limit_bucket: cron.anomaly-sweep
+    notes: "EMR-734. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/audit-export). Runs registered anomaly detectors and upserts results into the Anomaly table; auto-resolves rows the detector stops emitting and TTL-expires stale rows. Registry is intentionally empty until EMR-737/740/741 land — sweep returns 200 with detectorsRun=0 in the interim."
+
   cron/audit-export:
     methods: [POST]
     auth: cron
