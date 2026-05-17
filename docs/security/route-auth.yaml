@@ -56,9 +56,9 @@
 #   3. Changing a route's auth kind requires a security-review label on
 #      the PR.
 
-generated_at: 2026-05-12
-generated_against: origin/main@e2ec08a
-total_routes: 63
+generated_at: 2026-05-17
+generated_against: feature/wave-9-sprint@709f969
+total_routes: 86
 
 routes:
 
@@ -263,22 +263,22 @@ routes:
     methods: [POST]
     auth: needs_review
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "🚨 Patient-bound POST, no auth detected. Likely needs auth."
+    review_due: 2026-05-30
+    notes: "🚨 Patient-bound POST, no auth detected. Likely needs auth. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680); will be addressed in the leafmart auth pass alongside questions/reviews."
 
   leafmart/products/[slug]/questions:
     methods: [POST]
     auth: needs_review
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "Posting a question — anonymous OK or requires user? Confirm."
+    review_due: 2026-05-30
+    notes: "Posting a question — anonymous OK or requires user? Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
 
   leafmart/products/[slug]/reviews:
     methods: [POST]
     auth: needs_review
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "Posting a review — likely require auth + verified-purchase. Confirm."
+    review_due: 2026-05-30
+    notes: "Posting a review — likely require auth + verified-purchase. Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
 
   leafmart/search:
     methods: [GET]
@@ -477,3 +477,118 @@ routes:
     auth: cron
     owner: platform-security
     notes: "Cron daemon for syncing wearables."
+
+  # ── Wave 9 — clinical & integrations scaffolds ────────────
+  # Added 2026-05-17 with EMR-679/EMR-680 (PR #337). Routes are scaffolded
+  # behind feature flags; auth posture documented here, with needs_review
+  # flagged for any handler whose gate is incomplete (Bearer-prefix only,
+  # missing secret comparison, or no auth at all).
+
+  agents/chat-cb:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-679 scaffold. Public LLM passthrough (OpenRouter) — no auth, no rate limit. Decide intended audience (Education tab public vs providers-only) and add agentInvocationLimiter before broad exposure. $$ risk."
+
+  agents/claims-scrubber:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-045 scaffold. Background agent mutates Claim rows; currently no auth gate. Should run behind CRON_SECRET (match inventory-restock pattern) before merge to prod."
+
+  agents/clinical-decision-support:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-055 scaffold. Reads PHI (allergies, contraindications). Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Tighten to either requireApiAuth or a compared secret."
+
+  agents/inventory-restock:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-052 scaffold. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/reminders)."
+
+  agents/lab-results-parser:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    notes: "EMR-056 scaffold. Inbound from lab provider. Bearer LAB_PARSER_SECRET check, prod-only. Confirm secret-rotation policy when wiring real LabCorp/Quest feeds."
+
+  agents/waitlist-manager:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-043 scaffold. Bearer CRON_SECRET check, prod-only. Notifies waitlisted patients of recent cancellations."
+
+  audit/dea-logs:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-041 scaffold. Uses requireUser. DEA controlled-substance audit log writer."
+
+  cron/leafly-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-05-30
+    notes: "Wave-9 scaffold. POST handler has no secret check; sibling cron/sync-leafly does. Either fold into sync-leafly or add CRON_SECRET gate."
+
+  cron/sync-leafly:
+    methods: [GET]
+    auth: cron
+    owner: integrations
+    notes: "Wave-9 scaffold. Bearer CRON_SECRET compared on every request — fail-closed when env unset matches recommended pattern."
+
+  integrations/fhir/ingest:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-013 scaffold. Bearer FHIR_INGEST_SECRET check, prod-only. Inbound HL7/FHIR Bundle from Epic/Cerner."
+
+  integrations/prohub/sync:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-053 scaffold. Bearer PROHUB_SYNC_SECRET check, prod-only. Inbound product/sales sync from ProHub dispensaries."
+
+  integrations/referrals/transmit:
+    methods: [POST]
+    auth: required
+    owner: integrations
+    notes: "EMR-061 scaffold. Uses requireUser. Provider-initiated outbound referral (CCDA + Direct Secure Messaging stub)."
+
+  integrations/surescripts/transmit:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-05-30
+    notes: "EMR-015 scaffold. Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Strengthen before any real e-prescribe traffic."
+
+  integrations/twilio/video-token:
+    methods: [GET]
+    auth: required
+    owner: integrations
+    notes: "EMR-024 scaffold. Uses requireUser. Issues a Twilio access token tied to user.id."
+
+  mobile/biometrics/sync:
+    methods: [POST]
+    auth: needs_review
+    owner: mobile
+    review_due: 2026-05-30
+    notes: "EMR-051 scaffold. Only checks Authorization starts with 'Bearer ' — no JWT validation. Must verify token before accepting biometric writes from the mobile app."
+
+  patient/intake/submit:
+    methods: [POST]
+    auth: required
+    owner: scheduling
+    notes: "EMR-036 scaffold. Uses requireUser; also asserts the encounter belongs to the current patient before writing intake."
+
+  reports/mips-export:
+    methods: [GET]
+    auth: needs_review
+    owner: research
+    review_due: 2026-05-30
+    notes: "EMR-042 scaffold. Returns aggregated PHI-derived MIPS metrics as XML; currently no auth gate. Add requireApiAuth (likely super_admin or org_admin scope) before exposing."
