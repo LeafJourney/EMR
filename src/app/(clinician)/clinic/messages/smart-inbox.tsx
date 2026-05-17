@@ -830,9 +830,6 @@ export function SmartInboxView({
             </div>
           )}
         </Card>
-            </div>
-          )}
-        </Card>
       </div>
 
       {/* Gmail-style floating compose window */}

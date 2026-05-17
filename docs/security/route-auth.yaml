@@ -58,7 +58,7 @@
 
 generated_at: 2026-05-17
 generated_against: feature/wave-9-sprint@709f969
-total_routes: 86
+total_routes: 90
 
 routes:
 
@@ -592,3 +592,27 @@ routes:
     owner: research
     review_due: 2026-05-30
     notes: "EMR-042 scaffold. Returns aggregated PHI-derived MIPS metrics as XML; currently no auth gate. Add requireApiAuth (likely super_admin or org_admin scope) before exposing."
+
+  agents/billing-coder:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-032 scaffold. Bearer CRON_SECRET check, prod-only. Background coder that drafts Claim rows from signed encounter notes."
+
+  agents/prior-auth:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-046 scaffold. Bearer CRON_SECRET check, prod-only. Generates draft PriorAuthorization records when a medication triggers payer rules."
+
+  cron/outreach:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-033 scaffold. Bearer CRON_SECRET check, prod-only. Renewal/wellness outreach to patients with expiring qualifications."
+
+  mobile/kiosk/check-in:
+    methods: [POST]
+    auth: webhook
+    owner: mobile
+    notes: "EMR-029 scaffold. Bearer KIOSK_SECRET check, prod-only. Inbound check-in events from the front-desk iPad kiosk."
