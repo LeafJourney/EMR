@@ -40,16 +40,38 @@ export async function generateStaticParams() {
   }
 }
 
+// Synthesize a CATEGORY_META-shaped record from the `LeafmartCategory`
+// returned by `getCategories()`. The `/leafmart` hub links to every
+// category slug that the data source advertises (anxiety, edibles,
+// best-sellers, ...), but the curated CATEGORY_META map above only
+// covers the original five shelves — so anything new the data layer
+// adds used to 404. This keeps the curated headlines for the hero
+// shelves and falls back to the data-driven name + description for
+// the rest. (EMR-711)
+function synthCatFromInfo(
+  info: { name: string; sub: string; bg: string },
+): { title: string; headline: string; accent: string; bg: string } {
+  return {
+    title: info.name,
+    headline: info.sub,
+    accent: info.name.toLowerCase(),
+    bg: info.bg,
+  };
+}
+
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const cat = CATEGORY_META[params.slug];
-  if (!cat) return { title: "Category" };
+  // Metadata can't await DB; fall back to a slug-derived title rather
+  // than the bare "Category" string when the curated map misses.
+  const title = cat?.title ?? params.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const headline = cat?.headline ?? `Browse our ${title.toLowerCase()} shelf.`;
   return {
-    title: `${cat.title} Shelf`,
-    description: cat.headline,
+    title: `${title} Shelf`,
+    description: headline,
     alternates: { canonical: absoluteUrl(`/leafmart/category/${params.slug}`) },
     openGraph: {
-      title: `${cat.title} — Leafmart`,
-      description: cat.headline,
+      title: `${title} — Leafmart`,
+      description: headline,
       url: absoluteUrl(`/leafmart/category/${params.slug}`),
       type: "website",
       siteName: "Leafmart",
@@ -58,15 +80,19 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 }
 
 export default async function CategoryPage({ params }: { params: { slug: string } }) {
-  const cat = CATEGORY_META[params.slug];
-  if (!cat) notFound();
-
   const lookupSlug = CATEGORY_SLUG_ALIASES[params.slug] ?? params.slug;
   const [products, categories] = await Promise.all([
     getProductsByCategory(lookupSlug),
     getCategories(),
   ]);
   const catInfo = categories.find((c) => c.slug === lookupSlug);
+
+  // Curated metadata for the original five shelves takes priority; any
+  // newer slug that the data layer advertises gets a synthesized record
+  // built from the LeafmartCategory row. Only 404 when both the curated
+  // map AND the data layer don't know about the slug.
+  const cat = CATEGORY_META[params.slug] ?? (catInfo ? synthCatFromInfo(catInfo) : null);
+  if (!cat) notFound();
 
   const breadcrumbs = breadcrumbList([
     { name: "Leafmart", url: "/leafmart" },
