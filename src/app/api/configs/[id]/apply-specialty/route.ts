@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { applyTemplateDefaults } from "@/lib/specialty-templates/registry";
+import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,9 @@ const bodySchema = z.object({
   slug: z.string().min(1).max(100),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: { id: string } },
-) {
+export const POST = withAdminMutation<{ id: string }>(
+  { bucket: "admin.config.apply_specialty", role: "implementation_admin" },
+  async (req, { params }) => {
   const draftId = params.id;
   if (!draftId) {
     return NextResponse.json({ error: "missing_draft_id" }, { status: 400 });
@@ -67,4 +67,5 @@ export async function POST(
     draftId,
     applied: defaults,
   });
-}
+  },
+);

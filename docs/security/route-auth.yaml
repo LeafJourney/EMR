@@ -7,14 +7,21 @@
 #
 # Schema:
 #   routes:
-#     <route-path>:           # Path relative to /api, e.g. "admin/super-admins"
-#       methods: [GET, POST]  # Methods this route handles
-#       auth: <kind>          # See "Auth kinds" below
-#       owner: <team>         # Team responsible — drives PR review routing
-#       notes: <string>       # Optional — anything a reviewer needs to know
-#       review_due: <date>    # Optional — for routes flagged needs_review,
-#                             #   the date by which the classification must
-#                             #   be resolved.
+#     <route-path>:               # Path relative to /api, e.g. "admin/super-admins"
+#       methods: [GET, POST]      # Methods this route handles
+#       auth: <kind>              # See "Auth kinds" below
+#       owner: <team>             # Team responsible — drives PR review routing
+#       notes: <string>           # Optional — anything a reviewer needs to know
+#       review_due: <date>        # Optional — for routes flagged needs_review,
+#                                 #   the date by which the classification must
+#                                 #   be resolved.
+#       rate_limit_bucket: <name> # Optional — bucket label passed to
+#                                 #   withAdminMutation (EMR-728). Required de
+#                                 #   facto for every mutation route under
+#                                 #   /api/admin/** and /api/configs/**;
+#                                 #   scripts/check-admin-mutation-coverage.mjs
+#                                 #   enforces the helper wrapping at the source
+#                                 #   level. Field here exists for legibility.
 #
 # Auth kinds:
 #   required        — Authenticated user is a hard prerequisite.
@@ -69,13 +76,15 @@ routes:
     methods: [GET, POST]
     auth: required
     owner: platform-security
-    notes: "super_admin role. CSRF defense via /api/admin/** origin middleware."
+    notes: "super_admin role. CSRF defense via /api/admin/** origin middleware. POST behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.super_admin.grant
 
   admin/super-admins/[userId]:
     methods: [DELETE]
     auth: required
     owner: platform-security
-    notes: "super_admin role. Last-admin guard + Serializable txn (PR #225)."
+    notes: "super_admin role. Last-admin guard + Serializable txn (PR #225). DELETE behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.super_admin.revoke
 
   admin/practices:
     methods: [GET]
@@ -87,7 +96,8 @@ routes:
     methods: [POST]
     auth: required
     owner: platform-security
-    notes: "super_admin role. Requires status=published guard (PR #225)."
+    notes: "super_admin role. Requires status=published guard (PR #225). POST behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.switch_specialty
 
   # ── Onboarding controller (EMR-428) ───────────────────────
   audit:
@@ -100,32 +110,43 @@ routes:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.draft_create
 
   configs/[id]:
     methods: [GET, PATCH]
     auth: required
     owner: onboarding-controller
+    notes: "PATCH wrapped by withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.update
 
   configs/[id]/publish:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.publish
 
   configs/[id]/archive:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.archive
 
   configs/[id]/upgrade-template:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.upgrade_template
 
   configs/[id]/apply-specialty:
     methods: [POST]
     auth: required
     owner: onboarding-controller
-    notes: "Closed 2026-05-12 via find-and-fix pass 4 evidence. Probe returned 403 FORBIDDEN — middleware coarse-gates /api/configs as a controller surface, route handler trusts middleware."
+    notes: "implementation_admin via withAdminMutation (EMR-728). Earlier 2026-05-12 entry noted middleware coarse-gating; the route is now self-gated too."
+    rate_limit_bucket: admin.config.apply_specialty
 
   configs/by-practice/[practiceId]:
     methods: [GET]

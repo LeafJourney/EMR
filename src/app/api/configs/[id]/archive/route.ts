@@ -4,20 +4,15 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
-import { requireImplementationAdmin } from "@/lib/auth/super-admin";
+import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { logControllerAction } from "@/lib/auth/audit-stub";
-import { withAuthErrors, notFound } from "../../_helpers";
+import { notFound } from "../../_helpers";
 
 export const runtime = "nodejs";
 
-interface Ctx {
-  params: { id: string };
-}
-
-export async function POST(_req: Request, { params }: Ctx) {
-  return (await withAuthErrors(async () => {
-    const admin = await requireImplementationAdmin();
-
+export const POST = withAdminMutation<{ id: string }>(
+  { bucket: "admin.config.archive", role: "implementation_admin" },
+  async (_req, { actor: admin, params }) => {
     const existing = await prisma.practiceConfiguration.findUnique({
       where: { id: params.id },
     });
@@ -40,5 +35,5 @@ export async function POST(_req: Request, { params }: Ctx) {
     });
 
     return NextResponse.json(archived);
-  })) as NextResponse;
-}
+  },
+);
