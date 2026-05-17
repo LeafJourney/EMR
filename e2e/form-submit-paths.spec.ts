@@ -70,6 +70,23 @@ const PROBES: SubmitProbe[] = [
     submitSelector: 'button[type="submit"]',
   },
   {
+    // SiteFooter newsletter is rendered on every public page. Probing it
+    // from the homepage is enough — the same component is mounted
+    // site-wide and a regression in one place is a regression in all.
+    // (EMR-716 — silent setTimeout fake-success caught by pass 8.)
+    url: "/",
+    expectedPostMatch: "/api/contact",
+    fill: async (page) => {
+      // Scope to the footer to avoid matching any hero-section email
+      // capture that might exist on the homepage.
+      await page
+        .locator("footer")
+        .locator('input[type="email"]')
+        .fill(`${STAMP}@example.com`);
+    },
+    submitSelector: 'footer form button[type="submit"]',
+  },
+  {
     url: "/foundation",
     expectedPostMatch: "/api/foundation/grants",
     fill: async (page) => {
