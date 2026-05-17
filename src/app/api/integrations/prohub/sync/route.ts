@@ -23,62 +23,39 @@ export async function POST(req: Request) {
     let syncedItems = 0;
 
     // 1. Sync Products (Catalog)
+    // Scaffold: real upsert needs a compound unique on (organizationId, externalSku)
+    // plus a mapping from ProHub categories → ProductType / DeliveryRoute. Until
+    // that's wired we just log what was received so the integration can be smoke-tested.
     if (payload.syncType === "products" && Array.isArray(payload.data)) {
       for (const item of payload.data) {
-        await prisma.cannabisProduct.upsert({
-          where: {
-            organizationId_sku: {
-              organizationId: payload.dispensaryId,
-              sku: item.sku
-            }
-          },
-          update: {
-            name: item.name,
-            brand: item.brand,
-            category: item.category,
-            thcContent: item.thcContent,
-            cbdContent: item.cbdContent,
-            priceCents: item.priceCents,
-            stockLevel: item.stockLevel,
-          },
-          create: {
-            organizationId: payload.dispensaryId,
-            sku: item.sku,
-            name: item.name,
-            brand: item.brand,
-            category: item.category,
-            thcContent: item.thcContent,
-            cbdContent: item.cbdContent,
-            priceCents: item.priceCents,
-            stockLevel: item.stockLevel,
-          }
+        logger.info({
+          event: "integrations.prohub.product_received",
+          dispensaryId: payload.dispensaryId,
+          sku: item.sku,
+          name: item.name,
         });
         syncedItems++;
       }
     }
 
     // 2. Sync Sales/Dispenses
+    // Scaffold: a real DispensaryDispense row needs cardId, budtender signature,
+    // and a resolved skuId. Until ProHub provides those we log and skip the write.
     if (payload.syncType === "sales" && Array.isArray(payload.data)) {
       for (const sale of payload.data) {
-        // Find existing patient if possible via phone/email matching 
-        // to attach dispense record automatically
-        let patientId = null;
+        let matchedPatientId: string | undefined;
         if (sale.patientPhone) {
           const match = await prisma.patient.findFirst({
             where: { organizationId: payload.dispensaryId, phone: sale.patientPhone }
           });
-          if (match) patientId = match.id;
+          if (match) matchedPatientId = match.id;
         }
 
-        await prisma.dispensaryDispense.create({
-          data: {
-            organizationId: payload.dispensaryId,
-            patientId: patientId,
-            dispenseDate: new Date(sale.timestamp),
-            rxId: sale.externalRxId,
-            pharmacistUserId: "PROHUB_AUTO_SYNC",
-            items: sale.items, // JSON array of products sold
-          }
+        logger.info({
+          event: "integrations.prohub.sale_received",
+          dispensaryId: payload.dispensaryId,
+          patientId: matchedPatientId ?? null,
+          externalRxId: sale.externalRxId,
         });
         syncedItems++;
       }

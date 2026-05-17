@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 
@@ -25,27 +26,42 @@ export async function POST(req: Request) {
     const { patientId, labDocumentId, extractedMarkers } = payload;
     let markersSaved = 0;
 
-    // 1. Process Extracted Markers
-    // extractedMarkers is expected to be an array of { code, name, value, unit, referenceRange, isAbnormal }
-    for (const marker of extractedMarkers) {
-      await prisma.labResult.create({
-        data: {
-          patientId: patientId,
-          documentId: labDocumentId, // Link back to the original PDF
-          testName: marker.name,
-          loincCode: marker.code,
-          value: String(marker.value),
-          unit: marker.unit,
-          referenceRange: marker.referenceRange,
-          isAbnormal: marker.isAbnormal || false,
-          collectedAt: new Date(payload.collectedAt || Date.now()),
-        }
-      });
-      markersSaved++;
+    // 1. Persist the parsed panel. LabResult stores the full marker set as JSON
+    // under `results`; per-marker rows live inside that blob, indexed by name.
+    // extractedMarkers expected shape: { code, name, value, unit, referenceRange, isAbnormal }
+    const patient = await prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { organizationId: true },
+    });
+    if (!patient) {
+      return NextResponse.json({ error: "Patient not found" }, { status: 404 });
     }
 
-    // 2. Alert Provider if High Priority/Abnormal
+    const resultsByMarker: Record<string, unknown> = {};
+    for (const marker of extractedMarkers) {
+      resultsByMarker[marker.name] = {
+        loincCode: marker.code,
+        value: marker.value,
+        unit: marker.unit,
+        referenceRange: marker.referenceRange,
+        abnormal: marker.isAbnormal || false,
+      };
+      markersSaved++;
+    }
     const hasAbnormal = extractedMarkers.some((m: any) => m.isAbnormal);
+
+    await prisma.labResult.create({
+      data: {
+        organizationId: patient.organizationId!,
+        patientId,
+        panelName: payload.panelName || `Lab document ${labDocumentId}`,
+        receivedAt: new Date(payload.collectedAt || Date.now()),
+        results: resultsByMarker as Prisma.InputJsonValue,
+        abnormalFlag: hasAbnormal,
+      },
+    });
+
+    // 2. Alert Provider if High Priority/Abnormal
     if (hasAbnormal) {
       // Create a task or message in the Provider's inbox
       logger.info({ event: "agents.lab_parser.abnormal_flagged", patientId, labDocumentId });

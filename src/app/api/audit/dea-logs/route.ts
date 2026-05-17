@@ -21,11 +21,11 @@ export async function POST(req: Request) {
     const log = await prisma.auditLog.create({
       data: {
         organizationId: user.organizationId!,
-        userId: user.id,
-        action: `DEA_CONTROLLED_SUBSTANCE_${payload.action}`, // e.g., PRESCRIBED, DISPENSED
-        entity: "Medication",
-        entityId: payload.medicationId || "unknown",
-        details: {
+        actorUserId: user.id,
+        action: `DEA_CONTROLLED_SUBSTANCE_${payload.action}`,
+        subjectType: "Medication",
+        subjectId: payload.medicationId || "unknown",
+        metadata: {
           patientId: payload.patientId,
           medication: payload.medicationName,
           quantity: payload.quantity,

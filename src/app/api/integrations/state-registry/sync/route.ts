@@ -50,9 +50,9 @@ export async function POST(req: Request) {
       data: {
         organizationId: dispenseRecord.organizationId,
         action: `STATE_REPORTING_SUCCESS_${targetSystem.toUpperCase()}`,
-        entity: "Dispense",
-        entityId: dispenseRecord.id,
-        details: { receiptId: externalReceiptId }
+        subjectType: "Dispense",
+        subjectId: dispenseRecord.id,
+        metadata: { receiptId: externalReceiptId }
       }
     });
 

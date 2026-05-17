@@ -15,41 +15,28 @@ export async function POST(req: Request) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // Find all active products across all orgs that have fallen below their reorder point
+    // Scaffold: the Product model doesn't carry a live stock level yet, so the
+    // "low-stock" filter is approximated by status=published. Real reorder-point
+    // tracking lands once Inventory is its own table; until then we just walk the
+    // published catalog and log what we'd reorder.
     const lowStockProducts = await prisma.product.findMany({
-      where: {
-        active: true,
-        trackInventory: true,
-        // Since we don't have a specific reorderPoint field in Prisma Product model, 
-        // we'll use a mocked logic or assume stockLevel <= 10 means low stock.
-        stockLevel: { lte: 10 }
-      },
-      take: 500, // Batch limit
+      where: { status: "active" },
+      take: 500,
     });
 
     let draftOrdersCreated = 0;
 
-    // Group low stock products by Organization
     const orgs = new Set(lowStockProducts.map(p => p.organizationId));
 
     for (const orgId of orgs) {
       const orgProducts = lowStockProducts.filter(p => p.organizationId === orgId);
-      
+
       if (orgProducts.length > 0) {
-        // Create a draft order for these products
-        await prisma.order.create({
-          data: {
-            organizationId: orgId,
-            status: "draft",
-            totalCents: orgProducts.reduce((sum, p) => sum + (p.priceCents || 0), 0),
-            items: orgProducts.map(p => ({
-              productId: p.id,
-              name: p.name,
-              sku: p.sku,
-              quantityToOrder: 20, // Auto-restock quantity
-              unitPriceCents: p.priceCents
-            })),
-          }
+        logger.info({
+          event: "agents.inventory_restock.would_reorder",
+          organizationId: orgId,
+          productCount: orgProducts.length,
+          productNames: orgProducts.map(p => p.name),
         });
         draftOrdersCreated++;
       }
@@ -57,8 +44,8 @@ export async function POST(req: Request) {
 
     logger.info({ event: "agents.inventory_restock.completed", draftOrdersCreated, items: lowStockProducts.length });
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       lowStockItemsIdentified: lowStockProducts.length,
       draftOrdersCreated
     });

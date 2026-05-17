@@ -50,9 +50,10 @@ export async function POST(req: Request) {
         data: {
           organizationId: patient.organizationId,
           name: "Annual Renewal Reminder",
-          audienceSize: 1,
-          status: "sent",
-          content: "Your Leafjourney medical card expires soon. Click here to schedule a renewal."
+          channel: "email",
+          bodyTemplate: "Your Leafjourney medical card expires soon. Click here to schedule a renewal.",
+          status: "completed",
+          createdById: "system",
         }
       });
     }

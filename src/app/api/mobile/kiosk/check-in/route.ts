@@ -21,11 +21,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // 1. Update the Encounter Status to "arrived"
+    // 1. Move the Encounter into the active queue.
+    // Schema's EncounterStatus enum doesn't have a dedicated `arrived` value yet;
+    // `in_progress` is the closest fit until the schema gains an explicit waiting-room state.
     const encounter = await prisma.encounter.update({
       where: { id: payload.encounterId },
       data: {
-        status: "arrived", // Moves them from scheduled to the active queue
+        status: "in_progress",
         updatedAt: new Date()
       }
     });

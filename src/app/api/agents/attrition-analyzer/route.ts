@@ -55,9 +55,10 @@ export async function POST(req: Request) {
           data: {
             organizationId: patient.organizationId,
             name: "High Risk Retention Check-in",
-            audienceSize: 1,
+            channel: "email",
+            bodyTemplate: "Hi there, we noticed you missed a recent appointment. We care about your progress. Please call us to reschedule.",
             status: "draft",
-            content: "Hi there, we noticed you missed a recent appointment. We care about your progress. Please call us to reschedule."
+            createdById: "system",
           }
         });
         

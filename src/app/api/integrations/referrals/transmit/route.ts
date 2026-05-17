@@ -23,12 +23,14 @@ export async function POST(req: Request) {
       data: {
         organizationId: user.organizationId!,
         patientId: payload.patientId,
-        referringProviderId: payload.referringProviderId || user.id, // The current clinician
-        targetNpi: payload.targetProviderNpi,
-        targetName: payload.targetProviderName || "External Specialist",
-        targetSpecialty: payload.targetSpecialty || "Unknown",
+        direction: "outbound",
+        referringProviderName: payload.referringProviderName || `${user.firstName} ${user.lastName}`.trim() || "Unknown Provider",
+        referringPracticeName: payload.referringPracticeName || "Leafjourney",
+        referredToProviderName: payload.targetProviderName || "External Specialist",
+        referredToSpecialty: payload.targetSpecialty || "Unknown",
+        referredToPracticeName: payload.targetPracticeName || "External Practice",
         reason: payload.reasonForReferral,
-        status: "pending_transmission"
+        status: "pending_transmission",
       }
     });
 

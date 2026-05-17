@@ -15,10 +15,12 @@ export async function GET(req: Request) {
     }
 
     // Extrapolate data from completed encounters
+    // EncounterStatus.complete is the post-charting terminal state — the closest
+    // analog to a "signed" encounter until a separate signature flag is modeled.
     const encounters = await prisma.encounter.findMany({
       where: {
         organizationId: orgId,
-        status: "signed",
+        status: "complete",
       },
       include: {
         patient: { select: { id: true, dateOfBirth: true } }

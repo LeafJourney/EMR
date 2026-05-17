@@ -32,10 +32,13 @@ export async function POST(req: Request) {
         data: {
           organizationId: payload.organizationId,
           patientId: payload.patientId,
+          payerName: "Mock Payer",
           payerId: "PAYER-MOCK",
-          requestType: "medication",
-          serviceOrDrugCode: payload.medicationName,
-          status: "draft"
+          status: "draft",
+          packetPayload: {
+            requestType: "medication",
+            serviceOrDrugCode: payload.medicationName,
+          },
         }
       });
 

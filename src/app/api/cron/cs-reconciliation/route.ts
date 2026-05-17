@@ -17,20 +17,21 @@ export async function POST(req: Request) {
 
     logger.info({ event: "cron.cs_reconciliation.started" });
 
-    // 1. Fetch products tracking inventory
+    // 1. Fetch products to reconcile. CannabisProduct doesn't carry stock-on-hand —
+    // scaffold just walks active products and the real stock query gets layered in later.
     const trackedProducts = await prisma.cannabisProduct.findMany({
-      where: { stockLevel: { gt: 0 } },
+      where: { active: true },
       take: 200
     });
 
     let flagsGenerated = 0;
 
     for (const product of trackedProducts) {
-      // 2. Fetch sum of dispensed quantities for this product in the last 24h
-      const dispensedSinceYesterday = await prisma.dispensaryDispense.findMany({
+      // 2. Fetch dispenses in the last 24h. Real reconciliation needs to filter by
+      // skuId / productSku so per-product totals roll up; placeholder just queries the window.
+      await prisma.dispensaryDispense.findMany({
         where: {
-          dispenseDate: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-          // In a real query, we'd filter by the JSON items array or a related DispenseItem table
+          dispensedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
         }
       });
 
@@ -43,9 +44,9 @@ export async function POST(req: Request) {
           data: {
             organizationId: product.organizationId,
             action: "INVENTORY_DISCREPANCY_DETECTED",
-            entity: "CannabisProduct",
-            entityId: product.id,
-            details: { sku: product.sku, expected: 100, actual: 95 }
+            subjectType: "CannabisProduct",
+            subjectId: product.id,
+            metadata: { name: product.name, expected: 100, actual: 95 }
           }
         });
         flagsGenerated++;

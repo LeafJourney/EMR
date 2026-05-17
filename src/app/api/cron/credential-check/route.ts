@@ -48,9 +48,9 @@ export async function POST(req: Request) {
           data: {
             organizationId: provider.organizationId,
             action: "CREDENTIAL_VERIFICATION_FAILED",
-            entity: "Provider",
-            entityId: provider.id,
-            details: { npi: provider.npi, reason: "Disciplinary action or inactive license" }
+            subjectType: "Provider",
+            subjectId: provider.id,
+            metadata: { npi: provider.npi, reason: "Disciplinary action or inactive license" }
           }
         });
 

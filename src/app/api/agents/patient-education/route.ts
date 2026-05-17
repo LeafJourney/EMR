@@ -52,10 +52,10 @@ It was great seeing you today! Here is a quick summary of your visit:
         organizationId: encounter.organizationId,
         patientId: encounter.patientId,
         encounterId: encounter.id,
-        title: "Post-Visit Summary & Education",
-        type: "clinical",
-        url: "simulated_storage_url",
-        // In reality, we might store the markdown content directly or generate a PDF
+        originalName: "Post-Visit Summary & Education.md",
+        mimeType: "text/markdown",
+        sizeBytes: mockPatientSummary.length,
+        storageKey: "simulated_storage_url",
       }
     });
 

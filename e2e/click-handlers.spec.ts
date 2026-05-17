@@ -174,11 +174,12 @@ async function probeElements(page: Page): Promise<ElementProbe[]> {
       const parts: string[] = [];
       let node: HTMLElement | null = el;
       while (node && node.tagName !== "HTML") {
-        const parent = node.parentElement;
+        const parent: HTMLElement | null = node.parentElement;
         if (!parent) break;
-        const tag = node.tagName.toLowerCase();
-        const sibs = Array.from(parent.children).filter(
-          (c) => c.tagName === node!.tagName,
+        const currentTag: string = node.tagName;
+        const tag = currentTag.toLowerCase();
+        const sibs: Element[] = Array.from(parent.children).filter(
+          (c: Element) => c.tagName === currentTag,
         );
         const idx = sibs.indexOf(node) + 1;
         parts.unshift(sibs.length > 1 ? `${tag}:nth-of-type(${idx})` : tag);

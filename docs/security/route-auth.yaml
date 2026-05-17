@@ -58,7 +58,7 @@
 
 generated_at: 2026-05-17
 generated_against: feature/wave-9-sprint@709f969
-total_routes: 100
+total_routes: 106
 
 routes:
 
@@ -676,3 +676,39 @@ routes:
     auth: webhook
     owner: integrations
     notes: "EMR-066 scaffold. Bearer IOT_WEBHOOK_SECRET check, prod-only. Inbound vitals from connected medical devices (Validic-style aggregators)."
+
+  agents/attrition-analyzer:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-079 scaffold. Bearer CRON_SECRET check, prod-only. Scores patient churn risk from cancellation history."
+
+  agents/inbox-triage:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    notes: "EMR-080 scaffold. Bearer WEBHOOK_SECRET check, prod-only. Categorizes inbound patient messages and tags urgency."
+
+  agents/pgx-risk-scorer:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-077 scaffold. Bearer CRON_SECRET check, prod-only. Cross-references genetic markers against active meds."
+
+  agents/protocol-generator:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-075 scaffold. Bearer CRON_SECRET check, prod-only. Drafts 6-month step-therapy protocols from a primary diagnosis."
+
+  cron/cs-reconciliation:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-076 scaffold. Bearer CRON_SECRET check, prod-only. Nightly controlled-substance vault-vs-dispense reconciliation."
+
+  integrations/state-registry/sync:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-078 scaffold. Bearer STATE_REGISTRY_SECRET check, prod-only. Outbound METRC/BioTrack/PDMP compliance reporting."

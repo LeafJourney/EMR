@@ -670,7 +670,7 @@ export function SmartInboxView({
                         messageThreadId={selectedTriage.threadId}
                         counterpartyName={selectedThread.patientName}
                       />
-                      <Button variant="outline" size="sm" onClick={() => alert("Thread exported to PDF.")}>
+                      <Button variant="ghost" size="sm" onClick={() => alert("Thread exported to PDF.")}>
                         Export
                       </Button>
                       <Button variant="secondary" size="sm" onClick={() => alert("Thread marked as resolved.")}>

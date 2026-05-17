@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         // 3. Draft the appeal letter and link it to the claim
         await prisma.claim.update({
           where: { id: claim.id },
-          data: { status: "appeal_drafted" }
+          data: { status: "appealed" }
         });
 
         logger.info({ 
