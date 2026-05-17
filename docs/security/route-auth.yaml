@@ -353,6 +353,12 @@ routes:
     notes: "HMAC-SHA256 timing-safe verification, fail-closed on missing secret."
 
   # ── Cron (inbound triggers) ───────────────────────────────
+  cron/audit-export:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-750. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/credential-check). Exports previous UTC day of ControllerAuditLog as gzipped JSONL to audit/controller/YYYY/MM/DD.jsonl.gz. Idempotent via ControllerAuditExport.coveredDate unique key."
+
   cron/coa-tracker:
     methods: [POST]
     auth: cron

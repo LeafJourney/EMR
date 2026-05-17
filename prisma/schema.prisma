@@ -4854,4 +4854,31 @@ model PatientBadge {
   @@unique([patientId, badgeId])
 }
 
+// EMR-750 — verification ledger for the nightly ControllerAuditLog JSONL
+// export. One row per (covered) UTC day. Re-running the export for the
+// same day upserts the row, so `coveredDate` is the natural primary key
+// for idempotency. Stats are content-addressable: `sha256` is over the
+// gzipped bytes uploaded to `storageKey`, so compliance reviewers can
+// verify the artefact hasn't drifted by re-hashing the object.
+//
+// Failure case: if the upload fails we do NOT write a row here — a missing
+// row for a date IS the alarm signal that the export didn't land. The
+// cron route also emits a structured error log (Sentry-bound downstream).
+model ControllerAuditExport {
+  id          String   @id @default(cuid())
+  /// UTC calendar day covered by this export (midnight UTC).
+  coveredDate DateTime @unique
+  /// Object-storage key, e.g. "audit/controller/2026/05/17.jsonl.gz".
+  storageKey  String
+  /// Number of ControllerAuditLog rows included in the export.
+  rowCount    Int
+  /// Size of the uploaded gzipped artefact in bytes.
+  byteCount   Int
+  /// Hex-encoded SHA-256 of the uploaded gzipped artefact.
+  sha256      String
+  /// When this export run completed (and uploaded).
+  runAt       DateTime @default(now())
+
+  @@index([runAt])
+}
 
