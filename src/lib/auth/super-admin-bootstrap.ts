@@ -25,6 +25,10 @@ import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 import { runBootstrapAllowlistAudit } from "./bootstrap-audit";
 import type { AuthedUser } from "./session";
+import {
+  clerkUserHasMfa,
+  getCurrentClerkUserForMfa,
+} from "./super-admin-mfa";
 
 export const LEAFJOURNEY_HQ_SLUG = "leafjourney-hq";
 const LEAFJOURNEY_HQ_NAME = "LeafJourney HQ";
@@ -99,6 +103,27 @@ export async function bootstrapSuperAdminIfAllowlisted(
   const allowlist = bootstrapAllowlist();
   if (allowlist.size === 0) return false;
   if (!allowlist.has(user.email.toLowerCase())) return false;
+
+  // EMR-725 — Refuse to promote without an enrolled second factor. Fresh
+  // bootstrap grants get no grace window (see super-admin-mfa.ts header).
+  // The check is skipped in non-prod environments that explicitly disable
+  // MFA enforcement, matching `mfaEnforcementDisabled()` semantics.
+  const mfaEnforced =
+    process.env.NODE_ENV === "production" ||
+    process.env.SUPER_ADMIN_MFA_ENFORCE !== "0";
+  if (mfaEnforced) {
+    const clerkUser = await getCurrentClerkUserForMfa();
+    if (!clerkUserHasMfa(clerkUser)) {
+      logger.warn({
+        event: "auth.bootstrap.refused_no_mfa",
+        userId: user.id,
+        email: user.email,
+        message:
+          "Allowlisted user attempted bootstrap promotion without an enrolled second factor.",
+      });
+      return false;
+    }
+  }
 
   const hqOrgId = await ensureLeafjourneyHq();
   await prisma.membership.upsert({

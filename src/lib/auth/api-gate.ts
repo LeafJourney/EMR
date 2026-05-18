@@ -36,6 +36,10 @@ import type { Role } from "@prisma/client";
 import { logger } from "@/lib/observability/log";
 import { type AuthedUser, requireUser } from "./session";
 import { bootstrapSuperAdminIfAllowlisted } from "./super-admin-bootstrap";
+import {
+  buildMfaRequiredResponse,
+  loadSuperAdminMfaState,
+} from "./super-admin-mfa";
 
 export interface RequireApiAuthOptions {
   /**
@@ -126,6 +130,26 @@ export async function requireApiAuth(
     };
   }
 
+  // EMR-725 — Super-admin MFA enforcement. Existing super-admins without
+  // MFA get a one-time 14-day grace window (stamped on first read by
+  // loadSuperAdminMfaState); after that the gate hard-blocks with a
+  // structured `mfa_required` 403. See ./super-admin-mfa.ts for the
+  // grace-window design rationale.
+  if (user.roles.includes("super_admin")) {
+    const mfaState = await loadSuperAdminMfaState(user);
+    if (mfaState.status === "blocked") {
+      await logMfaBlocked(user, mfaState.graceUntil);
+      return { actor: null, error: buildMfaRequiredResponse(mfaState.graceUntil) };
+    }
+    if (mfaState.status === "grace") {
+      logger.warn({
+        event: "auth.super_admin_mfa.grace_active",
+        userId: user.id,
+        graceUntil: mfaState.graceUntil.toISOString(),
+      });
+    }
+  }
+
   if (options.rateLimit) {
     const result = options.rateLimit.limiter.check(user.id);
     if (!result.allowed) {
@@ -151,4 +175,28 @@ export async function requireApiAuth(
   }
 
   return { actor: user, error: null };
+}
+
+async function logMfaBlocked(user: AuthedUser, graceUntil: Date | null): Promise<void> {
+  try {
+    const { logControllerAction } = await import("./audit-stub");
+    await logControllerAction({
+      actor: {
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        organizationId: user.organizationId,
+      },
+      action: "controller.super_admin.mfa_blocked",
+      targetId: user.id,
+      after: { graceUntil: graceUntil ? graceUntil.toISOString() : null },
+      reason: "super_admin without enrolled MFA — request blocked.",
+    });
+  } catch (err) {
+    logger.error({
+      event: "auth.super_admin_mfa.audit_write_failed",
+      userId: user.id,
+      err,
+    });
+  }
 }
