@@ -86,6 +86,13 @@ routes:
     notes: "super_admin role. Last-admin guard + Serializable txn (PR #225). DELETE behind withAdminMutation (EMR-728)."
     rate_limit_bucket: admin.super_admin.revoke
 
+  admin/super-admins/[userId]/emergency-revoke:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-727 — strips role and adds target to SessionKillList for fleet-wide <1s session kill. Two-person rule (cannot revoke self unless co-admin issues)."
+    rate_limit_bucket: admin.super_admin.emergency_revoke
+
   admin/practices:
     methods: [GET]
     auth: required
