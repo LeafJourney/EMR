@@ -6,6 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
 
+import { loadAllHqData } from "./loaders";
+import { HeroStrip } from "./tiles/hero-strip";
+import { RevenueStrip } from "./tiles/revenue-strip";
+import { OnboardingFunnel } from "./tiles/onboarding-funnel";
+import { ModalityMix } from "./tiles/modality-mix";
+import { Leaderboards } from "./tiles/leaderboards";
+import { ActivityStream } from "./tiles/activity-stream";
+
 export const metadata: Metadata = {
   title: "Leafjourney HQ",
   description: "Super-admin fleet operations dashboard.",
@@ -21,51 +29,12 @@ const HQ_NAV: NavLink[] = [
   { label: "Admins", href: "/admin/console" },
   { label: "Onboarding", href: "/onboarding" },
   { label: "Templates", href: "/templates" },
-  { label: "History", href: "/admin/history" },
-  { label: "Audit Log", href: "/admin/audit-log" },
-];
-
-type Placeholder = {
-  title: string;
-  description: string;
-  ticket: string;
-};
-
-const PLACEHOLDERS: Placeholder[] = [
-  {
-    title: "Hero KPIs",
-    description: "Fleet-wide MRR, active practices, encounters, and gross margin.",
-    ticket: "EMR-733",
-  },
-  {
-    title: "Revenue",
-    description: "Trailing revenue, billable mix, and per-practice contribution.",
-    ticket: "EMR-735",
-  },
-  {
-    title: "Funnel",
-    description: "Onboarding-to-publish conversion across the fleet.",
-    ticket: "EMR-736",
-  },
-  {
-    title: "Modality Mix",
-    description: "Cannabis vs. non-cannabis split across published configurations.",
-    ticket: "EMR-739",
-  },
-  {
-    title: "Leaderboards",
-    description: "Top practices by revenue, encounters, and activation velocity.",
-    ticket: "EMR-744",
-  },
-  {
-    title: "Activity Stream",
-    description: "Cross-fleet timeline of publishes, role grants, and exceptions.",
-    ticket: "EMR-744",
-  },
+  { label: "Audit Log", href: "/admin/audit" },
 ];
 
 export default async function LeafjourneyHqPage() {
   const user = await requireUser();
+  const snapshot = await loadAllHqData();
 
   return (
     <PageShell maxWidth="max-w-[1240px]">
@@ -110,59 +79,80 @@ export default async function LeafjourneyHqPage() {
       </nav>
 
       <section aria-labelledby="hero-kpis-heading" className="mb-10">
-        <h2 id="hero-kpis-heading" className="sr-only">
-          Hero KPIs
-        </h2>
+        <h2 id="hero-kpis-heading" className="sr-only">Hero KPIs</h2>
+        <HeroStrip counts={snapshot.counts} dailySeries={snapshot.dailySeries} />
+      </section>
+
+      <section aria-labelledby="revenue-heading" className="mb-10">
+        <h2 id="revenue-heading" className="sr-only">Revenue</h2>
+        <RevenueStrip revenue={snapshot.revenue} />
+      </section>
+
+      <section aria-label="Dashboard panels" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
         <Card>
           <CardHeader>
             <div className="flex items-baseline justify-between gap-3">
-              <CardTitle>Hero KPIs</CardTitle>
-              <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">
-                EMR-733
-              </span>
+              <CardTitle>Onboarding funnel</CardTitle>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">EMR-736</span>
             </div>
             <CardDescription>
-              Fleet-wide MRR, active practices, encounters, and gross margin.
+              Practice configurations by stage with median time-in-stage. Stuck rows are flagged.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {["MRR", "Active practices", "Encounters / 30d", "Gross margin"].map((label) => (
-                <div key={label}>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-subtle mb-2">
-                    {label}
-                  </div>
-                  <div className="font-display text-3xl text-text tracking-tight">—</div>
-                </div>
-              ))}
+            <OnboardingFunnel stages={snapshot.onboardingFunnel} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle>Modality & specialty mix</CardTitle>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">EMR-739</span>
             </div>
-            <p className="text-xs text-text-subtle mt-6">Coming soon</p>
+            <CardDescription>
+              Live practices grouped by enabled modality. Drift shows practices N versions behind the latest manifest.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ModalityMix
+              modalityMix={snapshot.modalityMix}
+              specialtyMix={snapshot.specialtyMix}
+              specialtyDrift={snapshot.specialtyDrift}
+            />
           </CardContent>
         </Card>
       </section>
 
-      <section aria-label="Dashboard panels" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {PLACEHOLDERS.filter((p) => p.title !== "Hero KPIs").map((panel) => (
-          <Card key={panel.title}>
-            <CardHeader>
-              <div className="flex items-baseline justify-between gap-3">
-                <CardTitle>{panel.title}</CardTitle>
-                <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">
-                  {panel.ticket}
-                </span>
-              </div>
-              <CardDescription>{panel.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center min-h-[140px] rounded-lg border border-dashed border-border-strong/60 bg-surface-muted/30">
-                <div className="text-center px-6 py-8">
-                  <div className="font-display text-2xl text-text-muted tracking-tight">—</div>
-                  <p className="text-xs text-text-subtle mt-2">Coming soon</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <section aria-labelledby="leaderboards-heading" className="mb-10">
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 id="leaderboards-heading" className="font-display text-xl text-text tracking-tight">
+            Leaderboards
+          </h2>
+          <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">EMR-744</span>
+        </div>
+        <Leaderboards
+          topByClaims={snapshot.topByClaims}
+          topByRevenue={snapshot.topByRevenue}
+          topByPatientGrowth={snapshot.topByPatientGrowth}
+        />
+      </section>
+
+      <section aria-labelledby="activity-heading" className="mb-10">
+        <Card>
+          <CardHeader>
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle id="activity-heading">24h activity</CardTitle>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">EMR-744</span>
+            </div>
+            <CardDescription>
+              Cross-fleet super-admin actions. Refreshes every 30 seconds.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActivityStream rows={snapshot.recentActivity} />
+          </CardContent>
+        </Card>
       </section>
     </PageShell>
   );

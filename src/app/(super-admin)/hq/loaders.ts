@@ -292,21 +292,27 @@ export const getOnboardingFunnel = cached(
     });
 
     const buckets = new Map<string, number[]>();
-    const now = Date.now();
+    const stuckByStatus = new Map<string, number>();
+    const now = new Date();
+    const nowMs = now.getTime();
     for (const c of configs) {
       const status = String(c.status);
       const arr = buckets.get(status) ?? [];
       const end =
         status === "published" && c.publishedAt
           ? c.publishedAt.getTime()
-          : now;
+          : nowMs;
       arr.push(end - c.createdAt.getTime());
       buckets.set(status, arr);
+      if (isStuckConfig(status, c.updatedAt, now, STUCK_HOURS)) {
+        stuckByStatus.set(status, (stuckByStatus.get(status) ?? 0) + 1);
+      }
     }
     return Array.from(buckets.entries()).map(([status, durations]) => ({
       status,
       count: durations.length,
       medianHoursInStage: medianMs(durations) / (60 * 60 * 1000),
+      stuckCount: stuckByStatus.get(status) ?? 0,
     }));
   },
 );
@@ -428,12 +434,16 @@ async function topByClaimsImpl(limit: number): Promise<TopPracticeRow[]> {
   const prevByOrg = new Map(prev.map((r) => [r.organizationId, r._count._all]));
   const nameByOrg = new Map(orgs.map((o) => [o.id, o.brandName ?? o.name]));
   return cur
-    .map((r) => ({
-      organizationId: r.organizationId,
-      practiceName: nameByOrg.get(r.organizationId) ?? "(unknown)",
-      metric: r._count._all,
-      momDelta: momDelta(r._count._all, prevByOrg.get(r.organizationId) ?? 0),
-    }))
+    .map((r) => {
+      const prevValue = prevByOrg.get(r.organizationId) ?? 0;
+      return {
+        organizationId: r.organizationId,
+        practiceName: nameByOrg.get(r.organizationId) ?? "(unknown)",
+        metric: r._count._all,
+        momDelta: momDelta(r._count._all, prevValue),
+        prevMetric: prevValue,
+      };
+    })
     .sort((a, b) => b.metric - a.metric)
     .slice(0, limit);
 }
@@ -476,11 +486,13 @@ async function topByRevenueImpl(limit: number): Promise<TopPracticeRow[]> {
   return cur
     .map((r) => {
       const billed = r._sum.billedAmountCents ?? 0;
+      const prevValue = prevByOrg.get(r.organizationId) ?? 0;
       return {
         organizationId: r.organizationId,
         practiceName: nameByOrg.get(r.organizationId) ?? "(unknown)",
         metric: billed,
-        momDelta: momDelta(billed, prevByOrg.get(r.organizationId) ?? 0),
+        momDelta: momDelta(billed, prevValue),
+        prevMetric: prevValue,
       };
     })
     .sort((a, b) => b.metric - a.metric)
@@ -523,12 +535,16 @@ async function topByPatientGrowthImpl(limit: number): Promise<TopPracticeRow[]> 
   const prevByOrg = new Map(prev.map((r) => [r.organizationId, r._count._all]));
   const nameByOrg = new Map(orgs.map((o) => [o.id, o.brandName ?? o.name]));
   return cur
-    .map((r) => ({
-      organizationId: r.organizationId,
-      practiceName: nameByOrg.get(r.organizationId) ?? "(unknown)",
-      metric: r._count._all,
-      momDelta: momDelta(r._count._all, prevByOrg.get(r.organizationId) ?? 0),
-    }))
+    .map((r) => {
+      const prevValue = prevByOrg.get(r.organizationId) ?? 0;
+      return {
+        organizationId: r.organizationId,
+        practiceName: nameByOrg.get(r.organizationId) ?? "(unknown)",
+        metric: r._count._all,
+        momDelta: momDelta(r._count._all, prevValue),
+        prevMetric: prevValue,
+      };
+    })
     .sort((a, b) => b.metric - a.metric)
     .slice(0, limit);
 }

@@ -32,6 +32,8 @@ export interface OnboardingFunnelStage {
   status: string;
   count: number;
   medianHoursInStage: number;
+  /** Practices in this non-terminal stage with no update in >24h. */
+  stuckCount: number;
 }
 
 export interface ModalityMixRow {
@@ -58,7 +60,10 @@ export interface TopPracticeRow {
   organizationId: string;
   practiceName: string;
   metric: number;
+  /** MoM percent change vs the prior-month value of the same metric. */
   momDelta: number;
+  /** Prior-month raw value of the same metric, for tooltip context. */
+  prevMetric: number;
 }
 
 export interface RecentActivityRow {
