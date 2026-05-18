@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { CommandPalette } from "@/components/ui/command-palette";
-import { ROLE_HOME } from "@/lib/rbac/roles";
+import { ROLE_HOME, primaryRole } from "@/lib/rbac/roles";
 import { prisma } from "@/lib/db/prisma";
 import {
   computeAgingBadge,
@@ -29,8 +29,7 @@ export default async function OperatorLayout({
     (r) => r === "operator" || r === "practice_owner" || r === "system"
   );
   if (!allowed) {
-    const primary = user.roles[0];
-    redirect(ROLE_HOME[primary] ?? "/");
+    redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
   }
 
   if (!user.organizationId) {
