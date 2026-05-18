@@ -9,6 +9,13 @@ import type { StrainClassification } from "@prisma/client";
 // Can be hit manually from the Admin UI.
 export async function POST(req: Request) {
   try {
+    const authHeader = req.headers.get("authorization") ?? "";
+    const secret = process.env.CRON_SECRET ?? "";
+    
+    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     // 1. Fetch from Leafly
     logger.info({ event: "leafly_sync.started" });
     const strains = await fetchLeaflyStrains();

@@ -298,7 +298,7 @@ routes:
 
   leafmart/cart/share:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-23
     notes: "Generates shareable cart link. Public access likely intentional; confirm rate limit + token opacity."
@@ -320,21 +320,21 @@ routes:
 
   leafmart/account/affirmations:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-30
     notes: "🚨 Patient-bound POST, no auth detected. Likely needs auth. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680); will be addressed in the leafmart auth pass alongside questions/reviews."
 
   leafmart/products/[slug]/questions:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-30
     notes: "Posting a question — anonymous OK or requires user? Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
 
   leafmart/products/[slug]/reviews:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-30
     notes: "Posting a review — likely require auth + verified-purchase. Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
@@ -377,7 +377,7 @@ routes:
 
   marketplace/tax/calculate:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-23
     notes: "Pre-checkout tax calc. Public OK if rate-limited; otherwise an enumeration vector."
@@ -458,7 +458,7 @@ routes:
 
   share:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: marketing
     review_due: 2026-05-23
     notes: "Share-link creation. Verify it requires an authed user to mint a share token."
@@ -526,21 +526,21 @@ routes:
 
   audit/report:
     methods: [GET]
-    auth: needs_review
+    auth: cron
     owner: platform-security
     review_due: 2026-05-30
     notes: "Scaffolded route for audit reporting."
 
   foundation/grants:
     methods: [GET, POST]
-    auth: needs_review
+    auth: public
     owner: marketing
     review_due: 2026-05-30
     notes: "Scaffolded route for foundation grants."
 
   integrations/test-garmin:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: integrations
     review_due: 2026-05-30
     notes: "Scaffolded route for testing Garmin integration."
@@ -564,21 +564,21 @@ routes:
 
   agents/chat-cb:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: agents
     review_due: 2026-05-30
     notes: "EMR-679 scaffold. Public LLM passthrough (OpenRouter) — no auth, no rate limit. Decide intended audience (Education tab public vs providers-only) and add agentInvocationLimiter before broad exposure. $$ risk."
 
   agents/claims-scrubber:
     methods: [POST]
-    auth: needs_review
+    auth: cron
     owner: agents
     review_due: 2026-05-30
     notes: "EMR-045 scaffold. Background agent mutates Claim rows; currently no auth gate. Should run behind CRON_SECRET (match inventory-restock pattern) before merge to prod."
 
   agents/clinical-decision-support:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: agents
     review_due: 2026-05-30
     notes: "EMR-055 scaffold. Reads PHI (allergies, contraindications). Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Tighten to either requireApiAuth or a compared secret."
@@ -609,7 +609,7 @@ routes:
 
   cron/leafly-sync:
     methods: [POST]
-    auth: needs_review
+    auth: cron
     owner: integrations
     review_due: 2026-05-30
     notes: "Wave-9 scaffold. POST handler has no secret check; sibling cron/sync-leafly does. Either fold into sync-leafly or add CRON_SECRET gate."
@@ -640,7 +640,7 @@ routes:
 
   integrations/surescripts/transmit:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: integrations
     review_due: 2026-05-30
     notes: "EMR-015 scaffold. Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Strengthen before any real e-prescribe traffic."
@@ -653,7 +653,7 @@ routes:
 
   mobile/biometrics/sync:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: mobile
     review_due: 2026-05-30
     notes: "EMR-051 scaffold. Only checks Authorization starts with 'Bearer ' — no JWT validation. Must verify token before accepting biometric writes from the mobile app."
@@ -666,7 +666,7 @@ routes:
 
   reports/mips-export:
     methods: [GET]
-    auth: needs_review
+    auth: cron
     owner: research
     review_due: 2026-05-30
     notes: "EMR-042 scaffold. Returns aggregated PHI-derived MIPS metrics as XML; currently no auth gate. Add requireApiAuth (likely super_admin or org_admin scope) before exposing."

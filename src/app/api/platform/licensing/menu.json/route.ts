@@ -4,6 +4,6 @@ import { renderMenuJson } from "@/lib/platform/licensing-menu";
 export const dynamic = "force-static";
 export const revalidate = 3600;
 
-export async function GET() {
+export async function GET(req: Request) {
   return NextResponse.json(renderMenuJson());
 }

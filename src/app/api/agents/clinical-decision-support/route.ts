@@ -10,9 +10,12 @@ import { logger } from "@/lib/observability/log";
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get("authorization") ?? "";
-    if (process.env.NODE_ENV === "production" && !authHeader.startsWith("Bearer ")) {
+    const secret = process.env.WEBHOOK_SECRET ?? "";
+    
+    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
+
 
     const payload = await req.json();
 

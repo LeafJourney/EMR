@@ -15,7 +15,7 @@ function deployedCommit(): string | null {
   );
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const commit = deployedCommit();
   try {
     await prisma.$queryRaw`SELECT 1`;

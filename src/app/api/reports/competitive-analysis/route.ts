@@ -103,7 +103,7 @@ const COMPARISON: FeatureComparison[] = [
   { category: "Practice Management", feature: "Mission Control / ops dashboard", arfinnMed: "no", leafjourney: "yes", priority: "high", notes: "Real-time visibility into all agent activity, approvals, and job queue." },
 ];
 
-export async function GET() {
+export async function GET(req: Request) {
   // Internal competitive analysis — admin-only. Find-and-fix pass 4
   // found this route returning the full report to anonymous callers,
   // exposing our internal feature scoring against competitors.

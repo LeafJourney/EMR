@@ -7,6 +7,13 @@ import { logger } from "@/lib/observability/log";
 // and auto-flags denials for review.
 export async function POST(req: Request) {
   try {
+    const authHeader = req.headers.get("authorization") ?? "";
+    const secret = process.env.CRON_SECRET ?? "";
+    
+    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     // We fetch "draft" or "pending" claims to scrub
     const claimsToScrub = await prisma.claim.findMany({
       where: {

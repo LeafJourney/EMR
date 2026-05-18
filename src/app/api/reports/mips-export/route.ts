@@ -7,6 +7,13 @@ import { logger } from "@/lib/observability/log";
 // and creates exportable XML format for CMS submission.
 export async function GET(req: Request) {
   try {
+    const authHeader = req.headers.get("authorization") ?? "";
+    const secret = process.env.CRON_SECRET ?? "";
+    
+    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     const url = new URL(req.url);
     const orgId = url.searchParams.get("organizationId");
 

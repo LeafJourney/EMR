@@ -23,7 +23,7 @@ const grantSchema = z.object({
   email: z.string().email().max(254),
 });
 
-export async function GET() {
+export async function GET(req: Request) {
   const gate = await requireApiAuth({ role: "super_admin" });
   if (gate.error) return gate.error;
 
