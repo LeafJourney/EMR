@@ -155,9 +155,13 @@ export default function StorePage() {
               <span className="text-[10px] font-semibold uppercase tracking-wider text-text-subtle">
                 {product.brand} &middot; {product.category}
               </span>
-              <h3 className="font-display text-xl text-text tracking-tight mt-2">
+              {/* h2 (not h3) — page h1 lives in the hero; the next
+                  heading after it must be h2 for axe's heading-order
+                  rule. The "Browse the shelf" h2 below this section
+                  keeps the order valid. (EMR-713 cleanup.) */}
+              <h2 className="font-display text-xl text-text tracking-tight mt-2">
                 {product.name}
-              </h3>
+              </h2>
               <p className="text-sm text-text-muted mt-2 leading-relaxed flex-1">
                 {product.description}
               </p>
