@@ -14,7 +14,13 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: [
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      // Scripts that ship classifier/agent logic also need unit coverage
+      // (e.g. the CI/CD triage classifier at scripts/triage-staging-failure.ts).
+      "scripts/**/*.test.ts",
+    ],
     // Don't load .env — the transcription module reads env vars, and
     // tests should run deterministically regardless of .env state.
     passWithNoTests: false,

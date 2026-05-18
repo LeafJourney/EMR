@@ -1,0 +1,242 @@
+name: Staging Failure Triage
+
+# Self-heal layer for the Staging & Production Pipeline.
+#
+# Fires every time the staging pipeline finishes — passes are ignored; on
+# failure we parse the run, classify risk via scripts/triage-staging-failure.ts,
+# and route to one of three outcomes:
+#
+#   • action="rerun"     — known-flake signature, retry the failed jobs (max
+#                          RERUN_BUDGET in the classifier, today = 2).
+#   • action="autofix"   — real failure on a non-sensitive surface. Opens a
+#                          de-duped issue tagged `autofix-needed` so a human
+#                          or a follow-on Claude task can pick it up.
+#   • action="escalate"  — auth, PHI, billing, or controller surface. Opens an
+#                          issue tagged `pipeline-escalate`. No autofix.
+#
+# Production never auto-deploys past a failed pipeline — that invariant lives
+# in staging-to-prod.yml (`deploy_production` needs `test_staging`). This
+# workflow only changes *what happens* when the pipeline goes red.
+
+on:
+  workflow_run:
+    workflows: ["Staging & Production Pipeline"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  pull-requests: write
+
+jobs:
+  triage:
+    # Only triage failures on main. PR-level pipelines don't ship to prod
+    # anyway, and triaging their failures would generate issue noise.
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (head commit the pipeline ran against)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (classifier only)
+        # We don't need the full app — just enough to run tsx + the
+        # classifier. Use the precise package set to keep this step fast.
+        run: npm ci --ignore-scripts
+
+      - name: Gather failure context
+        id: gather
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # Which job(s) failed inside the run?
+          gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
+            --jq '.jobs[] | select(.conclusion=="failure") | {name, id}' \
+            > /tmp/failed_jobs.json
+          FAILED_JOB_NAME="$(jq -r 'first | .name // empty' /tmp/failed_jobs.json)"
+          echo "failed_job=${FAILED_JOB_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Failed job: ${FAILED_JOB_NAME:-<none>}"
+
+          # Files the merge commit touched. Used by the classifier to weigh
+          # blast radius — touching src/lib/auth/* always escalates.
+          if git rev-parse "${HEAD_SHA}^" >/dev/null 2>&1; then
+            git diff --name-only "${HEAD_SHA}^" "${HEAD_SHA}" > /tmp/changed_paths.txt
+          else
+            : > /tmp/changed_paths.txt
+          fi
+
+          # Failed tests. The Playwright JSON report isn't uploaded as an
+          # artifact today, so we fall back to scraping the failed step's
+          # log output. Each "✘ <num> [project] › path:line:col › title" line
+          # marks a failure; we capture the next "Error: ..." line as the
+          # error excerpt. Best-effort; the classifier escalates if the
+          # parse comes back empty.
+          mkdir -p /tmp/logs
+          gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/logs" \
+            > /tmp/logs/run.zip || echo "(no logs artifact)"
+          if [ -s /tmp/logs/run.zip ]; then
+            (cd /tmp/logs && unzip -q run.zip) || true
+          fi
+
+          node scripts/parse-playwright-failures.js \
+            /tmp/logs > /tmp/failed_tests.json || echo "[]" > /tmp/failed_tests.json
+
+          echo "Parsed failures:"
+          cat /tmp/failed_tests.json
+
+      - name: Look up existing rerun count
+        id: rerun_state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # How many times has THIS SHA's pipeline been re-run already?
+          # GitHub exposes run_attempt; the first attempt is 1, so rerun_count
+          # = run_attempt - 1. The classifier caps reruns at RERUN_BUDGET
+          # and upgrades to autofix once the budget is spent.
+          ATTEMPT="${{ github.event.workflow_run.run_attempt }}"
+          RERUN_COUNT=$(( ATTEMPT - 1 ))
+          echo "rerun_count=${RERUN_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Attempt ${ATTEMPT} → rerun_count=${RERUN_COUNT}"
+
+      - name: Classify
+        id: classify
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_JOB: ${{ steps.gather.outputs.failed_job }}
+          RERUN_COUNT: ${{ steps.rerun_state.outputs.rerun_count }}
+        run: |
+          set -euo pipefail
+
+          FAILED_TESTS_JSON="$(cat /tmp/failed_tests.json)"
+          CHANGED_PATHS_JSON="$(jq -R -s 'split("\n") | map(select(length>0))' \
+            /tmp/changed_paths.txt)"
+
+          jq -n \
+            --argjson workflowRunId "${RUN_ID}" \
+            --arg headSha "${HEAD_SHA}" \
+            --arg failedJobName "${FAILED_JOB:-unknown}" \
+            --argjson failedTests "${FAILED_TESTS_JSON}" \
+            --argjson changedPaths "${CHANGED_PATHS_JSON}" \
+            --argjson rerunCount "${RERUN_COUNT}" \
+            '{workflowRunId: $workflowRunId, headSha: $headSha, failedJobName: $failedJobName, failedTests: $failedTests, changedPaths: $changedPaths, rerunCount: $rerunCount}' \
+            > /tmp/ctx.json
+
+          npx tsx scripts/triage-staging-failure.ts < /tmp/ctx.json \
+            > /tmp/decision.json
+          cat /tmp/decision.json
+
+          {
+            echo "action=$(jq -r .action /tmp/decision.json)"
+            echo "risk=$(jq -r .risk /tmp/decision.json)"
+            echo "signal=$(jq -r .signal /tmp/decision.json)"
+            echo "signature=$(jq -r .failureSignature /tmp/decision.json)"
+            {
+              echo "reason<<EOF"
+              jq -r .reason /tmp/decision.json
+              echo "EOF"
+            }
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Action — rerun failed jobs
+        if: steps.classify.outputs.action == 'rerun'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          echo "Classifier says flake — re-running failed jobs only."
+          gh api -X POST \
+            "repos/${{ github.repository }}/actions/runs/${RUN_ID}/rerun-failed-jobs"
+
+      - name: Action — open autofix / escalate issue
+        if: |
+          steps.classify.outputs.action == 'autofix' ||
+          steps.classify.outputs.action == 'escalate'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          ACTION: ${{ steps.classify.outputs.action }}
+          RISK: ${{ steps.classify.outputs.risk }}
+          SIGNAL: ${{ steps.classify.outputs.signal }}
+          SIGNATURE: ${{ steps.classify.outputs.signature }}
+          REASON: ${{ steps.classify.outputs.reason }}
+        run: |
+          set -euo pipefail
+
+          LABEL="autofix-needed"
+          TITLE_PREFIX="🤖 CI autofix"
+          if [ "${ACTION}" = "escalate" ]; then
+            LABEL="pipeline-escalate"
+            TITLE_PREFIX="🚨 CI escalation"
+          fi
+
+          # Ensure the label exists. Idempotent — `gh label create` errors
+          # if it already exists, which we suppress.
+          gh label create "${LABEL}" \
+            --description "Created by the staging-test-triage workflow" \
+            --color "$([ "${LABEL}" = "pipeline-escalate" ] && echo b60205 || echo fbca04)" \
+            2>/dev/null || true
+
+          TITLE="${TITLE_PREFIX}: staging pipeline failed on ${HEAD_SHA:0:7} (sig ${SIGNATURE})"
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
+
+          # Dedupe: if an open issue with this signature already exists, comment
+          # on it instead of opening a duplicate. Signature is embedded in the
+          # title so search-by-title is a reliable lookup.
+          EXISTING=$(gh issue list \
+            --state open \
+            --label "${LABEL}" \
+            --search "sig ${SIGNATURE} in:title" \
+            --json number --jq '.[0].number // empty')
+
+          # Compose the issue body in /tmp. Using a file (rather than a
+          # bash heredoc that interpolates inline) keeps YAML happy — a
+          # heredoc body starting with markdown bold (`**`) at column 0
+          # confuses the YAML block-scalar scanner.
+          {
+            printf '**Pipeline run:** %s\n' "${RUN_URL}"
+            printf '**Commit:** `%s`\n' "${HEAD_SHA}"
+            printf '**Action:** `%s` · **Risk:** `%s` · **Signal:** `%s`\n' \
+              "${ACTION}" "${RISK}" "${SIGNAL}"
+            printf '**Signature:** `%s`\n\n' "${SIGNATURE}"
+            printf '### Why this was routed here\n%s\n\n' "${REASON}"
+            printf '### Failed tests\n```json\n'
+            cat /tmp/failed_tests.json
+            printf '\n```\n\n### Files touched by the merge commit\n```\n'
+            head -50 /tmp/changed_paths.txt
+            printf '```\n\n---\n\n'
+            printf '**For autofix (low/medium risk):** read the failed tests + diff above, push a fix to a `claude/autofix-%s` branch, open a PR against `main`. The PR'\''s pipeline run will re-trigger triage; a clean run closes this issue.\n\n' "${SIGNATURE}"
+            printf '**For escalation (high risk):** do **not** autofix. Auth, PHI, billing, or controller code is involved. A human reviewer must read the diff, decide whether to roll back the merge, and either land a fix or revert. Close this issue once the next pipeline run is green.\n'
+          } > /tmp/issue-body.md
+
+          if [ -n "${EXISTING}" ]; then
+            echo "Found existing issue #${EXISTING} for signature ${SIGNATURE}; commenting."
+            gh issue comment "${EXISTING}" --body-file /tmp/issue-body.md
+          else
+            echo "Opening new issue."
+            gh issue create \
+              --title "${TITLE}" \
+              --label "${LABEL}" \
+              --body-file /tmp/issue-body.md
+          fi
