@@ -17,6 +17,7 @@
 
 import { redirect } from "next/navigation";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import {
@@ -162,6 +163,13 @@ export default async function AuditLogPage({
 
   return (
     <PageShell>
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Audit" },
+          { label: "Audit log" },
+        ]}
+      />
       <PageHeader
         eyebrow="Internal"
         title="Audit log"

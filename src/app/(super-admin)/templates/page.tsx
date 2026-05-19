@@ -4,6 +4,7 @@ import {
   TemplateList,
   type TemplateRow,
 } from "@/components/admin/template-list";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 // TODO(EMR-428): integrate once branch lands.
 import { requireSuperAdmin } from "@/lib/auth/super-admin";
 // TODO(EMR-408): integrate once branch lands.
@@ -91,6 +92,13 @@ export default async function SpecialtyTemplatesPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Templates" },
+        ]}
+      />
       <Card>
         <CardHeader>
           <p className="text-[11px] uppercase tracking-wide text-text-subtle font-medium">

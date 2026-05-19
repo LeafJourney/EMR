@@ -22,6 +22,7 @@
 
 import { redirect } from "next/navigation";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { prisma } from "@/lib/db/prisma";
 import {
   SEARCH_ENTITY_KINDS,
@@ -136,6 +137,13 @@ export default async function CrossTenantSearchPage({
 
   return (
     <PageShell>
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Cross-tenant search" },
+        ]}
+      />
       <PageHeader
         eyebrow="Internal"
         title="Cross-tenant search"

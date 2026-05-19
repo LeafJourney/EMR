@@ -10,6 +10,7 @@
 import type { Metadata } from "next";
 
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/ornament";
 import { prisma } from "@/lib/db/prisma";
@@ -90,6 +91,13 @@ export default async function BootstrapAllowlistPage() {
 
   return (
     <PageShell maxWidth="max-w-[1100px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Security" },
+          { label: "Bootstrap allowlist" },
+        ]}
+      />
       <PageHeader
         eyebrow="Leafjourney HQ"
         title="Bootstrap allowlist"
