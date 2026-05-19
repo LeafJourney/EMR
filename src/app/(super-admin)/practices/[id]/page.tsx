@@ -24,6 +24,7 @@ import { ArrowLeft, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { ViewAsPracticeButton } from "@/components/super-admin/view-as-practice-button";
 
 import { loadPracticeOverview } from "../loaders";
@@ -77,6 +78,15 @@ export default async function PracticeDrillInPage({
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Practices", href: "/practices" },
+          { label: practice.practiceName },
+        ]}
+      />
+
       <div className="mb-6">
         <Link
           href="/practices"

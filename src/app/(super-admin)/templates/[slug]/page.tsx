@@ -6,6 +6,7 @@ import {
   TemplateDetail,
   type DependentPractice,
 } from "@/components/admin/template-detail";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 // TODO(EMR-428): integrate once branch lands.
 import { requireSuperAdmin } from "@/lib/auth/super-admin";
 // TODO(EMR-408): integrate once branch lands.
@@ -63,8 +64,18 @@ export default async function SpecialtyTemplateDetailPage({
 
   const dependentPractices = await loadDependentPractices(params.slug);
 
+  const templateName = (manifest as { name: string }).name;
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-10 space-y-5">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Templates", href: "/templates" },
+          { label: templateName },
+        ]}
+      />
       <div className="flex items-center gap-3 text-xs text-text-subtle">
         <Link
           href="/templates"
@@ -80,7 +91,7 @@ export default async function SpecialtyTemplateDetailPage({
             Super admin · Specialty template
           </p>
           <h1 className="font-display text-2xl font-medium text-text tracking-tight mt-1">
-            {(manifest as { name: string }).name}
+            {templateName}
           </h1>
           <p className="text-sm text-text-muted mt-2">
             Templates are edited via pull request to{" "}
