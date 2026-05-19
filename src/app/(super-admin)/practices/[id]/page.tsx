@@ -23,6 +23,7 @@ import { ArrowLeft, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
+import { ViewAsPracticeButton } from "@/components/super-admin/view-as-practice-button";
 
 import { loadPracticeOverview } from "../loaders";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
@@ -117,6 +118,13 @@ export default async function PracticeDrillInPage({
               )}
             </div>
           </div>
+          {/* EMR-742 Phase 2 — super-admin-only; the (super-admin) layout
+              guards this segment with requireSuperAdmin() so anyone who
+              renders this page is already cleared to see the button. */}
+          <ViewAsPracticeButton
+            practiceOrgId={practice.organizationId}
+            practiceName={practice.practiceName}
+          />
         </div>
       </div>
 
