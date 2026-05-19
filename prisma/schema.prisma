@@ -233,6 +233,48 @@ model Membership {
   @@index([organizationId, role])
 }
 
+// EMR-726 / EMR-760 — Bootstrap allowlist audit trail.
+//
+// Every deploy snapshots the current SUPER_ADMIN_BOOTSTRAP_EMAILS env
+// value into this table so security can replay who was eligible at any
+// point in time. Diff'd on the admin/bootstrap surface.
+model BootstrapAllowlistSnapshot {
+  id          String   @id @default(cuid())
+  hash        String
+  emails      String[] // raw allowlist at deploy time
+  deploySha   String
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// EMR-732 / EMR-760 — Per-practice health score (computed nightly).
+//
+// `src/app/api/cron/practice-health/route.ts` upserts one row per
+// org each sweep with a 0..100 score and a structured breakdown.
+model PracticeHealth {
+  organizationId String   @id
+  score          Int
+  breakdown      Json
+  computedAt     DateTime @default(now()) @updatedAt
+}
+
+// EMR-730 / EMR-760 — Per-actor mutation-budget alarm history.
+//
+// When the mutation-budget sweep cron decides an actor exceeded the
+// per-min / per-5-min thresholds, a row gets appended here so the
+// next sweep can suppress duplicate pages within a cool-down window.
+model MutationBudgetAlarm {
+  id              String   @id @default(cuid())
+  actorUserId     String
+  firstSeenAt     DateTime
+  lastAlertedAt   DateTime
+  perMinAtAlert   Int
+  per5MinAtAlert  Int
+
+  @@index([actorUserId, lastAlertedAt])
+}
+
 // EMR-737 / EMR-760 — Cross-tenant anomaly detector framework.
 //
 // Detectors emit normalized findings (something exceeded a threshold,
