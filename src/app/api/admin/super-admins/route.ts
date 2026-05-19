@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireApiAuth } from "@/lib/auth/api-gate";
-import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
+import { adminMutationLimiter } from "@/lib/auth/rate-limit";
 import { ensureLeafjourneyHq } from "@/lib/auth/super-admin-bootstrap";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 
@@ -23,7 +23,7 @@ const grantSchema = z.object({
   email: z.string().email().max(254),
 });
 
-export async function GET(req: Request) {
+export async function GET() {
   const gate = await requireApiAuth({ role: "super_admin" });
   if (gate.error) return gate.error;
 
@@ -68,9 +68,14 @@ export async function GET(req: Request) {
   return NextResponse.json({ items });
 }
 
-export const POST = withAdminMutation(
-  { bucket: "admin.super_admin.grant" },
-  async (req, { actor }) => {
+export async function POST(req: Request) {
+  const gate = await requireApiAuth({
+    role: "super_admin",
+    rateLimit: { limiter: adminMutationLimiter, bucket: "admin.super_admin.grant" },
+  });
+  if (gate.error) return gate.error;
+  const actor = gate.actor;
+
   let raw: unknown;
   try {
     raw = await req.json();
@@ -139,5 +144,4 @@ export const POST = withAdminMutation(
       lastName: targetUser.lastName,
     },
   });
-  },
-);
+}

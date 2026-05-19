@@ -11,13 +11,6 @@ const CANNABIS_CANCER_BOOK_EXCERPTS = [
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const secret = process.env.WEBHOOK_SECRET ?? "";
-    
-    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
     const { message } = await req.json();
     
     // Check if OpenRouter key exists

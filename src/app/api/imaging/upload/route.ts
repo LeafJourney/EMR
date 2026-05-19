@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: Request) {
+export async function GET() {
   return NextResponse.json({
     accept: Array.from(ACCEPTED_IMAGING_MIME),
     maxBytes: MAX_UPLOAD_BYTES,

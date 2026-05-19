@@ -11,15 +11,24 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
+import { requireApiAuth } from "@/lib/auth/api-gate";
+import { adminMutationLimiter } from "@/lib/auth/rate-limit";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const DELETE = withAdminMutation<{ userId: string }>(
-  { bucket: "admin.super_admin.revoke" },
-  async (_req, { actor, params }) => {
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { userId: string } },
+) {
+  const gate = await requireApiAuth({
+    role: "super_admin",
+    rateLimit: { limiter: adminMutationLimiter, bucket: "admin.super_admin.revoke" },
+  });
+  if (gate.error) return gate.error;
+  const actor = gate.actor;
+
   const targetUserId = params.userId;
   if (!targetUserId) {
     return NextResponse.json({ error: "missing_user_id" }, { status: 400 });
@@ -91,5 +100,4 @@ export const DELETE = withAdminMutation<{ userId: string }>(
   });
 
   return NextResponse.json({ ok: true });
-  },
-);
+}

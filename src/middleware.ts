@@ -13,9 +13,6 @@
 
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
-// Redefined here because importing from impersonation.ts pulls in node crypto 
-// which crashes the Edge runtime.
-const IMPERSONATION_COOKIE = "lj_impersonation";
 
 /** Hostnames that should resolve to the Leafmart storefront */
 const LEAFMART_HOSTS = [
@@ -105,51 +102,6 @@ export default clerkMiddleware(async (auth, req) => {
       return NextResponse.redirect(url);
     }
     // Authenticated — fall through to per-route role check downstream.
-  }
-
-  // ── EMR-742: belt-and-braces impersonation read-only at the edge ──
-  // The authoritative check lives in requireApiAuth (verifies the cookie
-  // signature, binds to the Clerk user id, etc.). This middleware layer
-  // is a second line of defense that catches non-API mutations — server
-  // actions in particular, which are POSTs to a page path and bypass
-  // /api/** routing entirely.
-  //
-  // We are intentionally permissive here:
-  //   - We trust the presence of the cookie as a strong hint without
-  //     verifying its signature (no Node crypto in the edge runtime by
-  //     default). Forging the cookie to ENABLE read-only is harmless;
-  //     forging it to DISABLE read-only is the threat, and that's
-  //     prevented by requireApiAuth's signed-cookie verification.
-  //   - We exempt the impersonation exit route so the user can always
-  //     terminate the session even if they somehow trip the read-only
-  //     check.
-  if (
-    req.method !== "GET" &&
-    req.method !== "HEAD" &&
-    req.method !== "OPTIONS"
-  ) {
-    const hasImpersonationCookie = !!req.cookies.get(IMPERSONATION_COOKIE);
-    const isImpersonationExit =
-      pathname === "/api/admin/impersonate/exit";
-    if (hasImpersonationCookie && !isImpersonationExit) {
-      // Page POSTs (server actions) get a JSON 403 here — Next will
-      // surface the error to the client action wrapper. API POSTs hit
-      // requireApiAuth's check and receive the same envelope; defining
-      // it twice keeps both layers self-consistent.
-      if (pathname.startsWith("/api/")) {
-        // Let the API gate handle it (richer error envelope, includes
-        // practiceId, structured logging). Fall through.
-      } else {
-        return NextResponse.json(
-          {
-            error: "impersonation_read_only",
-            message:
-              "Mutations are not permitted while viewing as a practice.",
-          },
-          { status: 403 },
-        );
-      }
-    }
   }
 
   // ── Origin check for state-changing /api/admin requests ──

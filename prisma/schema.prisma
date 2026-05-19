@@ -215,16 +215,11 @@ model User {
 }
 
 model Membership {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
   organizationId String
   role           Role
-  createdAt      DateTime  @default(now())
-  // EMR-725 — Super-admin MFA enforcement grace window. Set on first
-  // post-deploy sign-in for an existing super_admin who lacks MFA;
-  // null otherwise (including fresh bootstrap grants, which require
-  // MFA at grant time and therefore never need a grace).
-  mfaGraceUntil  DateTime?
+  createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1800,69 +1795,6 @@ model ControllerAuditLog {
   @@index([subjectId, at])
   @@index([organizationId, at])
   @@index([actorUserId, at])
-}
-
-// EMR-726 — Bootstrap allowlist rotation audit.
-//
-// One row per *change* of SUPER_ADMIN_BOOTSTRAP_EMAILS as observed at boot.
-// The boot-audit helper computes a SHA-256 over the sorted/normalised email
-// list and inserts a snapshot only when the hash differs from the most
-// recent row. That makes idempotent reboots silent while still catching a
-// silent expansion of the allowlist between deploys — which is the whole
-// point of EMR-726.
-model BootstrapAllowlistSnapshot {
-  id        String   @id @default(cuid())
-  /// SHA-256 hex of `sorted(lowercased(trimmed(emails))).join(",")`.
-  hash      String
-  /// The parsed allowlist at the moment of capture.
-  emails    String[]
-  /// Resolved from RENDER_GIT_COMMIT / GIT_SHA at boot. Null in dev.
-  deploySha String?
-  createdAt DateTime @default(now())
-
-  @@index([createdAt(sort: Desc)])
-}
-
-// EMR-730 — Per-actor mutation budget alarm ledger.
-//
-// One row per (actor, alarm-fire). The cron at
-// /api/cron/mutation-budget-sweep reads the most-recent row per actor to
-// dedupe re-fires inside a 10-minute window. We don't UPDATE existing rows
-// — every alarm fire is its own row so on-call has a forensic history of
-// when an account tripped the budget and how badly.
-model MutationBudgetAlarm {
-  id             String   @id @default(cuid())
-  actorUserId    String
-  firstSeenAt    DateTime
-  lastAlertedAt  DateTime
-  perMinAtAlert  Int
-  per5MinAtAlert Int
-
-  @@index([actorUserId, lastAlertedAt(sort: Desc)])
-}
-
-// EMR-727 — Fleet-wide session kill-list for emergency revoke.
-//
-// One row per actively-killed user. The auth gate consults this on every
-// authenticated request (with a 1s in-process TTL cache layered on top to
-// keep p99 latency under budget) so a revoke takes effect on the *next*
-// request across every replica — not whenever the JWT/cookie expires.
-//
-// `userId` is the PK because at most one kill exists per user at a time.
-// A subsequent emergency-revoke UPSERTs, refreshing `revokedAt` /
-// `expiresAt`. `expiresAt` MUST exceed the longest possible session
-// lifetime; the endpoint sets it to now + 90d.
-//
-// See: prisma/migrations/20260517140000_add_session_kill_list/migration.sql
-// and src/lib/auth/session-kill-list.ts.
-model SessionKillList {
-  userId      String   @id
-  revokedAt   DateTime @default(now())
-  expiresAt   DateTime
-  reason      String
-  revokedById String
-
-  @@index([expiresAt])
 }
 
 // --------------------------------------------------------------
@@ -4275,31 +4207,6 @@ model MigrationProfile {
   @@index([status])
 }
 
-// EMR-732 — Per-practice composite health score (0–100).
-//
-// Denormalized snapshot recomputed at most every 5 minutes by the
-// cron at `src/app/api/cron/practice-health/route.ts`. The HQ
-// dashboard (E1) reads `score` and `breakdown` directly off this
-// table rather than running aggregate queries at request time.
-//
-// `breakdown` is a stable JSON shape:
-//   { publish: number, agentErrors: number, billing: number, loginFailures: number }
-// Any change to the keys is a contract break for the HQ dashboard.
-//
-// PHI posture: rates and integer subscores only — never names, IDs
-// beyond `organizationId`, claim numbers, or any patient field.
-model PracticeHealth {
-  id             String   @id @default(cuid())
-  organizationId String   @unique
-  score          Int
-  breakdown      Json
-  computedAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@index([score])
-}
-
 // --------------------------------------------------------------
 // Leafly Integrations & Strain Parsers
 // --------------------------------------------------------------
@@ -4947,93 +4854,4 @@ model PatientBadge {
   @@unique([patientId, badgeId])
 }
 
-// EMR-750 — verification ledger for the nightly ControllerAuditLog JSONL
-// export. One row per (covered) UTC day. Re-running the export for the
-// same day upserts the row, so `coveredDate` is the natural primary key
-// for idempotency. Stats are content-addressable: `sha256` is over the
-// gzipped bytes uploaded to `storageKey`, so compliance reviewers can
-// verify the artefact hasn't drifted by re-hashing the object.
-//
-// Failure case: if the upload fails we do NOT write a row here — a missing
-// row for a date IS the alarm signal that the export didn't land. The
-// cron route also emits a structured error log (Sentry-bound downstream).
-model ControllerAuditExport {
-  id          String   @id @default(cuid())
-  /// UTC calendar day covered by this export (midnight UTC).
-  coveredDate DateTime @unique
-  /// Object-storage key, e.g. "audit/controller/2026/05/17.jsonl.gz".
-  storageKey  String
-  /// Number of ControllerAuditLog rows included in the export.
-  rowCount    Int
-  /// Size of the uploaded gzipped artefact in bytes.
-  byteCount   Int
-  /// Hex-encoded SHA-256 of the uploaded gzipped artefact.
-  sha256      String
-  /// When this export run completed (and uploaded).
-  runAt       DateTime @default(now())
-
-  @@index([runAt])
-}
-
-// --------------------------------------------------------------
-// EMR-734 — Anomaly Detector Framework
-// --------------------------------------------------------------
-// Detectors are pure functions that scan recent state and emit zero or more
-// `Anomaly` rows. Each row carries a severity, TTL, target `practiceId` (or
-// null for fleet-wide), a stable `kind` (the detector identifier), a human
-// `message`, a `deeplinkUrl` for the HQ surface, raw `context` JSON, and an
-// `idempotencyKey` that is unique within a kind — re-detection on the next
-// sweep is upserted, NOT duplicated.
-//
-// Lifecycle states (see src/lib/anomaly/framework.ts for the full state
-// machine):
-//   - live              → resolvedAt = null, expiresAt > now
-//   - resolved-by-ttl   → resolvedAt = null, expiresAt < now  (filtered from feed)
-//   - resolved-by-detector → resolvedAt != null               (kept for audit)
-//
-// Concrete detectors land in EMR-737 / EMR-740 / EMR-741. This model + the
-// framework + the sweep cron are the v1 substrate; the registry starts empty.
-
-enum AnomalySeverity {
-  INFO
-  WARNING
-  CRITICAL
-}
-
-model Anomaly {
-  id             String          @id @default(cuid())
-  /// Stable URL slug for the HQ feed. Unique across the table.
-  slug           String          @unique
-  /// Detector identifier — e.g. "stuck_publish", "webhook_health". Pairs
-  /// with `idempotencyKey` for upsert.
-  kind           String
-  severity       AnomalySeverity
-  /// Null = fleet-wide anomaly (e.g. webhook-provider outage). Otherwise
-  /// the practice the anomaly targets. Untyped String to match the
-  /// PracticeConfiguration precedent — no FK, since practice ids may
-  /// reference rows the anomaly detector doesn't own.
-  practiceId     String?
-  message        String
-  deeplinkUrl    String
-  context        Json
-  /// Stable key the detector generates for this anomaly instance. Same key
-  /// across sweeps = same anomaly; bumps `lastSeenAt` + `expiresAt` instead
-  /// of creating a new row. Unique within (kind, idempotencyKey).
-  idempotencyKey String
-  /// TTL in seconds, captured at emission. Used by the sweep to compute
-  /// `expiresAt = lastSeenAt + ttlSeconds` on every upsert.
-  ttlSeconds     Int
-  firstSeenAt    DateTime        @default(now())
-  lastSeenAt     DateTime        @default(now())
-  expiresAt      DateTime
-  /// Set when the detector stops emitting the anomaly on a subsequent
-  /// sweep (auto-resolve). Once set, the row is retained for the audit
-  /// trail but filtered from the active HQ feed.
-  resolvedAt     DateTime?
-
-  @@unique([kind, idempotencyKey])
-  @@index([resolvedAt, severity, lastSeenAt(sort: Desc)])
-  @@index([practiceId, resolvedAt])
-  @@index([kind, resolvedAt])
-}
 

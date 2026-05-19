@@ -12,7 +12,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ user: null });

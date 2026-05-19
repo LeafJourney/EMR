@@ -74,10 +74,15 @@ export function TermsSignature() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-[12.5px] font-medium mb-1 text-[var(--ink)]">
+          <label
+            htmlFor="terms-signer-name"
+            className="block text-[12.5px] font-medium mb-1 text-[var(--ink)]"
+          >
             Authorized signer (full name)
           </label>
           <input
+            id="terms-signer-name"
+            autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -85,10 +90,15 @@ export function TermsSignature() {
           />
         </div>
         <div>
-          <label className="block text-[12.5px] font-medium mb-1 text-[var(--ink)]">
+          <label
+            htmlFor="terms-org-name"
+            className="block text-[12.5px] font-medium mb-1 text-[var(--ink)]"
+          >
             Practice / organization
           </label>
           <input
+            id="terms-org-name"
+            autoComplete="organization"
             value={orgName}
             onChange={(e) => setOrgName(e.target.value)}
             required

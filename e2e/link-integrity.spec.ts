@@ -93,19 +93,6 @@ function normaliseHref(raw: string, base: string): string | null {
   }
 }
 
-// A heavy seed page (e.g. /leafmart, /leafmart/shop) can expose 40+
-// internal product links. Probing them serially at the previous 10 s
-// per-probe ceiling blew past the default 30 s test timeout on
-// staging. Two-part fix:
-//   1. raise the per-test budget to 120 s so we have headroom
-//   2. probe in parallel with a small concurrency cap so a single
-//      slow target doesn't block the next 39 probes from starting.
-// Findings collection is unchanged — every probe still gets recorded.
-test.describe.configure({ timeout: 120_000 });
-
-const PROBE_CONCURRENCY = 8;
-const PROBE_TIMEOUT_MS = 8_000;
-
 test.describe("Link integrity — find-and-fix pass 6", () => {
   for (const seed of SEED_PAGES) {
     test(`crawl ${seed}`, async ({ page, request }) => {
@@ -136,22 +123,16 @@ test.describe("Link integrity — find-and-fix pass 6", () => {
       }
       state.hrefsBySource.set(seed, targets);
 
-      // Probe each unique target ONCE across the whole run, with a small
-      // concurrency cap so slow targets don't serialise the whole batch.
-      // `pending` shrinks as workers pull from it; each worker loops
-      // until empty.
-      const pending = [...targets].filter((t) => {
-        if (state.visitedTargets.has(t)) return false;
-        state.visitedTargets.add(t);
-        return true;
-      });
+      // Probe each unique target ONCE across the whole run.
+      for (const target of targets) {
+        if (state.visitedTargets.has(target)) continue;
+        state.visitedTargets.add(target);
 
-      const probeOne = async (target: string): Promise<void> => {
         try {
           const res = await request.get(target, {
             maxRedirects: 0,
             failOnStatusCode: false,
-            timeout: PROBE_TIMEOUT_MS,
+            timeout: 10_000,
           });
           const status = res.status();
 
@@ -159,7 +140,7 @@ test.describe("Link integrity — find-and-fix pass 6", () => {
             // Redirects are recorded but treated as ok at this level —
             // the destination page is one of the seed pages or will get
             // crawled later if it's internal.
-            return;
+            continue;
           }
 
           // 404 / 5xx — capture context
@@ -174,7 +155,10 @@ test.describe("Link integrity — find-and-fix pass 6", () => {
             source: seed,
             target,
             status,
-            evidence: bodyPeek.replace(/\s+/g, " ").slice(0, 200).trim(),
+            evidence: bodyPeek
+              .replace(/\s+/g, " ")
+              .slice(0, 200)
+              .trim(),
             category,
           });
         } catch (err) {
@@ -186,21 +170,7 @@ test.describe("Link integrity — find-and-fix pass 6", () => {
             category: "other",
           });
         }
-      };
-
-      let cursor = 0;
-      const workers: Promise<void>[] = [];
-      for (let i = 0; i < PROBE_CONCURRENCY; i++) {
-        workers.push(
-          (async () => {
-            while (cursor < pending.length) {
-              const idx = cursor++;
-              await probeOne(pending[idx]);
-            }
-          })(),
-        );
       }
-      await Promise.all(workers);
     });
   }
 

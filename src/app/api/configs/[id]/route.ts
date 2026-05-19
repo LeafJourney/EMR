@@ -5,10 +5,10 @@
 //   those transitions go through /publish and /archive.
 
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireImplementationAdmin } from "@/lib/auth/super-admin";
-import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 // TODO(EMR-409): swap to the canonical `DraftPracticeConfigurationInput`
 // re-export from src/lib/practice-config/types.ts once that file lands. For
@@ -53,9 +53,10 @@ export async function GET(_req: Request, { params }: Ctx) {
   })) as NextResponse;
 }
 
-export const PATCH = withAdminMutation<{ id: string }>(
-  { bucket: "admin.config.update", role: "implementation_admin" },
-  async (req, { actor: admin, params }) => {
+export async function PATCH(req: Request, { params }: Ctx) {
+  return (await withAuthErrors(async () => {
+    const admin = await requireImplementationAdmin();
+
     const parsedBody = await readJson(req);
     if (!parsedBody.ok) return parsedBody.response;
 
@@ -84,5 +85,5 @@ export const PATCH = withAdminMutation<{ id: string }>(
     });
 
     return NextResponse.json(updated);
-  },
-);
+  })) as NextResponse;
+}

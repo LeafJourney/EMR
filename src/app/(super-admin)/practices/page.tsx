@@ -49,7 +49,7 @@ export default async function PracticesLandingPage({
       <PageHeader
         eyebrow="Leafjourney HQ"
         title="Practices"
-        description="Every practice you've configured, with live KPIs. Click any card to drill in."
+        description="Every practice you've configured, with live KPIs. Click any card to expand."
         actions={
           <Link href="/onboarding">
             <Button>Onboard a practice</Button>

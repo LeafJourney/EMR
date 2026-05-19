@@ -5,24 +5,17 @@ on:
     branches: [main]
     paths:
       - 'src/app/api/**'
-      - 'src/lib/auth/with-admin-mutation.ts'
       - 'docs/security/route-auth.yaml'
       - 'scripts/check-route-auth-manifest.mjs'
-      - 'scripts/check-admin-mutation-coverage.mjs'
       - '.github/workflows/route-auth-manifest.yml'
   push:
     branches: [main]
 
-# Fails the build if:
-#   1. A /api/** route lands without an entry in the manifest, OR an
-#      entry's `needs_review` deadline has passed without resolution.
-#   2. (EMR-728) Any POST/PATCH/DELETE handler under /api/admin/** or
-#      /api/configs/** is not wrapped by withAdminMutation — i.e. is
-#      missing controller-route rate-limit parity.
+# Fails the build if a /api/** route lands without an entry in the manifest,
+# or if an entry's `needs_review` deadline has passed without resolution.
 #
-# These are the gates behind OPERATION-STEEL-SPINE epic 1.1 — without
-# them, new routes can ship to prod with no auth-kind classification
-# AND without rate-limit + audit coverage.
+# This is the gate behind OPERATION-STEEL-SPINE epic 1.1 — without it, new
+# routes can ship to prod with no auth-kind classification at all.
 
 jobs:
   check-manifest:
@@ -39,6 +32,3 @@ jobs:
 
       - name: Validate manifest
         run: node scripts/check-route-auth-manifest.mjs
-
-      - name: Validate admin-mutation coverage (EMR-728)
-        run: node scripts/check-admin-mutation-coverage.mjs

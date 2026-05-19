@@ -9,12 +9,16 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
-import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
+import { requireImplementationAdmin } from "@/lib/auth/super-admin";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 import { getSpecialtyTemplate } from "@/lib/specialty-templates/registry";
-import { notFound } from "../../_helpers";
+import { withAuthErrors, notFound } from "../../_helpers";
 
 export const runtime = "nodejs";
+
+interface Ctx {
+  params: { id: string };
+}
 
 /**
  * Required fields for publish. Specialty-adaptive — we never special-case a
@@ -42,9 +46,10 @@ function findMissing(
   return missing;
 }
 
-export const POST = withAdminMutation<{ id: string }>(
-  { bucket: "admin.config.publish", role: "implementation_admin" },
-  async (_req, { actor: admin, params }) => {
+export async function POST(_req: Request, { params }: Ctx) {
+  return (await withAuthErrors(async () => {
+    const admin = await requireImplementationAdmin();
+
     const config = await prisma.practiceConfiguration.findUnique({
       where: { id: params.id },
     });
@@ -120,5 +125,5 @@ export const POST = withAdminMutation<{ id: string }>(
     });
 
     return NextResponse.json(published);
-  },
-);
+  })) as NextResponse;
+}

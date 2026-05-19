@@ -70,20 +70,7 @@ function parseManifest(text) {
     const routeMatch = stripped.match(/^  ([^:]+):\s*$/);
     if (routeMatch) {
       currentKey = routeMatch[1].trim();
-      currentEntry = {
-        methods: [],
-        auth: null,
-        owner: null,
-        notes: null,
-        review_due: null,
-        // EMR-728 — bucket label that pairs the route with its
-        // adminMutationLimiter bucket via withAdminMutation. Optional at
-        // the schema level; admin-mutation coverage is enforced by
-        // scripts/check-admin-mutation-coverage.mjs (which walks the
-        // source, not the manifest).
-        rate_limit_bucket: null,
-        _line: i + 1,
-      };
+      currentEntry = { methods: [], auth: null, owner: null, notes: null, review_due: null, _line: i + 1 };
       routes[currentKey] = currentEntry;
       continue;
     }

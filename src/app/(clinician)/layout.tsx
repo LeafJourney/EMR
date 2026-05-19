@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
-import { ROLE_HOME, primaryRole } from "@/lib/rbac/roles";
+import { ROLE_HOME } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { BreathingBreak } from "@/components/ui/breathing-break";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
@@ -27,7 +27,8 @@ export default async function ClinicianLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
-    redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
+    const primary = user.roles[0];
+    redirect(ROLE_HOME[primary] ?? "/");
   }
 
   const safeCount = async (fn: () => Promise<number>) => {

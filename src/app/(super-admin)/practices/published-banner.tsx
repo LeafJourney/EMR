@@ -29,7 +29,7 @@ export function PublishedBanner() {
         </div>
         <p className="text-[13px] text-text-muted mt-0.5">
           Your new configuration is live. Click any card below to drill into
-          its KPIs, providers, activity, and billing.
+          its KPIs.
         </p>
       </div>
       <button

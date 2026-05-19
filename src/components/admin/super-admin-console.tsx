@@ -438,15 +438,6 @@ function AdminsTab() {
     }
   }
 
-  // EMR-727 — emergency revoke modal target. Holds the row the operator
-  // wants to nuke; the modal renders when this is non-null.
-  const [emergencyTarget, setEmergencyTarget] = React.useState<AdminRow | null>(null);
-
-  function onEmergencyRevoked() {
-    setEmergencyTarget(null);
-    load();
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -511,14 +502,6 @@ function AdminsTab() {
                     <Button variant="ghost" size="sm" onClick={() => revoke(a.userId, a.email)}>
                       Revoke
                     </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => setEmergencyTarget(a)}
-                      aria-label={`Emergency revoke ${a.email}`}
-                    >
-                      Emergency revoke
-                    </Button>
                   </div>
                 </li>
               ))}
@@ -526,136 +509,6 @@ function AdminsTab() {
           )}
         </CardContent>
       </Card>
-
-      {emergencyTarget && (
-        <EmergencyRevokeModal
-          target={emergencyTarget}
-          onCancel={() => setEmergencyTarget(null)}
-          onRevoked={onEmergencyRevoked}
-        />
-      )}
-    </div>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// EMR-727 — Emergency revoke modal
-// -----------------------------------------------------------------------------
-//
-// Double-confirmation modal for the destructive emergency-revoke action.
-// Two friction gates before the POST goes out:
-//   1. Operator must type the target's email exactly (server re-checks).
-//   2. Operator must supply a non-empty reason (server requires 1..500).
-//
-// The server is the source of truth on both — this UI is just a friction
-// barrier. A clever attacker who could call the API directly still has to
-// satisfy the same server-side schema + last-admin guard + adminMutationLimiter.
-
-function EmergencyRevokeModal({
-  target,
-  onCancel,
-  onRevoked,
-}: {
-  target: AdminRow;
-  onCancel: () => void;
-  onRevoked: () => void;
-}) {
-  const [confirmEmail, setConfirmEmail] = React.useState("");
-  const [reason, setReason] = React.useState("");
-  const [submitState, setSubmitState] = React.useState<"idle" | "submitting" | "error">("idle");
-  const [error, setError] = React.useState<string | null>(null);
-
-  const emailMatches = confirmEmail.trim().toLowerCase() === target.email.trim().toLowerCase();
-  const reasonOk = reason.trim().length > 0 && reason.trim().length <= 500;
-  const canSubmit = emailMatches && reasonOk && submitState !== "submitting";
-
-  async function submit() {
-    if (!canSubmit) return;
-    setSubmitState("submitting");
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/admin/super-admins/${encodeURIComponent(target.userId)}/emergency-revoke`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: reason.trim(), confirmEmail: confirmEmail.trim() }),
-        },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
-      }
-      onRevoked();
-    } catch (e: unknown) {
-      setSubmitState("error");
-      setError(e instanceof Error ? e.message : "Failed to emergency-revoke");
-    }
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Emergency revoke super-admin"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-    >
-      <div className="w-full max-w-md rounded-lg border border-danger/40 bg-surface p-6 shadow-xl">
-        <h3 className="text-lg font-semibold text-danger">Emergency revoke</h3>
-        <p className="mt-2 text-sm text-text">
-          This will immediately strip <span className="font-medium">{target.email}</span>&rsquo;s
-          super-admin role AND terminate every active session within ~1 second across the fleet.
-        </p>
-        <p className="mt-2 text-xs text-text-muted">
-          Use this if the account is compromised. Routine revocations should use the regular
-          &ldquo;Revoke&rdquo; button.
-        </p>
-
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="block text-xs font-medium uppercase tracking-wide text-text-muted">
-              Type <code className="rounded bg-surface-muted px-1 py-0.5">{target.email}</code> to confirm
-            </label>
-            <Input
-              value={confirmEmail}
-              onChange={(e) => setConfirmEmail(e.target.value)}
-              placeholder={target.email}
-              aria-label="Confirm target email"
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium uppercase tracking-wide text-text-muted">
-              Reason (required, logged to audit trail)
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Compromised at 14:02 PT, see #incident-413"
-              aria-label="Revocation reason"
-              maxLength={500}
-              rows={3}
-              className="mt-1 w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:border-danger focus:ring-2 focus:ring-danger/20"
-            />
-            <p className="mt-1 text-xs text-text-muted">{reason.trim().length}/500</p>
-          </div>
-        </div>
-
-        {submitState === "error" && error && (
-          <p role="alert" className="mt-3 text-sm text-danger">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitState === "submitting"}>
-            Cancel
-          </Button>
-          <Button variant="danger" size="sm" disabled={!canSubmit} onClick={submit}>
-            {submitState === "submitting" ? "Revoking…" : "Emergency revoke"}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -7,55 +7,30 @@ import { ROLE_LABELS } from "@/lib/rbac/roles";
 
 export const dynamic = "force-dynamic";
 
-// Four rail pillars, each with multiple destinations so the drawer reads
-// as a real workspace map rather than one-link rooms. PillarNav returns
-// the FIRST section whose pillar key matches the active rail icon, so
-// sharing a pillar key across sections silently hides every section
-// after the first — every pillar here is unique.
-//
-//   HQ          — KPI / dashboard read surface (chart)
-//   Operations  — what a super-admin does all day (building)
-//   Audit       — observability + the audit log (inbox)
-//   Security    — hardening / MFA / revoke / bootstrap (shield)
 const SUPER_ADMIN_SECTIONS: NavSection[] = [
   {
-    pillar: "hq",
-    icon: "chart",
-    label: "HQ",
-    items: [
-      { label: "Dashboard", href: "/admin/hq" },
-      { label: "Leaderboards", href: "/admin/hq#leaderboards-heading" },
-      { label: "24h activity", href: "/admin/hq#activity-heading" },
-    ],
+    pillar: "onboarding",
+    icon: "clipboard-check",
+    label: "Onboarding",
+    items: [{ label: "Onboarding", href: "/onboarding" }],
   },
   {
-    pillar: "operations",
+    pillar: "practices",
     icon: "building",
-    label: "Operations",
-    items: [
-      { label: "Practices", href: "/practices" },
-      { label: "Onboarding", href: "/onboarding" },
-      { label: "Templates", href: "/templates" },
-      { label: "Cross-tenant search", href: "/admin/search" },
-    ],
+    label: "Practices",
+    items: [{ label: "Practices", href: "/practices" }],
   },
   {
-    pillar: "audit",
-    icon: "inbox",
-    label: "Audit",
-    items: [
-      { label: "Audit log", href: "/admin/audit" },
-      { label: "Audit export (CSV)", href: "/api/admin/audit/export" },
-    ],
+    pillar: "templates",
+    icon: "layout-grid",
+    label: "Templates",
+    items: [{ label: "Templates", href: "/templates" }],
   },
   {
-    pillar: "security",
-    icon: "shield",
-    label: "Security",
-    items: [
-      { label: "Super-admin console", href: "/admin/console" },
-      { label: "Bootstrap allowlist", href: "/admin/bootstrap" },
-    ],
+    pillar: "admin",
+    icon: "settings",
+    label: "Admin",
+    items: [{ label: "Console", href: "/admin" }],
   },
 ];
 

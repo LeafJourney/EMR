@@ -7,7 +7,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
-import { ROLE_HOME, primaryRole } from "@/lib/rbac/roles";
+import { ROLE_HOME } from "@/lib/rbac/roles";
 
 const RESEARCHER_SECTIONS: NavSection[] = [
   {
@@ -40,7 +40,8 @@ export default async function ResearcherLayout({
     (r) => r === "operator" || r === "practice_owner" || r === "system",
   );
   if (!allowed) {
-    redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
+    const primary = user.roles[0];
+    redirect(ROLE_HOME[primary] ?? "/");
   }
 
   return (

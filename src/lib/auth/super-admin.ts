@@ -26,7 +26,6 @@ import "server-only";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { type AuthedUser, requireUser } from "./session";
-import { loadSuperAdminMfaState, MfaRequiredError } from "./super-admin-mfa";
 
 /** Roles allowed to operate the onboarding controller (write-path). */
 const CONTROLLER_ROLES: ReadonlyArray<Role> = ["super_admin", "implementation_admin"];
@@ -46,20 +45,11 @@ function hasAnyRole(user: AuthedUser, allowed: ReadonlyArray<Role>): boolean {
  * Require the caller to be a LeafJourney super_admin.
  * Throws "FORBIDDEN" otherwise — same contract as `requireRole()` in
  * `./session.ts`. Caller is expected to surface this as a 403.
- *
- * EMR-725 — Also enforces MFA at this layer: a super_admin without an
- * enrolled second factor (and past their 14-day grace window) gets a
- * typed `MfaRequiredError` so the layout can redirect to enrollment
- * rather than the generic /forbidden surface.
  */
 export async function requireSuperAdmin(): Promise<AuthedUser> {
   const user = await requireUser();
   if (!user.roles.includes("super_admin")) {
     throw new Error("FORBIDDEN");
-  }
-  const mfa = await loadSuperAdminMfaState(user);
-  if (mfa.status === "blocked") {
-    throw new MfaRequiredError(mfa.graceUntil);
   }
   return user;
 }

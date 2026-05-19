@@ -160,6 +160,14 @@ async function probeElements(page: Page): Promise<ElementProbe[]> {
         if (rect.width === 0 || rect.height === 0) return;
         const style = window.getComputedStyle(el);
         if (style.visibility === "hidden" || style.display === "none") return;
+        // Skip elements that the page has explicitly disabled for
+        // pointer input — e.g., footer column titles that are accordion
+        // toggles on mobile but render as plain headings on desktop
+        // via `sm:pointer-events-none`. Without this we record bogus
+        // "click_threw" findings because Playwright's click times out
+        // on something the page intentionally made non-interactive at
+        // the current viewport. (EMR-718)
+        if (style.pointerEvents === "none") return;
         seen.add(el);
         interactive.push(el);
       });
@@ -402,17 +410,12 @@ async function clickAndObserve(
   return local;
 }
 
-// Each route fires up to MAX_CLICKS_PER_ROUTE per-click pages; with
-// CLICK_OBSERVE_MS=2s plus nav+probe time this easily breaches the
-// 30s default test timeout. The previous attempt called
-// `test.setTimeout(180_000)` inside the describe body — that's a no-op
-// in Playwright (the static helper only takes effect inside a test or
-// hook callback). `test.describe.configure({ timeout })` is the
-// supported API for raising the budget for every test in a describe
-// group, and it actually works.
-test.describe.configure({ timeout: 180_000 });
-
 test.describe("Click handlers — find-and-fix pass 8", () => {
+  // Each route fires up to MAX_CLICKS_PER_ROUTE per-click pages; with
+  // CLICK_OBSERVE_MS=2s plus nav+probe time this easily breaches the
+  // 30s default test timeout. Give each route its own generous budget.
+  test.setTimeout(180_000);
+
   for (const route of ROUTES) {
     test(`crawl ${route}`, async ({ page, context }) => {
       stats.routesScanned += 1;

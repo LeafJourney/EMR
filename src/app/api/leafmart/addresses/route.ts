@@ -21,7 +21,7 @@ const CreateSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 
-export async function GET(req: Request) {
+export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const addresses = await listAddressesForUser(user);

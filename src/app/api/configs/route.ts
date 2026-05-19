@@ -8,12 +8,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
+import { requireImplementationAdmin } from "@/lib/auth/super-admin";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 // TODO(EMR-408): integrate `applyTemplateDefaults` once
 // src/lib/specialty-templates/registry.ts lands.
 import { applyTemplateDefaults } from "@/lib/specialty-templates/registry";
-import { readJson, invalidInput } from "./_helpers";
+import {
+  readJson,
+  invalidInput,
+  withAuthErrors,
+} from "./_helpers";
 
 export const runtime = "nodejs";
 
@@ -27,9 +31,10 @@ const createDraftInput = z.object({
   selectedSpecialty: z.string().min(1).optional(),
 });
 
-export const POST = withAdminMutation(
-  { bucket: "admin.config.draft_create", role: "implementation_admin" },
-  async (req, { actor: admin }) => {
+export async function POST(req: Request) {
+  return (await withAuthErrors(async () => {
+    const admin = await requireImplementationAdmin();
+
     const parsedBody = await readJson(req);
     if (!parsedBody.ok) return parsedBody.response;
 
@@ -76,5 +81,5 @@ export const POST = withAdminMutation(
     });
 
     return NextResponse.json(created, { status: 201 });
-  },
-);
+  })) as NextResponse;
+}

@@ -48,13 +48,6 @@ function asError(status: number, error: string): NextResponse {
 
 export async function GET(req: Request): Promise<NextResponse | Response> {
   try {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const secret = process.env.CRON_SECRET ?? "";
-    
-    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
     await requireImplementationAdmin();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -2,15 +2,8 @@ import { NextResponse } from "next/server";
 import { garminClient } from "@/lib/integrations/garmin-vitals";
 import { prisma } from "@/lib/db/prisma";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const authHeader = request.headers.get("authorization") ?? "";
-    const secret = process.env.WEBHOOK_SECRET ?? "";
-    
-    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
     // 1. Get an existing patient to attach the data to
     const patient = await prisma.patient.findFirst();
     if (!patient) {

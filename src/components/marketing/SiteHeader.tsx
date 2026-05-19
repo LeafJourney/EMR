@@ -6,12 +6,19 @@ import { Wordmark } from "@/components/ui/logo";
 import { Button } from "@/components/ui/button";
 import { MobilePortraitNav } from "@/components/layout/MobilePortraitNav";
 
+// LeafMart and Marketplace previously both pointed at the legacy
+// external `theleafmart.com`, which (a) navigated visitors away from
+// the in-app surfaces and (b) lost the in-app catalogs — /leafmart
+// (consumer storefront) and /marketplace (editorial catalog, PDPs
+// from PR #348) both exist as real internal routes. Same fix shipped
+// for MobilePortraitNav in PR #353; this completes the desktop nav.
+// Caught by commercial-conversion smoke test (pass 9).
 const NAV_LINKS = [
   { label: "About", href: "/about" },
   { label: "Security", href: "/security" },
   { label: "Education", href: "/education" },
-  { label: "LeafMart", href: "https://www.theleafmart.com/", external: true },
-  { label: "Marketplace", href: "https://www.theleafmart.com/", external: true },
+  { label: "LeafMart", href: "/leafmart" },
+  { label: "Marketplace", href: "/marketplace" },
   { label: "Developer", href: "/developer" },
 ] as const;
 

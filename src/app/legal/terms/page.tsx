@@ -203,8 +203,20 @@ const SECTIONS: { id: string; title: string; summary: string; body: React.ReactN
         </p>
         <p>
           Questions or concerns about these Terms may be directed to{" "}
-          <a href="mailto:neal@leafjourney.com">neal@leafjourney.com</a> and{" "}
-          <a href="mailto:scott@leafjourney.com">scott@leafjourney.com</a>.
+          <a
+            href="mailto:neal@leafjourney.com"
+            className="underline underline-offset-2 decoration-[var(--accent)]/40 hover:decoration-[var(--accent)]"
+          >
+            neal@leafjourney.com
+          </a>{" "}
+          and{" "}
+          <a
+            href="mailto:scott@leafjourney.com"
+            className="underline underline-offset-2 decoration-[var(--accent)]/40 hover:decoration-[var(--accent)]"
+          >
+            scott@leafjourney.com
+          </a>
+          .
         </p>
       </>
     ),
@@ -235,7 +247,7 @@ export default function TermsPage() {
             href="https://healthit.gov/wp-content/uploads/2025/03/EHR_Contracts_Untangled.pdf"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[var(--leaf,#2d8b5e)] underline-offset-2 hover:underline"
+            className="text-[var(--leaf,#2d8b5e)] underline underline-offset-2 decoration-[var(--leaf,#2d8b5e)]/40 hover:decoration-[var(--leaf,#2d8b5e)]"
           >
             EHR Contracts Untangled
           </a>{" "}

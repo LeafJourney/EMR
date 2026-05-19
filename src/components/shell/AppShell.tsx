@@ -14,7 +14,6 @@ import { RailIdentityMenu } from "./RailIdentityMenu";
 import { NavPrefsProvider } from "./NavPrefsContext";
 import { NavPrefsSections } from "./NavPrefsSections";
 import { NavVisitTracker } from "./NavVisitTracker";
-import { IdleTimeoutGuard } from "@/components/auth/IdleTimeoutGuard";
 import { hasPillarIcons, type NavItem, type NavSection } from "./nav-sections";
 
 export type { NavItem, NavSection } from "./nav-sections";
@@ -56,7 +55,6 @@ export function AppShell({
   return (
     <NavPrefsProvider>
       <NavVisitTracker sections={resolved} />
-      <IdleTimeoutGuard roles={user.roles} />
       <div
         className={cn(
           "min-h-screen bg-bg flex",

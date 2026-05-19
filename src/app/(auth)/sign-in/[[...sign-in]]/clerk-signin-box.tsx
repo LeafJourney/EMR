@@ -10,8 +10,8 @@ export default function ClerkSignInBox() {
   return (
     <SignIn
       signUpUrl="/sign-up"
-      fallbackRedirectUrl="/post-sign-in"
-      forceRedirectUrl="/post-sign-in"
+      fallbackRedirectUrl="/portal"
+      forceRedirectUrl="/portal"
       appearance={{
         variables: {
           colorPrimary: "#2E5A44",

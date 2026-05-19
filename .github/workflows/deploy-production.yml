@@ -1,0 +1,19 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy_production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Production Deploy
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK }}
+          method: 'POST'
+          customHeaders: '{"Content-Type": "application/json"}'
+          timeout: '60000'
