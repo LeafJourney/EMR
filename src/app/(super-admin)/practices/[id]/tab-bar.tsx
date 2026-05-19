@@ -2,9 +2,8 @@
 //
 // We intentionally keep this server-only so the drill-in page can use
 // server components throughout and each tab can lazy-load its data on
-// selection rather than fetching everything up front (per AC). The
-// History tab is rendered as a disabled anchor with a tooltip pointing
-// at EMR-743 — implementation lives in that ticket's epic (E5).
+// selection rather than fetching everything up front (per AC). EMR-743
+// promoted the History tab from a "Soon" placeholder to a real link.
 
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
@@ -45,31 +44,9 @@ export function TabBar({
       aria-label="Practice tabs"
     >
       {TAB_KEYS.map((key) => {
-        const isHistory = key === "history";
         const isActive = key === active;
         const base =
           "relative px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-t-md";
-
-        if (isHistory) {
-          return (
-            <span
-              key={key}
-              role="tab"
-              aria-disabled="true"
-              aria-selected="false"
-              title="Shipped in EMR-743"
-              className={cn(
-                base,
-                "text-text-muted/60 cursor-not-allowed select-none",
-              )}
-            >
-              {TAB_LABELS[key]}
-              <span className="ml-1.5 text-[10px] uppercase tracking-wider rounded-full bg-surface-muted text-text-muted/70 px-1.5 py-0.5 align-middle">
-                Soon
-              </span>
-            </span>
-          );
-        }
 
         return (
           <Link

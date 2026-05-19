@@ -41,6 +41,29 @@ export type PracticeAuditRow = {
   reason: string | null;
 };
 
+// EMR-743 — History tab row + paged result envelope. Shape is intentionally
+// a superset of PracticeAuditRow (adds before/after JSON) so the timeline
+// can render a one-line summary without a second round trip.
+export type PracticeHistoryRow = {
+  id: string;
+  at: string;
+  actorUserId: string;
+  actorEmail: string | null;
+  actorRoles: string[];
+  action: string;
+  subjectType: string;
+  subjectId: string;
+  reason: string | null;
+  before: unknown;
+  after: unknown;
+};
+
+export type PracticeHistoryPage = {
+  rows: PracticeHistoryRow[];
+  /** Opaque cursor for the next page, or null if exhausted. */
+  nextCursor: string | null;
+};
+
 export type PracticeBillingMonthRow = {
   monthIso: string; // YYYY-MM-01 in UTC
   monthLabel: string; // "May 2026"
@@ -684,5 +707,150 @@ export async function loadPracticeBilling(
       gatewayChargeCents: mtdCharges._sum.feeAmountCents ?? 0,
     },
     last12Months,
+  };
+}
+
+// --------------------------------------------------------------
+// EMR-743 — History tab loader (cursor-paged audit timeline)
+// --------------------------------------------------------------
+//
+// Reads ControllerAuditLog rows whose `organizationId` matches the practice
+// OR whose `subjectId` matches a known config / practice id for the same
+// practice. Cursor-paged most-recent-first so "Load more" can append
+// without refetching the head of the timeline.
+//
+// The cursor is an opaque `${atIso}|${id}` string — we tiebreak on `id` so
+// two rows with identical `at` (rare but possible — the audit writer uses
+// `default(now())`) don't get skipped or duplicated.
+
+/** Default page size for the history timeline. */
+export const PRACTICE_HISTORY_PAGE_SIZE = 25;
+
+/** Hard upper bound on `take` to protect against runaway query params. */
+const PRACTICE_HISTORY_MAX_PAGE_SIZE = 100;
+
+/**
+ * Encode a (timestamp, id) tuple as an opaque cursor for the URL.
+ * Exported for tests / route handlers; the format is deliberately stable.
+ */
+export function encodeHistoryCursor(at: Date, id: string): string {
+  return `${at.toISOString()}|${id}`;
+}
+
+/**
+ * Inverse of `encodeHistoryCursor`. Returns null when the input is
+ * malformed — callers should treat that as "no cursor".
+ */
+export function decodeHistoryCursor(
+  cursor: string | null | undefined,
+): { at: Date; id: string } | null {
+  if (!cursor) return null;
+  const idx = cursor.indexOf("|");
+  if (idx <= 0) return null;
+  const atRaw = cursor.slice(0, idx);
+  const id = cursor.slice(idx + 1);
+  if (!id) return null;
+  const at = new Date(atRaw);
+  if (Number.isNaN(at.getTime())) return null;
+  return { at, id };
+}
+
+/**
+ * Page of ControllerAuditLog rows for a practice. Cursor is the
+ * `(at, id)` of the last row returned; pass it back as `cursor` for the
+ * next page. Returns at most `pageSize` rows.
+ *
+ * `organizationId` is the canonical lookup key; we also OR-in any rows
+ * whose `subjectId` matches the practice's configuration id or practice
+ * id, so audit rows emitted before `organizationId` was populated on the
+ * row (or on a different scope) still surface here.
+ */
+export async function loadPracticeHistoryPage(args: {
+  organizationId: string;
+  /** Additional subjectIds (e.g. PracticeConfiguration.id, Practice.id) to OR-in. */
+  alsoSubjectIds?: string[];
+  cursor?: string | null;
+  pageSize?: number;
+}): Promise<PracticeHistoryPage> {
+  const pageSize = Math.min(
+    Math.max(1, args.pageSize ?? PRACTICE_HISTORY_PAGE_SIZE),
+    PRACTICE_HISTORY_MAX_PAGE_SIZE,
+  );
+  const decoded = decodeHistoryCursor(args.cursor);
+
+  // OR clause: organizationId match OR subjectId in [config.id, practice.id].
+  const subjectIds = Array.from(
+    new Set((args.alsoSubjectIds ?? []).filter((s): s is string => !!s)),
+  );
+
+  const scope =
+    subjectIds.length > 0
+      ? {
+          OR: [
+            { organizationId: args.organizationId },
+            { subjectId: { in: subjectIds } },
+          ],
+        }
+      : { organizationId: args.organizationId };
+
+  // Cursor predicate: rows strictly older than (at, id).
+  //
+  // Prisma's built-in `cursor` option does a single-column tie-break and
+  // can't AND `(at < x) OR (at = x AND id < y)` directly without raw SQL,
+  // so we filter in `where` and order by (at desc, id desc).
+  const cursorPredicate = decoded
+    ? {
+        OR: [
+          { at: { lt: decoded.at } },
+          { AND: [{ at: decoded.at }, { id: { lt: decoded.id } }] },
+        ],
+      }
+    : null;
+
+  const where = cursorPredicate
+    ? { AND: [scope, cursorPredicate] }
+    : scope;
+
+  // Fetch pageSize + 1 so we know whether another page exists without a
+  // separate count round-trip.
+  const raw = await prisma.controllerAuditLog.findMany({
+    where,
+    orderBy: [{ at: "desc" }, { id: "desc" }],
+    take: pageSize + 1,
+    select: {
+      id: true,
+      at: true,
+      actorUserId: true,
+      actorEmail: true,
+      actorRoles: true,
+      action: true,
+      subjectType: true,
+      subjectId: true,
+      reason: true,
+      before: true,
+      after: true,
+    },
+  });
+
+  const hasMore = raw.length > pageSize;
+  const page = hasMore ? raw.slice(0, pageSize) : raw;
+  const last = page[page.length - 1];
+  const nextCursor = hasMore && last ? encodeHistoryCursor(last.at, last.id) : null;
+
+  return {
+    rows: page.map((r) => ({
+      id: r.id,
+      at: r.at.toISOString(),
+      actorUserId: r.actorUserId,
+      actorEmail: r.actorEmail,
+      actorRoles: r.actorRoles.map((role) => String(role)),
+      action: r.action,
+      subjectType: r.subjectType,
+      subjectId: r.subjectId,
+      reason: r.reason,
+      before: r.before,
+      after: r.after,
+    })),
+    nextCursor,
   };
 }
