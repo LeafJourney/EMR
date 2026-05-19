@@ -12,7 +12,7 @@ export async function getGarminSyncStatus() {
   
   const lastLog = await prisma.outcomeLog.findFirst({
     where: { 
-      patientId: session.userId, 
+      patientId: session.id, 
       note: { contains: "Garmin" } 
     },
     orderBy: { createdAt: "desc" },
@@ -36,7 +36,7 @@ export async function triggerGarminSync() {
   // Wait a moment to ensure UX loading state is visible
   await new Promise(resolve => setTimeout(resolve, 800));
   
-  await garminClient.syncPatientData(session.userId, accessToken, today, today);
+  await garminClient.syncPatientData(session.id, accessToken, today, today);
   
   return { success: true, syncTime: new Date().toISOString() };
 }

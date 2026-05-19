@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     await prisma.integrationConnection.upsert({
       where: {
         patientId_provider: {
-          patientId: session.userId,
+          patientId: session.id,
           provider: "garmin"
         }
       },
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
         connectedAt: new Date()
       },
       create: {
-        patientId: session.userId,
+        patientId: session.id,
         provider: "garmin",
         accessToken: finalAccessToken,
         accessSecret: finalAccessSecret

@@ -31,7 +31,7 @@ export async function GET() {
     // https://connect.garmin.com/oauthConfirm?oauth_token=...
 
     // Since we don't have real keys, we will mock the redirect to our callback directly:
-    const mockRequestToken = "mock_request_token_" + session.userId;
+    const mockRequestToken = "mock_request_token_" + session.id;
     const callbackUrl = new URL(`/api/integrations/garmin/callback?oauth_token=${mockRequestToken}&oauth_verifier=mock_verifier`, process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
 
     return NextResponse.redirect(callbackUrl);
