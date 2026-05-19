@@ -158,7 +158,7 @@ export function IntegrationsView() {
 
   const toggle = (id: string) => {
     if (id === "garmin" && !states.garmin.connected) {
-      handleGarminSync();
+      window.location.href = "/api/integrations/garmin/auth";
       return;
     }
 

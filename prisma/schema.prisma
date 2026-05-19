@@ -346,6 +346,9 @@ model Patient {
   // EMR-098 — Gamification Badges
   patientBadges PatientBadge[]
 
+  // EMR-054 — Third-party integrations (Garmin, Apple Health)
+  integrationConnections IntegrationConnection[]
+
   @@index([organizationId, status])
   @@index([lastName, firstName])
 }
@@ -1249,6 +1252,25 @@ model OutcomeLog {
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId, metric, loggedAt])
+}
+
+// --------------------------------------------------------------
+// Third-party Integrations (EMR-054)
+// --------------------------------------------------------------
+
+model IntegrationConnection {
+  id           String    @id @default(cuid())
+  patientId    String
+  provider     String // "garmin", "apple-health", "oura", etc.
+  accessToken  String // OAuth 1.0a oauth_token or OAuth 2.0 access_token
+  accessSecret String? // OAuth 1.0a oauth_token_secret or OAuth 2.0 refresh_token
+  connectedAt  DateTime  @default(now())
+  lastSyncAt   DateTime?
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, provider])
+  @@index([provider])
 }
 
 // --------------------------------------------------------------
@@ -4853,5 +4875,3 @@ model PatientBadge {
 
   @@unique([patientId, badgeId])
 }
-
-
