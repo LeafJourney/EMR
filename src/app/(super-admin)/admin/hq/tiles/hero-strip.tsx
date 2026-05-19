@@ -61,6 +61,34 @@ function Tile({
   );
 }
 
+function EmptyTile({
+  label,
+  hint,
+  ctaHref,
+  ctaLabel,
+}: {
+  label: string;
+  hint: string;
+  ctaHref: string;
+  ctaLabel: string;
+}) {
+  return (
+    <div className="block rounded-2xl border border-dashed border-border-strong/60 bg-surface-muted/30 px-7 py-6">
+      <div className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">{label}</div>
+      <div className="font-display text-5xl text-text-muted tracking-tight tabular-nums mt-4 leading-none">
+        —
+      </div>
+      <p className="mt-4 text-[12px] text-text-muted leading-snug">{hint}</p>
+      <Link
+        href={ctaHref}
+        className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.14em] text-accent hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
+      >
+        {ctaLabel} <span aria-hidden="true">→</span>
+      </Link>
+    </div>
+  );
+}
+
 export function HeroStrip({
   counts,
   dailySeries,
@@ -81,27 +109,54 @@ export function HeroStrip({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-      <Tile
-        label="Practices live"
-        value={formatCount(counts.practicesLive)}
-        href="/practices"
-        series={claims}
-        momPct={practicesMom}
-      />
-      <Tile
-        label="Providers active"
-        value={formatCount(counts.providersActive)}
-        href="/admin/console"
-        series={encounters}
-        momPct={providersMom}
-      />
-      <Tile
-        label="Patients active"
-        value={formatCount(counts.patientsActive)}
-        href="/practices?focus=patients"
-        series={newPatients}
-        momPct={patientsMom}
-      />
+      {counts.practicesLive === 0 ? (
+        <EmptyTile
+          label="Practices live"
+          hint="Live practice count appears here once your first practice publishes its configuration."
+          ctaHref="/onboarding"
+          ctaLabel="Start a practice"
+        />
+      ) : (
+        <Tile
+          label="Practices live"
+          value={formatCount(counts.practicesLive)}
+          href="/practices"
+          series={claims}
+          momPct={practicesMom}
+        />
+      )}
+      {counts.providersActive === 0 ? (
+        <EmptyTile
+          label="Providers active"
+          hint="Active providers will appear here once clinicians are invited into a practice."
+          ctaHref="/admin/console"
+          ctaLabel="Manage admins"
+        />
+      ) : (
+        <Tile
+          label="Providers active"
+          value={formatCount(counts.providersActive)}
+          href="/admin/console"
+          series={encounters}
+          momPct={providersMom}
+        />
+      )}
+      {counts.patientsActive === 0 ? (
+        <EmptyTile
+          label="Patients active"
+          hint="Active patients across the fleet appear here once charts are created."
+          ctaHref="/admin/search"
+          ctaLabel="Search existing data"
+        />
+      ) : (
+        <Tile
+          label="Patients active"
+          value={formatCount(counts.patientsActive)}
+          href="/practices?focus=patients"
+          series={newPatients}
+          momPct={patientsMom}
+        />
+      )}
     </div>
   );
 }

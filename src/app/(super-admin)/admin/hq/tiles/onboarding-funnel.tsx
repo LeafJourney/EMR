@@ -34,7 +34,19 @@ export function OnboardingFunnel({ stages }: { stages: OnboardingFunnelStage[] }
 
   if (total === 0) {
     return (
-      <p className="text-sm text-text-muted py-6">No practices in onboarding.</p>
+      <div className="py-6">
+        <p className="text-sm text-text">No practices in onboarding yet.</p>
+        <p className="mt-1.5 text-[12px] text-text-muted leading-snug max-w-md">
+          Each practice configuration progresses through draft, in-progress, and published stages.
+          The funnel chart appears here once the first one is created.
+        </p>
+        <Link
+          href="/onboarding"
+          className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.14em] text-accent hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
+        >
+          Start onboarding a practice <span aria-hidden="true">→</span>
+        </Link>
+      </div>
     );
   }
 

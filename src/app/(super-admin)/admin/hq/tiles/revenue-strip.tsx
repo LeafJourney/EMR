@@ -38,6 +38,27 @@ function Tile({
   );
 }
 
+function EmptyRevenueTile({
+  label,
+  hint,
+}: {
+  label: string;
+  hint: string;
+}) {
+  return (
+    <div
+      tabIndex={0}
+      className="relative block rounded-2xl border border-dashed border-border-strong/60 bg-surface-muted/30 px-7 py-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+    >
+      <div className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">{label}</div>
+      <div className="font-display text-3xl md:text-4xl text-text-muted tracking-tight tabular-nums mt-4 leading-none">
+        $0
+      </div>
+      <p className="mt-3 text-[11px] text-text-muted leading-snug">{hint}</p>
+    </div>
+  );
+}
+
 function PlaceholderTile() {
   return (
     <div
@@ -66,27 +87,48 @@ export function RevenueStrip({ revenue }: { revenue: FleetRevenue }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-      <Tile
-        label="Billed MTD"
-        subtitle="Total claim charges submitted this month."
-        value={formatUSDCents(revenue.billedCentsMTD)}
-        prevValue={formatUSDCents(revenue.billedCentsPrevMonth)}
-        pct={billedPct}
-      />
-      <Tile
-        label="Collected MTD"
-        subtitle="Insurance + patient cash actually received."
-        value={formatUSDCents(revenue.collectedCentsMTD)}
-        prevValue={formatUSDCents(revenue.collectedCentsPrevMonth)}
-        pct={collectedPct}
-      />
-      <Tile
-        label="GMV MTD"
-        subtitle="All dollars routed through the payment gateway."
-        value={formatUSDCents(revenue.gmvCentsMTD)}
-        prevValue={formatUSDCents(revenue.gmvCentsPrevMonth)}
-        pct={gmvPct}
-      />
+      {revenue.billedCentsMTD === 0 && revenue.billedCentsPrevMonth === 0 ? (
+        <EmptyRevenueTile
+          label="Billed MTD"
+          hint="Total claim charges submitted this month will appear once practices file claims."
+        />
+      ) : (
+        <Tile
+          label="Billed MTD"
+          subtitle="Total claim charges submitted this month."
+          value={formatUSDCents(revenue.billedCentsMTD)}
+          prevValue={formatUSDCents(revenue.billedCentsPrevMonth)}
+          pct={billedPct}
+        />
+      )}
+      {revenue.collectedCentsMTD === 0 && revenue.collectedCentsPrevMonth === 0 ? (
+        <EmptyRevenueTile
+          label="Collected MTD"
+          hint="Insurance and patient cash received will appear once payments land."
+        />
+      ) : (
+        <Tile
+          label="Collected MTD"
+          subtitle="Insurance + patient cash actually received."
+          value={formatUSDCents(revenue.collectedCentsMTD)}
+          prevValue={formatUSDCents(revenue.collectedCentsPrevMonth)}
+          pct={collectedPct}
+        />
+      )}
+      {revenue.gmvCentsMTD === 0 && revenue.gmvCentsPrevMonth === 0 ? (
+        <EmptyRevenueTile
+          label="GMV MTD"
+          hint="Dollars routed through the payment gateway will appear once charges flow."
+        />
+      ) : (
+        <Tile
+          label="GMV MTD"
+          subtitle="All dollars routed through the payment gateway."
+          value={formatUSDCents(revenue.gmvCentsMTD)}
+          prevValue={formatUSDCents(revenue.gmvCentsPrevMonth)}
+          pct={gmvPct}
+        />
+      )}
       <PlaceholderTile />
     </div>
   );
