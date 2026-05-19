@@ -48,5 +48,25 @@ jobs:
       - name: Lint specialty manifests
         run: npm run manifests:lint
 
+      # Vitest unit + integration tests. Previously CI ran typecheck +
+      # lint + build but NOT the test suite — a material gap for a
+      # healthcare/commerce codebase (see EMR-763). Running the suite
+      # here surfaces regressions on every PR so test debt can't grow
+      # silently. Local: `npm test` (vitest run).
+      - name: Tests (vitest)
+        run: npm test
+
       - name: Build
         run: npm run build
+
+      # Soft guard against `any` regression. The codebase tolerates a
+      # known volume today (~450 hits, EMR-763); this step prints the
+      # current count so PR reviewers see the delta. Flip to a hard
+      # threshold once the count is meaningfully reduced.
+      - name: any-usage budget (informational)
+        if: always()
+        run: |
+          count=$(grep -rE ":\s*any\b|<any>|as any\b" src/ \
+            --include="*.ts" --include="*.tsx" 2>/dev/null | wc -l | tr -d ' ')
+          echo "TypeScript \`any\` count: $count (target: <100; see EMR-763)"
+          echo "any_count=$count" >> $GITHUB_OUTPUT
