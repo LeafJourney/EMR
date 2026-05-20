@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
+import { OutcomeVelocityChart } from "@/components/leafnerd/OutcomeVelocityChart";
+import Link from "next/link";
 
 export default async function LeafNerdDashboard() {
   // 1. Auth check
@@ -41,13 +43,8 @@ export default async function LeafNerdDashboard() {
         <div className="lg:col-span-2 bg-bg-surface border border-border/10 rounded-2xl p-6 h-[400px] flex flex-col relative overflow-hidden shadow-sm">
           <h3 className="text-lg font-semibold text-text-strong mb-1">Outcome Velocity vs Polypharmacy</h3>
           <p className="text-xs text-text-muted mb-6">Tracking patient symptom reduction against prescription count.</p>
-          <div className="flex-1 border border-dashed border-border/20 rounded-xl flex items-center justify-center bg-bg-highlight/5 relative group cursor-crosshair">
-            {/* Faux graph lines */}
-            <svg className="absolute inset-0 w-full h-full opacity-50 group-hover:opacity-100 transition-opacity" preserveAspectRatio="none" viewBox="0 0 100 100">
-              <path d="M0 80 Q 25 70, 50 40 T 100 10" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-strong" />
-              <path d="M0 90 Q 30 80, 60 70 T 100 65" fill="none" stroke="currentColor" strokeWidth="2" className="text-error opacity-70" />
-            </svg>
-            <span className="text-text-muted text-sm font-medium z-10 bg-bg-surface/80 px-4 py-2 rounded-full backdrop-blur-sm border border-border/10">Interactive Chart Rendering</span>
+          <div className="flex-1 rounded-xl overflow-hidden border border-border/10">
+            <OutcomeVelocityChart />
           </div>
         </div>
 
@@ -77,20 +74,24 @@ export default async function LeafNerdDashboard() {
       
       {/* Secondary Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:bg-bg-highlight/5 transition-colors cursor-pointer">
-          <div>
-            <h4 className="font-semibold text-text-strong">Run Cohort Simulation</h4>
-            <p className="text-sm text-text-muted mt-1">Test treatment efficacy across 10k synthetic profiles.</p>
+        <Link href="/leafnerd/cohorts" className="block">
+          <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:border-accent-strong/30 hover:bg-bg-highlight/5 transition-all cursor-pointer group">
+            <div>
+              <h4 className="font-semibold text-text-strong group-hover:text-accent-strong transition-colors">Run Cohort Simulation</h4>
+              <p className="text-sm text-text-muted mt-1">Test treatment efficacy across 10k synthetic profiles.</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-bg border border-border/10 flex items-center justify-center text-text-muted group-hover:bg-accent-strong/10 group-hover:text-accent-strong group-hover:border-accent-strong/30 transition-all">→</div>
           </div>
-          <div className="w-10 h-10 rounded-full bg-bg border border-border/10 flex items-center justify-center text-text-muted">→</div>
-        </div>
-        <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:bg-bg-highlight/5 transition-colors cursor-pointer">
-          <div>
-            <h4 className="font-semibold text-text-strong">Real-time Claims Anomaly</h4>
-            <p className="text-sm text-text-muted mt-1">Review 3 flagged billing codes from yesterday.</p>
+        </Link>
+        <Link href="/leafnerd/claims" className="block">
+          <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:border-error/30 hover:bg-bg-highlight/5 transition-all cursor-pointer group">
+            <div>
+              <h4 className="font-semibold text-text-strong group-hover:text-error transition-colors">Real-time Claims Anomaly</h4>
+              <p className="text-sm text-text-muted mt-1">Review 3 flagged billing codes from yesterday.</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center text-error font-bold shadow-sm">3</div>
           </div>
-          <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center text-error">3</div>
-        </div>
+        </Link>
       </div>
     </div>
   );
