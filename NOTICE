@@ -1,0 +1,21 @@
+LeafJourney EMR / LeafBridge
+Copyright 2026 LeafJourney, Inc.
+
+This product includes software developed at LeafJourney, Inc.
+(https://leafjourney.com).
+
+Portions of this distribution are licensed under the Apache License,
+Version 2.0 (the "License"); see the accompanying LICENSE file or
+http://www.apache.org/licenses/LICENSE-2.0 for terms.
+
+Boundary of the open-source release:
+  - LeafBridge core (FHIR, terminology services, agent framework,
+    orchestrator, knowledge / policy / workbench scaffolds) is released
+    under Apache-2.0 and is the canonical re-usable substrate.
+  - LeafJourney-branded clinical, billing, dispensary, RCM, marketplace,
+    and patient-engagement surfaces in `src/app/**` and the matching
+    Prisma surface are NOT part of the open release and remain
+    proprietary to LeafJourney, Inc. See docs/commercial-boundary.md.
+
+Third-party components retain their original licenses; see the
+respective package metadata for details.
