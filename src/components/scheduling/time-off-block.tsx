@@ -84,7 +84,6 @@ export function TimeOffBlockForm({
     setSaving(true);
     try {
       if (onSave) await onSave(block);
-      else console.log("Time-off block:", block);
     } finally {
       setSaving(false);
     }

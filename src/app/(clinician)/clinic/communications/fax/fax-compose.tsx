@@ -41,22 +41,32 @@ export function FaxComposeForm() {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
-          <Label htmlFor="fax-pages">Pages</Label>
+          <Label htmlFor="fax-pages">Pages (optional)</Label>
+          {/* EMR-694 — dropdown 1-10 with freehand fallback via list input. */}
           <Input
             id="fax-pages"
             name="pageCount"
             type="number"
             min={1}
             max={500}
+            list="fax-pages-options"
             placeholder="1"
           />
+          <datalist id="fax-pages-options">
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="fax-patient">Patient ID (optional)</Label>
+          <Label htmlFor="fax-patient">Patient Info</Label>
+          {/* EMR-694 — was "Patient ID (optional)"; now mandatory. Search by
+              phone, DOB, last name, first name, or medical life number. */}
           <Input
             id="fax-patient"
             name="patientId"
-            placeholder="Patient ID"
+            required
+            placeholder="phone, DOB, full last/first name, medical life #"
           />
         </div>
       </div>

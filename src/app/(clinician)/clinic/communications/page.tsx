@@ -104,42 +104,44 @@ export default async function CommunicationsPage() {
       <PageHeader
         eyebrow="Communications"
         title="Communications Overlay"
-        description="Text, video, fax, and HIPAA-compliant calling — all in one workspace. AI transcription captures only pertinent clinical info; personal data is discarded before persistence."
+        description="Text, video, fax, and HIPAA-compliant calling — all in one workspace. AI transcription captures only pertinent clinical info. Personal data is discarded before documented."
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        {/* EMR-690 — CALLS / BEAM / VOICEMAIL / TRANSCRIPTS / FAXES / OUTREACH
+            tile labels match the all-caps spec; Zoom renamed to Beam. */}
         <MetricTile
-          label="Calls (7 days)"
+          label="CALLS (7 DAYS)"
           value={callsThisWeek}
           accent="forest"
           hint="Phone + video sessions logged"
         />
         <MetricTile
-          label="Zoom upcoming"
+          label="BEAM UPCOMING"
           value={upcomingZoom}
           accent={upcomingZoom > 0 ? "forest" : "none"}
-          hint="HIPAA-compliant Zoom visits"
+          hint="HIPAA-compliant Beam visits"
         />
         <MetricTile
-          label="New voicemails"
+          label="NEW VOICEMAILS"
           value={newVoicemails}
           accent={newVoicemails > 0 ? "amber" : "none"}
           hint="Awaiting clinician review"
         />
         <MetricTile
-          label="Transcripts to review"
+          label="TRANSCRIPTS TO REVIEW"
           value={pendingTranscripts}
           accent={pendingTranscripts > 0 ? "amber" : "none"}
           hint="Pertinent-info-only summaries"
         />
         <MetricTile
-          label="Faxes in flight"
+          label="FAXES IN FLIGHT"
           value={pendingFaxes}
           accent={pendingFaxes > 0 ? "amber" : "none"}
           hint="Queued or sending"
         />
         <MetricTile
-          label="Active outreach"
+          label="ACTIVE OUTREACH"
           value={activeCampaigns}
           accent="forest"
           hint="SMS + email campaigns"
@@ -153,16 +155,17 @@ export default async function CommunicationsPage() {
           href="/clinic/messages"
           cta="Open inbox"
         />
+        {/* EMR-690 — "provider chats" + Beam rename throughout. */}
         <ChannelCard
-          title="Provider channel"
+          title="Provider chats"
           description="HIPAA-compliant chat between providers in your org."
           href="/clinic/providers/messages"
           cta="Open channel"
         />
         <ChannelCard
-          title="Zoom telehealth"
-          description="HIPAA-compliant Zoom video visits — E2EE, waiting room, no cloud recording."
-          href="/clinic/communications/zoom"
+          title="Beam telehealth"
+          description="HIPAA-compliant video visits — E2EE, waiting room, no cloud recording."
+          href="/clinic/communications/beam"
           cta={upcomingZoom > 0 ? `${upcomingZoom} upcoming` : "Schedule"}
           highlight={upcomingZoom > 0}
         />

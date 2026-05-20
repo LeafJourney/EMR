@@ -15,9 +15,10 @@ export default async function ResearchConsolePage({
 }: {
   searchParams: { q?: string; id?: string };
 }) {
+  // EMR-688 — show the last 5 saved searches (was 8).
   const recent = await prisma.researchQuery.findMany({
     orderBy: { createdAt: "desc" },
-    take: 8,
+    take: 5,
     include: { results: { orderBy: { rank: "asc" } } },
   });
 
@@ -56,21 +57,43 @@ export default async function ResearchConsolePage({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {/* Search card */}
-          <Card tone="raised">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LeafSprig size={16} className="text-accent/80" />
-                Search the evidence
-              </CardTitle>
-              <CardDescription>
-                Try: &quot;neuropathic pain&quot;, &quot;sleep insomnia&quot;, &quot;anxiety cbd&quot;, &quot;nausea oncology&quot;.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResearchSearchForm />
-            </CardContent>
-          </Card>
+          {/* Search card — EMR-688: modality-gate cannabis-only language and
+              accept any number of words ("sleep" or "insomnia in people with
+              OSA" both return results). */}
+          {isCannabisModality && (
+            <Card tone="raised">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LeafSprig size={16} className="text-accent/80" />
+                  Search the evidence
+                </CardTitle>
+                <CardDescription>
+                  Try a single word like &quot;sleep&quot; or a full
+                  phrase like &quot;insomnia in people with OSA&quot;.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResearchSearchForm />
+              </CardContent>
+            </Card>
+          )}
+          {!isCannabisModality && (
+            <Card tone="raised">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LeafSprig size={16} className="text-accent/80" />
+                  Search the literature
+                </CardTitle>
+                <CardDescription>
+                  Search PubMed for clinical evidence. Multi-word queries
+                  are supported.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResearchSearchForm />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Results */}
           {selected ? (
@@ -156,7 +179,8 @@ export default async function ResearchConsolePage({
           <Card>
             <CardHeader>
               <CardTitle>Recent queries</CardTitle>
-              <CardDescription>{recent.length} saved searches.</CardDescription>
+              {/* EMR-688 — cap surfaced to user as 5 saved searches. */}
+              <CardDescription>{recent.length} of last 5 saved searches.</CardDescription>
             </CardHeader>
             <CardContent>
               {recent.length === 0 ? (

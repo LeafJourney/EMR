@@ -23,8 +23,6 @@ export function PainQualityForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log({ intensity, selectedAdjectives, duration });
-    // TODO: Connect to intake flow
   };
 
   return (

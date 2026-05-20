@@ -43,8 +43,6 @@ export function DocumentActions({
   };
 
   const handleDownload = () => {
-    // Mock download action
-    console.log(`Downloading document: ${documentId}`);
     setIsOpen(false);
     void logPatientEngagement("DocumentActions", "download", { documentId, documentName });
   };

@@ -51,6 +51,9 @@ interface Props {
   threadMessages: ThreadMessageData[];
   currentUserId: string;
   initialThreadId?: string;
+  /** EMR-708 — supports `?filter=brief` from the redirected morning-brief
+   *  route. Unknown values fall back to "all". */
+  initialFilter?: string;
 }
 
 // EMR-604 — chronological timeline that interleaves messages and call records
@@ -76,10 +79,15 @@ function buildTimeline(thread: ThreadMessageData): TimelineItem[] {
 // Priority filter config
 // ---------------------------------------------------------------------------
 
-type PriorityFilter = "all" | MessagePriority;
+// EMR-708 — `brief` is a synthetic filter for items migrated from the
+// retired /clinic/morning-brief surface. The Smart Inbox tags relevant
+// threads with category=follow_up by triage rules today; the brief filter
+// surfaces those plus anything flagged via a future `brief` priority.
+type PriorityFilter = "all" | "brief" | MessagePriority;
 
 const PRIORITY_FILTERS: { key: PriorityFilter; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "brief", label: "Brief" },
   { key: "urgent", label: "Urgent" },
   { key: "high", label: "High" },
   { key: "routine", label: "Routine" },
@@ -381,8 +389,17 @@ export function SmartInboxView({
   threadMessages,
   currentUserId,
   initialThreadId,
+  initialFilter,
 }: Props) {
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const initialPriority: PriorityFilter =
+    initialFilter === "brief" ||
+    initialFilter === "urgent" ||
+    initialFilter === "high" ||
+    initialFilter === "routine" ||
+    initialFilter === "low"
+      ? initialFilter
+      : "all";
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(initialPriority);
   const [categoryFilter, setCategoryFilter] = useState<MessageCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
@@ -390,10 +407,13 @@ export function SmartInboxView({
   );
   const [composeOpen, setComposeOpen] = useState(false);
 
-  // Compute counts per priority
+  // Compute counts per priority. EMR-708 — `brief` counts threads with
+  // category=follow_up (the closest current proxy for "morning brief item")
+  // until brief-tagging is fully wired upstream.
   const priorityCounts = useMemo(() => {
     const counts: Record<PriorityFilter, number> = {
       all: triaged.length,
+      brief: 0,
       urgent: 0,
       high: 0,
       routine: 0,
@@ -401,6 +421,7 @@ export function SmartInboxView({
     };
     for (const t of triaged) {
       counts[t.priority]++;
+      if (t.category === "follow_up") counts.brief++;
     }
     return counts;
   }, [triaged]);
@@ -423,7 +444,11 @@ export function SmartInboxView({
   const filtered = useMemo(() => {
     let list = triaged;
 
-    if (priorityFilter !== "all") {
+    if (priorityFilter === "brief") {
+      // EMR-708 — Brief view scopes to follow-up category until brief-flag
+      // tagging lands upstream.
+      list = list.filter((t) => t.category === "follow_up");
+    } else if (priorityFilter !== "all") {
       list = list.filter((t) => t.priority === priorityFilter);
     }
 

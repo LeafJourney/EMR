@@ -69,8 +69,6 @@ export function SubjectiveHpi() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const narrative = state.narrative.trim() || composeNarrative(state);
-    console.log("HPI:", { ...state, narrative });
   };
 
   return (

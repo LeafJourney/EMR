@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
@@ -10,15 +11,54 @@ import {
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
 import { SmartInboxView } from "./smart-inbox";
+import { MorningBriefView } from "./brief-view";
 
 export const metadata = { title: "Smart Inbox" };
+
+// EMR-708 — supported `filter=` values. `brief` renders the merged
+// Morning Brief view (previously at /clinic/morning-brief); any other
+// value falls through to the normal Smart Inbox.
+const SUPPORTED_FILTERS = ["brief"] as const;
+type SupportedFilter = (typeof SUPPORTED_FILTERS)[number];
+
+function isSupportedFilter(value: string | undefined): value is SupportedFilter {
+  return !!value && (SUPPORTED_FILTERS as readonly string[]).includes(value);
+}
 
 export default async function ClinicMessagesPage({
   searchParams,
 }: {
-  searchParams?: { thread?: string };
+  // EMR-708 — `filter=brief` is the inbound filter from the redirected
+  // /clinic/morning-brief route. The inbox shows a Brief banner + scopes
+  // the list to brief-flagged threads.
+  searchParams?: { thread?: string; filter?: string };
 }) {
   const user = await requireUser();
+  const filter = isSupportedFilter(searchParams?.filter) ? searchParams!.filter : null;
+
+  if (filter === "brief") {
+    return (
+      <PageShell maxWidth="max-w-[1400px]">
+        <PageHeader
+          eyebrow="Messages · Brief"
+          title={`Good morning, ${user.firstName}.`}
+          description="Your daily quality checklist. Folded into the inbox as the brief filter."
+        />
+        <div className="mb-4 flex items-center gap-2 text-xs">
+          <Link
+            href="/clinic/messages"
+            className="rounded-full border border-border bg-surface px-3 py-1 text-text-muted hover:bg-surface-muted"
+          >
+            All threads
+          </Link>
+          <span className="rounded-full border border-accent bg-accent/10 px-3 py-1 text-text">
+            Brief
+          </span>
+        </div>
+        <MorningBriefView />
+      </PageShell>
+    );
+  }
 
   const threads = await prisma.messageThread.findMany({
     where: { patient: { organizationId: user.organizationId! } },
@@ -133,11 +173,24 @@ export default async function ClinicMessagesPage({
         title="Smart Inbox"
         description="AI-triaged message queue. Threads are prioritized so urgent patient needs surface first."
       />
+      {/* EMR-708 — filter chips. Brief is the merged Morning Brief view. */}
+      <div className="mb-4 flex items-center gap-2 text-xs">
+        <span className="rounded-full border border-accent bg-accent/10 px-3 py-1 text-text">
+          All threads
+        </span>
+        <Link
+          href="/clinic/messages?filter=brief"
+          className="rounded-full border border-border bg-surface px-3 py-1 text-text-muted hover:bg-surface-muted"
+        >
+          Brief
+        </Link>
+      </div>
       <SmartInboxView
         triaged={triaged}
         threadMessages={threadMessages}
         currentUserId={user.id}
         initialThreadId={searchParams?.thread}
+        initialFilter={searchParams?.filter}
       />
     </PageShell>
   );

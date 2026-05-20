@@ -117,6 +117,8 @@ export async function scheduleZoomMeetingAction(
   });
 
   revalidatePath("/clinic/communications");
+  // EMR-691 — beam is the canonical path; zoom retained as redirect.
+  revalidatePath("/clinic/communications/beam");
   revalidatePath("/clinic/communications/zoom");
   return {
     ok: true,
@@ -155,6 +157,7 @@ export async function cancelZoomMeetingAction(
     data: { status: "cancelled" },
   });
 
+  revalidatePath("/clinic/communications/beam");
   revalidatePath("/clinic/communications/zoom");
   return { ok: true };
 }

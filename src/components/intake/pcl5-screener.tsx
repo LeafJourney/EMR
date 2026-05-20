@@ -32,7 +32,6 @@ export function Pcl5Screener() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("PCL-5 Score:", totalScore);
   };
 
   return (
