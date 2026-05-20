@@ -97,16 +97,15 @@ export async function HistoryTab({
         <div className="text-[11px] uppercase tracking-wider text-text-muted">
           Configuration history
         </div>
-        {/* EMR-744 — the diff viewer + "Compare versions" picker land in the
-            companion ticket. We stub the entry-point here so the layout has
-            the right whitespace and so super-admins can see where the UI is
-            headed. The link is intentionally non-functional until EMR-744. */}
-        <span
-          className="text-[11px] text-text-muted/70 italic"
-          title="Arrives with EMR-744 — diff viewer"
+        {/* EMR-746 — entry point into the semantic diff viewer.
+            Defaults to v1 → v2; the diff route renders a "No semantic
+            differences" empty state when either side doesn't exist. */}
+        <Link
+          href={`/practices/${practiceRouteId}/history/diff?from=v1&to=v2`}
+          className="text-[11px] text-text-muted hover:text-text underline-offset-2 hover:underline"
         >
-          Compare versions · coming soon
-        </span>
+          Compare versions
+        </Link>
       </div>
 
       <ol className="relative pl-5">
