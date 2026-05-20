@@ -1,0 +1,132 @@
+{
+  "resourceType": "Bundle",
+  "id": "patient-002-insomnia",
+  "meta": {
+    "tag": [
+      {
+        "system": "http://leafjourney.com/fhir/CodeSystem/synthetic-source",
+        "code": "hand-authored",
+        "display": "Hand-authored exemplar"
+      }
+    ]
+  },
+  "type": "collection",
+  "entry": [
+    {
+      "fullUrl": "Patient/patient-002",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-002",
+        "active": true,
+        "name": [
+          { "use": "official", "family": "Sleeper", "given": ["Sam", "B."] }
+        ],
+        "gender": "male",
+        "birthDate": "1987-11-30",
+        "telecom": [
+          { "system": "phone", "value": "+1-555-0200", "use": "mobile" },
+          { "system": "email", "value": "patient-002@example.invalid" }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": ["456 Fixture Lane"],
+            "city": "Faketown",
+            "state": "OR",
+            "postalCode": "97000",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Condition/cond-insomnia-001",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-insomnia-001",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            { "system": "http://snomed.info/sct", "code": "193462001", "display": "Insomnia" }
+          ],
+          "text": "Sleep-onset insomnia"
+        },
+        "subject": { "reference": "Patient/patient-002" },
+        "onsetDateTime": "2025-06-10"
+      }
+    },
+    {
+      "fullUrl": "MedicationRequest/medreq-thc-cbn-001",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "medreq-thc-cbn-001",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "text": "THC 5 mg + CBN 2 mg nighttime gummy"
+        },
+        "subject": { "reference": "Patient/patient-002" },
+        "authoredOn": "2026-01-20",
+        "dosageInstruction": [
+          {
+            "text": "1 gummy 60 minutes before bed",
+            "timing": { "repeat": { "frequency": 1, "period": 1, "periodUnit": "d" } }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-isi-001",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-isi-001",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              { "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "survey" }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            { "system": "http://loinc.org", "code": "97546-9", "display": "Insomnia severity index total score" }
+          ]
+        },
+        "subject": { "reference": "Patient/patient-002" },
+        "effectiveDateTime": "2026-02-15",
+        "valueQuantity": { "value": 18, "unit": "{score}" }
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-isi-002",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-isi-002",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              { "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "survey" }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            { "system": "http://loinc.org", "code": "97546-9", "display": "Insomnia severity index total score" }
+          ]
+        },
+        "subject": { "reference": "Patient/patient-002" },
+        "effectiveDateTime": "2026-04-01",
+        "valueQuantity": { "value": 8, "unit": "{score}" }
+      }
+    }
+  ]
+}

@@ -19,7 +19,6 @@ export function PsqiForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("PSQI Submission:", formData);
   };
 
   return (

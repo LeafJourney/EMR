@@ -32,7 +32,13 @@ export function DemographicsChart({
   metric = "Patients",
 }: DemographicsChartProps) {
   
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: Array<{ name: string; value: number }>;
+  }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-surface border border-border p-3 rounded-xl shadow-sm text-sm">

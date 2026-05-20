@@ -8,13 +8,20 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 
-export type TabKey = "overview" | "providers" | "activity" | "billing" | "history";
+export type TabKey =
+  | "overview"
+  | "providers"
+  | "activity"
+  | "billing"
+  | "costs"
+  | "history";
 
 export const TAB_KEYS: TabKey[] = [
   "overview",
   "providers",
   "activity",
   "billing",
+  "costs",
   "history",
 ];
 
@@ -23,6 +30,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   providers: "Providers",
   activity: "Activity",
   billing: "Billing",
+  costs: "Costs",
   history: "History",
 };
 

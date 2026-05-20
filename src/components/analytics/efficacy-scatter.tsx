@@ -56,9 +56,15 @@ export function ModalityEfficacyScatter({
     return groups;
   }, [data]);
 
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+  }: {
+    active?: boolean;
+    payload?: Array<{ payload: EfficacyDataPoint }>;
+  }) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload as EfficacyDataPoint;
+      const data = payload[0].payload;
       return (
         <div className="bg-surface border border-border p-3 rounded-xl shadow-sm text-sm">
           <p className="font-semibold text-text mb-1 flex items-center gap-2">

@@ -1,17 +1,18 @@
 // LeafBridge — Trust + AI Orchestration Layer
 //
-// Three modules ship together because they form a single chokepoint
-// for every PHI access in the platform:
+// Modules:
+//   • Ingestion Gateway       — Module 1 / EMR-763
+//   • FHIR Persistence        — Module 2 / EMR-764
+//   • MPI                     — Module 3 / EMR-765
+//   • Consent Policy Gateway  — Module 5 / EMR-767
+//   • Agent Orchestrator      — Module 6 / EMR-768
+//   • Clinical RAG Service    — Module 7 / EMR-769
 //
-//   • consent-policy-gateway  — Module 5 / EMR-767 — policy + consent
-//   • clinical-rag-service    — Module 7 / EMR-769 — grounded context
-//   • agent-orchestrator      — Module 6 / EMR-768 — agent OS
-//
-// Everything is in-memory and side-effect-free at MVP. Production
-// wires the stores + queues to Postgres / FHIR / pgvector / a real
-// human-review UI; the public APIs do not change.
 
 export * as Shared from "./shared";
+export * as ingestionGateway from "./ingestion-gateway";
+export * as fhirPersistence from "./fhir-persistence";
+export * as mpi from "./mpi";
 export * as ConsentPolicy from "./consent-policy-gateway";
 export * as ClinicalRag from "./clinical-rag-service";
 export * as AgentOrchestrator from "./agent-orchestrator";
