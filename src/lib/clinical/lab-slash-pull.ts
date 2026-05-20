@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="Lab slash-pull helper for EMR-702"
+
 /**
  * EMR-702 — Lab slash-pull + trending.
  *

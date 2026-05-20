@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="Note structure rules helper for EMR-704"
+
 /**
  * EMR-704 — Note structure rules.
  *

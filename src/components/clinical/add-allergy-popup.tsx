@@ -1,5 +1,7 @@
 "use client";
 
+// SAFE: dead-export-allowed reason="AddAllergyPopup component for EMR-696"
+
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";

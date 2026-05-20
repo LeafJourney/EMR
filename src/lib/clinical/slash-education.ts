@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="Slash command education helper for EMR-703"
+
 /**
  * EMR-703 — Slash-command patient-education library.
  *

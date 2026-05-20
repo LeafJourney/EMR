@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="Health maintenance scheduler for EMR-705"
+
 /**
  * EMR-705 — Health maintenance + preventive-care scheduler.
  *

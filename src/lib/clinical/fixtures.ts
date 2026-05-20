@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="SOAP acceptance fixture for EMR-700"
+
 import fs from "node:fs";
 import path from "node:path";
 

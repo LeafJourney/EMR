@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="Medical abbreviations helper for EMR-706"
+
 /**
  * EMR-706 — Medical abbreviation registry.
  *

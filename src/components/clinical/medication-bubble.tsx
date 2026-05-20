@@ -1,3 +1,5 @@
+// SAFE: dead-export-allowed reason="MedicationBubble components for EMR-701"
+
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
