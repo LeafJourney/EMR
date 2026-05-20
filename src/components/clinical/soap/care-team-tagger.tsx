@@ -88,7 +88,6 @@ export function CareTeamTagger({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Care team tagged:", taggedMembers);
   };
 
   return (

@@ -58,7 +58,6 @@ export function PlanEprescribe({ onSend }: PlanEprescribeProps = {}) {
     setStatus("sending");
     try {
       if (onSend) await onSend(state);
-      else console.log("E-Prescribe (stub):", state);
       setStatus("sent");
     } catch (err) {
       console.error("E-Prescribe failed:", err);

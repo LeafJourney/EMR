@@ -64,7 +64,6 @@ export function AssessmentIcd10({ initialSelected = [], onChange }: AssessmentIc
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Assessment ICD-10 codes:", selected);
   };
 
   return (

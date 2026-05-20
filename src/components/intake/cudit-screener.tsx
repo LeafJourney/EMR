@@ -49,7 +49,6 @@ export function CuditScreener() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("CUDIT-R Score:", totalScore);
   };
 
   return (

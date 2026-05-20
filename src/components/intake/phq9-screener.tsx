@@ -35,7 +35,6 @@ export function Phq9Screener() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("PHQ-9 Score:", totalScore);
   };
 
   return (

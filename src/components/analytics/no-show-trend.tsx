@@ -29,7 +29,15 @@ export function NoShowTrendLine({
   description = "Tracking missed appointments over time to identify operational bottlenecks.",
 }: NoShowTrendProps) {
   
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+    label,
+  }: {
+    active?: boolean;
+    payload?: Array<{ value: number }>;
+    label?: string;
+  }) => {
     if (active && payload && payload.length) {
       const rate = payload[0].value;
       const isHigh = rate > 15; // Arbitrary threshold for visual warning

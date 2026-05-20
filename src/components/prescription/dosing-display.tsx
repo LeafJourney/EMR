@@ -19,7 +19,7 @@ export function DosingDisplay({ doses = [] }: { doses?: DoseInfo[] }) {
     {
       id: "dose-1",
       medication: "CBD Isolate Tincture",
-      amount: "0.25ml (12.5mg)",
+      amount: "0.25 mL (12.5 mg)",
       frequency: "1x Daily",
       timeOfDay: "Morning",
       isTaken: true,
@@ -35,7 +35,7 @@ export function DosingDisplay({ doses = [] }: { doses?: DoseInfo[] }) {
     {
       id: "dose-3",
       medication: "CBN Sleep Capsule",
-      amount: "1 Capsule (5mg)",
+      amount: "1 Capsule (5 mg)",
       frequency: "1x Daily",
       timeOfDay: "Evening",
       isTaken: false,
