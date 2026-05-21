@@ -803,3 +803,704 @@ routes:
     auth: public
     owner: integrations
     notes: "EMR-766 terminology lookup endpoint. Pure public reference data (LOINC, SNOMED, RxNorm, ICD10 lookup), no PHI, safe public."
+
+  # ── wave-9-sprint scaffolded routes (EMR-081 through EMR-200) ──────
+  # Bulk-added on 2026-05-20 to unblock route-auth CI on PR #402.
+  # All carry an in-code Bearer secret check (LAB_WEBHOOK_SECRET /
+  # CRON_SECRET / WEBHOOK_SECRET / etc.), prod-only. Categorized as
+  # needs_review pending owner sign-off on the right auth kind per
+  # surface — review_due 2026-07-31.
+
+  agents/advance-directive-scanner:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/antimicrobial-steward:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/appeals-generator:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/balance-biller:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/bed-management:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/bilirubin-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/ccm-timer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cgm-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cgm-hypo-ai:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chart-abstractor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chart-defect-scanner:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chemo-dose-rounding:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/code-blue-scribe:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/coding-auditor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cs-agreement-locker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cs-lockin-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dietary-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/discharge-router:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dur-queue:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dynamic-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/fall-risk-ai:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/fall-risk-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/formulary-substitutor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/hcc-coder:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/lab-interpreter:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/lwbs-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/maternity-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/med-reconciler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/no-show-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/opioid-risk-scorer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/p2p-prep:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-appeal-drafter:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-approval-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-bundler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/polypharmacy-risk:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/preeclampsia-monitor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/proms-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/rpm-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/rtw-note-generator:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/scribe-qa:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sdoh-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sentiment-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sepsis-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sepsis-warning:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/smart-phrase-injector:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sprint-broadcaster:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/stroke-timer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/telemetry-triage:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/trial-matcher-live:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/tumor-board:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/wound-assessment:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/340b-auditor:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/awv-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/birads-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/chart-locker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/claim-ml-loop:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/collections-handoff:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/death-registry-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/gap-in-care:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/malpractice-risk:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/mips-reporter:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/noshow-recovery:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/pa-reverify:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/pdmp-reporter:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/post-op-checker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/referral-loop:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/rtc-tickler:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/rte-autofixer:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/system-god-mode:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/workers-comp-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/asthma-inhaler:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/asthma-sync-pediatric:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cash-price-optimizer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cdisc-exporter:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cpap-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/critical-lab-cascade:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/ctms-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/e-consult-triage:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/eligibility-check:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/erx-auto-refill:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/fhir-bulk:
+    methods: [GET]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/ift-packager:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/iis-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/mobile-phlebotomy:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/mpi-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/nemt-transport:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/newborn-hearing:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/p2p-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/pacs-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/pdmp-check:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rpm-provisioner:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtls-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtpb:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtpb-optimizer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rx-transfer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/supply-chain:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/telehealth-bandwidth:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/telehealth-qos:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/unos-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
