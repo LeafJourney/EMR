@@ -62,7 +62,7 @@ export function RollbackButton({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 transition-all"
         >
           <div className="w-full max-w-md rounded-2xl bg-surface shadow-2xl border border-border/85 p-6 animate-in fade-in-50 zoom-in-95 duration-200">
-            <div className="flex items-center gap-3 text-red-650 dark:text-red-500">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-500">
               <span className="text-xl" aria-hidden="true">&#9888;</span>
               <h2
                 id="rollback-title"
@@ -90,7 +90,7 @@ export function RollbackButton({
                 placeholder={practiceName}
                 className={`mt-2 w-full rounded-lg border bg-bg px-3 py-2 text-[13px] text-text focus:outline-none focus:ring-2 transition-all ${
                   nameMatches
-                    ? "border-emerald-550 focus:ring-emerald-550/20"
+                    ? "border-emerald-500 focus:ring-emerald-500/20"
                     : "border-border focus:ring-accent/20"
                 }`}
               />
@@ -123,7 +123,7 @@ export function RollbackButton({
             </div>
 
             {error && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50 px-3 py-2.5 text-[12px] text-red-755 dark:text-red-400">
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50/50 dark:bg-red-950/20 dark:border-red-900/50 px-3 py-2.5 text-[12px] text-red-700 dark:text-red-400">
                 {error}
               </div>
             )}
