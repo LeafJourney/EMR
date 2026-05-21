@@ -33,6 +33,7 @@ import { OverviewTab } from "./overview-tab";
 import { ProvidersTab } from "./providers-tab";
 import { ActivityTab } from "./activity-tab";
 import { BillingTab } from "./billing-tab";
+import { CostsTab } from "./costs-tab";
 import { HistoryTab } from "./history-tab";
 import { TabBar, isTabKey, type TabKey } from "./tab-bar";
 
@@ -151,10 +152,15 @@ export default async function PracticeDrillInPage({
       {activeTab === "billing" && (
         <BillingTab organizationId={practice.organizationId} />
       )}
+      {activeTab === "costs" && (
+        <CostsTab organizationId={practice.organizationId} />
+      )}
       {activeTab === "history" && (
         <HistoryTab
           practiceRouteId={id}
           organizationId={practice.organizationId}
+          configurationId={practice.configId}
+          practiceName={practice.practiceName}
           alsoSubjectIds={[
             practice.configId,
             practice.practiceId,

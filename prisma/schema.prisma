@@ -138,6 +138,11 @@ model Organization {
   timeZone            String? // IANA tz, e.g. "America/Los_Angeles"
   ExternalProvider    ExternalProvider[]
   OutboundReferral    OutboundReferral[]
+
+  // EMR-751 — Per-org subscription / billing state.
+  // One-to-one with Organization. Created on first paid event or via the
+  // admin tooling; absent for orgs that haven't onboarded billing yet.
+  practiceSubscription PracticeSubscription?
 }
 
 // EMR-420 — A Practice is a single clinical location/group under an
@@ -5038,3 +5043,56 @@ model Anomaly {
   @@index([kind, resolvedAt])
 }
 
+// --------------------------------------------------------------
+// EMR-751 — Per-organization subscription (billing tier + Stripe link)
+// --------------------------------------------------------------
+//
+// One row per Organization. Drives:
+//   - Seat-count enforcement at provider creation ([[EMR-752]] / seat-enforcement.ts).
+//   - Per-practice cost guardrails ([[EMR-756]]) via includedMonthlyTokens.
+//   - MRR/ARR fleet tile ([[EMR-753]]) via monthlyRevenueCents.
+//
+// Stripe webhook handler (EMR-751 follow-up) writes this row on
+// customer.subscription.{created,updated,deleted}; the Prisma model is
+// kept storage-only here so the rest of the system can read tier/status
+// without taking a Stripe dependency.
+//
+// `tier` values mirror the BILLING_TIERS array in
+// src/lib/billing/seat-enforcement.ts; values not in that list are
+// invalid (validated at write time, falls back to "team" on read).
+
+model PracticeSubscription {
+  id                    String    @id @default(cuid())
+  organizationId        String    @unique
+  /// "solo" | "team" | "practice" | "enterprise"
+  tier                  String
+  /// "trialing" | "active" | "past_due" | "canceled" | "incomplete"
+  status                String
+  monthlyRevenueCents   Int       @default(0)
+  /// Hard cap; enforced by seat-enforcement.ts. Mirror of the tier
+  /// default but persisted so per-customer adjustments survive tier
+  /// renames. Null = unlimited.
+  seatLimit             Int?
+  /// Token allowance per calendar month (EMR-756 soft/hard caps work
+  /// off this number). Null = no allowance enforced.
+  includedMonthlyTokens Int?
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?   @unique
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  /// Operator-set kill-switch for the broker — EMR-756. When true,
+  /// invoke() short-circuits with a structured 429.
+  throttled             Boolean   @default(false)
+  /// Optional override note set when an operator manually adjusts caps.
+  /// EMR-756 requires the reason; the column itself is freeform text.
+  overrideReason        String?
+  overrideSetAt         DateTime?
+  overrideSetByUserId   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([tier])
+}

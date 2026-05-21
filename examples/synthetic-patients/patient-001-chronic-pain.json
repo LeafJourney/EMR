@@ -1,0 +1,132 @@
+{
+  "resourceType": "Bundle",
+  "id": "patient-001-chronic-pain",
+  "meta": {
+    "tag": [
+      {
+        "system": "http://leafjourney.com/fhir/CodeSystem/synthetic-source",
+        "code": "hand-authored",
+        "display": "Hand-authored exemplar"
+      }
+    ]
+  },
+  "type": "collection",
+  "entry": [
+    {
+      "fullUrl": "Patient/patient-001",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-001",
+        "active": true,
+        "name": [
+          { "use": "official", "family": "Synthia", "given": ["Test", "A."] }
+        ],
+        "gender": "female",
+        "birthDate": "1971-04-12",
+        "telecom": [
+          { "system": "phone", "value": "+1-555-0100", "use": "mobile" },
+          { "system": "email", "value": "patient-001@example.invalid" }
+        ],
+        "address": [
+          {
+            "use": "home",
+            "line": ["123 Synthetic Way"],
+            "city": "Faketown",
+            "state": "CO",
+            "postalCode": "80000",
+            "country": "US"
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Condition/cond-pain-001",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-pain-001",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            { "system": "http://snomed.info/sct", "code": "82423001", "display": "Chronic pain" }
+          ],
+          "text": "Chronic lumbar pain"
+        },
+        "subject": { "reference": "Patient/patient-001" },
+        "onsetDateTime": "2023-09-01"
+      }
+    },
+    {
+      "fullUrl": "MedicationRequest/medreq-cbd-001",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "medreq-cbd-001",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "text": "CBD 20:1 tincture, 25 mg/mL"
+        },
+        "subject": { "reference": "Patient/patient-001" },
+        "authoredOn": "2026-01-15",
+        "dosageInstruction": [
+          {
+            "text": "0.5 mL sublingual twice daily; titrate up to 1 mL BID as tolerated",
+            "timing": { "repeat": { "frequency": 2, "period": 1, "periodUnit": "d" } }
+          }
+        ]
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-pain-001",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-pain-001",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              { "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "survey" }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            { "system": "http://loinc.org", "code": "72514-3", "display": "Pain severity - 0-10 verbal numeric rating" }
+          ]
+        },
+        "subject": { "reference": "Patient/patient-001" },
+        "effectiveDateTime": "2026-02-01",
+        "valueQuantity": { "value": 7, "unit": "{score}" }
+      }
+    },
+    {
+      "fullUrl": "Observation/obs-pain-002",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "obs-pain-002",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              { "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "survey" }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            { "system": "http://loinc.org", "code": "72514-3", "display": "Pain severity - 0-10 verbal numeric rating" }
+          ]
+        },
+        "subject": { "reference": "Patient/patient-001" },
+        "effectiveDateTime": "2026-04-01",
+        "valueQuantity": { "value": 4, "unit": "{score}" }
+      }
+    }
+  ]
+}

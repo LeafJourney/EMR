@@ -2,6 +2,7 @@ import type { FleetRevenue } from "../types";
 import { momDelta } from "../types";
 import { MomPill } from "./mom-pill";
 import { formatUSDCents } from "./format";
+import { ArrTile } from "./arr-tile";
 
 function Tile({
   label,
@@ -59,28 +60,7 @@ function EmptyRevenueTile({
   );
 }
 
-function PlaceholderTile() {
-  return (
-    <div
-      tabIndex={0}
-      className="block rounded-2xl border border-dashed border-border-strong/60 bg-surface-muted/30 px-7 py-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-      title="Available after SaaS billing ships (EMR-724)"
-      aria-label="ARR placeholder — Available after SaaS billing ships (EMR-724)"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="text-[11px] uppercase tracking-[0.16em] text-text-subtle">ARR</div>
-      </div>
-      <div className="font-display text-3xl md:text-4xl text-text-muted tracking-tight tabular-nums mt-4 leading-none">
-        —
-      </div>
-      <div className="mt-3 text-[11px] text-text-subtle leading-snug">
-        Available after SaaS billing ships (EMR-724).
-      </div>
-    </div>
-  );
-}
-
-export function RevenueStrip({ revenue }: { revenue: FleetRevenue }) {
+export async function RevenueStrip({ revenue }: { revenue: FleetRevenue }) {
   const billedPct = momDelta(revenue.billedCentsMTD, revenue.billedCentsPrevMonth);
   const collectedPct = momDelta(revenue.collectedCentsMTD, revenue.collectedCentsPrevMonth);
   const gmvPct = momDelta(revenue.gmvCentsMTD, revenue.gmvCentsPrevMonth);
@@ -129,7 +109,8 @@ export function RevenueStrip({ revenue }: { revenue: FleetRevenue }) {
           pct={gmvPct}
         />
       )}
-      <PlaceholderTile />
+      {/* EMR-753 — real ARR/MRR/churn tile, sourced from PracticeSubscription. */}
+      {await ArrTile()}
     </div>
   );
 }

@@ -803,3 +803,9 @@ routes:
     auth: required
     owner: agents
     notes: "AI Insight Engine for LeafNerd dashboard. Uses requireUser + explicit leafnerd role check."
+
+  terminology/[system]/[code]:
+    methods: [GET]
+    auth: public
+    owner: integrations
+    notes: "EMR-766 terminology lookup endpoint. Pure public reference data (LOINC, SNOMED, RxNorm, ICD10 lookup), no PHI, safe public."
