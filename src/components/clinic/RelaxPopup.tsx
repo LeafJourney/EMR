@@ -19,8 +19,8 @@ export function RelaxPopup() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className="inline-flex items-center justify-center h-10 px-6 rounded-full bg-surface-raised border border-border text-sm font-medium text-text hover:bg-surface-muted hover:text-accent transition-colors">
-          Take a breath
+        <button className="inline-flex items-center justify-center h-6 px-2.5 rounded-full bg-accent-soft text-[9px] font-bold uppercase tracking-wider text-accent hover:bg-accent hover:text-white transition-colors cursor-pointer select-none">
+          Relax
         </button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px] text-center">

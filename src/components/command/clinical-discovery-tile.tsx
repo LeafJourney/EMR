@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db/prisma";
 import type { AuthedUser } from "@/lib/auth/session";
 import { Tile } from "@/components/ui/tile";
 import { TileErrorBody } from "@/components/command/tile-error";
+import { getLocalDayBounds } from "@/lib/utils/timezone";
+import { DiscoveryTrendButton } from "@/components/command/DiscoveryTrendModal";
 
 /**
  * Clinical Discovery tile — "what did I uncover today?"
@@ -28,13 +30,12 @@ export async function ClinicalDiscoveryTile({ user }: { user: AuthedUser }) {
 }
 
 async function renderDiscoveryTile(organizationId: string) {
-  const now = new Date();
-  const startOfDay = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  );
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { timeZone: true },
+  });
+  const tz = org?.timeZone || "America/Los_Angeles";
+  const { startOfDay, endOfDay } = getLocalDayBounds(tz);
 
   const observations = await prisma.clinicalObservation.findMany({
     where: {
@@ -85,7 +86,7 @@ async function renderDiscoveryTile(organizationId: string) {
     )[0];
 
   return (
-    <DiscoveryShell>
+    <DiscoveryShell action={<DiscoveryTrendButton />}>
       <div className="flex flex-col h-full gap-3">
         <dl className="space-y-2">
           <DiscoveryRow
@@ -134,7 +135,7 @@ async function renderDiscoveryTile(organizationId: string) {
   );
 }
 
-function DiscoveryShell({ children }: { children?: React.ReactNode }) {
+function DiscoveryShell({ children, action }: { children?: React.ReactNode; action?: React.ReactNode }) {
   return (
     <Tile
       eyebrow="Clinical Discovery"
@@ -142,6 +143,7 @@ function DiscoveryShell({ children }: { children?: React.ReactNode }) {
       icon="🔍"
       span="1x1"
       tone="default"
+      action={action}
     >
       {children}
     </Tile>

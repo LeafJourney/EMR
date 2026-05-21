@@ -102,3 +102,145 @@ export async function startVisit(patientId: string) {
     redirect(`/clinic/patients/${patientId}?tab=notes&scribe=processing`);
   }
 }
+
+export async function saveAllergy(patientId: string, drugName: string, reaction: string) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  const newAllergy = `${drugName}:${reaction}`;
+  const allergies = [...(patient.allergies || [])];
+  if (!allergies.includes(newAllergy)) {
+    allergies.push(newAllergy);
+  }
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { allergies },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  return { ok: true };
+}
+
+export async function removeAllergen(patientId: string, allergyStr: string) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  const allergies = (patient.allergies || []).filter((a) => a !== allergyStr);
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { allergies },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  return { ok: true };
+}
+
+export async function updatePatientPhoto(patientId: string, base64Data: string) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  const intake = (patient.intakeAnswers as Record<string, any>) ?? {};
+  const updatedIntake = { ...intake, photoUrl: base64Data };
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { intakeAnswers: updatedIntake as any },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  revalidatePath(`/portal/profile`);
+  return { ok: true };
+}
+
+export async function updatePMHAndPSH(patientId: string, pmh: string[], psh: string[]) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  const intake = (patient.intakeAnswers as Record<string, any>) ?? {};
+  const updatedIntake = { ...intake, pastMedicalHistory: pmh, pastSurgicalHistory: psh };
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { intakeAnswers: updatedIntake as any },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  return { ok: true };
+}
+
+export async function logCorrespondence(
+  patientId: string,
+  type: "email" | "call",
+  subject: string,
+  body: string,
+  attachments?: { name: string; type: string; size: number; base64: string }[]
+) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  const now = new Date();
+
+  // Create message thread
+  const thread = await prisma.messageThread.create({
+    data: {
+      patientId,
+      subject: type === "call" ? `Phone Call - ${now.toLocaleDateString()}` : subject,
+      lastMessageAt: now,
+    },
+  });
+
+  // Create message
+  let messageBody = body;
+  if (attachments && attachments.length > 0) {
+    messageBody += "\n\nAttachments:";
+    for (const att of attachments) {
+      messageBody += `\n- ${att.name} (${Math.round(att.size / 1024)} KB)`;
+      
+      // Also create a Document entry in the database for this patient!
+      await prisma.document.create({
+        data: {
+          organizationId: user.organizationId!,
+          patientId,
+          uploadedById: user.id,
+          kind: "other",
+          originalName: att.name,
+          mimeType: att.type,
+          sizeBytes: att.size,
+          storageKey: `inline-attachment-${att.name}-${Date.now()}`,
+        },
+      });
+    }
+  }
+
+  await prisma.message.create({
+    data: {
+      threadId: thread.id,
+      senderUserId: user.id,
+      status: "sent",
+      body: messageBody,
+      sentAt: now,
+    },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  return { ok: true };
+}
+
+

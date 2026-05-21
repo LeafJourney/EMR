@@ -138,3 +138,5 @@ main().catch((err) => {
   console.error("Smoke test runner crashed:", err);
   process.exit(1);
 });
+
+export {};

@@ -21,6 +21,7 @@ vi.mock("@/lib/db/prisma", () => ({
     document: { findMany: vi.fn() },
     chartSummary: { findMany: vi.fn() },
     clinicalObservation: { findMany: vi.fn() },
+    practiceConfiguration: { findFirst: vi.fn() },
   },
 }));
 

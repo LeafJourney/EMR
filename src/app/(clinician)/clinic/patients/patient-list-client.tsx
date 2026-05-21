@@ -7,9 +7,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
+import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -51,7 +51,6 @@ type PowerFilter = "all" | "active" | "new" | "vip" | "high-risk";
 
 const POWER_FILTERS: { key: PowerFilter; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "active", label: "Active" },
   { key: "new", label: "New (30d)" },
   { key: "vip", label: "VIP" },
   { key: "high-risk", label: "High-risk" },
@@ -318,16 +317,11 @@ export function PatientListClient({
   return (
     <div className="space-y-6">
       {/* Summary metric tiles */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MetricTile
           label="Total Patients"
           value={statusCounts.all}
           accent="none"
-        />
-        <MetricTile
-          label="Active"
-          value={statusCounts.active}
-          accent="forest"
         />
         <MetricTile
           label="In Intake"
@@ -401,18 +395,11 @@ export function PatientListClient({
       <Card tone="raised" className="overflow-hidden">
         {/* Search bar */}
         <div className="px-5 pt-5 pb-4">
-          <div className="relative max-w-md">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <SearchIcon />
-            </div>
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, DOB, or phone..."
-              className="pl-9"
-            />
-          </div>
+          <UniversalPatientSearch
+            className="w-full max-w-md"
+            onQueryChange={setSearch}
+            value={search}
+          />
         </div>
 
         {/* Patient rows */}

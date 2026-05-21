@@ -14,17 +14,19 @@ export function Avatar({
   firstName,
   lastName,
   size = "md",
+  src,
   className,
 }: {
   firstName: string;
   lastName: string;
   size?: Size;
+  src?: string | null;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "relative inline-flex items-center justify-center rounded-full select-none",
+        "relative inline-flex items-center justify-center rounded-full select-none overflow-hidden",
         "bg-gradient-to-br from-accent-soft to-highlight-soft text-accent font-display font-medium",
         "ring-1 ring-inset ring-border",
         SIZES[size],
@@ -32,7 +34,13 @@ export function Avatar({
       )}
       aria-hidden="true"
     >
-      {initials(firstName, lastName)}
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={`${firstName} ${lastName}`} className="h-full w-full object-cover" />
+      ) : (
+        initials(firstName, lastName)
+      )}
     </div>
   );
 }
+
