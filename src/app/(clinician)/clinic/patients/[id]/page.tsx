@@ -37,6 +37,7 @@ import {
 import { CarePlanSection } from "@/components/patient/CarePlanSection";
 import { ChartTaskList } from "@/components/patient/ChartTaskList";
 import { logger } from "@/lib/observability/log";
+import { BirthdayBanner } from "./birthday-banner";
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -366,6 +367,14 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     })),
   });
 
+  /* ── Birthday check (EMR-780) ────────────────────────────── */
+  const isBirthday = (() => {
+    if (!patient.dateOfBirth) return false;
+    const today = new Date();
+    const dob = new Date(patient.dateOfBirth);
+    return dob.getMonth() === today.getMonth() && dob.getDate() === today.getDate();
+  })();
+
   /* ── Bound start visit action ─────────────────────────────── */
   const startVisitWithPatient = startVisit.bind(null, params.id);
 
@@ -399,6 +408,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      <BirthdayBanner isBirthday={isBirthday} firstName={patient.firstName} />
       {/* Tracks this view in the localStorage "recently viewed" strip */}
       <TrackPatientView
         patientId={patient.id}
@@ -418,8 +428,11 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
                   benchmarkSeconds={benchmarkSeconds}
                 />
               </div>
-              <h1 className="font-display text-3xl text-text tracking-tight leading-tight">
+              <h1 className="font-display text-3xl text-text tracking-tight leading-tight flex items-center gap-2">
                 {patient.firstName} {patient.lastName}
+                {isBirthday && (
+                  <span aria-hidden="true" className="text-2xl leading-none">🎂</span>
+                )}
               </h1>
               {patient.presentingConcerns && (
                 <p className="text-[15px] text-text-muted mt-1.5 leading-relaxed max-w-xl">
