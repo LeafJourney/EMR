@@ -24,6 +24,12 @@ const HOUR = 60 * MINUTE;
 export const IDLE_LIMITS_MS: Record<Role, number> = {
   patient: 30 * MINUTE,
   clinician: 15 * MINUTE,
+  // EMR-786 — Mid-level providers and back/front-office staff sit on
+  // the clinic floor with shared workstations, so we hold them to the
+  // same 15-minute PHI-staff budget.
+  midlevel: 15 * MINUTE,
+  back_office: 15 * MINUTE,
+  front_office: 15 * MINUTE,
   operator: 15 * MINUTE,
   practice_owner: 15 * MINUTE,
   practice_admin: 15 * MINUTE,

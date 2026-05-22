@@ -6,6 +6,12 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { logger } from "@/lib/observability/log";
+import {
+  ForbiddenError,
+  assertChartAccess,
+  hasPermission,
+  requirePermission,
+} from "@/lib/rbac/permissions";
 
 /**
  * Start a visit: find or create an in-progress encounter for today,
@@ -15,9 +21,23 @@ import { logger } from "@/lib/observability/log";
 export async function startVisit(patientId: string) {
   const user = await requireUser();
 
-  // Only clinicians and practice owners can start visits
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
+  // EMR-786 — Starting a visit requires write access to clinical notes.
+  // Front-office and back-office staff hit the deny path; mid-levels +
+  // clinicians + practice_owners pass.
+  if (!hasPermission(user, "notes.edit")) {
     redirect(`/clinic/patients/${patientId}?tab=notes&error=unauthorized`);
+  }
+
+  // EMR-786 — Chart-privacy gate. A doctor-only chart that the current
+  // user is not on the allowlist for must reject the start-visit, even
+  // for clinicians who would otherwise have notes.edit globally.
+  try {
+    await assertChartAccess(user, patientId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      redirect(`/clinic/patients/${patientId}?tab=notes&error=restricted`);
+    }
+    throw err;
   }
 
   const patient = await prisma.patient.findFirst({
@@ -101,4 +121,89 @@ export async function startVisit(patientId: string) {
   } else {
     redirect(`/clinic/patients/${patientId}?tab=notes&scribe=processing`);
   }
+}
+
+/* ── EMR-786 — Chart privacy management ────────────────────────── */
+
+export type ChartPrivacyResult =
+  | { ok: true; chartRestricted: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Toggle the doctor-only flag on a chart and set the allowlist of
+ * provider User IDs who may view the restricted chart. Only users with
+ * `chart.privacy.manage` (clinician / practice_owner) may call this —
+ * patients flag their preference via a different intake path that
+ * surfaces a Task for the clinician to acknowledge before the flag is
+ * set, so this action is always intentional clinician-side.
+ *
+ * Writes an AuditLog row per repo rule schema.prisma:6.
+ */
+export async function updateChartPrivacy(input: {
+  patientId: string;
+  chartRestricted: boolean;
+  restrictedProviderIds: string[];
+  reason?: string;
+}): Promise<ChartPrivacyResult> {
+  const user = await requireUser();
+
+  try {
+    requirePermission(user, "chart.privacy.manage");
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "FORBIDDEN" };
+    }
+    throw err;
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: {
+      id: input.patientId,
+      organizationId: user.organizationId!,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!patient) return { ok: false, error: "NOT_FOUND" };
+
+  // Ensure the user setting the restriction is themselves on the
+  // allowlist — otherwise they'd lock themselves out on the next page
+  // load. (Practice owners bypass via PRIVACY_BYPASS_ROLES, but the
+  // explicit allowlist entry keeps the audit trail honest.)
+  const allowlist = Array.from(
+    new Set(
+      input.chartRestricted
+        ? [...input.restrictedProviderIds, user.id]
+        : input.restrictedProviderIds,
+    ),
+  );
+
+  await prisma.patient.update({
+    where: { id: patient.id },
+    data: {
+      chartRestricted: input.chartRestricted,
+      restrictedProviderIds: allowlist,
+      chartRestrictedReason: input.reason ?? null,
+      chartRestrictedAt: input.chartRestricted ? new Date() : null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: user.organizationId!,
+      actorUserId: user.id,
+      action: input.chartRestricted
+        ? "patient.chart.privacy.restricted"
+        : "patient.chart.privacy.opened",
+      subjectType: "Patient",
+      subjectId: patient.id,
+      metadata: {
+        allowlistSize: allowlist.length,
+        reason: input.reason ?? null,
+      } as any,
+    },
+  });
+
+  revalidatePath(`/clinic/patients/${input.patientId}`);
+  return { ok: true, chartRestricted: input.chartRestricted };
 }

@@ -2,6 +2,12 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  ForbiddenError,
+  assertChartAccess,
+  canViewSection,
+} from "@/lib/rbac/permissions";
+import { AccessDenied } from "@/components/rbac/access-denied";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -52,6 +58,40 @@ interface PageProps {
 export default async function PatientChartPage({ params, searchParams }: PageProps) {
   const user = await requireUser();
   const tab = (searchParams.tab as TabKey) || "demographics";
+
+  // EMR-786 — Enforce the role/chart-privacy gate *before* loading any
+  // PHI. Front-office staff with no clinical permission, or any user
+  // hitting a chart flagged restricted/doctor-only who is not on the
+  // allowlist, lands on the AccessDenied surface instead of pulling
+  // notes/encounters/medications into the query plan.
+  try {
+    await assertChartAccess(user, params.id);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      const reason =
+        err.reason === "chart_restricted"
+          ? "This chart is flagged restricted/doctor-only. You are not on the provider allowlist."
+          : "Your role does not permit access to patient charts.";
+      return <AccessDenied reason={reason} />;
+    }
+    throw err;
+  }
+
+  // EMR-786 — Office roles cannot land on the clinical tabs at all. If
+  // a front-office user navigates to ?tab=notes or ?tab=clinical, route
+  // them back to the demographics tab they are allowed to see.
+  const CLINICAL_TABS: ReadonlySet<string> = new Set([
+    "notes",
+    "clinical",
+    "medications",
+    "prescribe",
+    "labs",
+    "imaging",
+    "problems",
+  ]);
+  if (CLINICAL_TABS.has(tab) && !canViewSection(user, "notes")) {
+    redirect(`/clinic/patients/${params.id}?tab=demographics`);
+  }
 
   // EMR-178 — `?tab=billing` is a legacy entry point. The billing
   // experience now lives on the dedicated /billing route (Financial
