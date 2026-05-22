@@ -47,7 +47,7 @@ export function ChatCB() {
           }
         ]);
       }
-    } catch (err) {
+    } catch {
       setMessages((prev) => [...prev, { role: "ai", content: "Failed to connect to ChatCB service." }]);
     } finally {
       setIsLoading(false);
