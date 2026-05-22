@@ -60,7 +60,8 @@ export default async function ClinicMessagesPage({
     );
   }
 
-  const threads = await prisma.messageThread.findMany({
+  const [threads, patients] = await Promise.all([
+    prisma.messageThread.findMany({
     where: { patient: { organizationId: user.organizationId! } },
     orderBy: { lastMessageAt: "desc" },
     include: {
@@ -90,8 +91,15 @@ export default async function ClinicMessagesPage({
         orderBy: { startedAt: "asc" },
       },
     },
-    take: 50,
-  });
+      take: 50,
+    }),
+    prisma.patient.findMany({
+      where: { organizationId: user.organizationId! },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      take: 300,
+    }),
+  ]);
 
   // Triage each thread and build serialized data for the client component
   const triaged: TriagedMessage[] = threads.map((t) => {
@@ -207,6 +215,7 @@ export default async function ClinicMessagesPage({
         currentUserId={user.id}
         initialThreadId={searchParams?.thread}
         initialFilter={searchParams?.filter}
+        patients={patients}
         patientMeds={patientMeds}
       />
     </PageShell>

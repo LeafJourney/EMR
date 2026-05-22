@@ -19,7 +19,7 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
-import { sendReply } from "./actions";
+import { sendReply, composeMessage, type ComposeResult } from "./actions";
 import { CallLaunchButtons } from "@/components/communications/call-launch-buttons";
 import { CallBubble, type CallLogData } from "./call-bubble";
 
@@ -47,6 +47,12 @@ interface ThreadMessageData {
   callLogs: CallLogData[];
 }
 
+interface PatientOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
 interface PatientMed {
   name: string;
   dosage: string | null;
@@ -57,6 +63,8 @@ interface Props {
   threadMessages: ThreadMessageData[];
   currentUserId: string;
   initialThreadId?: string;
+  /** EMR-656 — patient picker options for the New Message modal. */
+  patients: PatientOption[];
   /** EMR-708 — supports `?filter=brief` from the redirected morning-brief
    *  route. Unknown values fall back to "all". */
   initialFilter?: string;
@@ -273,6 +281,214 @@ function SparklesIcon() {
   );
 }
 
+function PencilSquareIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compose modal (EMR-656)
+// ---------------------------------------------------------------------------
+
+function ComposeSubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" size="sm" disabled={pending}>
+      {pending ? "Sending..." : "Send Message"}
+    </Button>
+  );
+}
+
+function ComposeModal({
+  patients,
+  onClose,
+  onSent,
+}: {
+  patients: PatientOption[];
+  onClose: () => void;
+  onSent: (threadId: string) => void;
+}) {
+  const [state, formAction] = useFormState(composeMessage, null);
+  const [patientQuery, setPatientQuery] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    firstInputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (state?.ok) {
+      onSent(state.threadId);
+    }
+  }, [state, onSent]);
+
+  const filteredPatients = useMemo(() => {
+    if (!patientQuery.trim()) return patients.slice(0, 6);
+    const q = patientQuery.toLowerCase();
+    return patients
+      .filter(
+        (p) =>
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q),
+      )
+      .slice(0, 6);
+  }, [patients, patientQuery]);
+
+  function handleSelectPatient(p: PatientOption) {
+    setSelectedPatient(p);
+    setPatientQuery(`${p.firstName} ${p.lastName}`);
+    setDropdownOpen(false);
+  }
+
+  function handlePatientInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setPatientQuery(e.target.value);
+    setSelectedPatient(null);
+    setDropdownOpen(true);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-surface shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-2 text-text">
+            <PencilSquareIcon />
+            <h2 className="font-display text-lg font-semibold">New Message</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-md text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+            aria-label="Close"
+          >
+            <XIcon />
+          </button>
+        </div>
+
+        {/* Form */}
+        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4">
+          {selectedPatient && (
+            <input type="hidden" name="patientId" value={selectedPatient.id} />
+          )}
+
+          {/* Patient autocomplete */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              To (patient)
+            </label>
+            <div className="relative">
+              <Input
+                ref={firstInputRef}
+                value={patientQuery}
+                onChange={handlePatientInputChange}
+                onFocus={() => setDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                placeholder="Search by name..."
+                autoComplete="off"
+              />
+              {dropdownOpen && filteredPatients.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg overflow-hidden">
+                  {filteredPatients.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-surface-muted transition-colors"
+                      onMouseDown={() => handleSelectPatient(p)}
+                    >
+                      {p.lastName}, {p.firstName}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              Subject
+            </label>
+            <Input
+              name="subject"
+              placeholder="e.g. Follow-up on your recent visit"
+              required
+              maxLength={200}
+            />
+          </div>
+
+          {/* Body */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              Message
+            </label>
+            <Textarea
+              name="body"
+              rows={5}
+              placeholder="Write your message..."
+              required
+              className="resize-none"
+            />
+          </div>
+
+          {/* Error */}
+          {state?.ok === false && (
+            <p className="text-xs text-danger">{state.error}</p>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <ComposeSubmitButton />
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Hover Meds
 // ---------------------------------------------------------------------------
@@ -474,6 +690,7 @@ export function SmartInboxView({
   threadMessages,
   currentUserId,
   initialThreadId,
+  patients,
   initialFilter,
   patientMeds = {},
 }: Props) {
@@ -491,6 +708,7 @@ export function SmartInboxView({
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
     initialThreadId ?? triaged[0]?.threadId ?? null,
   );
+  const [showCompose, setShowCompose] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
 
   // Compute counts per priority. EMR-708 — `brief` counts threads with
@@ -582,15 +800,48 @@ export function SmartInboxView({
   // Empty state: no threads at all
   if (triaged.length === 0) {
     return (
-      <EmptyState
-        icon={<CheckCircleIcon />}
-        title="Inbox zero — all caught up."
-        description="No patient messages to review. Enjoy the calm."
-      />
+      <>
+        {showCompose && (
+          <ComposeModal
+            patients={patients}
+            onClose={() => setShowCompose(false)}
+            onSent={(threadId) => {
+              setShowCompose(false);
+              setSelectedThreadId(threadId);
+            }}
+          />
+        )}
+        <div className="flex justify-end mb-4">
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon={<PencilSquareIcon />}
+            onClick={() => setShowCompose(true)}
+          >
+            New Message
+          </Button>
+        </div>
+        <EmptyState
+          icon={<CheckCircleIcon />}
+          title="Inbox zero — all caught up."
+          description="No patient messages to review. Enjoy the calm."
+        />
+      </>
     );
   }
 
   return (
+    <>
+      {showCompose && (
+        <ComposeModal
+          patients={patients}
+          onClose={() => setShowCompose(false)}
+          onSent={(threadId) => {
+            setShowCompose(false);
+            setSelectedThreadId(threadId);
+          }}
+        />
+      )}
     <div className="space-y-4">
       {/* Top bar: filters + stats */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -664,27 +915,33 @@ export function SmartInboxView({
           </div>
         </div>
 
-        {/* Right: stats */}
-        <div className="flex items-center gap-4 text-xs text-text-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <InboxIcon />
-            {triaged.length} total
-          </span>
-          {urgentCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
-              <AlertTriangleIcon />
-              {urgentCount} urgent
-            </span>
-          )}
-          {needsClinicianCount > 0 && (
+        {/* Right: stats + new message */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 text-xs text-text-muted">
             <span className="inline-flex items-center gap-1.5">
-              <StethoscopeIcon />
-              {needsClinicianCount} needs clinician
+              <InboxIcon />
+              {triaged.length} total
             </span>
-          )}
-          <Button onClick={() => setComposeOpen(true)} size="sm" className="ml-4 shadow-sm hover:shadow-md transition-shadow bg-accent hover:bg-accent-light text-white font-medium px-4 py-2 rounded-full">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M12 5v14M5 12h14"/></svg>
-            Compose
+            {urgentCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
+                <AlertTriangleIcon />
+                {urgentCount} urgent
+              </span>
+            )}
+            {needsClinicianCount > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <StethoscopeIcon />
+                {needsClinicianCount} needs clinician
+              </span>
+            )}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon={<PencilSquareIcon />}
+            onClick={() => setShowCompose(true)}
+          >
+            New Message
           </Button>
         </div>
       </div>
@@ -984,5 +1241,6 @@ export function SmartInboxView({
         </div>
       )}
     </div>
+    </>
   );
 }
