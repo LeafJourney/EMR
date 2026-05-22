@@ -486,6 +486,11 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
 
             {/* Quick actions */}
             <div className="flex items-center gap-2 shrink-0 pt-1">
+              <Link href={`/clinic/patients/${params.id}/download`}>
+                <Button variant="ghost" size="sm">
+                  Download chart
+                </Button>
+              </Link>
               <Link href={`/clinic/patients/${params.id}/voice-chart`}>
                 <Button variant="ghost" size="sm">
                   Voice chart
