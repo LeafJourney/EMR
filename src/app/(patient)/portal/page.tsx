@@ -25,6 +25,12 @@ import { HealthRoadmap } from "@/components/patient/health-roadmap";
 import { PositiveInputPrompt } from "@/components/patient/positive-input-prompt";
 import { DicomViewer } from "@/components/dicom/dicom-viewer";
 import { withTimeout } from "@/lib/utils/with-timeout";
+import { FadeInWidget, StaggerContainer, FadeInItem } from "@/components/ui/fade-in-widget";
+import { StreakFlame } from "@/components/portal/streak-flame";
+import { HealthRings } from "@/components/portal/health-rings";
+import { FreezeTokenStore } from "@/components/portal/freeze-token-store";
+import { applyFreezeTokenAction } from "@/app/(patient)/portal/apply-freeze-action";
+import { BadgeShowcase, type BadgeData } from "@/components/portal/badge-showcase";
 
 // EMR-205: guard the home-page queries so a hung downstream call can
 // never wedge the Suspense boundary again. Tight timeouts give the user
@@ -194,6 +200,14 @@ export default async function PatientHome() {
             where: { active: true },
             include: { product: true },
           },
+          dailyStreak: true,
+          freezeTokens: {
+            where: { isUsed: false },
+          },
+          patientBadges: {
+            include: { badge: true },
+            orderBy: { earnedAt: "desc" },
+          },
         },
       }).catch((err) => {
         console.warn("[portal.home] patient.findUnique rejected:", err);
@@ -312,6 +326,11 @@ export default async function PatientHome() {
     hasRegimen: patient.dosingRegimens.length > 0,
   });
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const currentStreak = patient.dailyStreak?.currentStreak ?? 0;
+  const longestStreak = patient.dailyStreak?.longestStreak ?? 0;
+  const hasCheckedInToday = patient.dailyStreak?.lastCheckInDate === todayStr;
+
   return (
     <PageShell maxWidth="max-w-[1040px]">
       <OnboardingTour />
@@ -319,13 +338,26 @@ export default async function PatientHome() {
       {/* ── Hero greeting ────────────────────────────── */}
       <section className="relative overflow-hidden rounded-2xl md:rounded-3xl liquid-glass-strong mb-6 md:mb-8">
         <div className="relative px-6 sm:px-8 md:px-12 py-8 md:py-12 max-w-2xl">
-          <Eyebrow className="mb-3">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </Eyebrow>
+          <div className="flex items-center gap-4 mb-3">
+            <Eyebrow className="mb-0">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </Eyebrow>
+            <StreakFlame 
+              currentStreak={currentStreak} 
+              longestStreak={longestStreak} 
+              hasCheckedInToday={hasCheckedInToday} 
+            />
+            {patient.freezeTokens && patient.freezeTokens.length > 0 && (
+              <FreezeTokenStore 
+                availableTokens={patient.freezeTokens.length} 
+                onApplyFreeze={applyFreezeTokenAction} 
+              />
+            )}
+          </div>
           <h1 className="font-display text-2xl sm:text-3xl md:text-4xl leading-[1.1] tracking-tight text-text">
             {greeting()},{" "}
             <span className="italic text-accent">{patient.firstName}</span>.
@@ -348,18 +380,18 @@ export default async function PatientHome() {
       <ContinuePanel />
 
       {/* ── Symptom sparklines (kept above the fold per EMR-193) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 md:mb-8">
-        <MetricTile label="Pain" accent="forest" value={latestPain !== undefined ? latestPain.toFixed(1) : "—"} hint="0-10 scale" />
-        <MetricTile label="Sleep" accent="amber" value={latestSleep !== undefined ? latestSleep.toFixed(1) : "—"} hint="0-10 scale" />
-        <div className="bg-surface-raised border border-border rounded-xl p-4 shadow-sm">
+      <StaggerContainer className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 md:mb-8">
+        <FadeInItem><MetricTile label="Pain" accent="forest" value={latestPain !== undefined ? latestPain.toFixed(1) : "—"} hint="0-10 scale" /></FadeInItem>
+        <FadeInItem><MetricTile label="Sleep" accent="amber" value={latestSleep !== undefined ? latestSleep.toFixed(1) : "—"} hint="0-10 scale" /></FadeInItem>
+        <FadeInItem className="bg-surface-raised border border-border rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">Pain trend</p>
           <Sparkline data={painSeries.length > 1 ? painSeries : [3, 4, 4, 3, 3, 2]} width={180} height={44} />
-        </div>
-        <div className="bg-surface-raised border border-border rounded-xl p-4 shadow-sm">
+        </FadeInItem>
+        <FadeInItem className="bg-surface-raised border border-border rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">Sleep trend</p>
           <Sparkline data={sleepSeries.length > 1 ? sleepSeries : [5, 5, 6, 6, 7, 7]} width={180} height={44} />
-        </div>
-      </div>
+        </FadeInItem>
+      </StaggerContainer>
 
       {/* ── Daily Vitals ── */}
       <div className="mb-6 md:mb-8">
@@ -367,61 +399,77 @@ export default async function PatientHome() {
       </div>
 
       {/* ── Top row: Health grade + Lifestyle bars + AI tips ── */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
-        {/* Health Grade */}
-        <Card tone="glass" className="md:col-span-3 text-center">
-          <CardContent className="py-8">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-3">
-              Health grade
-            </p>
-            <div className={`inline-flex h-20 w-20 items-center justify-center rounded-2xl border-2 ${healthGrade.color}`}>
-              <span className="font-display text-5xl font-bold">{healthGrade.grade}</span>
-            </div>
-            <p className="text-sm text-text-muted mt-4 leading-relaxed px-2">
-              {healthGrade.message}
-            </p>
-          </CardContent>
-        </Card>
+      <StaggerContainer className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
+        {/* Health Rings */}
+        <FadeInItem className="md:col-span-3 h-full">
+          <Card tone="glass" className="h-full text-center">
+            <CardContent className="py-6 flex flex-col items-center justify-center h-full">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-4">
+                Daily Rings
+              </p>
+              <HealthRings 
+                checkinProgress={hasCheckedInToday ? 1 : 0} 
+                adherenceProgress={latestAdherence !== null ? latestAdherence / 100 : 0.2} 
+                intakeProgress={intakeComplete / 100} 
+                size={120} 
+                strokeWidth={12} 
+              />
+              <div className="mt-5 flex gap-3 text-[10px] text-text-subtle justify-center text-left">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-accent"></div>Check-in</div>
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-highlight"></div>Adherence</div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500"></div>Intake</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </FadeInItem>
 
         {/* Lifestyle Bars */}
-        <Card tone="glass" className="md:col-span-5">
-          <CardContent className="py-6">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-5">
-              Lifestyle measures
-            </p>
-            <div className="flex items-end justify-around">
-              <LifestyleBar label="Sleep" value={latestSleep ?? null} emoji={"\uD83D\uDE34"} />
-              <LifestyleBar label="Mood" value={latestMood ?? null} emoji={"\uD83D\uDE0A"} />
-              <LifestyleBar label="Energy" value={latestEnergy ?? null} emoji={"\u26A1"} />
-              <LifestyleBar label="Anxiety" value={latestAnxiety !== undefined ? 10 - latestAnxiety : null} emoji={"\uD83E\uDDD8"} />
-              <LifestyleBar label="Pain" value={latestPain !== undefined ? 10 - latestPain : null} emoji={"\uD83D\uDCAA"} />
-            </div>
-            <p className="text-[10px] text-text-subtle text-center mt-4">
-              Higher bars = better. Based on your latest check-in.
-            </p>
-          </CardContent>
-        </Card>
+        <FadeInItem className="md:col-span-5 h-full">
+          <Card tone="glass" className="h-full">
+            <CardContent className="py-6">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-5">
+                Lifestyle measures
+              </p>
+              <div className="flex items-end justify-around">
+                <LifestyleBar label="Sleep" value={latestSleep ?? null} emoji={"\uD83D\uDE34"} />
+                <LifestyleBar label="Mood" value={latestMood ?? null} emoji={"\uD83D\uDE0A"} />
+                <LifestyleBar label="Energy" value={latestEnergy ?? null} emoji={"\u26A1"} />
+                <LifestyleBar label="Anxiety" value={latestAnxiety !== undefined ? 10 - latestAnxiety : null} emoji={"\uD83E\uDDD8"} />
+                <LifestyleBar label="Pain" value={latestPain !== undefined ? 10 - latestPain : null} emoji={"\uD83D\uDCAA"} />
+              </div>
+              <p className="text-[10px] text-text-subtle text-center mt-4">
+                Higher bars = better. Based on your latest check-in.
+              </p>
+            </CardContent>
+          </Card>
+        </FadeInItem>
 
         {/* AI Tips */}
-        <Card tone="glass" className="md:col-span-4">
-          <CardContent className="py-6">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-accent mb-4 flex items-center gap-1.5">
-              <LeafSprig size={12} className="text-accent/70" />
-              Ways to improve
-            </p>
-            <div className="space-y-3">
-              {healthTips.map((tip, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent text-[10px] font-medium mt-0.5">
-                    {i + 1}
-                  </span>
-                  <p className="text-sm text-text-muted leading-relaxed">{tip}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        <FadeInItem className="md:col-span-4 h-full">
+          <Card tone="glass" className="h-full">
+            <CardContent className="py-6">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-accent mb-4 flex items-center gap-1.5">
+                <LeafSprig size={12} className="text-accent/70" />
+                Ways to improve
+              </p>
+              <div className="space-y-3">
+                {healthTips.map((tip, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent text-[10px] font-medium mt-0.5">
+                      {i + 1}
+                    </span>
+                    <p className="text-sm text-text-muted leading-relaxed">{tip}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </FadeInItem>
+      </StaggerContainer>
 
       {/* ── Second row: Cannabis module + Next visit + Mood ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
@@ -726,6 +774,21 @@ export default async function PatientHome() {
       {/* ── Check-in Prompt ── */}
       <div className="mt-8 mb-4">
         <PositiveInputPrompt />
+      </div>
+
+      {/* ── Badges ── */}
+      <div className="mt-8">
+        <BadgeShowcase 
+          badges={
+            patient.patientBadges?.map((pb: any) => ({
+              id: pb.badge.id,
+              name: pb.badge.name,
+              description: pb.badge.description,
+              tier: pb.badge.tier,
+              earnedAt: pb.earnedAt.toISOString(),
+            })) || []
+          } 
+        />
       </div>
     </PageShell>
   );

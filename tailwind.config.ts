@@ -76,7 +76,31 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    function ({ addUtilities }: any) {
+      addUtilities({
+        ".liquid-glass": {
+          background: "rgba(255, 255, 255, 0.4)",
+          "backdrop-filter": "blur(24px) saturate(1.8)",
+          "-webkit-backdrop-filter": "blur(24px) saturate(1.8)",
+          "border-top": "1px solid rgba(255,255,255,0.8)",
+          "border-left": "1px solid rgba(255,255,255,0.5)",
+          "box-shadow": "0 8px 32px rgba(0,0,0,0.05)",
+        },
+        ".liquid-glass-strong": {
+          background: "rgba(255, 255, 255, 0.75)",
+          "backdrop-filter": "blur(32px) saturate(2)",
+          "-webkit-backdrop-filter": "blur(32px) saturate(2)",
+          "border-top": "1px solid rgba(255,255,255,0.9)",
+          "border-left": "1px solid rgba(255,255,255,0.7)",
+          "box-shadow": "0 12px 48px rgba(0,0,0,0.08)",
+        },
+        ".perspective-1000": {
+          perspective: "1000px",
+        },
+      });
+    },
+  ],
 };
 
 export default config;

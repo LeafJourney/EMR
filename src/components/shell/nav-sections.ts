@@ -31,7 +31,11 @@ export type NavIconKey =
   | "chart"
   | "server"
   | "heart"
-  | "inbox";
+  | "inbox"
+  | "search"
+  | "shield"
+  | "activity"
+  | "flag";
 
 export interface NavItem {
   label: string;

@@ -164,6 +164,14 @@ export function HeroSearchBar({
           onKeyDown={handleKey}
           placeholder={placeholder}
           aria-label="Search Leafmart"
+          // `role="combobox"` is required for `aria-expanded` and
+          // `aria-autocomplete` to be valid on an input. Without it,
+          // axe-core (and lint's `jsx-a11y/role-supports-aria-props`)
+          // flag the implicit `textbox` role as not supporting these
+          // attributes. The combobox pattern is the correct semantic
+          // for a search input that opens a suggestion listbox.
+          // (EMR-713)
+          role="combobox"
           aria-autocomplete="list"
           aria-expanded={open}
           autoComplete="off"

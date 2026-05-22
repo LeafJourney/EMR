@@ -12,7 +12,7 @@ import { LEAFJOURNEY_HQ_SLUG } from "@/lib/auth/super-admin-bootstrap";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   const gate = await requireApiAuth({ role: "super_admin" });
   if (gate.error) return gate.error;
 

@@ -54,17 +54,17 @@ function getActionTone(action: string): "success" | "warning" | "danger" | "neut
   return "neutral";
 }
 
-function getActionColor(action: string): string {
+function getActionLeaf(action: string): string {
   const tone = getActionTone(action);
   switch (tone) {
     case "success":
-      return "bg-emerald-500";
+      return "🌿";
     case "warning":
-      return "bg-amber-500";
+      return "🌱";
     case "danger":
-      return "bg-red-500";
+      return "🍂";
     default:
-      return "bg-gray-400";
+      return "🍃";
   }
 }
 
@@ -362,13 +362,13 @@ export function AuditTrailView({
                               </svg>
                             </button>
 
-                            {/* Color dot */}
+                            {/* Action leaf */}
                             <span
-                              className={cn(
-                                "mt-1.5 h-2 w-2 rounded-full shrink-0",
-                                getActionColor(log.action),
-                              )}
-                            />
+                              aria-hidden="true"
+                              className="mt-0.5 text-[11px] leading-none shrink-0"
+                            >
+                              {getActionLeaf(log.action)}
+                            </span>
 
                             {/* Content */}
                             <div className="flex-1 min-w-0">
@@ -497,19 +497,19 @@ export function AuditTrailView({
       {/* Legend */}
       <div className="mt-6 flex items-center gap-6 text-xs text-text-muted">
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span aria-hidden="true">🌿</span>
           Reads
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          <span aria-hidden="true">🌱</span>
           Writes
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-red-500" />
+          <span aria-hidden="true">🍂</span>
           Deletes
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-gray-400" />
+          <span aria-hidden="true">🍃</span>
           Other
         </div>
       </div>

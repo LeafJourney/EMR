@@ -158,6 +158,28 @@ export function ProvidersDirectoryClient({ providers }: Props) {
           ))}
         </div>
       )}
+
+      {/* Ancillary Services Section */}
+      {!search && (
+        <div className="mt-12 pt-8 border-t border-border">
+          <h2 className="text-xl font-display font-medium text-text mb-6">Ancillary Services</h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[
+              { name: "Verdant Pharmacy", desc: "In-house compounding and dispensary", phone: "555-0101" },
+              { name: "Apex Imaging", desc: "MRI, CT, X-Ray", phone: "555-0102" },
+              { name: "Central Lab", desc: "Bloodwork, Pathology, Genetics", phone: "555-0103" }
+            ].map((service) => (
+              <Card key={service.name} className="card-hover">
+                <CardContent className="pt-6">
+                  <h3 className="font-display text-base font-medium text-text">{service.name}</h3>
+                  <p className="text-xs text-text-muted mt-1">{service.desc}</p>
+                  <p className="text-sm font-medium text-accent mt-3">{service.phone}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

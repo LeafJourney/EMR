@@ -78,7 +78,6 @@ export function ObjectiveVitals() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Vitals:", { ...state, bmi: computedBmi });
   };
 
   return (

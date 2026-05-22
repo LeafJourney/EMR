@@ -89,6 +89,7 @@ export function VideoRoom({
   const [linkCopied, setLinkCopied] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>("loading");
   const [participantCount, setParticipantCount] = useState(1);
+  const [scribeActive, setScribeActive] = useState(false);
 
   const timer = useTimer(phase === "in_progress" && connection === "joined");
 
@@ -184,20 +185,22 @@ export function VideoRoom({
               <ul className="space-y-3">
                 {checklist.map((item) => (
                   <li key={item.id}>
-                    <label
+                    <button
+                      type="button"
+                      onClick={() => toggleCheck(item.id)}
                       className={cn(
-                        "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200",
+                        "w-full text-left flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200",
                         checkedItems.has(item.id)
                           ? "bg-accent/5 border-accent/30"
                           : "bg-surface border-border hover:bg-surface-muted",
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checkedItems.has(item.id)}
-                        onChange={() => toggleCheck(item.id)}
-                        className="mt-0.5 h-5 w-5 rounded border-border-strong text-accent focus:ring-accent/20"
-                      />
+                      <div className={cn(
+                        "mt-0.5 flex h-5 w-5 items-center justify-center rounded border transition-colors",
+                        checkedItems.has(item.id) ? "border-accent bg-accent text-white" : "border-border-strong text-transparent"
+                      )}>
+                        <LeafSprig size={12} className="text-current" />
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-text">
@@ -213,8 +216,8 @@ export function VideoRoom({
                           {item.description}
                         </p>
                       </div>
-                    </label>
-                  </li>
+                      </button>
+                    </li>
                 ))}
               </ul>
             </CardContent>
@@ -416,6 +419,12 @@ export function VideoRoom({
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          {scribeActive && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 border border-accent/20 text-xs font-medium text-accent animate-pulse mr-2">
+              <span className="h-2 w-2 rounded-full bg-accent" />
+              AI Scribe Active
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -587,6 +596,24 @@ export function VideoRoom({
                       strokeWidth="1.5"
                       strokeLinecap="round"
                     />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={() => setScribeActive(!scribeActive)}
+                  className={cn(
+                    "h-12 w-12 rounded-full flex items-center justify-center transition-all duration-200",
+                    scribeActive
+                      ? "bg-accent text-white shadow-[0_0_15px_rgba(var(--accent-rgb),0.5)]"
+                      : "bg-surface-muted text-text hover:bg-surface-muted/80",
+                  )}
+                  title={scribeActive ? "Pause AI Scribe" : "Start AI Scribe"}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" x2="12" y1="19" y2="22" />
+                    <path d="M8 22h8" />
                   </svg>
                 </button>
 

@@ -62,14 +62,24 @@ export function RailIdentityMenu({
           </div>
 
           <div className="mt-2 border-t border-border/70 pt-2">
-            <SignOutButton redirectUrl="/sign-in">
-              <button
+            {typeof window !== "undefined" && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+              <SignOutButton redirectUrl="/sign-in">
+                <button
+                  role="menuitem"
+                  className="w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
+                >
+                  Sign out
+                </button>
+              </SignOutButton>
+            ) : (
+              <a
+                href="/sign-in"
                 role="menuitem"
-                className="w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
+                className="block w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
               >
                 Sign out
-              </button>
-            </SignOutButton>
+              </a>
+            )}
           </div>
         </div>
       )}

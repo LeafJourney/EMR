@@ -1,0 +1,18 @@
+{
+  "name": "@leafbridge/fhir-schemas",
+  "version": "0.0.1",
+  "description": "Zod schemas for Tier A FHIR R4 resources, profiled against US Core 6.1.0.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  }
+}

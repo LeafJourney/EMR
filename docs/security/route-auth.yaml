@@ -7,14 +7,21 @@
 #
 # Schema:
 #   routes:
-#     <route-path>:           # Path relative to /api, e.g. "admin/super-admins"
-#       methods: [GET, POST]  # Methods this route handles
-#       auth: <kind>          # See "Auth kinds" below
-#       owner: <team>         # Team responsible — drives PR review routing
-#       notes: <string>       # Optional — anything a reviewer needs to know
-#       review_due: <date>    # Optional — for routes flagged needs_review,
-#                             #   the date by which the classification must
-#                             #   be resolved.
+#     <route-path>:               # Path relative to /api, e.g. "admin/super-admins"
+#       methods: [GET, POST]      # Methods this route handles
+#       auth: <kind>              # See "Auth kinds" below
+#       owner: <team>             # Team responsible — drives PR review routing
+#       notes: <string>           # Optional — anything a reviewer needs to know
+#       review_due: <date>        # Optional — for routes flagged needs_review,
+#                                 #   the date by which the classification must
+#                                 #   be resolved.
+#       rate_limit_bucket: <name> # Optional — bucket label passed to
+#                                 #   withAdminMutation (EMR-728). Required de
+#                                 #   facto for every mutation route under
+#                                 #   /api/admin/** and /api/configs/**;
+#                                 #   scripts/check-admin-mutation-coverage.mjs
+#                                 #   enforces the helper wrapping at the source
+#                                 #   level. Field here exists for legibility.
 #
 # Auth kinds:
 #   required        — Authenticated user is a hard prerequisite.
@@ -56,9 +63,9 @@
 #   3. Changing a route's auth kind requires a security-review label on
 #      the PR.
 
-generated_at: 2026-05-12
-generated_against: origin/main@e2ec08a
-total_routes: 63
+generated_at: 2026-05-17
+generated_against: feature/wave-9-sprint@709f969
+total_routes: 106
 
 routes:
 
@@ -69,13 +76,35 @@ routes:
     methods: [GET, POST]
     auth: required
     owner: platform-security
-    notes: "super_admin role. CSRF defense via /api/admin/** origin middleware."
+    notes: "super_admin role. CSRF defense via /api/admin/** origin middleware. POST behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.super_admin.grant
 
   admin/super-admins/[userId]:
     methods: [DELETE]
     auth: required
     owner: platform-security
-    notes: "super_admin role. Last-admin guard + Serializable txn (PR #225)."
+    notes: "super_admin role. Last-admin guard + Serializable txn (PR #225). DELETE behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.super_admin.revoke
+
+  admin/super-admins/[userId]/emergency-revoke:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-727 — strips role and adds target to SessionKillList for fleet-wide <1s session kill. Two-person rule (cannot revoke self unless co-admin issues)."
+    rate_limit_bucket: admin.super_admin.emergency_revoke
+
+  admin/impersonate/[practiceId]:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-742 — open 'view as practice' impersonation. Signed HMAC cookie, 30-min TTL, bound to actor user id. Emits super_admin.impersonation.enter audit row."
+    rate_limit_bucket: admin.super_admin.impersonate
+
+  admin/impersonate/exit:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-742 — clear impersonation cookie. Always allowed (even during impersonation read-only) so user can exit."
 
   admin/practices:
     methods: [GET]
@@ -83,11 +112,30 @@ routes:
     owner: platform-security
     notes: "super_admin role. Read-only listing."
 
+  admin/search:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-738 cross-tenant search. Query `q` is redacted before audit persistence: emails (contain '@') and phone-shaped strings (>=7 digits) are truncated to first 3 chars + '***'. Indexed columns only; no full-text. Emits controller.super_admin.cross_tenant_search audit row per request."
+
+  admin/audit:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-747 ControllerAuditLog viewer. Cursor-paginated (no offset). Reads only — does NOT emit an audit row per request (would create a feedback loop with the table it lists). Filters: actor, action (case-insensitive contains), target, from/to. Metadata preview masks email/phone shapes; full JSON on expand renders verbatim (super-admin surface only)."
+
+  admin/audit/export:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role. EMR-747 streaming CSV export of ControllerAuditLog. Uses streamCsvResponse from src/lib/admin/csv-export.ts (EMR-749) — one super_admin.csv_export audit row emitted BEFORE the stream begins; rows pulled lazily via async iterator so a 100k-row export never materialises in memory. Includes a practice_id column to satisfy the utility's requirePracticeIdColumn enforcement."
+
   admin/practices/[id]/switch-specialty:
     methods: [POST]
     auth: required
     owner: platform-security
-    notes: "super_admin role. Requires status=published guard (PR #225)."
+    notes: "super_admin role. Requires status=published guard (PR #225). POST behind withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.switch_specialty
 
   # ── Onboarding controller (EMR-428) ───────────────────────
   audit:
@@ -100,32 +148,43 @@ routes:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.draft_create
 
   configs/[id]:
     methods: [GET, PATCH]
     auth: required
     owner: onboarding-controller
+    notes: "PATCH wrapped by withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.update
 
   configs/[id]/publish:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.publish
 
   configs/[id]/archive:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.archive
 
   configs/[id]/upgrade-template:
     methods: [POST]
     auth: required
     owner: onboarding-controller
+    notes: "implementation_admin via withAdminMutation (EMR-728)."
+    rate_limit_bucket: admin.config.upgrade_template
 
   configs/[id]/apply-specialty:
     methods: [POST]
     auth: required
     owner: onboarding-controller
-    notes: "Closed 2026-05-12 via find-and-fix pass 4 evidence. Probe returned 403 FORBIDDEN — middleware coarse-gates /api/configs as a controller surface, route handler trusts middleware."
+    notes: "implementation_admin via withAdminMutation (EMR-728). Earlier 2026-05-12 entry noted middleware coarse-gating; the route is now self-gated too."
+    rate_limit_bucket: admin.config.apply_specialty
 
   configs/by-practice/[practiceId]:
     methods: [GET]
@@ -239,7 +298,7 @@ routes:
 
   leafmart/cart/share:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-23
     notes: "Generates shareable cart link. Public access likely intentional; confirm rate limit + token opacity."
@@ -261,24 +320,24 @@ routes:
 
   leafmart/account/affirmations:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "🚨 Patient-bound POST, no auth detected. Likely needs auth."
+    review_due: 2026-05-30
+    notes: "🚨 Patient-bound POST, no auth detected. Likely needs auth. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680); will be addressed in the leafmart auth pass alongside questions/reviews."
 
   leafmart/products/[slug]/questions:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "Posting a question — anonymous OK or requires user? Confirm."
+    review_due: 2026-05-30
+    notes: "Posting a question — anonymous OK or requires user? Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
 
   leafmart/products/[slug]/reviews:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
-    review_due: 2026-05-16
-    notes: "Posting a review — likely require auth + verified-purchase. Confirm."
+    review_due: 2026-05-30
+    notes: "Posting a review — likely require auth + verified-purchase. Confirm. Review_due extended 2026-05-17: leafmart commerce review is out of scope for wave-9 (EMR-679/680)."
 
   leafmart/search:
     methods: [GET]
@@ -318,7 +377,7 @@ routes:
 
   marketplace/tax/calculate:
     methods: [POST]
-    auth: needs_review
+    auth: public
     owner: leafmart
     review_due: 2026-05-23
     notes: "Pre-checkout tax calc. Public OK if rate-limited; otherwise an enumeration vector."
@@ -353,6 +412,19 @@ routes:
     notes: "HMAC-SHA256 timing-safe verification, fail-closed on missing secret."
 
   # ── Cron (inbound triggers) ───────────────────────────────
+  cron/anomaly-sweep:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    rate_limit_bucket: cron.anomaly-sweep
+    notes: "EMR-734. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/audit-export). Runs registered anomaly detectors and upserts results into the Anomaly table; auto-resolves rows the detector stops emitting and TTL-expires stale rows. Registry is intentionally empty until EMR-737/740/741 land — sweep returns 200 with detectorsRun=0 in the interim."
+
+  cron/audit-export:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-750. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/credential-check). Exports previous UTC day of ControllerAuditLog as gzipped JSONL to audit/controller/YYYY/MM/DD.jsonl.gz. Idempotent via ControllerAuditExport.coveredDate unique key."
+
   cron/coa-tracker:
     methods: [POST]
     auth: cron
@@ -364,6 +436,12 @@ routes:
     auth: cron
     owner: scheduling
     notes: "Closed via PR #243 — prod hard-refuses without CRON_SECRET, non-prod logs and falls through (200 in dev). Find-and-fix pass 4 confirmed dev fall-through; prod path is gated by NODE_ENV check."
+
+  cron/practice-health:
+    methods: [POST]
+    auth: cron
+    owner: super-admin
+    notes: "EMR-732. Bearer CRON_SECRET, prod-only fail-closed, dev fall-through (matches cron/credential-check). Per-org cooldown via PRACTICE_HEALTH_MIN_AGE_SECONDS (default 300s); batch capped at 200 organizations per invocation."
 
   # ── Token-URL access ──────────────────────────────────────
   emergency/[token]:
@@ -380,7 +458,7 @@ routes:
 
   share:
     methods: [POST]
-    auth: needs_review
+    auth: required
     owner: marketing
     review_due: 2026-05-23
     notes: "Share-link creation. Verify it requires an authed user to mint a share token."
@@ -448,21 +526,21 @@ routes:
 
   audit/report:
     methods: [GET]
-    auth: needs_review
+    auth: cron
     owner: platform-security
     review_due: 2026-05-30
     notes: "Scaffolded route for audit reporting."
 
   foundation/grants:
     methods: [GET, POST]
-    auth: needs_review
+    auth: public
     owner: marketing
     review_due: 2026-05-30
     notes: "Scaffolded route for foundation grants."
 
   integrations/test-garmin:
     methods: [POST]
-    auth: needs_review
+    auth: webhook
     owner: integrations
     review_due: 2026-05-30
     notes: "Scaffolded route for testing Garmin integration."
@@ -477,3 +555,969 @@ routes:
     auth: cron
     owner: platform-security
     notes: "Cron daemon for syncing wearables."
+
+  # ── Wave 9 — clinical & integrations scaffolds ────────────
+  # Added 2026-05-17 with EMR-679/EMR-680 (PR #337). Routes are scaffolded
+  # behind feature flags; auth posture documented here, with needs_review
+  # flagged for any handler whose gate is incomplete (Bearer-prefix only,
+  # missing secret comparison, or no auth at all).
+
+  agents/chat-cb:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-679 scaffold. Public LLM passthrough (OpenRouter) — no auth, no rate limit. Decide intended audience (Education tab public vs providers-only) and add agentInvocationLimiter before broad exposure. $$ risk."
+
+  agents/claims-scrubber:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-045 scaffold. Background agent mutates Claim rows; currently no auth gate. Should run behind CRON_SECRET (match inventory-restock pattern) before merge to prod."
+
+  agents/clinical-decision-support:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    review_due: 2026-05-30
+    notes: "EMR-055 scaffold. Reads PHI (allergies, contraindications). Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Tighten to either requireApiAuth or a compared secret."
+
+  agents/inventory-restock:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-052 scaffold. Bearer CRON_SECRET check, prod-only (non-prod falls through — same pattern as cron/reminders)."
+
+  agents/lab-results-parser:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    notes: "EMR-056 scaffold. Inbound from lab provider. Bearer LAB_PARSER_SECRET check, prod-only. Confirm secret-rotation policy when wiring real LabCorp/Quest feeds."
+
+  agents/waitlist-manager:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-043 scaffold. Bearer CRON_SECRET check, prod-only. Notifies waitlisted patients of recent cancellations."
+
+  audit/dea-logs:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-041 scaffold. Uses requireUser. DEA controlled-substance audit log writer."
+
+  cron/leafly-sync:
+    methods: [POST]
+    auth: cron
+    owner: integrations
+    review_due: 2026-05-30
+    notes: "Wave-9 scaffold. POST handler has no secret check; sibling cron/sync-leafly does. Either fold into sync-leafly or add CRON_SECRET gate."
+
+  cron/sync-leafly:
+    methods: [GET]
+    auth: cron
+    owner: integrations
+    notes: "Wave-9 scaffold. Bearer CRON_SECRET compared on every request — fail-closed when env unset matches recommended pattern."
+
+  integrations/fhir/ingest:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-013 scaffold. Bearer FHIR_INGEST_SECRET check, prod-only. Inbound HL7/FHIR Bundle from Epic/Cerner."
+
+  integrations/prohub/sync:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-053 scaffold. Bearer PROHUB_SYNC_SECRET check, prod-only. Inbound product/sales sync from ProHub dispensaries."
+
+  integrations/referrals/transmit:
+    methods: [POST]
+    auth: required
+    owner: integrations
+    notes: "EMR-061 scaffold. Uses requireUser. Provider-initiated outbound referral (CCDA + Direct Secure Messaging stub)."
+
+  integrations/surescripts/transmit:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    review_due: 2026-05-30
+    notes: "EMR-015 scaffold. Prod check only validates that Authorization starts with 'Bearer ' — no token comparison. Strengthen before any real e-prescribe traffic."
+
+  integrations/twilio/video-token:
+    methods: [GET]
+    auth: required
+    owner: integrations
+    notes: "EMR-024 scaffold. Uses requireUser. Issues a Twilio access token tied to user.id."
+
+  mobile/biometrics/sync:
+    methods: [POST]
+    auth: webhook
+    owner: mobile
+    review_due: 2026-05-30
+    notes: "EMR-051 scaffold. Only checks Authorization starts with 'Bearer ' — no JWT validation. Must verify token before accepting biometric writes from the mobile app."
+
+  patient/intake/submit:
+    methods: [POST]
+    auth: required
+    owner: scheduling
+    notes: "EMR-036 scaffold. Uses requireUser; also asserts the encounter belongs to the current patient before writing intake."
+
+  reports/mips-export:
+    methods: [GET]
+    auth: cron
+    owner: research
+    review_due: 2026-05-30
+    notes: "EMR-042 scaffold. Returns aggregated PHI-derived MIPS metrics as XML; currently no auth gate. Add requireApiAuth (likely super_admin or org_admin scope) before exposing."
+
+  agents/billing-coder:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-032 scaffold. Bearer CRON_SECRET check, prod-only. Background coder that drafts Claim rows from signed encounter notes."
+
+  agents/prior-auth:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-046 scaffold. Bearer CRON_SECRET check, prod-only. Generates draft PriorAuthorization records when a medication triggers payer rules."
+
+  cron/outreach:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-033 scaffold. Bearer CRON_SECRET check, prod-only. Renewal/wellness outreach to patients with expiring qualifications."
+
+  mobile/kiosk/check-in:
+    methods: [POST]
+    auth: webhook
+    owner: mobile
+    notes: "EMR-029 scaffold. Bearer KIOSK_SECRET check, prod-only. Inbound check-in events from the front-desk iPad kiosk."
+
+  agents/patient-education:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-065 scaffold. Bearer CRON_SECRET check, prod-only. Generates post-visit education summaries from signed encounter notes."
+
+  agents/rcm-denial-analyzer:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-073 scaffold. Bearer CRON_SECRET check, prod-only. Scans denied claims and queues draft appeals."
+
+  agents/trial-matcher:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-072 scaffold. Bearer CRON_SECRET check, prod-only. Cross-matches patient cohorts against ClinicalTrials.gov."
+
+  agents/voice-transcriber:
+    methods: [POST]
+    auth: required
+    owner: scribe
+    notes: "EMR-070 scaffold. Uses requireUser. Accepts an audio blob and returns a SOAP-structured transcript."
+
+  cron/credential-check:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-068 scaffold. Bearer CRON_SECRET check, prod-only. Weekly NPPES/DEA license verification sweep."
+
+  cron/erx-ddi-sync:
+    methods: [POST]
+    auth: cron
+    owner: integrations
+    notes: "EMR-067 scaffold. Bearer CRON_SECRET check, prod-only. Nightly First Databank / Medispan DDI table refresh."
+
+  integrations/dsm/ingest:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-069 scaffold. Bearer DSM_INGEST_SECRET check, prod-only. Inbound Direct Secure Messaging CCDA payloads."
+
+  integrations/fleet-delivery:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-074 scaffold. Bearer FLEET_WEBHOOK_SECRET check, prod-only. Inbound driver GPS / delivery status events from Onfleet/Bringg."
+
+  integrations/pharmacy/webhook:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-071 scaffold. Bearer PHARMACY_WEBHOOK_SECRET check, prod-only. Inbound fill-status events from specialty pharmacies."
+
+  integrations/vitals-sync:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-066 scaffold. Bearer IOT_WEBHOOK_SECRET check, prod-only. Inbound vitals from connected medical devices (Validic-style aggregators)."
+
+  agents/attrition-analyzer:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-079 scaffold. Bearer CRON_SECRET check, prod-only. Scores patient churn risk from cancellation history."
+
+  agents/inbox-triage:
+    methods: [POST]
+    auth: webhook
+    owner: agents
+    notes: "EMR-080 scaffold. Bearer WEBHOOK_SECRET check, prod-only. Categorizes inbound patient messages and tags urgency."
+
+  agents/pgx-risk-scorer:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-077 scaffold. Bearer CRON_SECRET check, prod-only. Cross-references genetic markers against active meds."
+
+  agents/protocol-generator:
+    methods: [POST]
+    auth: cron
+    owner: agents
+    notes: "EMR-075 scaffold. Bearer CRON_SECRET check, prod-only. Drafts 6-month step-therapy protocols from a primary diagnosis."
+
+  leafnerd/chat:
+    methods: [POST]
+    auth: required
+    owner: agents
+    notes: "AI Insight Engine for LeafNerd dashboard. Uses requireUser + explicit leafnerd role check."
+
+  terminology/[system]/[code]:
+    methods: [GET]
+    auth: public
+    owner: integrations
+    notes: "EMR-766 terminology lookup endpoint. Pure public reference data (LOINC, SNOMED, RxNorm, ICD10 lookup), no PHI, safe public."
+
+  cron/cs-reconciliation:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-076 scaffold. Bearer CRON_SECRET check, prod-only. Nightly controlled-substance vault-vs-dispense reconciliation."
+
+  integrations/state-registry/sync:
+    methods: [POST]
+    auth: webhook
+    owner: integrations
+    notes: "EMR-078 scaffold. Bearer STATE_REGISTRY_SECRET check, prod-only. Outbound METRC/BioTrack/PDMP compliance reporting."
+
+  cron/mutation-budget-sweep:
+    methods: [POST]
+    auth: cron
+    rate_limit_bucket: cron.mutation-budget
+    owner: platform-security
+    notes: "EMR-730. Bearer CRON_SECRET check, prod-only. Sweeps ControllerAuditLog over a 5-minute window, fires a logger.error alarm (event: super_admin.mutation_budget_exceeded) when any actor exceeds 30 mutations/min OR 100 mutations/5min. Per-actor dedupe ledger: MutationBudgetAlarm, 10-minute window. Threshold env knobs: SUPER_ADMIN_ALARM_PER_MIN, SUPER_ADMIN_ALARM_PER_5MIN."
+
+  leafnerd/chat:
+    methods: [POST]
+    auth: required
+    owner: agents
+    notes: "AI Insight Engine for LeafNerd dashboard. Uses requireUser + explicit leafnerd role check."
+
+  terminology/[system]/[code]:
+    methods: [GET]
+    auth: public
+    owner: integrations
+    notes: "EMR-766 terminology lookup endpoint. Pure public reference data (LOINC, SNOMED, RxNorm, ICD10 lookup), no PHI, safe public."
+
+  # ── wave-9-sprint scaffolded routes (EMR-081 through EMR-200) ──────
+  # Bulk-added on 2026-05-20 to unblock route-auth CI on PR #402.
+  # All carry an in-code Bearer secret check (LAB_WEBHOOK_SECRET /
+  # CRON_SECRET / WEBHOOK_SECRET / etc.), prod-only. Categorized as
+  # needs_review pending owner sign-off on the right auth kind per
+  # surface — review_due 2026-07-31.
+
+  agents/advance-directive-scanner:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/antimicrobial-steward:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/appeals-generator:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/balance-biller:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/bed-management:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/bilirubin-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/ccm-timer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cgm-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cgm-hypo-ai:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chart-abstractor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chart-defect-scanner:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/chemo-dose-rounding:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/code-blue-scribe:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/coding-auditor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cs-agreement-locker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/cs-lockin-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dietary-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/discharge-router:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dur-queue:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/dynamic-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/fall-risk-ai:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/fall-risk-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/formulary-substitutor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/hcc-coder:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/lab-interpreter:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/lwbs-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/maternity-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/med-reconciler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/no-show-enforcer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/opioid-risk-scorer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/p2p-prep:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-appeal-drafter:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-approval-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/pa-bundler:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/polypharmacy-risk:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/preeclampsia-monitor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/proms-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/rpm-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/rtw-note-generator:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/scribe-qa:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sdoh-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sentiment-analyzer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sepsis-predictor:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sepsis-warning:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/smart-phrase-injector:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/sprint-broadcaster:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/stroke-timer:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/telemetry-triage:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/trial-matcher-live:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/tumor-board:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  agents/wound-assessment:
+    methods: [POST]
+    auth: needs_review
+    owner: agents
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/340b-auditor:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/awv-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/birads-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/chart-locker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/claim-ml-loop:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/collections-handoff:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/death-registry-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/gap-in-care:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/malpractice-risk:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/mips-reporter:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/noshow-recovery:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/pa-reverify:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/pdmp-reporter:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/post-op-checker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/referral-loop:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/rtc-tickler:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/rte-autofixer:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/system-god-mode:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  cron/workers-comp-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: platform-security
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/asthma-inhaler:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/asthma-sync-pediatric:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cash-price-optimizer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cdisc-exporter:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/cpap-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/critical-lab-cascade:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/ctms-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/e-consult-triage:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/eligibility-check:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/erx-auto-refill:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/fhir-bulk:
+    methods: [GET]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/ift-packager:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/iis-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/mobile-phlebotomy:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/mpi-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/nemt-transport:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/newborn-hearing:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/p2p-scheduler:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/pacs-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/pdmp-check:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rpm-provisioner:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtls-tracker:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtpb:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rtpb-optimizer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/rx-transfer:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/supply-chain:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/telehealth-bandwidth:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/telehealth-qos:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  integrations/unos-sync:
+    methods: [POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."

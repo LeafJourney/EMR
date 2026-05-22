@@ -36,6 +36,25 @@ import type { Role } from "@prisma/client";
 import { logger } from "@/lib/observability/log";
 import { type AuthedUser, requireUser } from "./session";
 import { bootstrapSuperAdminIfAllowlisted } from "./super-admin-bootstrap";
+import { readImpersonationFromCookies } from "./impersonation";
+import { isUserRevoked } from "./session-kill-list";
+import {
+  buildMfaRequiredResponse,
+  loadSuperAdminMfaState,
+} from "./super-admin-mfa";
+
+/**
+ * HTTP methods we consider "read-only." Anything else is treated as a
+ * mutation and refused during impersonation. OPTIONS is included
+ * because CORS preflights are required to succeed even on routes whose
+ * non-preflight method would 403 — refusing the preflight breaks the
+ * client error UI before the user ever sees the 403 body.
+ */
+const READ_ONLY_METHODS: ReadonlySet<string> = new Set([
+  "GET",
+  "HEAD",
+  "OPTIONS",
+]);
 
 export interface RequireApiAuthOptions {
   /**
@@ -67,6 +86,23 @@ export interface RequireApiAuthOptions {
     /** Bucket label included in the 429 response — for client-side debugging. */
     bucket?: string;
   };
+
+  /**
+   * Optional Request handle. When supplied, the gate enforces the
+   * EMR-742 impersonation read-only rule: if an impersonation session
+   * is active and the request method is NOT in READ_ONLY_METHODS, the
+   * gate returns 403 with body `{ error: "impersonation_read_only" }`.
+   *
+   * Why is this opt-in? Some routes (the impersonation exit route
+   * itself, plus the bootstrap-grant audit row) need to mutate state
+   * *during* impersonation to terminate or attribute the session. They
+   * deliberately omit `request` to bypass the gate. Every other admin
+   * mutation MUST pass `request` so the gate can enforce read-only.
+   *
+   * `withAdminMutation()` passes this automatically — most routes
+   * inherit the enforcement for free.
+   */
+  request?: Request;
 }
 
 export type RequireApiAuthResult =
@@ -101,6 +137,38 @@ export async function requireApiAuth(
     };
   }
 
+  // EMR-727: emergency-revoke kill-list. Consulted on every authenticated
+  // request via a 1s in-process TTL cache (≤1s fleet-wide propagation).
+  // If the actor is on the list, refuse with a structured 401 so clients
+  // can distinguish "your session was killed" from "you were never signed
+  // in" and force the user back to the sign-in flow.
+  try {
+    if (await isUserRevoked(user.id)) {
+      return {
+        actor: null,
+        error: NextResponse.json(
+          {
+            error: "UNAUTHORIZED",
+            code: "session_revoked",
+            message: "Your session has been revoked. Please sign in again.",
+          },
+          { status: 401 },
+        ),
+      };
+    }
+  } catch (err) {
+    // A kill-list lookup failure must NOT silently grant access — but it
+    // also can't block the entire fleet during a DB hiccup. Log loud and
+    // fail open: the worst case is the existing JWT-TTL window we had
+    // before this feature. The structured log makes the regression
+    // visible to on-call.
+    logger.error({
+      event: "auth.kill_list.lookup_failed",
+      userId: user.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   if (wantsBootstrap) {
     try {
       await bootstrapSuperAdminIfAllowlisted(user);
@@ -124,6 +192,98 @@ export async function requireApiAuth(
         { status: 403 },
       ),
     };
+  }
+
+  // EMR-725 — Super-admin MFA enforcement. Existing super-admins without
+  // MFA get a one-time 14-day grace window (stamped on first read by
+  // loadSuperAdminMfaState); after that the gate hard-blocks with a
+  // structured `mfa_required` 403. See ./super-admin-mfa.ts for the
+  // grace-window design rationale.
+  if (user.roles.includes("super_admin")) {
+    const mfaState = await loadSuperAdminMfaState(user);
+    if (mfaState.status === "blocked") {
+      await logMfaBlocked(user, mfaState.graceUntil);
+      return { actor: null, error: buildMfaRequiredResponse(mfaState.graceUntil) };
+    }
+    if (mfaState.status === "grace") {
+      logger.warn({
+        event: "auth.super_admin_mfa.grace_active",
+        userId: user.id,
+        graceUntil: mfaState.graceUntil.toISOString(),
+      });
+    }
+  }
+
+  // ── EMR-742: impersonation read-only enforcement ─────────────
+  // Runs AFTER authN/authZ + MFA gate but BEFORE rate limiting (we
+  // don't want a refused mutation to also burn budget).
+  //
+  // The gate is opt-in via `options.request` — see RequireApiAuthOptions
+  // for the rationale. When opted in, ANY non-GET method during an
+  // active impersonation is refused with a stable error envelope.
+  if (options.request) {
+    const method = options.request.method?.toUpperCase() ?? "GET";
+    // The impersonation-exit route MUST always be allowed even during an
+    // active impersonation — otherwise the user can't terminate the
+    // session they're trying to end. middleware.ts has the same
+    // exemption at the edge layer.
+    const isImpersonationExit = (() => {
+      try {
+        return new URL(options.request.url).pathname ===
+          "/api/admin/impersonate/exit";
+      } catch {
+        return false;
+      }
+    })();
+    if (!READ_ONLY_METHODS.has(method) && !isImpersonationExit) {
+      let session = null;
+      try {
+        session = await readImpersonationFromCookies(user.id);
+      } catch (err) {
+        // readImpersonationFromCookies throws outside a request scope.
+        // Inside one it shouldn't, but be defensive — a thrown cookie
+        // read must NEVER be interpreted as "no session" because that
+        // would silently unlock the read-only gate.
+        logger.error({
+          event: "auth.impersonation.cookie_read_failed",
+          userId: user.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        return {
+          actor: null,
+          error: NextResponse.json(
+            {
+              error: "impersonation_check_failed",
+              message:
+                "Could not verify impersonation state — request refused.",
+            },
+            { status: 500 },
+          ),
+        };
+      }
+
+      if (session) {
+        logger.warn({
+          event: "auth.impersonation.mutation_blocked",
+          actorId: user.id,
+          method,
+          practiceOrgId: session.practiceOrgId,
+        });
+        return {
+          actor: null,
+          error: NextResponse.json(
+            {
+              error: "impersonation_read_only",
+              message:
+                "Mutations are not permitted while viewing as a practice. " +
+                "Exit impersonation to make changes.",
+              impersonatedPracticeId: session.practiceOrgId,
+            },
+            { status: 403 },
+          ),
+        };
+      }
+    }
   }
 
   if (options.rateLimit) {
@@ -151,4 +311,28 @@ export async function requireApiAuth(
   }
 
   return { actor: user, error: null };
+}
+
+async function logMfaBlocked(user: AuthedUser, graceUntil: Date | null): Promise<void> {
+  try {
+    const { logControllerAction } = await import("./audit-stub");
+    await logControllerAction({
+      actor: {
+        id: user.id,
+        email: user.email,
+        roles: user.roles,
+        organizationId: user.organizationId,
+      },
+      action: "controller.super_admin.mfa_blocked",
+      targetId: user.id,
+      after: { graceUntil: graceUntil ? graceUntil.toISOString() : null },
+      reason: "super_admin without enrolled MFA — request blocked.",
+    });
+  } catch (err) {
+    logger.error({
+      event: "auth.super_admin_mfa.audit_write_failed",
+      userId: user.id,
+      err,
+    });
+  }
 }

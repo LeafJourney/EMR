@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { cn } from "@/lib/utils/cn";
 import { quickLogSymptom } from "@/app/(patient)/portal/outcomes/quick-log-action";
+import { confettiEmitter } from "@/components/portal/confetti-canvas";
 
 type Symptom = {
   key: "pain" | "sleep" | "anxiety" | "nausea" | "energy" | "mood";
@@ -65,6 +66,15 @@ export function QuickSymptomFab() {
       const res = await quickLogSymptom({ metric: symptom.key, value: rating });
       if (res.ok) {
         setView("saved");
+        
+        if (res.newlyEarnedBadges && res.newlyEarnedBadges.length > 0) {
+          confettiEmitter.emit({
+            id: `badge-${Date.now()}`,
+            type: "badge_earned",
+            message: "You earned a new badge!",
+          });
+        }
+
         setTimeout(close, 1600);
       } else {
         setErrorMsg(res.error);
@@ -80,7 +90,7 @@ export function QuickSymptomFab() {
         aria-label={view === "closed" ? "Quick log a symptom" : "Close symptom logger"}
         aria-expanded={view !== "closed"}
         className={cn(
-          "fixed bottom-20 right-5 sm:bottom-20 sm:right-6 z-40",
+          "fixed bottom-[160px] right-5 sm:bottom-[160px] sm:right-6 z-40",
           "flex h-14 w-14 items-center justify-center rounded-full",
           "bg-gradient-to-b from-accent to-accent-strong text-accent-ink",
           "shadow-[0_12px_30px_-10px_rgba(4,120,87,0.6)]",

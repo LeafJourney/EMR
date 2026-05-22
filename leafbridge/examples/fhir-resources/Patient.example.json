@@ -1,0 +1,59 @@
+{
+  "resourceType": "Patient",
+  "id": "patient-001",
+  "meta": {
+    "profile": [
+      "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient"
+    ]
+  },
+  "extension": [
+    {
+      "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race",
+      "extension": [
+        { "url": "ombCategory", "valueCoding": { "system": "urn:oid:2.16.840.1.113883.6.238", "code": "2106-3", "display": "White" } },
+        { "url": "text", "valueString": "White" }
+      ]
+    },
+    {
+      "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity",
+      "extension": [
+        { "url": "ombCategory", "valueCoding": { "system": "urn:oid:2.16.840.1.113883.6.238", "code": "2186-5", "display": "Not Hispanic or Latino" } },
+        { "url": "text", "valueString": "Not Hispanic or Latino" }
+      ]
+    },
+    {
+      "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex",
+      "valueCode": "F"
+    }
+  ],
+  "identifier": [
+    {
+      "system": "http://leafbridge.dev/mrn",
+      "value": "LB-000001"
+    }
+  ],
+  "active": true,
+  "name": [
+    {
+      "use": "official",
+      "family": "Singh",
+      "given": ["Riya"]
+    }
+  ],
+  "telecom": [
+    { "system": "phone", "value": "+1-555-0100", "use": "home" },
+    { "system": "email", "value": "riya.singh@example.org" }
+  ],
+  "gender": "female",
+  "birthDate": "1976-08-12",
+  "address": [
+    {
+      "use": "home",
+      "line": ["100 Mission St"],
+      "city": "San Francisco",
+      "state": "CA",
+      "postalCode": "94105",
+      "country": "US"
+    }
+  ]
+}

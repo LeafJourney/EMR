@@ -92,14 +92,20 @@ const HEALTH_TONE: Record<Health, { dot: string; label: string; tone: "success" 
 };
 
 export function StatusView() {
-  const [lastUpdated, setLastUpdated] = useState<string>(() =>
-    new Date().toLocaleTimeString()
-  );
+  // Deterministic placeholder — a `useState` lazy initializer would
+  // run with server time on the server and client time on the client,
+  // producing a hydration mismatch that cascades into the entire
+  // StatusView subtree being re-rendered client-side (caught by
+  // find-and-fix pass 8, EMR-715). Setting the timestamp inside
+  // `useEffect` keeps server-rendered HTML deterministic; the em-dash
+  // shows for the few ms before hydration completes.
+  const [lastUpdated, setLastUpdated] = useState<string>("—");
   const [email, setEmail] = useState("");
   const [subscribed, setSubscribed] = useState(false);
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLastUpdated(new Date().toLocaleTimeString());
     const t = setInterval(() => {
       setLastUpdated(new Date().toLocaleTimeString());
     }, 60000);

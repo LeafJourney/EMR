@@ -1,0 +1,29 @@
+erDiagram
+    TENANT ||--o{ PATIENT : "owns"
+    TENANT ||--o{ PRACTITIONER : "owns"
+    TENANT ||--o{ ORGANIZATION : "owns"
+    TENANT ||--o{ SOURCE : "owns"
+    TENANT ||--o{ PROVENANCE : "owns"
+    TENANT ||--o{ AUDITEVENT : "owns"
+
+    PATIENT ||--o{ ENCOUNTER : "has"
+    PATIENT ||--o{ CONSENT : "issued"
+    PATIENT ||--o| MPI_GOLDEN_RECORD : "resolves to"
+
+    ENCOUNTER ||--o{ CONDITION : "documents"
+    ENCOUNTER ||--o{ OBSERVATION : "records"
+    ENCOUNTER ||--o{ MEDICATIONREQUEST : "orders"
+    ENCOUNTER ||--o{ DIAGNOSTICREPORT : "produces"
+    ENCOUNTER ||--o{ DOCUMENTREFERENCE : "attaches"
+
+    MPI_GOLDEN_RECORD ||--o{ MPI_SOURCE_LINK : "linked from"
+    MPI_GOLDEN_RECORD ||--o{ MPI_MERGE_HISTORY : "history"
+
+    PROVENANCE ||..|{ PATIENT : "target"
+    PROVENANCE ||..|{ ENCOUNTER : "target"
+    PROVENANCE ||..|{ OBSERVATION : "target"
+    PROVENANCE ||..|{ CONDITION : "target"
+    PROVENANCE ||..|{ MEDICATIONREQUEST : "target"
+    PROVENANCE ||..|{ DIAGNOSTICREPORT : "target"
+    PROVENANCE ||..|{ DOCUMENTREFERENCE : "target"
+    PROVENANCE ||..|{ CONSENT : "target"

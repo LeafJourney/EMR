@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { submitOutcomeAction, type OutcomeResult } from "./actions";
@@ -107,6 +109,18 @@ export function OutcomeForm() {
     submitOutcomeAction,
     null
   );
+
+  useEffect(() => {
+    if (state?.ok && state.newlyEarnedBadges && state.newlyEarnedBadges.length > 0) {
+      import("@/components/portal/confetti-canvas").then(({ confettiEmitter }) => {
+        confettiEmitter.emit({
+          id: `badge-${Date.now()}`,
+          type: "badge_earned",
+          message: "You earned a new badge!",
+        });
+      });
+    }
+  }, [state]);
 
   // Success state
   if (state?.ok) {

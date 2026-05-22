@@ -10,12 +10,15 @@ import {
   saveAndFinalizeNote,
   refineSection,
   saveEmotionalVital,
-  PATIENT_DEMEANOR_OPTIONS,
-  type PatientDemeanor,
   type RefineMode,
 } from "./actions";
-import { APSO_ORDER, NOTE_BLOCK_LABELS } from "@/lib/domain/notes";
-import type { NoteBlockType } from "@/lib/domain/notes";
+import {
+  APSO_ORDER,
+  NOTE_BLOCK_LABELS,
+  PATIENT_DEMEANOR_OPTIONS,
+  type PatientDemeanor,
+  type NoteBlockType,
+} from "@/lib/domain/notes";
 import { LeafSprig } from "@/components/ui/ornament";
 import { DictateButton } from "@/components/ui/dictation";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";

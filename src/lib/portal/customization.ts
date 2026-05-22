@@ -146,11 +146,19 @@ export interface PortalLayout {
   hidden: PortalWidgetId[];
   /** Optional accent palette override. */
   accent?: "default" | "indigo" | "rose" | "amber" | "teal";
+  /** Visual theme. */
+  theme?: "system" | "light" | "dark";
+  /** Typography scale. */
+  textScale?: "normal" | "large";
+  /** Whether to reduce animations. */
+  reduceMotion?: boolean;
   /** ISO timestamp of last update. */
   updatedAt?: string;
 }
 
 const ACCENT_OPTIONS = ["default", "indigo", "rose", "amber", "teal"] as const;
+const THEME_OPTIONS = ["system", "light", "dark"] as const;
+const TEXT_SCALE_OPTIONS = ["normal", "large"] as const;
 
 export function defaultLayout(): PortalLayout {
   return {
@@ -159,6 +167,9 @@ export function defaultLayout(): PortalLayout {
       (w) => w.id,
     ),
     accent: "default",
+    theme: "system",
+    textScale: "normal",
+    reduceMotion: false,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -199,11 +210,26 @@ export function normalizeLayout(input: unknown): PortalLayout {
   ).includes(obj.accent ?? "default")
     ? (obj.accent ?? "default")
     : "default";
+    
+  const theme = (
+    THEME_OPTIONS as readonly string[]
+  ).includes(obj.theme ?? "system")
+    ? (obj.theme ?? "system")
+    : "system";
+    
+  const textScale = (
+    TEXT_SCALE_OPTIONS as readonly string[]
+  ).includes(obj.textScale ?? "normal")
+    ? (obj.textScale ?? "normal")
+    : "normal";
 
   return {
     order: orderWithRequired,
     hidden: filteredHidden,
     accent: accent as PortalLayout["accent"],
+    theme: theme as PortalLayout["theme"],
+    textScale: textScale as PortalLayout["textScale"],
+    reduceMotion: Boolean(obj.reduceMotion),
     updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date().toISOString(),
   };
 }

@@ -76,7 +76,13 @@ export default function HomePage() {
               can spend their time on what actually matters: <strong className="text-text">the patient in front of them</strong>.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Link href="/sign-up">
+              {/* "Request a demo" should route to the marketing demo
+                  form, not Clerk sign-up. /sign-up gates the visitor
+                  behind account creation before they've talked to
+                  sales — the wrong funnel for a B2B SaaS landing.
+                  /book-demo is the real intake. (EMR-712 follow-up;
+                  smoke-test pass 9 caught this.) */}
+              <Link href="/book-demo">
                 <Button size="lg">Request a demo</Button>
               </Link>
               <Link href="/about">
@@ -553,7 +559,10 @@ export default function HomePage() {
                 to talk.
               </p>
               <div className="mt-10 flex flex-wrap gap-3">
-                <Link href="/sign-up">
+                {/* Second "Request a demo" CTA in the footer-CTA band.
+                    Same fix as the hero — route to /book-demo, not
+                    Clerk sign-up. */}
+                <Link href="/book-demo">
                   <Button size="lg">Request a demo</Button>
                 </Link>
                 <Link href="/about">

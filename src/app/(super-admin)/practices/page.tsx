@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Eyebrow, EmptyIllustration } from "@/components/ui/ornament";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 
 import { loadPracticeLandingCards } from "./loaders";
 import { PracticeCard } from "./practice-card";
@@ -46,10 +47,17 @@ export default async function PracticesLandingPage({
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Practices" },
+        ]}
+      />
       <PageHeader
         eyebrow="Leafjourney HQ"
         title="Practices"
-        description="Every practice you've configured, with live KPIs. Click any card to expand."
+        description="Every practice you've configured, with live KPIs. Click any card to drill in."
         actions={
           <Link href="/onboarding">
             <Button>Onboard a practice</Button>

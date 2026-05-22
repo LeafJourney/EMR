@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
+import { EmergencyRevokeDialog } from "@/components/admin/emergency-revoke-dialog";
 
 type SpecialtyManifest = {
   slug: string;
@@ -438,6 +439,15 @@ function AdminsTab() {
     }
   }
 
+  // EMR-727 — emergency revoke modal target. Holds the row the operator
+  // wants to nuke; the modal renders when this is non-null.
+  const [emergencyTarget, setEmergencyTarget] = React.useState<AdminRow | null>(null);
+
+  function onEmergencyRevoked() {
+    setEmergencyTarget(null);
+    load();
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -502,6 +512,11 @@ function AdminsTab() {
                     <Button variant="ghost" size="sm" onClick={() => revoke(a.userId, a.email)}>
                       Revoke
                     </Button>
+                    <EmergencyRevokeTrigger
+                      label="Emergency revoke"
+                      ariaLabel={`Emergency revoke ${a.email}`}
+                      onClick={() => setEmergencyTarget(a)}
+                    />
                   </div>
                 </li>
               ))}
@@ -509,6 +524,77 @@ function AdminsTab() {
           )}
         </CardContent>
       </Card>
+
+      {emergencyTarget && (
+        <EmergencyRevokeDialog
+          targetUserId={emergencyTarget.userId}
+          targetEmail={emergencyTarget.email}
+          onCancel={() => setEmergencyTarget(null)}
+          onSuccess={onEmergencyRevoked}
+        />
+      )}
     </div>
   );
 }
+
+// -----------------------------------------------------------------------------
+// EMR-727 — Emergency revoke row trigger
+// -----------------------------------------------------------------------------
+//
+// Red destructive button with a small "?" tooltip next to it. The tooltip
+// is intentionally lightweight (CSS-only hover/focus reveal — no
+// JS-driven popper) because the row already has its own visual weight and
+// we don't want a heavyweight tooltip primitive added to the bundle just
+// for this one explainer. The "?" pill is keyboard-focusable so screen-
+// reader users can read the explanation via aria-describedby.
+// -----------------------------------------------------------------------------
+
+function EmergencyRevokeTrigger({
+  label,
+  ariaLabel,
+  onClick,
+}: {
+  label: string;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="danger"
+        size="sm"
+        onClick={onClick}
+        aria-label={ariaLabel}
+      >
+        {label}
+      </Button>
+      <span className="group relative inline-flex">
+        <button
+          type="button"
+          aria-label="What does emergency revoke do?"
+          aria-describedby="emergency-revoke-help"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border-strong bg-surface text-[10px] font-bold text-text-muted hover:text-danger hover:border-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/40"
+          // No onClick — purely informational. Stops the row's revoke
+          // button from accidentally firing if the user mis-clicks the "?".
+          onClick={(e) => e.preventDefault()}
+        >
+          ?
+        </button>
+        <span
+          id="emergency-revoke-help"
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full right-0 z-40 mb-2 hidden w-64 rounded-lg border border-border bg-surface-raised p-3 text-xs text-text shadow-lg group-hover:block group-focus-within:block"
+        >
+          Strips super-admin AND terminates every active session for this user
+          within ~1 second across the fleet. Requires a typed email
+          confirmation. Used for compromised accounts.
+        </span>
+      </span>
+    </div>
+  );
+}
+
+// EMR-727 — Emergency revoke modal lives in
+// `./emergency-revoke-dialog.tsx` and is rendered above. The trigger
+// `<EmergencyRevokeTrigger>` is co-located here because it is tightly
+// coupled to the per-row layout.

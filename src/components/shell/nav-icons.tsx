@@ -159,3 +159,30 @@ export const IconInbox: React.FC<SvgProps> = (props) => (
     <path d="M5 3h14l3 9v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7Z" />
   </svg>
 );
+
+export const IconSearch: React.FC<SvgProps> = (props) => (
+  <svg {...base(props)}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
+export const IconShield: React.FC<SvgProps> = (props) => (
+  <svg {...base(props)}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+    <path d="m9 12 2 2 4-4" />
+  </svg>
+);
+
+export const IconActivity: React.FC<SvgProps> = (props) => (
+  <svg {...base(props)}>
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+  </svg>
+);
+
+export const IconFlag: React.FC<SvgProps> = (props) => (
+  <svg {...base(props)}>
+    <path d="M4 22V4" />
+    <path d="M4 4h14l-2 4 2 4H4" />
+  </svg>
+);

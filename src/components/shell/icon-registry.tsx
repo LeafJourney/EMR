@@ -23,6 +23,10 @@ import {
   IconServer,
   IconHeart,
   IconInbox,
+  IconSearch,
+  IconShield,
+  IconActivity,
+  IconFlag,
 } from "./nav-icons";
 import type { NavIconKey } from "./nav-sections";
 
@@ -46,6 +50,10 @@ const REGISTRY: Record<NavIconKey, NavIconComponent> = {
   server: IconServer,
   heart: IconHeart,
   inbox: IconInbox,
+  search: IconSearch,
+  shield: IconShield,
+  activity: IconActivity,
+  flag: IconFlag,
 };
 
 export function resolveNavIcon(

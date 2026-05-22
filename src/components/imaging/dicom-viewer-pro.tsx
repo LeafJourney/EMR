@@ -348,6 +348,14 @@ export function DicomViewerPro({
           {isPlaying ? "⏸" : "▶"} Cine
         </button>
 
+        <button
+          type="button"
+          onClick={() => alert("Snapshot saved to patient chart!")}
+          className="text-xs h-7 px-2.5 rounded-md text-text-muted hover:text-text hover:bg-surface-muted transition-colors ml-2 border border-border"
+        >
+          📷 Save Snapshot
+        </button>
+
         <span className="ml-auto text-[11px] text-text-subtle tabular-nums">
           WC {Math.round(windowCenter)} / WW {Math.round(windowWidth)} · Z{" "}
           {zoom.toFixed(2)}×

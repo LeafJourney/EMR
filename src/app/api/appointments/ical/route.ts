@@ -15,7 +15,7 @@ import { buildIcs, type IcsEvent } from "@/lib/domain/ical";
  * subscription URLs (those would need a per-patient signed token,
  * which is a future enhancement).
  */
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

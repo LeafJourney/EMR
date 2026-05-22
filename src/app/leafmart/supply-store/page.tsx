@@ -38,7 +38,7 @@ export const revalidate = 3600;
 
 const CATEGORY_LABELS: Record<SupplyCategory, string> = {
   cough_cold: "Cough & Cold",
-  sleep: "Sleep",
+  sleep: "Rest",
   pain: "Pain Relief",
   digestive: "Digestive",
   vitamins_supplements: "Vitamins & Supplements",

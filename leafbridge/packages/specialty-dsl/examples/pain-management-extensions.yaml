@@ -1,0 +1,74 @@
+# Example LeafBridge extensions for the Pain Management (non-cannabis)
+# specialty template. The fields here are MERGED onto the upstream
+# SpecialtyManifest at registration time — this file is illustrative only.
+
+agents:
+  - id: previsit_summary
+    autonomy_tier: 2
+    modality: null
+    allowed_data_classes:
+      - conditions
+      - medications
+      - observations
+      - documents
+    allowed_tools:
+      - fhir.read
+      - rag.query
+    purpose_of_use: treatment
+    requires_human_review: true
+    escalation:
+      on_risk_above: moderate
+      route_to: clinical_triage_queue
+
+  - id: opioid_risk_review
+    autonomy_tier: 1
+    modality: null
+    allowed_data_classes:
+      - conditions
+      - medications
+      - observations
+      - documents
+    allowed_tools:
+      - fhir.read
+      - rag.query
+      - pdmp.read
+    purpose_of_use: treatment
+    requires_human_review: true
+    escalation:
+      on_risk_above: low
+      route_to: controlled_substance_monitoring_queue
+
+  - id: cannabis_certification_drafter
+    # Modality-gated. Hidden for any Pain Management practice that has not
+    # opted into cannabis-medicine.
+    autonomy_tier: 2
+    modality: cannabis-medicine
+    allowed_data_classes:
+      - conditions
+      - medications
+      - observations
+      - documents
+    allowed_tools:
+      - fhir.read
+      - rag.query
+    purpose_of_use: treatment
+    requires_human_review: true
+
+clinical_routing_rules:
+  - name: high_pain_score
+    when:
+      resource: Observation
+      code: pain_score
+      predicate: { value_greater_than: 8 }
+    then:
+      route_to: clinical_triage_queue
+      priority: high
+      trigger_agent: opioid_risk_review
+
+writeback_policy:
+  allowed_resources:
+    - CarePlan
+    - ServiceRequest
+    - DocumentReference
+  requires_approval: true
+  max_autonomy_tier: 3

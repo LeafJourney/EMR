@@ -1,18 +1,23 @@
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
+import { EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import Link from "next/link";
+import { getAllInteractions } from "@/lib/domain/drug-interactions";
+import { PdfExportButton } from "./pdf-export-button";
+import { InteractionBubbles } from "./interaction-bubbles";
 
 export const metadata = { title: "Clinical Library" };
 
 export default function LibraryPage() {
+  const interactions = getAllInteractions();
   return (
     <PageShell maxWidth="max-w-[960px]">
       <PageHeader
         eyebrow="Library"
         title="Clinical reference"
         description="Quick-reference pharmacology, dosing guidelines, coding, and research for cannabis medicine."
+        actions={<PdfExportButton />}
       />
 
       {/* Cannabinoid pharmacology */}
@@ -58,6 +63,56 @@ export default function LibraryPage() {
                   <td className="py-3 pr-4 text-text-muted">CB1, CB2, 5-HT1A, TRPV1</td>
                   <td className="py-3 pr-4 font-mono text-xs text-text-muted">Limited data</td>
                   <td className="py-3 text-text-muted">Anxiolytic, anti-inflammatory, neuroprotective (emerging)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Terpene pharmacology */}
+      <Card tone="raised" className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <LeafSprig size={16} className="text-accent/80" />
+            Terpene pharmacology
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="prose-clinical">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Terpene</th>
+                  <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Aroma Profile</th>
+                  <th className="py-2 font-medium text-text-subtle text-xs uppercase tracking-wide">Clinical effects</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Myrcene</td>
+                  <td className="py-3 pr-4 text-text-muted">Earthy, musky, herbal</td>
+                  <td className="py-3 text-text-muted">Sedating, muscle relaxant, enhances THC psychoactivity (blood-brain barrier permeability)</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Limonene</td>
+                  <td className="py-3 pr-4 text-text-muted">Citrus, lemon, orange</td>
+                  <td className="py-3 text-text-muted">Elevated mood, stress relief, anxiolytic, mild antidepressant</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Pinene</td>
+                  <td className="py-3 pr-4 text-text-muted">Pine, sharp, sweet</td>
+                  <td className="py-3 text-text-muted">Alertness, memory retention (acetylcholinesterase inhibitor), bronchodilator</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Linalool</td>
+                  <td className="py-3 pr-4 text-text-muted">Floral, lavender, spicy</td>
+                  <td className="py-3 text-text-muted">Anxiolytic, sedative, anticonvulsant, pain relief</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Beta-Caryophyllene</td>
+                  <td className="py-3 pr-4 text-text-muted">Pepper, spicy, woody</td>
+                  <td className="py-3 text-text-muted">CB2 agonist, anti-inflammatory, analgesic, gastroprotective</td>
                 </tr>
               </tbody>
             </table>
@@ -138,26 +193,13 @@ export default function LibraryPage() {
       <Card tone="raised" className="mb-6">
         <CardHeader>
           <CardTitle>Drug interaction reference</CardTitle>
-          <CardDescription>Cannabis-drug interactions are checked automatically in the Cannabis Rx tab.</CardDescription>
+          <CardDescription>
+            Click any bubble to see mechanism and recommendation.{" "}
+            {interactions.length} interactions in the database — checked automatically when prescribing.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <Badge tone="danger">Red</Badge>
-              <p className="text-sm text-text-muted">Contraindicated: Warfarin (CYP2C9), Clobazam (dramatic CBD interaction, FDA warning)</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <Badge tone="warning">Yellow</Badge>
-              <p className="text-sm text-text-muted">Caution: Opioids (additive CNS depression), Benzodiazepines, SSRIs (CYP2D6), Statins (CYP3A4), Immunosuppressants, Antiepileptics</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <Badge tone="success">Green</Badge>
-              <p className="text-sm text-text-muted">Generally safe: Acetaminophen, Ibuprofen, Vitamin D, Melatonin, Magnesium, Probiotics</p>
-            </div>
-          </div>
-          <p className="text-xs text-text-subtle mt-4">
-            43 interactions in the database. Full interaction check runs automatically when prescribing.
-          </p>
+          <InteractionBubbles interactions={interactions} />
         </CardContent>
       </Card>
 

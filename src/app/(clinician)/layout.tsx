@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
-import { ROLE_HOME } from "@/lib/rbac/roles";
+import { ROLE_HOME, primaryRole } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { BreathingBreak } from "@/components/ui/breathing-break";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
@@ -27,8 +27,7 @@ export default async function ClinicianLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
-    const primary = user.roles[0];
-    redirect(ROLE_HOME[primary] ?? "/");
+    redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
   }
 
   const safeCount = async (fn: () => Promise<number>) => {
@@ -127,24 +126,10 @@ export default async function ClinicianLayout({
         { label: "Messages", href: "/clinic/messages" },
         // EMR-165: unified sign-off queue rolls up labs + refills +
         // notes + messages — clinician's single place to clear the day.
-        { label: "Sign-off", href: "/clinic/sign-off" },
-        {
-          label: "Approvals",
-          href: "/clinic/approvals",
-          badge: computeApprovalsBadge({ pendingCount, emergencyCount }),
-        },
-        {
-          label: "Labs",
-          href: "/clinic/labs-review",
-          badge: computeLabsBadge({
-            unsignedCount: labsPendingCount,
-            abnormalCount: labsAbnormalCount,
-          }),
-        },
-        {
-          label: "Refills",
-          href: "/clinic/refills",
-          badge: computeRefillsBadge({ pendingCount: refillsPendingCount }),
+        { 
+          label: "Sign-off", 
+          href: "/clinic/sign-off",
+          badge: computeApprovalsBadge({ pendingCount, emergencyCount }) // Or a combined badge
         },
       ],
     },

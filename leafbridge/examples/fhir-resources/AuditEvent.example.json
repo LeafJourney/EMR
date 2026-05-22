@@ -1,0 +1,45 @@
+{
+  "resourceType": "AuditEvent",
+  "id": "auditevent-001",
+  "type": {
+    "system": "http://dicom.nema.org/resources/ontology/DCM",
+    "code": "110100",
+    "display": "Application Activity"
+  },
+  "subtype": [
+    { "system": "http://leafbridge.dev/audit-subtype", "code": "agent-output" }
+  ],
+  "action": "C",
+  "recorded": "2026-05-18T15:16:00-07:00",
+  "outcome": "0",
+  "agent": [
+    {
+      "type": {
+        "coding": [
+          { "system": "http://leafbridge.dev/agent-type", "code": "agent" }
+        ]
+      },
+      "who": { "display": "leafbridge:agent/previsit_summary@0.1.0" },
+      "requestor": false
+    }
+  ],
+  "source": {
+    "observer": { "display": "leafbridge:agent-orchestrator@0.1.0" }
+  },
+  "entity": [
+    {
+      "what": { "reference": "Patient/patient-001" },
+      "role": { "system": "http://terminology.hl7.org/CodeSystem/object-role", "code": "1", "display": "Patient" }
+    }
+  ],
+  "extension": [
+    {
+      "url": "http://leafbridge.dev/StructureDefinition/leafbridge-agent-prompt",
+      "valueString": "{\"prompt_id\":\"previsit-summary-v3\",\"tool_calls\":[{\"name\":\"fhir.read\",\"args\":{\"resource\":\"Patient/patient-001\"}}],\"output_hash\":\"sha256:abc123...\"}"
+    },
+    {
+      "url": "http://leafbridge.dev/StructureDefinition/leafbridge-tenant-id",
+      "valueString": "tenant-001"
+    }
+  ]
+}

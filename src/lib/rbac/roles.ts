@@ -10,6 +10,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   implementation_admin: "Implementation Admin",
   super_admin: "Super Admin",
   system: "System",
+  leafnerd: "LeafNerd",
 };
 
 /** Which landing path each role should hit after login. */
@@ -22,6 +23,7 @@ export const ROLE_HOME: Record<Role, string> = {
   implementation_admin: "/onboarding",
   super_admin: "/onboarding",
   system: "/ops/mission-control",
+  leafnerd: "/leafnerd",
 };
 
 /** Roles allowed to enter each route prefix. First match wins. */
@@ -54,6 +56,7 @@ export function primaryRole(roles: Role[]): Role {
     "practice_admin",
     "operator",
     "clinician",
+    "leafnerd",
     "patient",
   ];
   for (const r of order) if (roles.includes(r)) return r;

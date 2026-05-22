@@ -30,10 +30,54 @@ export default async function VoiceChartPage({ params }: PageProps) {
 
   if (!patient) notFound();
 
+  // Fetch the most recent finalized notes to extract Last Visit summary bullet points
+  const priorNotes = await prisma.note.findMany({
+    where: {
+      encounter: {
+        patientId: params.id,
+      },
+      status: "finalized",
+    },
+    orderBy: { createdAt: "desc" },
+    take: 3,
+    select: {
+      narrative: true,
+    },
+  });
+
+  const lastVisitBullets: string[] = [];
+  for (const note of priorNotes) {
+    if (note.narrative) {
+      const lines = note.narrative.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // Match standard markdown bullet characters
+        if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
+          const content = trimmed.replace(/^[-*\s]+/, "");
+          if (content && !lastVisitBullets.includes(content)) {
+            lastVisitBullets.push(content);
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback bullet if no summary notes exist yet
+  if (lastVisitBullets.length === 0) {
+    lastVisitBullets.push("No prior visit summary bullets documented.");
+  }
+
   const patientName = `${patient.firstName} ${patient.lastName}`;
-  const dob = patient.dateOfBirth
-    ? patient.dateOfBirth.toISOString().slice(0, 10)
-    : null;
+
+  // Format DOB as MM-DD-YYYY
+  let formattedDob = null;
+  if (patient.dateOfBirth) {
+    const d = patient.dateOfBirth;
+    const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    const year = d.getUTCFullYear();
+    formattedDob = `${month}-${day}-${year}`;
+  }
 
   return (
     <PageShell>
@@ -55,10 +99,12 @@ export default async function VoiceChartPage({ params }: PageProps) {
       <VoiceRecorder
         patientId={patient.id}
         patientName={patientName}
-        patientDob={dob}
+        patientDob={formattedDob}
         presentingConcerns={patient.presentingConcerns}
         treatmentGoals={patient.treatmentGoals}
+        lastVisitBullets={lastVisitBullets}
       />
     </PageShell>
+
   );
 }

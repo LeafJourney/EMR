@@ -22,9 +22,12 @@
   /* Text */
   --text: #1F2A24;
   --text-muted: #4A5651;
-  --text-subtle: #8A8578;
+  /* Bumped from #8A8578 (≈3.6:1) → #6E6A60 (≈5.0:1) for WCAG AA — same fix
+     that was already applied to --muted below; axe-core was still flagging
+     --text-subtle on `text-[11px] uppercase tracking-wider` eyebrows
+     across every public page (EMR-713). */
+  --text-subtle: #6E6A60;
   --text-soft: #4A5651;
-  /* Bumped from #8A8578 (≈3.6:1) → #6E6A60 (≈5.0:1) for WCAG AA on body text */
   --muted: #6E6A60;
 
   /* Trust — clinical green (reserved, never decoration) */

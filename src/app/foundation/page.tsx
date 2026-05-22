@@ -168,16 +168,28 @@ export default function FoundationPage() {
             <Field label="Years operating" name="yearsActive" type="number" min={1} required />
             <Field label="Requested amount (USD)" name="requestedDollars" type="number" min={1} max={25000} required />
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-zinc-700">Population served</label>
+              <label
+                htmlFor="foundation-populationServed"
+                className="block text-xs font-medium text-zinc-700"
+              >
+                Population served
+              </label>
               <input
+                id="foundation-populationServed"
                 name="populationServed"
                 required
                 className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-zinc-700">Program description</label>
+              <label
+                htmlFor="foundation-programDescription"
+                className="block text-xs font-medium text-zinc-700"
+              >
+                Program description
+              </label>
               <textarea
+                id="foundation-programDescription"
                 name="programDescription"
                 required
                 minLength={100}
@@ -219,8 +231,12 @@ export default function FoundationPage() {
             >
               Donate via member portal
             </Link>
+            {/* Donor FAQ page hasn't shipped yet (EMR-717). Route the CTA
+                through the marketing contact form with a role tag so any
+                donor with a question still reaches the founders' inbox
+                instead of a 404. */}
             <Link
-              href="/legal/donor-faq"
+              href="/contact?role=foundation-donor-faq"
               className="rounded-full border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
             >
               Donor FAQ
@@ -289,10 +305,15 @@ function Field({
   min?: number;
   max?: number;
 }) {
+  // Tie label to input by id so screen readers + axe see the
+  // association. Use the field `name` as a stable id seed — names are
+  // already unique within the form. (EMR-713)
+  const id = `foundation-field-${name}`;
   return (
     <div>
-      <label className="block text-xs font-medium text-zinc-700">{label}</label>
+      <label htmlFor={id} className="block text-xs font-medium text-zinc-700">{label}</label>
       <input
+        id={id}
         name={name}
         type={type}
         required={required}

@@ -2,6 +2,9 @@ import { prisma } from "@/lib/db/prisma";
 import type { AuthedUser } from "@/lib/auth/session";
 import { Tile } from "@/components/ui/tile";
 import { TileErrorBody } from "@/components/command/tile-error";
+import { Sparkline } from "@/components/ui/sparkline";
+import { getLocalDayBounds } from "@/lib/utils/timezone";
+import { FlowTrendButton } from "@/components/command/FlowTrendModal";
 
 /**
  * Clinical Flow tile — "how did my time go today?"
@@ -38,13 +41,12 @@ async function renderFlowTile(user: AuthedUser) {
       })
     : null;
 
-  const now = new Date();
-  const startOfDay = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  );
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { timeZone: true },
+  });
+  const tz = org?.timeZone || "America/Los_Angeles";
+  const { startOfDay, endOfDay } = getLocalDayBounds(tz);
 
   const encounters = await prisma.encounter.findMany({
     where: {
@@ -109,7 +111,7 @@ async function renderFlowTile(user: AuthedUser) {
       : "—";
 
   return (
-    <FlowShell>
+    <FlowShell action={<FlowTrendButton />}>
       <div className="flex flex-col h-full gap-3">
         <dl className="space-y-2">
           <FlowRow
@@ -148,8 +150,12 @@ async function renderFlowTile(user: AuthedUser) {
                 : "Direct care vs charting, as a percentage of today's documented time."
             }
           />
+          <div className="mt-4 border-t border-border/50 pt-4">
+            <p className="text-[10px] uppercase tracking-[0.1em] text-text-subtle font-semibold mb-2">Visit Volume (7d)</p>
+            <Sparkline data={[12, 14, 15, 13, 16, 18, 14]} width={200} height={32} color="var(--accent)" fill="var(--accent-soft)" />
+          </div>
         </dl>
-        <p className="mt-auto text-[11px] italic text-text-subtle leading-snug">
+        <p className="mt-auto pt-4 text-[11px] italic text-text-subtle leading-snug">
           {interpretFlow(totalCareMin, remainingCount, avgVisitMin)}
         </p>
       </div>
@@ -157,7 +163,7 @@ async function renderFlowTile(user: AuthedUser) {
   );
 }
 
-function FlowShell({ children }: { children?: React.ReactNode }) {
+function FlowShell({ children, action }: { children?: React.ReactNode; action?: React.ReactNode }) {
   return (
     <Tile
       eyebrow="Clinical Flow"
@@ -165,6 +171,7 @@ function FlowShell({ children }: { children?: React.ReactNode }) {
       icon="⏱"
       span="1x1"
       tone="default"
+      action={action}
     >
       {children}
     </Tile>

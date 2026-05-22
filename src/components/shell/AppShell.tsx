@@ -14,6 +14,7 @@ import { RailIdentityMenu } from "./RailIdentityMenu";
 import { NavPrefsProvider } from "./NavPrefsContext";
 import { NavPrefsSections } from "./NavPrefsSections";
 import { NavVisitTracker } from "./NavVisitTracker";
+import { IdleTimeoutGuard } from "@/components/auth/IdleTimeoutGuard";
 import { hasPillarIcons, type NavItem, type NavSection } from "./nav-sections";
 
 export type { NavItem, NavSection } from "./nav-sections";
@@ -52,9 +53,12 @@ export function AppShell({
   const useRail = hasPillarIcons(resolved);
   const isPatient = activeRole === "patient";
 
+  const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
   return (
     <NavPrefsProvider>
       <NavVisitTracker sections={resolved} />
+      {hasClerk && <IdleTimeoutGuard roles={user.roles} />}
       <div
         className={cn(
           "min-h-screen bg-bg flex",
@@ -116,11 +120,17 @@ export function AppShell({
                 </div>
               </div>
               <div className="mt-2">
-                <SignOutButton redirectUrl="/sign-in">
-                  <button className="w-full text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
+                {hasClerk ? (
+                  <SignOutButton redirectUrl="/sign-in">
+                    <button className="w-full text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
+                      Sign out →
+                    </button>
+                  </SignOutButton>
+                ) : (
+                  <Link href="/sign-in" className="w-full block text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
                     Sign out →
-                  </button>
-                </SignOutButton>
+                  </Link>
+                )}
               </div>
               <p className="text-[9px] text-text-subtle italic leading-tight mt-3 px-2 line-clamp-2">
                 Cannabis should be considered a medicine — please use it carefully

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modern Folio Mockup</title>
+  <style>
+    :root {
+      --bg-color: #F9F8F6;
+      --text-main: #1C1A15;
+      --text-muted: #5b6b62;
+      --accent: #2e4a3d;
+      --accent-soft: #e8ecea;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .folio-container {
+      width: 100%;
+      max-width: 1200px;
+      height: 80vh;
+      min-height: 600px;
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Top Nav / Progress bar */
+    .top-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 24px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .progress-segments {
+      display: flex;
+      gap: 6px;
+      width: 200px;
+    }
+    
+    .segment {
+      height: 3px;
+      flex: 1;
+      background: rgba(0,0,0,0.1);
+      border-radius: 4px;
+    }
+    .segment.active { background: var(--accent); }
+    .segment.filled { background: var(--text-muted); }
+
+    /* Left Pane - Art / Identity */
+    .pane-left {
+      flex: 1;
+      background: linear-gradient(135deg, #e0e8e4 0%, #f0f4f2 100%);
+      padding: 60px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      border-right: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .chapter-meta {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .chapter-emoji {
+      font-size: 80px;
+      margin-bottom: 24px;
+      opacity: 0.9;
+    }
+
+    .chapter-title {
+      font-family: "Georgia", serif;
+      font-size: 48px;
+      line-height: 1.1;
+      margin: 0;
+      color: var(--accent);
+    }
+
+    /* Right Pane - The Story */
+    .pane-right {
+      flex: 1.2;
+      padding: 80px 80px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      background: white;
+    }
+
+    .story-text {
+      font-family: "Georgia", serif;
+      font-size: 22px;
+      line-height: 1.8;
+      color: #333;
+    }
+
+    .story-text::first-letter {
+      float: left;
+      font-size: 84px;
+      line-height: 0.8;
+      padding-top: 4px;
+      padding-right: 12px;
+      color: var(--accent);
+      font-family: "Georgia", serif;
+    }
+
+    /* Navigation Controls */
+    .nav-buttons {
+      position: absolute;
+      bottom: 40px;
+      right: 40px;
+      display: flex;
+      gap: 12px;
+    }
+
+    .nav-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.1);
+      background: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .nav-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .play-music {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="folio-container">
+    
+    <div class="top-bar">
+      <div class="play-music">🎵 Play Soundtrack</div>
+      <div class="progress-segments">
+        <div class="segment filled"></div>
+        <div class="segment active"></div>
+        <div class="segment"></div>
+        <div class="segment"></div>
+      </div>
+      <div style="width: 100px;"></div> <!-- spacer -->
+    </div>
+
+    <div class="pane-left">
+      <div class="chapter-emoji">🌙</div>
+      <div class="chapter-meta">Chapter 2</div>
+      <h2 class="chapter-title">Where They Stand Today</h2>
+    </div>
+
+    <div class="pane-right">
+      <p class="story-text">
+        Today, Sarah is working with her care team to find a deeper sense of rest. The long nights of tossing and turning have brought her here, searching for a gentle rhythm that allows her mind to quiet down. 
+        <br><br>
+        She has started exploring a new routine, hoping that with the right support, the heavy fog of exhaustion will slowly begin to lift, making way for brighter mornings.
+      </p>
+
+      <div class="nav-buttons">
+        <div class="nav-btn">←</div>
+        <div class="nav-btn">→</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/helper.js"></script>
+</body>
+</html>

@@ -43,14 +43,12 @@ export default async function MindfulHubPage() {
           available
         />
         <MindfulCard
-          href="#"
           icon="🚶"
           title="Move"
           blurb="Micro-stretches, standing flows, or chair work. Picks what fits where you are."
           available={false}
         />
         <MindfulCard
-          href="#"
           icon="✨"
           title="Inspire"
           blurb="A single quote, painting, or landscape. Something beautiful, on purpose."
@@ -77,7 +75,7 @@ function MindfulCard({
   blurb,
   available,
 }: {
-  href: string;
+  href?: string;
   icon: string;
   title: string;
   blurb: string;
@@ -103,7 +101,7 @@ function MindfulCard({
     </div>
   );
 
-  if (!available) {
+  if (!available || !href) {
     return <div aria-disabled="true">{body}</div>;
   }
 

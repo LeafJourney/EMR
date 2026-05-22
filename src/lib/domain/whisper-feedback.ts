@@ -37,6 +37,8 @@ export interface WhisperSubmission {
   viewport?: { width: number; height: number };
   /** Submission timestamp from the client; server stamps its own as well. */
   occurredAt: string;
+  /** Explicitly selected area from the UI, skips AI classification */
+  area?: WhisperArea;
 }
 
 export interface ClassifiedWhisper extends WhisperSubmission {
@@ -79,9 +81,11 @@ export function classifyWhisper(s: WhisperSubmission, opts: { now?: Date } = {})
   for (const t of POSITIVE_TERMS) if (lower.includes(t)) pos++;
   const sentiment: WhisperSentiment = neg > pos ? "negative" : pos > neg ? "positive" : "neutral";
 
-  let area: WhisperArea = "other";
-  for (const [a, re] of AREA_HINTS) {
-    if (re.test(s.comment)) { area = a; break; }
+  let area: WhisperArea = s.area ?? "other";
+  if (!s.area) {
+    for (const [a, re] of AREA_HINTS) {
+      if (re.test(s.comment)) { area = a; break; }
+    }
   }
 
   const cSuiteRoute = sentiment === "negative" || area === "compliment" || area === "feature_request";
@@ -120,6 +124,7 @@ export function validateSubmission(input: unknown): { ok: true; value: WhisperSu
         ? { width: Number((x.viewport as Record<string, unknown>).width ?? 0), height: Number((x.viewport as Record<string, unknown>).height ?? 0) }
         : undefined,
       occurredAt: x.occurredAt,
+      area: typeof x.area === "string" ? (x.area as WhisperArea) : undefined,
     },
   };
 }

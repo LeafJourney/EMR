@@ -1,0 +1,45 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { LeafSprig } from "@/components/ui/ornament";
+
+export function RelaxPopup() {
+  const [open, setOpen] = useState(false);
+
+  // Randomly show the relax popup for clinician wellness
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Show once per session randomly after 1-2 hours, for demo we just won't auto-show it
+      // but we expose it for manual triggers.
+    }, 1000 * 60 * 60);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button className="inline-flex items-center justify-center h-6 px-2.5 rounded-full bg-accent-soft text-[9px] font-bold uppercase tracking-wider text-accent hover:bg-accent hover:text-white transition-colors cursor-pointer select-none">
+          Relax
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[400px] text-center">
+        <DialogHeader>
+          <DialogTitle className="text-center font-display text-2xl text-accent">Take a Breath</DialogTitle>
+        </DialogHeader>
+        <div className="py-8 flex flex-col items-center">
+          <div className="relative w-32 h-32 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-4 border-accent/20 animate-ping duration-[4000ms]" />
+            <div className="absolute inset-4 rounded-full border-4 border-accent/40 animate-ping duration-[4000ms] delay-700" />
+            <div className="relative z-10 w-16 h-16 rounded-full bg-accent text-white flex items-center justify-center shadow-lg">
+              <LeafSprig size={24} />
+            </div>
+          </div>
+          <p className="mt-8 text-text-muted text-sm">
+            You've been working hard. Take 3 deep breaths before your next patient.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

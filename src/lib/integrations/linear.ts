@@ -58,12 +58,13 @@ function getLinearApiKey(): string {
 
 async function linearGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const apiKey = getLinearApiKey();
+  const authHeader = apiKey.startsWith("lin_api_") ? apiKey : `Bearer ${apiKey}`;
 
   const response = await fetch(LINEAR_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: authHeader,
     },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",

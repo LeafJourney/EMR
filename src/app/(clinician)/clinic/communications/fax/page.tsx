@@ -53,9 +53,11 @@ export default async function FaxPage() {
 
         <Card tone="raised">
           <CardHeader>
+            {/* EMR-694 — copy reword + 7-year retention notice. */}
             <CardTitle className="text-base">Recent activity</CardTitle>
             <CardDescription>
-              Last 50 inbound and outbound transmissions.
+              Last 50 inbound and outbound faxes. Older entries archived for
+              7 years (2,555 days) per medical-records retention.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[640px] overflow-y-auto">

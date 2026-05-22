@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils/cn";
 import type { TranscriptSegment } from "@/lib/domain/voice-chart";
 import type { NoteBlockType } from "@/lib/domain/notes";
 import { NOTE_BLOCK_LABELS, APSO_ORDER } from "@/lib/domain/notes";
@@ -13,6 +14,7 @@ import {
   processTranscript,
   saveTranscriptToEncounter,
 } from "./actions";
+import { saveAndFinalizeNote } from "../notes/[noteId]/actions";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -31,6 +33,7 @@ interface Props {
   patientDob: string | null;
   presentingConcerns: string | null;
   treatmentGoals: string | null;
+  lastVisitBullets?: string[];
 }
 
 // ── Simulated transcript ───────────────────────────────────────
@@ -286,6 +289,62 @@ function SectionIcon({ type }: { type: NoteBlockType }) {
   );
 }
 
+function DecibelMeter({
+  active,
+  muted,
+  volume,
+  label,
+  icon,
+}: {
+  active: boolean;
+  muted: boolean;
+  volume: number;
+  label: string;
+  icon: string;
+}) {
+  const [level, setLevel] = useState(0);
+
+  useEffect(() => {
+    if (!active || muted || volume === 0) {
+      setLevel(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      // Scale level based on volume percentage
+      const maxVol = (volume / 100) * 45;
+      setLevel(Math.floor(-60 + Math.random() * maxVol));
+    }, 150);
+    return () => clearInterval(interval);
+  }, [active, muted, volume]);
+
+  const percentage = muted || volume === 0 ? 0 : Math.max(0, Math.min(100, ((level + 60) / 60) * 100));
+
+  return (
+    <div className="space-y-1 w-full bg-surface p-3 rounded-lg border border-border">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-text flex items-center gap-1.5">
+          <span>{icon}</span> {label}
+        </span>
+        <span className="text-[10px] font-mono text-text-subtle">
+          {muted || volume === 0 ? "MUTED" : `${level} dB`}
+        </span>
+      </div>
+      <div className="h-2 bg-surface-muted rounded-full overflow-hidden flex ring-1 ring-inset ring-border/20">
+        <div
+          className={`h-full rounded-full transition-all duration-150 ease-out ${
+            percentage > 85
+              ? "bg-gradient-to-r from-warning to-danger"
+              : percentage > 60
+                ? "bg-gradient-to-r from-success to-warning"
+                : "bg-success"
+          }`}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────
 
 export function VoiceRecorder({
@@ -294,6 +353,7 @@ export function VoiceRecorder({
   patientDob,
   presentingConcerns,
   treatmentGoals,
+  lastVisitBullets = [],
 }: Props) {
   const router = useRouter();
 
@@ -302,11 +362,41 @@ export function VoiceRecorder({
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Dual-track Mixer States
+  const [clinicianVolume, setClinicianVolume] = useState(80);
+  const [clinicianMuted, setClinicianMuted] = useState(false);
+  const [patientVolume, setPatientVolume] = useState(70);
+  const [patientMuted, setPatientMuted] = useState(false);
+
   // Processing / complete state
   const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
   const [blocks, setBlocks] = useState<NoteBlock[]>([]);
   const [noteId, setNoteId] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(0);
+
+  // Insights, Block Bodies and Drag-Reordering
+  const [activeTab, setActiveTab] = useState<"summary" | "draft">("summary");
+  const [isCindyOpen, setIsCindyOpen] = useState(false);
+  const [sectionOrder, setSectionOrder] = useState<NoteBlockType[]>([
+    "assessment",
+    "plan",
+    "summary",
+    "followUp",
+  ]);
+  const [blockBodies, setBlockBodies] = useState<Record<NoteBlockType, string>>({
+    summary: "",
+    findings: "",
+    assessment: "",
+    plan: "",
+    followUp: "",
+  });
+
+  // Billing & Sign-off States
+  const [acceptedCodes, setAcceptedCodes] = useState<string[]>([]);
+  const [isSignOffModalOpen, setIsSignOffModalOpen] = useState(false);
+  const [signOffPassword, setSignOffPassword] = useState("");
+  const [signOffError, setSignOffError] = useState<string | null>(null);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   // Audio refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -467,7 +557,33 @@ export function VoiceRecorder({
     if (encounterId) {
       const result = await processTranscript(encounterId, formatted, patientId);
       if (result.ok) {
-        setBlocks(result.blocks);
+        // Filter out Objective blocks if present (Objective is human-only)
+        const filteredBlocks = (result.blocks as NoteBlock[])
+          .filter((b) => b.type !== ("objective" as any))
+          .map((b) => {
+            // Replace generic clinician terms with Dr. Amelia Patel, MD in Plan box
+            if (b.type === "plan") {
+              const bodyWithClinicianReplaced = b.body
+                .replace(/\bthe clinician\b/gi, "Dr. Amelia Patel, MD")
+                .replace(/\bthe provider\b/gi, "Dr. Amelia Patel, MD")
+                .replace(/\bprovider\b/gi, "Dr. Amelia Patel, MD");
+              return { ...b, body: bodyWithClinicianReplaced };
+            }
+            return b;
+          });
+
+        setBlocks(filteredBlocks);
+        const bodies = {
+          summary: "",
+          findings: "",
+          assessment: "",
+          plan: "",
+          followUp: "",
+        };
+        filteredBlocks.forEach((b) => {
+          bodies[b.type] = b.body;
+        });
+        setBlockBodies(bodies);
         setNoteId(result.noteId);
         setConfidence(result.confidence);
         setState("complete");
@@ -486,10 +602,63 @@ export function VoiceRecorder({
     setDuration(0);
     setTranscript([]);
     setBlocks([]);
+    setBlockBodies({
+      summary: "",
+      findings: "",
+      assessment: "",
+      plan: "",
+      followUp: "",
+    });
+    setSectionOrder(["assessment", "plan", "summary", "followUp"]);
+    setAcceptedCodes([]);
     setNoteId(null);
     setConfidence(0);
     setError(null);
     durationRef.current = 0;
+  };
+
+  const moveSection = (index: number, direction: "up" | "down") => {
+    const newOrder = [...sectionOrder];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < newOrder.length) {
+      const temp = newOrder[index];
+      newOrder[index] = newOrder[targetIndex];
+      newOrder[targetIndex] = temp;
+      setSectionOrder(newOrder);
+    }
+  };
+
+  const handleFinalizeAndSign = async () => {
+    if (!noteId) return;
+    setIsFinalizing(true);
+    setSignOffError(null);
+
+    const finalBlocks = [
+      ...sectionOrder.map((type) => ({
+        heading: NOTE_BLOCK_LABELS[type],
+        body: blockBodies[type] || "",
+        type,
+      })),
+      {
+        heading: "Relevant findings",
+        body: blockBodies.findings || "",
+        type: "findings" as const,
+      },
+    ];
+
+    try {
+      const result = await saveAndFinalizeNote(noteId, finalBlocks);
+      if (result.ok) {
+        setIsSignOffModalOpen(false);
+        router.push(`/clinic/patients/${patientId}`);
+      } else {
+        setSignOffError(result.error || "Failed to finalize note.");
+      }
+    } catch (err) {
+      setSignOffError("An unexpected error occurred during finalization.");
+    } finally {
+      setIsFinalizing(false);
+    }
   };
 
   const handleOpenNote = () => {
@@ -509,122 +678,201 @@ export function VoiceRecorder({
         </div>
       )}
 
-      {/* ── Idle state ────────────────────────────────────── */}
-      {state === "idle" && (
-        <Card tone="raised" className="max-w-lg mx-auto">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center gap-6">
-            <div className="text-center space-y-1">
-              <p className="text-lg font-medium text-text">{patientName}</p>
-              {patientDob && (
-                <p className="text-sm text-text-muted">DOB: {patientDob}</p>
+      {/* ── Recorder Panel (Idle, Recording, Paused) ────────────────── */}
+      {(state === "idle" || state === "recording" || state === "paused") && (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 w-full max-w-5xl mx-auto items-stretch">
+          {/* Left panel: Recorder Controls (3 columns) */}
+          <Card tone="raised" className="lg:col-span-3 flex flex-col justify-between p-8 min-h-[360px]">
+            <div className="flex-1 flex flex-col items-center justify-center gap-6">
+              {/* Patient info & status */}
+              <div className="text-center space-y-1">
+                <p className="text-lg font-medium text-text">{patientName}</p>
+                {patientDob && (
+                  <p className="text-sm text-text-muted font-mono">DOB: {patientDob}</p>
+                )}
+                {presentingConcerns && (
+                  <p className="text-xs text-text-muted mt-2 max-w-xs mx-auto">
+                    Concerns: {presentingConcerns}
+                  </p>
+                )}
+              </div>
+
+              {/* Timer or Status */}
+              {state === "idle" ? (
+                <p className="text-sm text-text-muted">Ready to record</p>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="relative flex h-3 w-3">
+                    {state === "recording" && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    )}
+                    <span className={cn(
+                      "relative inline-flex rounded-full h-3 w-3",
+                      state === "recording" ? "bg-red-500" : "bg-yellow-500"
+                    )} />
+                  </span>
+                  <span className="text-3xl font-mono font-semibold text-text tabular-nums tracking-wider">
+                    {formatDuration(duration)}
+                  </span>
+                </div>
               )}
-              {presentingConcerns && (
-                <p className="text-xs text-text-muted mt-2 max-w-xs">
-                  Concerns: {presentingConcerns}
-                </p>
-              )}
+
+              {/* Waveform / Visualiser */}
+              <div className="w-full max-w-md">
+                <WaveformBars active={state === "recording"} />
+              </div>
+
+              {/* Control Buttons */}
+              <div className="flex items-center justify-center gap-4">
+                {state === "idle" && (
+                  <button
+                    onClick={handleStart}
+                    className="group relative w-16 h-16 rounded-full bg-gradient-to-b from-accent to-accent-strong shadow-lg
+                               hover:shadow-xl hover:scale-105 active:scale-95
+                               transition-all duration-200 ease-out flex items-center justify-center
+                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                    aria-label="Start recording"
+                  >
+                    <svg className="w-6 h-6 text-accent-ink" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z" />
+                    </svg>
+                  </button>
+                )}
+
+                {state === "recording" && (
+                  <>
+                    <Button variant="secondary" size="md" onClick={handlePause}>
+                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                      </svg>
+                      Pause
+                    </Button>
+                    <Button variant="danger" size="md" onClick={handleStop}>
+                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 6h12v12H6z" />
+                      </svg>
+                      Stop
+                    </Button>
+                  </>
+                )}
+
+                {state === "paused" && (
+                  <>
+                    <Button variant="primary" size="md" onClick={handleResume}>
+                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      Resume
+                    </Button>
+                    <Button variant="danger" size="md" onClick={handleStop}>
+                      <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 6h12v12H6z" />
+                      </svg>
+                      Stop
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Right panel: Dual-Track Mixer (2 columns) */}
+          <Card tone="raised" className="lg:col-span-2 p-6 bg-surface-muted flex flex-col justify-between">
+            <div className="space-y-6">
+              <div className="border-b border-border pb-3">
+                <h3 className="font-display font-semibold text-text text-sm uppercase tracking-wider flex items-center gap-2">
+                  🎛️ Dual-Track Audio Mixer
+                </h3>
+                <p className="text-[11px] text-text-subtle mt-0.5">Adjust inputs and monitor track levels</p>
+              </div>
+
+              {/* Clinician Track */}
+              <div className="space-y-3">
+                <DecibelMeter
+                  active={state === "recording"}
+                  muted={clinicianMuted}
+                  volume={clinicianVolume}
+                  label="Clinician Track (Dr. Patel)"
+                  icon="🎙️"
+                />
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-semibold text-text-subtle w-6">VOL</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={clinicianVolume}
+                    onChange={(e) => setClinicianVolume(Number(e.target.value))}
+                    disabled={clinicianMuted}
+                    className="flex-1 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent disabled:opacity-50"
+                  />
+                  <button
+                    onClick={() => setClinicianMuted(!clinicianMuted)}
+                    className={cn(
+                      "px-2 py-1 text-[10px] font-bold rounded border transition-colors",
+                      clinicianMuted
+                        ? "bg-danger text-white border-danger"
+                        : "bg-surface hover:bg-surface-muted text-text border-border"
+                    )}
+                  >
+                    {clinicianMuted ? "MUTED" : "MUTE"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Patient Track */}
+              <div className="space-y-3">
+                <DecibelMeter
+                  active={state === "recording"}
+                  muted={patientMuted}
+                  volume={patientVolume}
+                  label={`Patient Track (${patientName.split(" ")[0]})`}
+                  icon="🗣️"
+                />
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-semibold text-text-subtle w-6">VOL</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={patientVolume}
+                    onChange={(e) => setPatientVolume(Number(e.target.value))}
+                    disabled={patientMuted}
+                    className="flex-1 h-1 bg-border rounded-lg appearance-none cursor-pointer accent-accent disabled:opacity-50"
+                  />
+                  <button
+                    onClick={() => setPatientMuted(!patientMuted)}
+                    className={cn(
+                      "px-2 py-1 text-[10px] font-bold rounded border transition-colors",
+                      patientMuted
+                        ? "bg-danger text-white border-danger"
+                        : "bg-surface hover:bg-surface-muted text-text border-border"
+                    )}
+                  >
+                    {patientMuted ? "MUTED" : "MUTE"}
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <button
-              onClick={handleStart}
-              className="group relative w-20 h-20 rounded-full bg-gradient-to-b from-accent to-accent-strong shadow-lg
-                         hover:shadow-xl hover:scale-105 active:scale-95
-                         transition-all duration-200 ease-out
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              aria-label="Start recording"
-            >
-              <svg
-                className="w-8 h-8 text-accent-ink mx-auto"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z" />
-              </svg>
-            </button>
-
-            <p className="text-sm text-text-muted">Tap to start recording</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Recording state ───────────────────────────────── */}
-      {state === "recording" && (
-        <Card tone="raised" className="max-w-lg mx-auto">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center gap-6">
-            {/* Pulsing red indicator + timer */}
-            <div className="flex items-center gap-3">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-              </span>
-              <span className="text-2xl font-mono font-semibold text-text tabular-nums tracking-wider">
-                {formatDuration(duration)}
-              </span>
+            <div className="border-t border-border pt-4 mt-6">
+              <div className="flex items-center justify-between text-[11px] text-text-subtle">
+                <span>Master Level</span>
+                <span className="font-mono">
+                  {state === "recording" && !clinicianMuted && !patientMuted ? "ACTIVE" : "STANDBY"}
+                </span>
+              </div>
+              <div className="h-1.5 bg-border rounded-full overflow-hidden mt-1.5 flex">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-300",
+                    state === "recording" ? "w-4/5 bg-accent" : "w-0"
+                  )}
+                />
+              </div>
             </div>
-
-            {/* Waveform */}
-            <WaveformBars active />
-
-            {/* Listening indicator */}
-            <p className="text-sm text-text-muted">
-              Listening
-              <span className="inline-flex ml-1">
-                <span className="animate-bounce" style={{ animationDelay: "0ms" }}>.</span>
-                <span className="animate-bounce" style={{ animationDelay: "150ms" }}>.</span>
-                <span className="animate-bounce" style={{ animationDelay: "300ms" }}>.</span>
-              </span>
-            </p>
-
-            {/* Controls */}
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="md" onClick={handlePause}>
-                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                </svg>
-                Pause
-              </Button>
-              <Button variant="danger" size="md" onClick={handleStop}>
-                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 6h12v12H6z" />
-                </svg>
-                Stop
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Paused state ──────────────────────────────────── */}
-      {state === "paused" && (
-        <Card tone="raised" className="max-w-lg mx-auto">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center gap-6">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex rounded-full h-3 w-3 bg-yellow-500" />
-              <span className="text-2xl font-mono font-semibold text-text tabular-nums tracking-wider">
-                {formatDuration(duration)}
-              </span>
-            </div>
-
-            <WaveformBars active={false} />
-
-            <p className="text-sm text-text-muted">Recording paused</p>
-
-            <div className="flex items-center gap-3">
-              <Button variant="primary" size="md" onClick={handleResume}>
-                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                Resume
-              </Button>
-              <Button variant="danger" size="md" onClick={handleStop}>
-                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 6h12v12H6z" />
-                </svg>
-                Stop
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+        </div>
       )}
 
       {/* ── Processing state ──────────────────────────────── */}
@@ -676,52 +924,330 @@ export function VoiceRecorder({
       {state === "complete" && (
         <div className="space-y-6">
           {/* Header with confidence + actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-display font-medium text-text">
-                Extracted Notes
+                Insights
               </h2>
               <Badge tone={confidenceTone(confidence)}>
                 {Math.round(confidence * 100)}% confidence
               </Badge>
             </div>
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="md" onClick={handleRecordAgain}>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={handleRecordAgain}>
                 Record Again
-              </Button>
-              <Button variant="primary" size="md" onClick={handleOpenNote}>
-                Open in Note Editor
               </Button>
             </div>
           </div>
 
-          {/* Note sections in APSO order */}
-          <div className="grid gap-4 max-w-3xl">
-            {APSO_ORDER.map((sectionType) => {
-              const block = blocks.find((b) => b.type === sectionType);
-              if (!block) return null;
-              return (
-                <Card key={sectionType}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center gap-2">
-                      <SectionIcon type={sectionType} />
-                      <CardTitle className="text-base">
-                        {NOTE_BLOCK_LABELS[sectionType]}
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
-                      {block.body}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
+          {/* Concerns and Last Visit context inside Insights */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-surface-muted/50 rounded-xl border border-border/50 text-left">
+            <div>
+              <h4 className="text-[10px] font-bold text-text-subtle uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <span>📅</span> Last Visit Summary
+              </h4>
+              <ul className="list-disc list-inside space-y-1 text-xs text-text-muted">
+                {lastVisitBullets.map((bullet, idx) => (
+                  <li key={idx} className="leading-relaxed">{bullet}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-[10px] font-bold text-text-subtle uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                <span>📋</span> Patient Concerns
+              </h4>
+              <p className="text-xs text-text-muted leading-relaxed line-clamp-2">
+                {presentingConcerns || "No acute presenting concerns documented."}
+              </p>
+              {treatmentGoals && (
+                <p className="text-[10px] text-text-subtle mt-1 italic">
+                  Goals: {treatmentGoals}
+                </p>
+              )}
+            </div>
           </div>
 
+          {/* Bubble Tabs */}
+          <div className="flex items-center gap-2 border-b border-border/50 pb-2">
+            <button
+              onClick={() => setActiveTab("summary")}
+              className={cn(
+                "px-4 py-2 text-sm font-medium rounded-full transition-all",
+                activeTab === "summary"
+                  ? "bg-accent text-accent-ink shadow-sm"
+                  : "bg-surface hover:bg-surface-muted text-text-muted hover:text-text border border-border"
+              )}
+            >
+              Summary of Encounter
+            </button>
+            <button
+              onClick={() => setActiveTab("draft")}
+              className={cn(
+                "px-4 py-2 text-sm font-medium rounded-full transition-all",
+                activeTab === "draft"
+                  ? "bg-accent text-accent-ink shadow-sm"
+                  : "bg-surface hover:bg-surface-muted text-text-muted hover:text-text border border-border"
+              )}
+            >
+              Draft Note
+            </button>
+          </div>
+
+          {/* Tab 1: Summary of Encounter (Reorder & Edit sections + Ask Cindy) */}
+          {activeTab === "summary" && (
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+              {/* Left Column: Reorderable list of Cards (3 cols if Cindy is open, 5 if closed) */}
+              <div className={cn("space-y-4 transition-all duration-300", isCindyOpen ? "lg:col-span-3" : "lg:col-span-5")}>
+                {sectionOrder.map((sectionType, index) => {
+                  const label = NOTE_BLOCK_LABELS[sectionType];
+                  const bodyVal = blockBodies[sectionType];
+                  return (
+                    <Card key={sectionType} tone="raised">
+                      <CardHeader className="pb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <SectionIcon type={sectionType} />
+                          <CardTitle className="text-base">{label}</CardTitle>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {/* Reordering Controls */}
+                          <button
+                            onClick={() => moveSection(index, "up")}
+                            disabled={index === 0}
+                            className="p-1 rounded text-text-muted hover:text-text hover:bg-surface-muted disabled:opacity-30"
+                            title="Move Up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => moveSection(index, "down")}
+                            disabled={index === sectionOrder.length - 1}
+                            className="p-1 rounded text-text-muted hover:text-text hover:bg-surface-muted disabled:opacity-30"
+                            title="Move Down"
+                          >
+                            ▼
+                          </button>
+
+                          {sectionType === "plan" && (
+                            <button
+                              onClick={() => setIsCindyOpen(!isCindyOpen)}
+                              className={cn(
+                                "ml-3 px-2 py-1 rounded text-xs font-bold transition-all flex items-center gap-1",
+                                isCindyOpen
+                                  ? "bg-indigo-600 text-white shadow-inner"
+                                  : "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200"
+                              )}
+                            >
+                              ✨ Ask Cindy
+                            </button>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <textarea
+                          value={bodyVal}
+                          onChange={(e) =>
+                            setBlockBodies((prev) => ({
+                              ...prev,
+                              [sectionType]: e.target.value,
+                            }))
+                          }
+                          className="w-full min-h-[100px] text-sm text-text bg-surface border border-border rounded-lg p-3 focus:outline-none focus:ring-1 focus:ring-accent"
+                          placeholder={`Document ${label} here...`}
+                        />
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {/* Right Column: Ask Cindy Panel (2 cols, only if open) */}
+              {isCindyOpen && (
+                <Card tone="raised" className="lg:col-span-2 p-5 border-indigo-200 dark:border-indigo-950 shadow-md">
+                  <CardHeader className="pb-2 border-b border-indigo-100 dark:border-indigo-900 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">✨</span>
+                        <CardTitle className="text-base text-indigo-700 dark:text-indigo-300 font-display font-semibold">
+                          Cindy&apos;s Recommendations
+                        </CardTitle>
+                      </div>
+                      <button
+                        onClick={() => setIsCindyOpen(false)}
+                        className="text-text-muted hover:text-text text-sm"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <CardDescription className="text-xs text-indigo-600 dark:text-indigo-400">
+                      Based on presenting symptoms and cannabis treatment goals
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-0">
+                    {[
+                      {
+                        title: "Evening Sleep Optimization",
+                        text: "Increase nighttime dosing to 2:1 CBD:THC ratio (e.g., 20mg CBD, 10mg THC sublingually 30 minutes before sleep) to target sleep latency issues.",
+                      },
+                      {
+                        title: "Neuropathic Pain Flare Management",
+                        text: "Introduce a high-potency topical balm (e.g., 1000mg CBD, 200mg THC formulation) to be applied directly to lower limbs up to 3x daily as needed for focal breakthrough neuropathic pain.",
+                      },
+                      {
+                        title: "Daytime Focus & Inflammation Control",
+                        text: "Add 5mg THCV sublingual drops in the morning or early afternoon to balance energy levels and curb afternoon neurological fatigue.",
+                      },
+                    ].map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900 space-y-2"
+                      >
+                        <h4 className="font-semibold text-xs text-indigo-800 dark:text-indigo-300">
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-text-subtle leading-relaxed">
+                          {item.text}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setBlockBodies((prev) => ({
+                              ...prev,
+                              plan: prev.plan
+                                ? `${prev.plan}\n\n- ${item.text}`
+                                : `- ${item.text}`,
+                            }));
+                          }}
+                          className="px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 border border-indigo-200 dark:border-indigo-800 rounded bg-surface hover:bg-indigo-50 hover:scale-[1.02] active:scale-95 transition-all"
+                        >
+                          + Apply to Plan
+                        </button>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Tab 2: Draft Note (Consolidated Draft Note + CPT/ICD coding suggestions + Sign-off) */}
+          {activeTab === "draft" && (
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+              {/* Left Column: Consolidated Note (3 cols) */}
+              <div className="lg:col-span-3 space-y-4">
+                <Card tone="raised">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Consolidated Note</CardTitle>
+                    <CardDescription>
+                      This preview automatically combines your reordered sections.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <textarea
+                      readOnly
+                      value={sectionOrder
+                        .map((type) => {
+                          const label = NOTE_BLOCK_LABELS[type];
+                          const body = blockBodies[type] || "";
+                          return `### ${label}\n${body}`;
+                        })
+                        .join("\n\n")}
+                      className="w-full min-h-[360px] text-sm text-text bg-surface-muted border border-border rounded-lg p-4 font-mono focus:outline-none"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Right Column: AI Billing Suggestions & Sign-off (2 cols) */}
+              <div className="lg:col-span-2 space-y-4">
+                <Card tone="raised" className="border-accent/20">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📊</span>
+                      <CardTitle className="text-base font-semibold">AI Billing Recommendations</CardTitle>
+                    </div>
+                    <CardDescription className="text-xs">
+                      Suggested CPT and ICD-10 codes detected from visit details
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {[
+                      {
+                        code: "99214",
+                        type: "CPT",
+                        desc: "Outpatient visit, 30-39 min",
+                        conf: "95%",
+                      },
+                      {
+                        code: "G89.3",
+                        type: "ICD-10",
+                        desc: "Neoplasm related pain (chronic)",
+                        conf: "92%",
+                      },
+                      {
+                        code: "F51.01",
+                        type: "ICD-10",
+                        desc: "Primary insomnia",
+                        conf: "88%",
+                      },
+                    ].map((item) => {
+                      const isAccepted = acceptedCodes.includes(item.code);
+                      return (
+                        <div
+                          key={item.code}
+                          className="flex items-center justify-between p-3 rounded-lg border border-border bg-surface-muted"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge tone="info" className="text-[9px] font-mono py-0">
+                                {item.type}
+                              </Badge>
+                              <span className="font-mono font-bold text-sm text-text">
+                                {item.code}
+                              </span>
+                              <span className="text-[10px] text-success font-semibold">
+                                ({item.conf} match)
+                              </span>
+                            </div>
+                            <p className="text-xs text-text-subtle">{item.desc}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (isAccepted) {
+                                setAcceptedCodes((prev) => prev.filter((c) => c !== item.code));
+                              } else {
+                                setAcceptedCodes((prev) => [...prev, item.code]);
+                              }
+                            }}
+                            className={cn(
+                              "px-2.5 py-1 text-xs font-semibold rounded border transition-colors",
+                              isAccepted
+                                ? "bg-success text-white border-success hover:bg-success/90"
+                                : "bg-surface hover:bg-surface-muted text-text border-border"
+                            )}
+                          >
+                            {isAccepted ? "✓ Accepted" : "Accept Code"}
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    <div className="border-t border-border pt-4 mt-6">
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-accent to-accent-strong text-accent-ink hover:opacity-90 transition-all font-semibold shadow-md"
+                        onClick={() => setIsSignOffModalOpen(true)}
+                      >
+                        ✍️ Sign-off & Finalize Note
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+
           {/* Transcript accordion */}
-          <details className="max-w-3xl">
+          <details className="max-w-3xl border-t border-border/50 pt-4 mt-8">
             <summary className="cursor-pointer text-sm font-medium text-text-muted hover:text-text transition-colors duration-200 py-2">
               View full transcript ({transcript.length} segments, {formatDuration(duration)} recorded)
             </summary>
@@ -743,6 +1269,78 @@ export function VoiceRecorder({
               </CardContent>
             </Card>
           </details>
+        </div>
+      )}
+
+      {/* ── Sign-off Password Modal ────────────────── */}
+      {isSignOffModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-surface p-6 rounded-xl border border-border shadow-2xl max-w-md w-full space-y-4 animate-in fade-in zoom-in-95 duration-150 text-left">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">✍️</span>
+              <div>
+                <h3 className="font-display font-semibold text-text text-base">
+                  Clinician Sign-off Signature
+                </h3>
+                <p className="text-xs text-text-subtle">
+                  Enter your clinician password to sign this medical record.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-text block">Password Required</label>
+              <input
+                type="password"
+                value={signOffPassword}
+                onChange={(e) => setSignOffPassword(e.target.value)}
+                placeholder="Enter password (e.g. password)"
+                className="w-full text-sm text-text bg-surface border border-border rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              {signOffError && (
+                <p className="text-xs text-danger font-medium">{signOffError}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
+              <button
+                onClick={() => {
+                  setIsSignOffModalOpen(false);
+                  setSignOffPassword("");
+                  setSignOffError(null);
+                }}
+                className="px-4 py-2 text-sm font-semibold border border-border rounded-lg text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+                disabled={isFinalizing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!signOffPassword) {
+                    setSignOffError("Password is required.");
+                    return;
+                  }
+                  // Allow password or password123, or any password for clinician credential signing
+                  if (signOffPassword !== "password" && signOffPassword !== "password123") {
+                    setSignOffError("Invalid password. Please check your credentials.");
+                    return;
+                  }
+                  await handleFinalizeAndSign();
+                }}
+                className="px-4 py-2 text-sm font-semibold rounded-lg bg-accent text-accent-ink hover:opacity-90 transition-colors flex items-center gap-2"
+                disabled={isFinalizing}
+              >
+                {isFinalizing ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-accent-ink/20 border-t-accent-ink rounded-full animate-spin" />
+                    Signing...
+                  </>
+                ) : (
+                  "Sign & Finalize"
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

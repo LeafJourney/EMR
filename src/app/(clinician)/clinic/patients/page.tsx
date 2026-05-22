@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { PatientListClient } from "./patient-list-client";
-import Link from "next/link";
+import { NewPatientModal } from "@/components/clinic/NewPatientModal";
 import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
@@ -140,7 +140,7 @@ export default async function PatientsPage({
             <span className="text-sm text-text-muted tabular-nums">
               {patients.length} patient{patients.length === 1 ? "" : "s"}
             </span>
-            <Link href="/sign-up">
+            <NewPatientModal>
               <Button variant="secondary" size="sm">
                 <svg
                   width="14"
@@ -159,7 +159,7 @@ export default async function PatientsPage({
                 </svg>
                 New patient
               </Button>
-            </Link>
+            </NewPatientModal>
           </div>
         }
       />

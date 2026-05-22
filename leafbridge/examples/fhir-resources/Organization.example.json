@@ -1,0 +1,29 @@
+{
+  "resourceType": "Organization",
+  "id": "organization-001",
+  "meta": {
+    "profile": [
+      "http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization"
+    ]
+  },
+  "identifier": [
+    {
+      "system": "http://hl7.org/fhir/sid/us-npi",
+      "value": "9876543210"
+    }
+  ],
+  "active": true,
+  "name": "LeafBridge Demo Pain Management Clinic",
+  "telecom": [
+    { "system": "phone", "value": "+1-555-0300", "use": "work" }
+  ],
+  "address": [
+    {
+      "line": ["200 Market St"],
+      "city": "San Francisco",
+      "state": "CA",
+      "postalCode": "94105",
+      "country": "US"
+    }
+  ]
+}

@@ -115,6 +115,6 @@ export async function POST(req: Request) {
   });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   return NextResponse.json({ ok: true, hint: "POST to trigger the CFO agent." });
 }

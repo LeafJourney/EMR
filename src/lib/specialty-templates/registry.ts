@@ -41,6 +41,7 @@
 
 import {
   validateManifest,
+  type AgentDescriptor,
   type SpecialtyManifest,
 } from "@/lib/specialty-templates/manifest-schema";
 
@@ -145,48 +146,18 @@ function extractManifest(mod: unknown): unknown {
 function discoverManifestSources(): Array<{ key: string; raw: unknown }> {
   const out: Array<{ key: string; raw: unknown }> = [];
 
-  // Path 1: Vitest / Node runtime fallback.
-  // We use process.env.VITEST to explicitly enter the Node fs.readdirSync path
-  // without confusing Webpack's static analyzer or Next.js server components.
+  // Path 1: Vitest (Vite runtime).
+  // Use Vite's `import.meta.glob` with `eager: true` so manifests are
+  // discovered and transformed through vite-node, not Node's native require.
+  // This is the only path that works on Node 20 in CI, since Node <22 cannot
+  // strip TypeScript syntax when requiring `.ts` files directly.
   if (process.env.VITEST) {
-    // eslint-disable-next-line
-    const fs = require("node:fs") as typeof import("node:fs");
-    // eslint-disable-next-line
-    const path = require("node:path") as typeof import("node:path");
-    // Hide createRequire from Webpack's analyzer using String()
-    // eslint-disable-next-line
-    const { createRequire } = require(String("node:module")) as typeof import("node:module");
-
-    const here = typeof __dirname === "string" ? __dirname : process.cwd();
-    const manifestDir = path.join(here, "manifests");
-    const requireFn = createRequire(path.join(here, "registry.ts"));
-
-    const collect = (dir: string, prefix: string) => {
-      let entries: string[];
-      try {
-        entries = fs.readdirSync(dir);
-      } catch (err) {
-        throw new Error(
-          `[specialty-templates] cannot read manifests directory "${dir}": ${(err as Error).message}`
-        );
-      }
-      for (const entry of entries) {
-        const full = path.join(dir, entry);
-        const stat = fs.statSync(full);
-        if (stat.isDirectory()) {
-          collect(full, `${prefix}${entry}/`);
-          continue;
-        }
-        if (!entry.endsWith(".ts")) continue;
-        if (entry.endsWith(".d.ts") || entry.endsWith(".test.ts")) continue;
-        out.push({
-          key: `./${prefix}${entry}`,
-          raw: extractManifest(requireFn(full)),
-        });
-      }
-    };
-
-    collect(manifestDir, "");
+    // @ts-ignore - import.meta.glob is a Vite-only API
+    const modules = import.meta.glob("./manifests/**/*.ts", { eager: true }) as Record<string, unknown>;
+    for (const [key, mod] of Object.entries(modules)) {
+      if (key.endsWith(".d.ts") || key.endsWith(".test.ts")) continue;
+      out.push({ key, raw: extractManifest(mod) });
+    }
     return out;
   }
 
@@ -386,6 +357,45 @@ export function applyTemplateDefaults(
  */
 export function __reloadForTests(): void {
   loadManifests();
+}
+
+/**
+ * EMR-778 — Effective agent set for a practice.
+ *
+ * Merges the Specialty Template's `agents[]` default with the practice's
+ * `agent_enable_overrides`, then drops every modality-gated agent whose
+ * modality is not in `enabledModalities`.
+ *
+ * Mirror semantics: identical to the upstream `<ModalityGate>` rule from
+ * EMR-411. An agent with `modality: "cannabis-medicine"` is hidden for any
+ * practice that has not enabled the `cannabis-medicine` modality, even if
+ * the practice explicitly overrides the agent to `enabled`.
+ *
+ * Pure function — keeps the modality lookup at the caller so this stays
+ * trivially testable.
+ */
+export function resolveEffectiveAgents(input: {
+  slug: string;
+  version?: string;
+  enabledModalities: ReadonlySet<string> | readonly string[];
+  practiceOverrides?: Record<string, "enabled" | "disabled"> | undefined;
+}): AgentDescriptor[] {
+  const manifest = getSpecialtyTemplate(input.slug, input.version);
+  if (!manifest?.agents || manifest.agents.length === 0) return [];
+
+  const enabled =
+    input.enabledModalities instanceof Set
+      ? (input.enabledModalities as ReadonlySet<string>)
+      : new Set(input.enabledModalities as readonly string[]);
+  const overrides = input.practiceOverrides ?? {};
+
+  return manifest.agents.filter((agent) => {
+    const override = overrides[agent.id];
+    if (override === "disabled") return false;
+    // Modality gate ALWAYS wins, even against explicit `enabled` override.
+    if (agent.modality && !enabled.has(agent.modality)) return false;
+    return true;
+  });
 }
 
 /**

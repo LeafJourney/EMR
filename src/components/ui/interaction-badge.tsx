@@ -5,22 +5,22 @@ type Severity = "red" | "yellow" | "green";
 
 const SEVERITY_CONFIG: Record<
   Severity,
-  { label: string; dot: string; badge: string }
+  { label: string; leaf: string; badge: string }
 > = {
   red: {
     label: "Contraindicated",
-    dot: "bg-[color:var(--danger)]",
+    leaf: "🍂",
     badge: "bg-red-50 text-danger border-red-200",
   },
   yellow: {
     label: "Caution",
-    dot: "bg-[color:var(--highlight)]",
+    leaf: "🌱",
     badge:
       "bg-highlight-soft text-[color:var(--highlight-hover)] border-highlight/30",
   },
   green: {
     label: "Safe",
-    dot: "bg-[color:var(--success)]",
+    leaf: "🌿",
     badge: "bg-accent-soft text-success border-[color:var(--success)]/20",
   },
 };
@@ -36,15 +36,14 @@ export function InteractionBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full border tracking-wide",
+        "inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium rounded-full border tracking-wide",
         config.badge,
         className
       )}
     >
-      <span
-        className={cn("h-2 w-2 rounded-full shrink-0", config.dot)}
-        aria-hidden="true"
-      />
+      <span aria-hidden="true" className="text-[10px] leading-none">
+        {config.leaf}
+      </span>
       {config.label}
     </span>
   );

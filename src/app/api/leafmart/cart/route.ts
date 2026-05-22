@@ -56,7 +56,7 @@ async function loadCartItems(cartId: string) {
     }));
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });

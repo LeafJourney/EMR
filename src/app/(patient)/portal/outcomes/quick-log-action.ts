@@ -26,8 +26,10 @@ const quickLogSchema = z.object({
   note: z.string().max(500).optional().nullable(),
 });
 
+import { recordDailyCheckIn } from "@/lib/gamification/streaks";
+
 export type QuickLogResult =
-  | { ok: true }
+  | { ok: true; newlyEarnedBadges?: any[] }
   | { ok: false; error: string };
 
 export async function quickLogSymptom(input: {
@@ -47,17 +49,21 @@ export async function quickLogSymptom(input: {
 
   const { metric, value, note } = parsed.data;
 
-  await prisma.outcomeLog.create({
-    data: {
-      patientId: patient.id,
-      metric,
-      value,
-      note: note?.trim() ? `[quick-fab] ${note.trim()}` : "[quick-fab]",
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.outcomeLog.create({
+      data: {
+        patientId: patient.id,
+        metric,
+        value,
+        note: note?.trim() ? `[quick-fab] ${note.trim()}` : "[quick-fab]",
+      },
+    });
   });
+  
+  const result = await recordDailyCheckIn(patient.id);
 
   revalidatePath("/portal");
   revalidatePath("/portal/outcomes");
 
-  return { ok: true };
+  return { ok: true, newlyEarnedBadges: result.newlyEarnedBadges };
 }

@@ -84,6 +84,19 @@ export function checkInteractions(
   );
 }
 
+/** Return the full interaction database sorted by severity (red → yellow → green). */
+export function getAllInteractions(): DrugInteraction[] {
+  return (interactionData.interactions as InteractionEntry[])
+    .map((e) => ({
+      drug: e.drug,
+      cannabinoid: e.cannabinoid,
+      severity: e.severity as Severity,
+      mechanism: e.mechanism,
+      recommendation: e.recommendation,
+    }))
+    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+}
+
 /** Human-readable label for each severity level. */
 export function getSeverityLabel(severity: Severity): string {
   switch (severity) {

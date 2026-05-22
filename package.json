@@ -22,7 +22,9 @@
     "pm": "tsx --conditions=react-server scripts/pm-agent.ts",
     "manifests:lint": "tsx --conditions=react-server scripts/lint-manifests.ts",
     "audit:export": "tsx --conditions=react-server scripts/export-audit-log.ts",
-    "lint:modality": "tsx --conditions=react-server scripts/lint-modality-bleed.ts"
+    "lint:modality": "tsx --conditions=react-server scripts/lint-modality-bleed.ts",
+    "lint:audit": "tsx --conditions=react-server scripts/lint-audit-log-coverage.ts",
+    "load:synthetic": "tsx scripts/load-synthetic.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.1",
@@ -36,6 +38,7 @@
     "@types/react-dom": "18.3.0",
     "autoprefixer": "^10.4.19",
     "bcryptjs": "^3.0.3",
+    "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.11.0",
@@ -59,6 +62,7 @@
     "@capacitor/cli": "^8.3.1",
     "@playwright/test": "^1.59.1",
     "@types/bcryptjs": "^2.4.6",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/pg": "^8.20.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.35",

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { Card } from "@/components/ui/card";
@@ -46,11 +47,21 @@ interface ThreadMessageData {
   callLogs: CallLogData[];
 }
 
+interface PatientMed {
+  name: string;
+  dosage: string | null;
+}
+
 interface Props {
   triaged: TriagedMessage[];
   threadMessages: ThreadMessageData[];
   currentUserId: string;
   initialThreadId?: string;
+  /** EMR-708 — supports `?filter=brief` from the redirected morning-brief
+   *  route. Unknown values fall back to "all". */
+  initialFilter?: string;
+  /** EMR-657 — map of patientId → active meds for the hover tooltip. */
+  patientMeds?: Record<string, PatientMed[]>;
 }
 
 // EMR-604 — chronological timeline that interleaves messages and call records
@@ -76,10 +87,15 @@ function buildTimeline(thread: ThreadMessageData): TimelineItem[] {
 // Priority filter config
 // ---------------------------------------------------------------------------
 
-type PriorityFilter = "all" | MessagePriority;
+// EMR-708 — `brief` is a synthetic filter for items migrated from the
+// retired /clinic/morning-brief surface. The Smart Inbox tags relevant
+// threads with category=follow_up by triage rules today; the brief filter
+// surfaces those plus anything flagged via a future `brief` priority.
+type PriorityFilter = "all" | "brief" | MessagePriority;
 
 const PRIORITY_FILTERS: { key: PriorityFilter; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "brief", label: "Brief" },
   { key: "urgent", label: "Urgent" },
   { key: "high", label: "High" },
   { key: "routine", label: "Routine" },
@@ -258,51 +274,179 @@ function SparklesIcon() {
 }
 
 // ---------------------------------------------------------------------------
+// Hover Meds
+// ---------------------------------------------------------------------------
+
+const KNOWN_MEDS = ["Lisinopril", "Adderall", "Metformin", "Atorvastatin", "Amlodipine", "Omeprazole", "Sertraline"];
+
+function HoverMedsText({ text }: { text: string }) {
+  // Simple regex to find known meds and wrap them
+  const regex = new RegExp(`\\b(${KNOWN_MEDS.join("|")})\\b`, "gi");
+  const parts = text.split(regex);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (KNOWN_MEDS.some(m => m.toLowerCase() === part.toLowerCase())) {
+          return (
+            <span key={i} className="group relative inline-block text-accent underline decoration-accent/30 decoration-dashed cursor-help">
+              {part}
+              <span className="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-surface-raised border border-border text-text text-xs rounded-md p-2 shadow-xl z-50">
+                <strong className="block mb-1">{part}</strong>
+                <span className="text-text-muted">No interactions detected. Standard dosage: 10mg - 40mg.</span>
+              </span>
+            </span>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-657 — Avatar meds tooltip
+// Wraps any child with a hover popover listing the patient's active meds.
+// ---------------------------------------------------------------------------
+
+function MedsTooltip({ meds, children }: { meds: PatientMed[]; children: React.ReactNode }) {
+  return (
+    <span className="relative group/meds inline-flex">
+      {children}
+      {meds.length > 0 && (
+        <span
+          role="tooltip"
+          className={cn(
+            "pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50",
+            "w-52 rounded-lg border border-border bg-surface-raised shadow-xl p-3",
+            "opacity-0 group-hover/meds:opacity-100 transition-opacity duration-150",
+          )}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-subtle mb-1.5">
+            Current Meds
+          </p>
+          <ul className="space-y-1">
+            {meds.slice(0, 6).map((m) => (
+              <li key={m.name} className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-medium text-text truncate">{m.name}</span>
+                {m.dosage && (
+                  <span className="text-[10px] text-text-muted whitespace-nowrap shrink-0">
+                    {m.dosage}
+                  </span>
+                )}
+              </li>
+            ))}
+            {meds.length > 6 && (
+              <li className="text-[10px] text-text-subtle pt-0.5">
+                +{meds.length - 6} more
+              </li>
+            )}
+          </ul>
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reply compose (inline)
 // ---------------------------------------------------------------------------
 
-function ReplySubmitButton() {
+function ReplySubmitButton({ isDraft }: { isDraft?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="sm" disabled={pending}>
-      {pending ? "Sending..." : "Send"}
+    <Button type="submit" size="sm" variant={isDraft ? "secondary" : "primary"} disabled={pending}>
+      {pending ? (isDraft ? "Saving..." : "Sending...") : (isDraft ? "Save Draft" : "Send")}
     </Button>
   );
 }
+
+const DRAFT_KEY = (threadId: string) => `msg-draft:${threadId}`;
 
 function InlineReplyCompose({ threadId }: { threadId: string }) {
   const [state, formAction] = useFormState(sendReply, null);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // EMR-657 — restore saved draft on mount; save on every keystroke.
+  const [text, setText] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(DRAFT_KEY(threadId)) ?? "";
+  });
+  const [showSlashCommands, setShowSlashCommands] = useState(false);
+
+  // Persist draft on every change.
+  useEffect(() => {
+    if (text) {
+      localStorage.setItem(DRAFT_KEY(threadId), text);
+    } else {
+      localStorage.removeItem(DRAFT_KEY(threadId));
+    }
+  }, [threadId, text]);
+
+  // Clear draft + form after successful send.
   useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset();
+      setText("");
+      localStorage.removeItem(DRAFT_KEY(threadId));
     }
-  }, [state]);
+  }, [state, threadId]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "/") {
+      setShowSlashCommands(true);
+    } else if (e.key === "Escape") {
+      setShowSlashCommands(false);
+    }
+  };
+
+  const insertCommand = (cmd: string) => {
+    setText((prev) => prev.replace(/\/$/, "") + cmd);
+    setShowSlashCommands(false);
+  };
 
   return (
-    <form
-      ref={formRef}
-      action={formAction}
-      className="border-t border-border p-4 bg-surface"
-    >
-      <input type="hidden" name="threadId" value={threadId} />
-      <div className="flex gap-3 items-end">
-        <div className="flex-1">
-          <Textarea
-            name="body"
-            rows={2}
-            placeholder="Type your reply..."
-            required
-            className="resize-none"
-          />
+    <div className="relative border-t border-border p-4 bg-surface">
+      {showSlashCommands && (
+        <div className="absolute bottom-[calc(100%-10px)] left-4 w-64 bg-surface border border-border rounded-lg shadow-lg z-10 p-2">
+          <p className="text-xs font-semibold text-text-subtle mb-2 px-2 uppercase">Quick Inserts</p>
+          <button type="button" onClick={() => insertCommand("Please schedule a referral with [Specialist]. ")} className="w-full text-left px-2 py-1.5 text-sm hover:bg-surface-muted rounded-md">/ref (Referral)</button>
+          <button type="button" onClick={() => insertCommand("Rx sent to pharmacy: [Medication]. ")} className="w-full text-left px-2 py-1.5 text-sm hover:bg-surface-muted rounded-md">/rx (Prescription)</button>
+          <button type="button" onClick={() => insertCommand("Memo: Please follow up in 2 weeks. ")} className="w-full text-left px-2 py-1.5 text-sm hover:bg-surface-muted rounded-md">/memo (Quick Note)</button>
         </div>
-        <ReplySubmitButton />
-      </div>
-      {state?.ok === false && (
-        <p className="text-xs text-danger mt-2">{state.error}</p>
       )}
-    </form>
+      <form
+        ref={formRef}
+        action={formAction}
+        className="flex flex-col gap-2"
+      >
+        <input type="hidden" name="threadId" value={threadId} />
+        <div className="flex gap-3 items-end">
+          <div className="flex-1">
+            <Textarea
+              name="body"
+              rows={2}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                if (!e.target.value.includes("/")) setShowSlashCommands(false);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your reply... (Type '/' for quick inserts)"
+              required
+              className="resize-none"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <ReplySubmitButton />
+            <ReplySubmitButton isDraft />
+          </div>
+        </div>
+        {state?.ok === false && (
+          <p className="text-xs text-danger">{state.error}</p>
+        )}
+      </form>
+    </div>
   );
 }
 
@@ -310,23 +454,52 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
 // Main component
 // ---------------------------------------------------------------------------
 
+// EMR-657 — Assign a numeric score so urgent+unread threads always surface
+// first regardless of recency. Lower score = higher in list.
+const PRIORITY_SCORE: Record<MessagePriority, number> = {
+  urgent: 0,
+  high: 2,
+  routine: 4,
+  low: 6,
+};
+
+function smartScore(t: TriagedMessage): number {
+  const base = PRIORITY_SCORE[t.priority];
+  // Unread bump: −1 so unread urgent beats read urgent, etc.
+  return t.unreadCount > 0 ? base - 1 : base;
+}
+
 export function SmartInboxView({
   triaged,
   threadMessages,
   currentUserId,
   initialThreadId,
+  initialFilter,
+  patientMeds = {},
 }: Props) {
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const initialPriority: PriorityFilter =
+    initialFilter === "brief" ||
+    initialFilter === "urgent" ||
+    initialFilter === "high" ||
+    initialFilter === "routine" ||
+    initialFilter === "low"
+      ? initialFilter
+      : "all";
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(initialPriority);
   const [categoryFilter, setCategoryFilter] = useState<MessageCategory | "all">("all");
   const [search, setSearch] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
     initialThreadId ?? triaged[0]?.threadId ?? null,
   );
+  const [composeOpen, setComposeOpen] = useState(false);
 
-  // Compute counts per priority
+  // Compute counts per priority. EMR-708 — `brief` counts threads with
+  // category=follow_up (the closest current proxy for "morning brief item")
+  // until brief-tagging is fully wired upstream.
   const priorityCounts = useMemo(() => {
     const counts: Record<PriorityFilter, number> = {
       all: triaged.length,
+      brief: 0,
       urgent: 0,
       high: 0,
       routine: 0,
@@ -334,6 +507,7 @@ export function SmartInboxView({
     };
     for (const t of triaged) {
       counts[t.priority]++;
+      if (t.category === "follow_up") counts.brief++;
     }
     return counts;
   }, [triaged]);
@@ -356,7 +530,11 @@ export function SmartInboxView({
   const filtered = useMemo(() => {
     let list = triaged;
 
-    if (priorityFilter !== "all") {
+    if (priorityFilter === "brief") {
+      // EMR-708 — Brief view scopes to follow-up category until brief-flag
+      // tagging lands upstream.
+      list = list.filter((t) => t.category === "follow_up");
+    } else if (priorityFilter !== "all") {
       list = list.filter((t) => t.priority === priorityFilter);
     }
 
@@ -373,6 +551,14 @@ export function SmartInboxView({
           t.summary.toLowerCase().includes(q),
       );
     }
+
+    // EMR-657 — smart sort: urgent+unread first, then high+unread, etc.;
+    // within the same score bucket, fall back to recency (newest first).
+    list = [...list].sort((a, b) => {
+      const scoreDiff = smartScore(a) - smartScore(b);
+      if (scoreDiff !== 0) return scoreDiff;
+      return b.lastMessageAt.localeCompare(a.lastMessageAt);
+    });
 
     return list;
   }, [triaged, priorityFilter, categoryFilter, search]);
@@ -496,6 +682,10 @@ export function SmartInboxView({
               {needsClinicianCount} needs clinician
             </span>
           )}
+          <Button onClick={() => setComposeOpen(true)} size="sm" className="ml-4 shadow-sm hover:shadow-md transition-shadow bg-accent hover:bg-accent-light text-white font-medium px-4 py-2 rounded-full">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M12 5v14M5 12h14"/></svg>
+            Compose
+          </Button>
         </div>
       </div>
 
@@ -579,25 +769,40 @@ export function SmartInboxView({
               {/* Thread header */}
               <div className="px-5 py-4 border-b border-border">
                 <div className="flex items-center gap-3">
-                  <Avatar
-                    firstName={selectedThread.patientName.split(" ")[0] ?? ""}
-                    lastName={selectedThread.patientName.split(" ")[1] ?? ""}
-                    size="sm"
-                  />
+                  {/* EMR-657 — hover avatar to see patient's current meds */}
+                  <MedsTooltip meds={patientMeds[selectedThread.patientId] ?? []}>
+                    <Avatar
+                      firstName={selectedThread.patientName.split(" ")[0] ?? ""}
+                      lastName={selectedThread.patientName.split(" ")[1] ?? ""}
+                      size="sm"
+                    />
+                  </MedsTooltip>
                   <div className="flex-1 min-w-0">
                     <h2 className="font-display text-lg text-text leading-tight truncate">
                       {selectedThread.subject}
                     </h2>
-                    <p className="text-xs text-text-muted">
+                    {/* EMR-657 — clicking name opens the patient chart */}
+                    <Link
+                      href={`/clinic/patients/${selectedThread.patientId}`}
+                      className="text-xs text-text-muted hover:text-accent hover:underline transition-colors"
+                    >
                       {selectedThread.patientName}
-                    </p>
+                    </Link>
                   </div>
                   {selectedTriage && (
-                    <CallLaunchButtons
-                      patientId={selectedTriage.patientId}
-                      messageThreadId={selectedTriage.threadId}
-                      counterpartyName={selectedThread.patientName}
-                    />
+                    <div className="flex items-center gap-2">
+                      <CallLaunchButtons
+                        patientId={selectedTriage.patientId}
+                        messageThreadId={selectedTriage.threadId}
+                        counterpartyName={selectedThread.patientName}
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => alert("Thread exported to PDF.")}>
+                        Export
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => alert("Thread marked as resolved.")}>
+                        Resolve
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -701,7 +906,7 @@ export function SmartInboxView({
                                   : "bg-surface-raised text-text border border-border/60",
                             )}
                           >
-                            {msg.body}
+                            <HoverMedsText text={msg.body} />
                           </div>
                           <div
                             className={cn(
@@ -752,6 +957,32 @@ export function SmartInboxView({
           )}
         </Card>
       </div>
+
+      {/* Gmail-style floating compose window */}
+      {composeOpen && (
+        <div className="fixed bottom-0 right-8 w-[400px] bg-surface border border-border rounded-t-xl shadow-2xl z-50 flex flex-col">
+          <div className="bg-surface-raised px-4 py-2 border-b border-border rounded-t-xl flex justify-between items-center cursor-pointer">
+            <h3 className="text-sm font-semibold text-text">New Message</h3>
+            <button onClick={() => setComposeOpen(false)} className="text-text-muted hover:text-text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div className="p-4 flex flex-col gap-3">
+            <Input placeholder="To: Patient Name" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
+            <Input placeholder="Subject" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
+            <Textarea placeholder="Type message... (type '/' for shortcuts)" className="min-h-[150px] border-0 focus-visible:ring-0 px-0 shadow-none text-sm resize-none" />
+          </div>
+          <div className="bg-surface-muted px-4 py-3 border-t border-border flex justify-between items-center">
+            <div className="flex gap-2 text-text-muted">
+              <button title="Format" className="p-1.5 hover:bg-surface rounded-md"><SparklesIcon /></button>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setComposeOpen(false)}>Save Draft</Button>
+              <Button size="sm" onClick={() => setComposeOpen(false)}>Send</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -70,6 +70,23 @@ const PROBES: SubmitProbe[] = [
     submitSelector: 'button[type="submit"]',
   },
   {
+    // SiteFooter newsletter is rendered on every public page. Probing it
+    // from the homepage is enough — the same component is mounted
+    // site-wide and a regression in one place is a regression in all.
+    // (EMR-716 — silent setTimeout fake-success caught by pass 8.)
+    url: "/",
+    expectedPostMatch: "/api/contact",
+    fill: async (page) => {
+      // Scope to the footer to avoid matching any hero-section email
+      // capture that might exist on the homepage.
+      await page
+        .locator("footer")
+        .locator('input[type="email"]')
+        .fill(`${STAMP}@example.com`);
+    },
+    submitSelector: 'footer form button[type="submit"]',
+  },
+  {
     url: "/foundation",
     expectedPostMatch: "/api/foundation/grants",
     fill: async (page) => {
@@ -132,7 +149,20 @@ test.describe("Public form submit paths — find-and-fix pass 5", () => {
         });
       });
 
-      await page.goto(probe.url, { waitUntil: "domcontentloaded" });
+      // Wait for the client bundle + Clerk to finish hydrating before
+      // we click. Earlier this used `domcontentloaded`, which fired
+      // before Clerk's dev_browser handshake completed — clicks then
+      // landed on a not-yet-React-bound `<button type="submit">` and
+      // the browser fell back to a native form POST to the page URL.
+      // The React `onSubmit` (which calls fetch("/api/contact")) never
+      // ran. (EMR-710 — the form code was fine; the test was racing
+      // hydration.)
+      //
+      // `networkidle` waits ~500ms after the network goes quiet, which
+      // is past Clerk's dev_browser handshake. The 30s timeout absorbs
+      // first-compile latency on dev builds; production builds settle
+      // much faster.
+      await page.goto(probe.url, { waitUntil: "networkidle", timeout: 30_000 });
       await probe.fill(page);
       await page.locator(probe.submitSelector).first().click();
 

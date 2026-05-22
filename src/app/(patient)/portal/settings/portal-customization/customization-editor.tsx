@@ -97,6 +97,9 @@ export function CustomizationEditor({ patientId }: CustomizationEditorProps) {
   function commit(next: PortalLayout) {
     setLayout(next);
     writeLayout(patientId, next);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("portal-layout-changed"));
+    }
   }
 
   const hiddenDefs = useMemo(
@@ -163,6 +166,92 @@ export function CustomizationEditor({ patientId }: CustomizationEditorProps) {
                 </button>
               );
             })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Display & Accessibility */}
+      <Card tone="raised">
+        <CardContent className="py-6 space-y-6">
+          <div>
+            <div className="flex items-baseline justify-between gap-2 mb-3 flex-wrap">
+              <h2 className="font-display text-lg text-text">Display & Accessibility</h2>
+            </div>
+            
+            <div className="space-y-5">
+              {/* Theme */}
+              <div>
+                <p className="text-sm font-medium text-text mb-2">Visual Theme</p>
+                <div className="flex bg-surface-muted rounded-lg p-1 w-full max-w-sm">
+                  {(["system", "light", "dark"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => commit({ ...layout, theme: t, updatedAt: new Date().toISOString() })}
+                      className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        layout.theme === t ? "bg-surface shadow-sm text-text" : "text-text-muted hover:text-text"
+                      }`}
+                    >
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text Scale */}
+              <div>
+                <p className="text-sm font-medium text-text mb-2">Typography Scale</p>
+                <div className="flex bg-surface-muted rounded-lg p-1 w-full max-w-sm">
+                  {(["normal", "large"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => commit({ ...layout, textScale: s, updatedAt: new Date().toISOString() })}
+                      className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        layout.textScale === s ? "bg-surface shadow-sm text-text" : "text-text-muted hover:text-text"
+                      }`}
+                    >
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {layout.textScale === "large" && (
+                  <p className="text-xs text-text-subtle mt-2">
+                    Large text may cause some dashboard widgets to scroll.
+                  </p>
+                )}
+              </div>
+
+              {/* Reduce Motion */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-text">Reduce Motion</p>
+                  <p className="text-xs text-text-subtle">
+                    Disables most micro-animations and spatial transitions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={layout.reduceMotion}
+                  onClick={() =>
+                    commit({
+                      ...layout,
+                      reduceMotion: !layout.reduceMotion,
+                      updatedAt: new Date().toISOString(),
+                    })
+                  }
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ${
+                    layout.reduceMotion ? "bg-accent" : "bg-border-strong"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      layout.reduceMotion ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

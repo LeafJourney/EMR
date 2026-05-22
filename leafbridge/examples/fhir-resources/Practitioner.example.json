@@ -1,0 +1,23 @@
+{
+  "resourceType": "Practitioner",
+  "id": "practitioner-001",
+  "meta": {
+    "profile": [
+      "http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner"
+    ]
+  },
+  "identifier": [
+    {
+      "system": "http://hl7.org/fhir/sid/us-npi",
+      "value": "1234567893"
+    }
+  ],
+  "active": true,
+  "name": [
+    { "family": "Patel", "given": ["Asha"], "prefix": ["Dr."] }
+  ],
+  "telecom": [
+    { "system": "phone", "value": "+1-555-0200", "use": "work" },
+    { "system": "email", "value": "asha.patel@example.org", "use": "work" }
+  ]
+}

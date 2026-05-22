@@ -131,16 +131,25 @@ export async function GET(req: Request) {
             ? "phone"
             : "in-person";
 
+      // EMR-012: SMS Expansion + Intake forms
+      const requiresIntake = true; // basic mock rule
+      
+      const emailBody = `Reminder: You have a ${modalityText} appointment with ${providerName} tomorrow at ${timeString}.`;
+      const smsBody = `Leafjourney: Reminder for your ${modalityText} appt with ${providerName} tomorrow at ${timeString}. ${requiresIntake ? "Please complete your intake forms." : ""}`;
+
       // TODO(EMR-XXX): replace with the real Twilio/SendGrid path once
       // the messaging-provider abstraction lands. For now this is a
       // structured log line so ops can verify the cron is firing
       // against the right rows.
-      // eslint-disable-next-line no-console
       console.log(
-        `[cron/reminders] would-send to=${encounter.patient.email} ` +
-          `firstName=${encounter.patient.firstName ?? ""} ` +
-          `at=${timeString} provider=${providerName} modality=${modalityText}`,
+        `[cron/reminders] EMAIL-would-send to=${encounter.patient.email} body="${emailBody}"`
       );
+
+      if (encounter.patient.phone) {
+        console.log(
+          `[cron/reminders] SMS-would-send to=${encounter.patient.phone} body="${smsBody}"`
+        );
+      }
 
       const currentContext = readBriefingContext(encounter.briefingContext);
       await prisma.encounter.update({

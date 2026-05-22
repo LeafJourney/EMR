@@ -45,7 +45,7 @@ async function fetchOk(url: string, opts?: RequestInit) {
 
 async function login(email: string, password: string): Promise<string> {
   // Get the login page first to establish session
-  const loginPage = await fetch(`${BASE}/login`, { redirect: "manual" });
+  const loginPage = await fetch(`${BASE}/sign-in`, { redirect: "manual" });
   const cookies = loginPage.headers.getSetCookie?.() ?? [];
   const sessionCookie = cookies.find((c) => c.startsWith("emr-session"))?.split(";")[0];
 
@@ -54,7 +54,7 @@ async function login(email: string, password: string): Promise<string> {
   form.set("email", email);
   form.set("password", password);
 
-  const res = await fetch(`${BASE}/login`, {
+  const res = await fetch(`${BASE}/sign-in`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -80,13 +80,13 @@ async function main() {
 
   // 2. Login page
   await test("Login page loads", async () => {
-    const res = await fetchOk(`${BASE}/login`);
+    const res = await fetchOk(`${BASE}/sign-in`);
     assert(res.status === 200, `Expected 200, got ${res.status}`);
   });
 
   // 3. Signup page
   await test("Signup page loads", async () => {
-    const res = await fetchOk(`${BASE}/signup`);
+    const res = await fetchOk(`${BASE}/sign-up`);
     assert(res.status === 200, `Expected 200, got ${res.status}`);
   });
 
@@ -138,3 +138,5 @@ main().catch((err) => {
   console.error("Smoke test runner crashed:", err);
   process.exit(1);
 });
+
+export {};

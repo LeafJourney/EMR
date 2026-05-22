@@ -3,34 +3,60 @@ import { requireUser } from "@/lib/auth/session";
 import { requireSuperAdmin } from "@/lib/auth/super-admin";
 import { bootstrapSuperAdminIfAllowlisted } from "@/lib/auth/super-admin-bootstrap";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
+import { ImpersonationBanner } from "@/components/super-admin/impersonation-banner";
 import { ROLE_LABELS } from "@/lib/rbac/roles";
 
 export const dynamic = "force-dynamic";
 
+// Four rail pillars, each with multiple destinations so the drawer reads
+// as a real workspace map rather than one-link rooms. PillarNav returns
+// the FIRST section whose pillar key matches the active rail icon, so
+// sharing a pillar key across sections silently hides every section
+// after the first — every pillar here is unique.
+//
+//   HQ          — KPI / dashboard read surface (chart)
+//   Operations  — what a super-admin does all day (building)
+//   Audit       — observability + the audit log (inbox)
+//   Security    — hardening / MFA / revoke / bootstrap (shield)
 const SUPER_ADMIN_SECTIONS: NavSection[] = [
   {
-    pillar: "onboarding",
-    icon: "clipboard-check",
-    label: "Onboarding",
-    items: [{ label: "Onboarding", href: "/onboarding" }],
+    pillar: "hq",
+    icon: "chart",
+    label: "HQ",
+    items: [
+      { label: "Dashboard", href: "/admin/hq" },
+      { label: "Leaderboards", href: "/admin/hq#leaderboards-heading" },
+      { label: "24h activity", href: "/admin/hq#activity-heading" },
+    ],
   },
   {
-    pillar: "practices",
+    pillar: "operations",
     icon: "building",
-    label: "Practices",
-    items: [{ label: "Practices", href: "/practices" }],
+    label: "Operations",
+    items: [
+      { label: "Practices", href: "/practices" },
+      { label: "Onboarding", href: "/onboarding" },
+      { label: "Templates", href: "/templates" },
+      { label: "Cross-tenant search", href: "/admin/search" },
+    ],
   },
   {
-    pillar: "templates",
-    icon: "layout-grid",
-    label: "Templates",
-    items: [{ label: "Templates", href: "/templates" }],
+    pillar: "audit",
+    icon: "inbox",
+    label: "Audit",
+    items: [
+      { label: "Audit log", href: "/admin/audit" },
+      { label: "Audit export (CSV)", href: "/api/admin/audit/export" },
+    ],
   },
   {
-    pillar: "admin",
-    icon: "settings",
-    label: "Admin",
-    items: [{ label: "Console", href: "/admin" }],
+    pillar: "security",
+    icon: "shield",
+    label: "Security",
+    items: [
+      { label: "Super-admin console", href: "/admin/console" },
+      { label: "Bootstrap allowlist", href: "/admin/bootstrap" },
+    ],
   },
 ];
 
@@ -51,14 +77,21 @@ export default async function SuperAdminLayout({
   }
 
   return (
-    <AppShell
-      user={user}
-      activeRole="super_admin"
-      sections={SUPER_ADMIN_SECTIONS}
-      roleLabel={ROLE_LABELS.super_admin}
-      showNavPrefs={false}
-    >
-      {children}
-    </AppShell>
+    <>
+      {/* EMR-742 Phase 2 — Spans the entire viewport (sticky top). Renders
+          nothing when there is no active impersonation session. Mounted
+          above AppShell so it sits above the role rail / drawer rather
+          than being clipped by them. */}
+      <ImpersonationBanner />
+      <AppShell
+        user={user}
+        activeRole="super_admin"
+        sections={SUPER_ADMIN_SECTIONS}
+        roleLabel={ROLE_LABELS.super_admin}
+        showNavPrefs={false}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

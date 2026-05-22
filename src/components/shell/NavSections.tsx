@@ -59,10 +59,10 @@ function CountBadge({ count, tone }: { count: number; tone: CountTone }) {
 // signals severity at a glance; the label gives the punchline; `context`
 // becomes a native title-attribute tooltip.
 
-const SEVERITY_DOT_CLASS: Record<Exclude<BadgeSeverity, "ok">, string> = {
-  critical: "bg-red-600",
-  warn: "bg-amber-500",
-  info: "bg-accent",
+const SEVERITY_LEAF: Record<Exclude<BadgeSeverity, "ok">, string> = {
+  critical: "🍂",
+  warn: "🌱",
+  info: "🌿",
 };
 
 const SEVERITY_TEXT_CLASS: Record<Exclude<BadgeSeverity, "ok">, string> = {
@@ -73,20 +73,19 @@ const SEVERITY_TEXT_CLASS: Record<Exclude<BadgeSeverity, "ok">, string> = {
 
 export function SemanticBadge({ badge }: { badge: NavBadge }) {
   if (badge.severity === "ok") return null;
-  const dot = SEVERITY_DOT_CLASS[badge.severity];
+  const leaf = SEVERITY_LEAF[badge.severity];
   const text = SEVERITY_TEXT_CLASS[badge.severity];
   return (
     <span
       title={badge.context}
       className={cn(
-        "inline-flex items-center gap-1.5 text-[11px] font-medium tabular-nums",
+        "inline-flex items-center gap-1 text-[11px] font-medium tabular-nums",
         text,
       )}
     >
-      <span
-        aria-hidden="true"
-        className={cn("h-1.5 w-1.5 rounded-full", dot)}
-      />
+      <span aria-hidden="true" className="text-[9px] leading-none">
+        {leaf}
+      </span>
       {badge.label}
     </span>
   );

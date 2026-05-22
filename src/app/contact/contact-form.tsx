@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Mail } from "lucide-react";
+import { useFormValidation } from "@/hooks/use-form-validation";
 
 const RECIPIENTS = ["neal@leafjourney.com", "scott@leafjourney.com"];
 
@@ -17,6 +18,7 @@ export function ContactForm() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const { validate, fieldInvalid } = useFormValidation();
 
   const mailtoHref = `mailto:${RECIPIENTS.join(",")}?subject=${encodeURIComponent(
     subject || "Leafjourney inquiry"
@@ -25,8 +27,8 @@ export function ContactForm() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    if (!name.trim() || !email.trim() || !message.trim()) {
-      setError("Please fill in your name, email, and message.");
+    if (!validate({ name, email, message })) {
+      setError("Please complete each field.");
       return;
     }
     setStatus("submitting");
@@ -79,7 +81,7 @@ export function ContactForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
           <label htmlFor="contact-name" className="block text-sm font-medium text-text mb-1.5">
-            Your name
+            Your name <span aria-hidden="true" className="text-danger">*</span>
           </label>
           <input
             id="contact-name"
@@ -88,12 +90,17 @@ export function ContactForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
-            className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-sm focus:border-accent focus:outline-none"
+            aria-invalid={fieldInvalid(name)}
+            className={`w-full rounded-lg border bg-surface px-4 py-2.5 text-sm focus:outline-none transition-colors ${
+              fieldInvalid(name)
+                ? "border-danger focus:border-danger focus:ring-2 focus:ring-danger/20"
+                : "border-border focus:border-accent"
+            }`}
           />
         </div>
         <div>
           <label htmlFor="contact-email" className="block text-sm font-medium text-text mb-1.5">
-            Email
+            Email <span aria-hidden="true" className="text-danger">*</span>
           </label>
           <input
             id="contact-email"
@@ -103,7 +110,12 @@ export function ContactForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full rounded-lg border border-border bg-surface px-4 py-2.5 text-sm focus:border-accent focus:outline-none"
+            aria-invalid={fieldInvalid(email)}
+            className={`w-full rounded-lg border bg-surface px-4 py-2.5 text-sm focus:outline-none transition-colors ${
+              fieldInvalid(email)
+                ? "border-danger focus:border-danger focus:ring-2 focus:ring-danger/20"
+                : "border-border focus:border-accent"
+            }`}
           />
         </div>
       </div>
@@ -122,7 +134,7 @@ export function ContactForm() {
       </div>
       <div className="mt-5">
         <label htmlFor="contact-message" className="block text-sm font-medium text-text mb-1.5">
-          Message
+          Message <span aria-hidden="true" className="text-danger">*</span>
         </label>
         <textarea
           id="contact-message"
@@ -131,7 +143,12 @@ export function ContactForm() {
           onChange={(e) => setMessage(e.target.value)}
           required
           rows={7}
-          className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm focus:border-accent focus:outline-none resize-none"
+          aria-invalid={fieldInvalid(message)}
+          className={`w-full rounded-lg border bg-surface px-4 py-3 text-sm focus:outline-none resize-none transition-colors ${
+            fieldInvalid(message)
+              ? "border-danger focus:border-danger focus:ring-2 focus:ring-danger/20"
+              : "border-border focus:border-accent"
+          }`}
           placeholder="Tell us about yourself, the role, and how you'd contribute…"
         />
       </div>

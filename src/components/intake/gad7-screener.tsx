@@ -33,7 +33,6 @@ export function Gad7Screener() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("GAD-7 Score:", totalScore);
   };
 
   return (

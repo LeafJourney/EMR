@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: leafbridge-services
+    static_configs:
+      - targets:
+          - 'host.docker.internal:3010'  # ingestion-gateway
+          - 'host.docker.internal:3011'  # fhir-server-adapter
+          - 'host.docker.internal:3012'  # terminology-service
+          - 'host.docker.internal:3013'  # mpi-service
+          - 'host.docker.internal:3014'  # consent-service
+          - 'host.docker.internal:3015'  # policy-gateway
+          - 'host.docker.internal:3016'  # agent-orchestrator
+          - 'host.docker.internal:3017'  # rag-service
+          - 'host.docker.internal:3018'  # audit-service
+          - 'host.docker.internal:3019'  # notification-router

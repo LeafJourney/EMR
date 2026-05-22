@@ -133,9 +133,11 @@ export default async function VoicemailPage() {
           <Card tone="raised">
             <CardHeader>
               <CardTitle className="text-base">Log a voicemail</CardTitle>
+              {/* EMR-692 — reworded into plain language. */}
               <CardDescription>
-                Front-desk capture path — the transcript is redacted before
-                persistence so PHI never lands in the database raw.
+                The front desk removes private health information from the
+                notes before saving them so no personal information is
+                stored in the EMR.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -151,7 +153,11 @@ export default async function VoicemailPage() {
           <Card tone="raised">
             <CardHeader>
               <CardTitle className="text-base">Archived</CardTitle>
-              <CardDescription>Last 10 archived voicemails.</CardDescription>
+              {/* EMR-692 — confirm 30-day auto-delete policy. */}
+              <CardDescription>
+                Last 10 archived voicemails. Auto-delete 30 days after
+                recording date.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {archived.length === 0 ? (

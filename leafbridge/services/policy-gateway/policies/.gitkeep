@@ -1,0 +1,2 @@
+# OPA Rego policies live here. Mounted into the OPA container by
+# infra/docker-compose/docker-compose.yml.

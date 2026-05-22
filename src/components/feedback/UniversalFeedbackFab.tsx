@@ -16,6 +16,7 @@ type State = "closed" | "form" | "submitting" | "thanks" | "error";
 export function UniversalFeedbackFab() {
   const [state, setState] = useState<State>("closed");
   const [comment, setComment] = useState("");
+  const [area, setArea] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // Persist a stable client-id per browser to dedupe repeats / retries.
@@ -37,10 +38,15 @@ export function UniversalFeedbackFab() {
   function close() {
     setState("closed");
     setComment("");
+    setArea("");
     setError(null);
   }
 
   async function submit() {
+    if (!area) {
+      setError("Please select a topic so we can route this correctly.");
+      return;
+    }
     if (comment.trim().length < 5) {
       setError("Tell us a little more — at least 5 characters helps us route it.");
       return;
@@ -52,6 +58,7 @@ export function UniversalFeedbackFab() {
         clientId: clientIdRef.current,
         pageUrl: window.location.href,
         comment,
+        area,
         userAgent: navigator.userAgent,
         viewport: { width: window.innerWidth, height: window.innerHeight },
         occurredAt: new Date().toISOString(),
@@ -88,7 +95,7 @@ export function UniversalFeedbackFab() {
         aria-label="Send feedback"
         title="Send feedback"
       >
-        <span className="block text-base">💬</span>
+        <span className="block text-base">🌱</span>
       </button>
     );
   }
@@ -124,7 +131,23 @@ export function UniversalFeedbackFab() {
             </div>
           ) : (
             <>
+              <select
+                required
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+                className="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              >
+                <option value="" disabled>Select a topic...</option>
+                <option value="feature_request">Feature Request</option>
+                <option value="performance">Bug Report / Performance</option>
+                <option value="medications">Clinical / Medications</option>
+                <option value="billing">Billing / Insurance</option>
+                <option value="other">Other</option>
+              </select>
+
               <textarea
+                required
+                minLength={5}
                 rows={4}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -133,8 +156,7 @@ export function UniversalFeedbackFab() {
               />
 
               <p className="text-[11px] text-text-subtle">
-                We'll capture the page URL and your viewport automatically — no
-                screenshot needed.
+                We'll capture the page URL automatically. Any voice memos attached are auto-deleted after 30 days for privacy.
               </p>
 
               {error && <p className="text-sm text-danger">{error}</p>}

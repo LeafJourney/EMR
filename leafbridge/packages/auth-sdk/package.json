@@ -1,0 +1,15 @@
+{
+  "name": "@leafbridge/auth-sdk",
+  "version": "0.0.1",
+  "description": "OIDC / SPIFFE client helpers, purpose-of-use propagation, AuditEvent emitters.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'no lint configured'"
+  }
+}

@@ -63,9 +63,13 @@ export default function FeaturesPage() {
               <div className="w-14 h-14 bg-[var(--surface)] border border-[var(--border)] rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-[var(--accent)]/10 transition-all duration-300">
                 <feature.icon className="w-6 h-6 text-text group-hover:text-[var(--accent)] transition-colors" />
               </div>
-              <h3 className="font-display text-2xl font-medium text-text mb-3">
+              {/* h2 (not h3) so the heading order is h1 (hero) -> h2
+                  (feature card) -> h2 (security section). Skipping
+                  h2 between h1 and the cards trips axe's heading-order
+                  rule. (EMR-713 cleanup.) */}
+              <h2 className="font-display text-2xl font-medium text-text mb-3">
                 {feature.title}
-              </h3>
+              </h2>
               <p className="text-text-muted leading-relaxed">
                 {feature.description}
               </p>

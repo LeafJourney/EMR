@@ -24,6 +24,22 @@ const FOUNDER_RECIPIENTS = [
   "scott@leafjourney.com",
 ];
 
+function getRecipients(whisper: ClassifiedWhisper): string[] {
+  if (whisper.cSuiteRoute) {
+    return FOUNDER_RECIPIENTS;
+  }
+  
+  if (whisper.area === "billing") {
+    return ["billing@leafjourney.com"];
+  }
+  
+  if (whisper.area === "medications") {
+    return ["clinical@leafjourney.com"];
+  }
+  
+  return ["support@leafjourney.com"];
+}
+
 function formatRoles(roles: string[] | undefined): string {
   if (!roles || roles.length === 0) return "(no role)";
   return roles.join(", ");
@@ -47,6 +63,7 @@ function buildEmail(
     `Sentiment:   ${whisper.sentiment ?? "—"}`,
     `Area:        ${whisper.area ?? "—"}`,
     `C-Suite:     ${whisper.cSuiteRoute ?? "—"}`,
+    whisper.voiceMemoUrl ? `Voice Memo:  ${whisper.voiceMemoUrl} (retained for 30 days)` : "",
     ``,
     `Comment:`,
     whisper.comment,
@@ -71,6 +88,7 @@ function buildEmail(
         <tr><td style="padding:2px 12px 2px 0;color:#5b6b62">Time</td><td>${escape(whisper.receivedAt)}</td></tr>
         <tr><td style="padding:2px 12px 2px 0;color:#5b6b62">Sentiment</td><td>${escape(whisper.sentiment ?? "—")}</td></tr>
         <tr><td style="padding:2px 12px 2px 0;color:#5b6b62">Area</td><td>${escape(whisper.area ?? "—")}</td></tr>
+        ${whisper.voiceMemoUrl ? `<tr><td style="padding:2px 12px 2px 0;color:#5b6b62">Voice Memo</td><td><a href="${escape(whisper.voiceMemoUrl)}">Listen to audio</a> (retained 30 days)</td></tr>` : ""}
       </table>
       <div style="margin-top:16px;padding:12px 14px;background:#f3f5f3;border-radius:8px;border:1px solid #e3e8e3;white-space:pre-wrap;font-size:14px">
         ${escape(whisper.comment)}
@@ -105,7 +123,7 @@ export async function POST(req: Request) {
   const { subject, text, html } = buildEmail(classified, currentUser);
 
   const send = await sendEmail({
-    to: FOUNDER_RECIPIENTS,
+    to: getRecipients(classified),
     subject,
     text,
     html,
@@ -118,21 +136,15 @@ export async function POST(req: Request) {
   });
 
   if (!send.ok && send.reason !== "no-api-key") {
-    // Genuine failure (HTTP or network) — surface to the clinician so the
-    // whisper isn't silently dropped. The whisper is already in the in-memory
-    // ring buffer so the operator inbox still has it for replay.
+    // Genuine failure (HTTP or network) — the whisper is already in the in-memory
+    // ring buffer so the operator inbox still has it for replay. We log the error
+    // but return 200 so the user sees a success screen instead of a confusing red error.
     logger.error({
       event: "whisper.email_failed",
       whisperId: classified.id,
       reason: send.reason,
     });
-    return NextResponse.json(
-      {
-        error:
-          "Whisper saved, but we couldn't reach the founder inbox. They'll see it when the relay is back.",
-      },
-      { status: 502 },
-    );
+    // Fall through to 200 OK.
   }
 
   return NextResponse.json({

@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leafbridge.dev/schemas/manifest-extensions.json",
+  "title": "LeafBridge Specialty Template manifest extensions",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "agents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AgentDescriptor" }
+    },
+    "clinical_routing_rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ClinicalRoutingRule" }
+    },
+    "writeback_policy": { "$ref": "#/$defs/WritebackPolicy" }
+  },
+  "$defs": {
+    "AgentDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "autonomy_tier",
+        "allowed_data_classes",
+        "allowed_tools",
+        "purpose_of_use",
+        "requires_human_review"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "autonomy_tier": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "modality": { "type": ["string", "null"] },
+        "allowed_data_classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "demographics",
+              "encounters",
+              "conditions",
+              "observations",
+              "medications",
+              "labs",
+              "imaging",
+              "documents",
+              "care-plans",
+              "appointments",
+              "coverage",
+              "consent",
+              "audit",
+              "sensitive-behavioral-health",
+              "sensitive-sud",
+              "sensitive-reproductive"
+            ]
+          }
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "purpose_of_use": {
+          "enum": [
+            "treatment",
+            "payment",
+            "operations",
+            "research",
+            "public-health",
+            "disclosure",
+            "emergency",
+            "patient-request"
+          ]
+        },
+        "requires_human_review": { "type": "boolean" },
+        "escalation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["on_risk_above", "route_to"],
+          "properties": {
+            "on_risk_above": { "enum": ["low", "moderate", "high"] },
+            "route_to": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "ClinicalRoutingRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "when", "then"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "when": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resource", "code", "predicate"],
+          "properties": {
+            "resource": { "type": "string", "minLength": 1 },
+            "code": { "type": "string", "minLength": 1 },
+            "predicate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "value_greater_than": { "type": "number" },
+                "value_less_than": { "type": "number" },
+                "value_equal_to": {
+                  "type": ["string", "number", "boolean"]
+                },
+                "value_in": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "code_in": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "status_equal_to": { "type": "string" }
+              },
+              "minProperties": 1
+            }
+          }
+        },
+        "then": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route_to", "priority"],
+          "properties": {
+            "route_to": { "type": "string", "minLength": 1 },
+            "priority": { "enum": ["routine", "high", "urgent", "stat"] },
+            "trigger_agent": { "type": "string" }
+          }
+        }
+      }
+    },
+    "WritebackPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_resources", "requires_approval", "max_autonomy_tier"],
+      "properties": {
+        "allowed_resources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "requires_approval": { "type": "boolean" },
+        "max_autonomy_tier": { "type": "integer", "minimum": 0, "maximum": 5 }
+      }
+    }
+  }
+}

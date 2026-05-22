@@ -1,0 +1,26 @@
+<h2>Ontology Mapping Strategy</h2>
+<p class="subtitle">Leafly uses recreational tags ("Sleepy", "Happy"), but Verdant Apothecary uses clinical tags ("Insomnia", "Anxiolytic"). How should we translate these during the sync?</p>
+
+<div class="options">
+  <div class="option" data-choice="static" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Static Code Mapping</h3>
+      <p>Hardcode a dictionary in the codebase (e.g., "Sleepy" -> "Insomnia"). Fast to build, but requires a code deployment to update or add new terms.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="dynamic" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Dynamic Database Mapping</h3>
+      <p>Store the mapping rules in a Postgres table. Allows clinical admins to update the ontology translation on the fly without developer involvement.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="ai" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>AI-Assisted Tagging</h3>
+      <p>Pass Leafly's raw strain description and effects through an LLM (like Claude) during sync to intelligently extract and assign our clinical therapeutic tags.</p>
+    </div>
+  </div>
+</div>

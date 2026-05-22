@@ -349,7 +349,7 @@ function ThreadDetail({
               )}
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
             {oneOnOnePeer && peerProvider && (
               <CallLaunchButtons
                 providerUserId={oneOnOnePeer.userId}
@@ -359,6 +359,10 @@ function ThreadDetail({
             )}
             <Badge tone="success">HIPAA Secure</Badge>
             <Badge tone="neutral">Encrypted at rest</Badge>
+            <label className="flex items-center gap-1.5 ml-2 cursor-pointer border border-border px-2 py-1 rounded-full bg-surface">
+              <input type="checkbox" className="h-3 w-3 accent-emerald-600" defaultChecked />
+              <span className="text-[10px] font-medium text-text">SMS Opt-In</span>
+            </label>
           </div>
         </div>
       </CardHeader>
@@ -377,17 +381,17 @@ function ThreadDetail({
                 size="sm"
               />
               <div
-                className={`max-w-[70%] rounded-2xl px-4 py-3 ${
+                className={`max-w-[70%] rounded-2xl px-4 py-2 shadow-sm ${
                   isOwn
-                    ? "bg-accent/10 border border-accent/20"
-                    : "bg-surface-muted border border-border"
+                    ? "bg-blue-500 text-white rounded-tr-sm"
+                    : "bg-surface-raised border border-border text-text rounded-tl-sm"
                 }`}
               >
-                <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
+                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isOwn ? "text-white" : "text-text"}`}>
                   {msg.body}
                 </p>
-                <p className="text-[10px] text-text-subtle mt-1.5">
-                  {isOwn ? "You" : msg.senderName} ·{" "}
+                <p className={`text-[10px] mt-1.5 ${isOwn ? "text-blue-100" : "text-text-subtle"}`}>
+                  {isOwn ? "Delivered" : msg.senderName} ·{" "}
                   {formatRelative(msg.createdAt)}
                 </p>
               </div>

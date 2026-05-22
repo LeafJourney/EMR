@@ -21,8 +21,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireApiAuth } from "@/lib/auth/api-gate";
-import { adminMutationLimiter } from "@/lib/auth/rate-limit";
+import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { applyTemplateDefaults } from "@/lib/specialty-templates/registry";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 
@@ -34,17 +33,9 @@ const bodySchema = z.object({
   confirmName: z.string().min(1),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: { id: string } },
-) {
-  const gate = await requireApiAuth({
-    role: "super_admin",
-    rateLimit: { limiter: adminMutationLimiter, bucket: "admin.config.switch_specialty" },
-  });
-  if (gate.error) return gate.error;
-  const actor = gate.actor;
-
+export const POST = withAdminMutation<{ id: string }>(
+  { bucket: "admin.config.switch_specialty" },
+  async (req, { actor, params }) => {
   const configId = params.id;
   if (!configId) {
     return NextResponse.json({ error: "missing_config_id" }, { status: 400 });
@@ -188,4 +179,5 @@ export async function POST(
   });
 
   return NextResponse.json({ ok: true, config: updated });
-}
+  },
+);

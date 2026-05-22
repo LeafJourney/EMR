@@ -96,14 +96,13 @@ export const CANNABIS_KNOWLEDGE_BASE: CannabisConditionPair[] = [
  * Search the knowledge base by query term.
  */
 export function searchKnowledgeBase(query: string): CannabisConditionPair[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return CANNABIS_KNOWLEDGE_BASE;
+  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return CANNABIS_KNOWLEDGE_BASE;
 
-  return CANNABIS_KNOWLEDGE_BASE.filter((pair) =>
-    pair.cannabinoid.toLowerCase().includes(q) ||
-    pair.condition.toLowerCase().includes(q) ||
-    pair.summary.toLowerCase().includes(q)
-  );
+  return CANNABIS_KNOWLEDGE_BASE.filter((pair) => {
+    const hay = [pair.cannabinoid, pair.condition, pair.summary].join(" ").toLowerCase();
+    return tokens.every((t) => hay.includes(t));
+  });
 }
 
 /**

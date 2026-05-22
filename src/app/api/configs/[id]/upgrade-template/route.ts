@@ -26,21 +26,12 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireImplementationAdmin } from "@/lib/auth/super-admin";
+import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 import { getSpecialtyTemplate } from "@/lib/specialty-templates/registry";
-import {
-  readJson,
-  invalidInput,
-  withAuthErrors,
-  notFound,
-} from "../../_helpers";
+import { readJson, invalidInput, notFound } from "../../_helpers";
 
 export const runtime = "nodejs";
-
-interface Ctx {
-  params: { id: string };
-}
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -48,10 +39,9 @@ const bodySchema = z.object({
   targetVersion: z.string().regex(SEMVER, "targetVersion must be semver"),
 });
 
-export async function POST(req: Request, { params }: Ctx) {
-  return (await withAuthErrors(async () => {
-    const admin = await requireImplementationAdmin();
-
+export const POST = withAdminMutation<{ id: string }>(
+  { bucket: "admin.config.upgrade_template", role: "implementation_admin" },
+  async (req, { actor: admin, params }) => {
     const parsedBody = await readJson(req);
     if (!parsedBody.ok) return parsedBody.response;
 
@@ -146,5 +136,5 @@ export async function POST(req: Request, { params }: Ctx) {
     });
 
     return NextResponse.json(upgraded);
-  })) as NextResponse;
-}
+  },
+);

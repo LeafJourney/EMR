@@ -7,7 +7,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
-import { rescheduleAppointmentAction } from "./actions";
+import { Eyebrow } from "@/components/ui/ornament";
+import {
+  rescheduleAppointmentAction,
+  createPatientAppointmentAction,
+  createSpecialBlockAction,
+} from "./actions";
 
 export type AppointmentDTO = {
   id: string;
@@ -21,15 +26,27 @@ export type AppointmentDTO = {
   notes: string | null;
 };
 
+type PatientDTO = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  dateOfBirthIso: string | null;
+  email: string | null;
+  address?: string | null;
+};
+
 type View = "day" | "week" | "list";
 
 type Props = {
   weekStartIso: string;
   appointments: AppointmentDTO[];
   initialView?: View;
+  timeZone: string;
+  patients: PatientDTO[];
 };
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const FIRST_HOUR = 7;
 const LAST_HOUR = 19;
 const SLOT_MIN = 30;
@@ -37,11 +54,27 @@ const SLOTS_PER_HOUR = 60 / SLOT_MIN;
 const TOTAL_SLOTS = (LAST_HOUR - FIRST_HOUR) * SLOTS_PER_HOUR;
 const SQUARE = 36; // px per slot — keeps cells visually square
 
-export function ScheduleCalendar({ weekStartIso, appointments, initialView = "week" }: Props) {
+export function ScheduleCalendar({
+  weekStartIso,
+  appointments,
+  initialView = "week",
+  timeZone,
+  patients,
+}: Props) {
   const router = useRouter();
   const [view, setView] = React.useState<View>(initialView);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
+
+  // Modals & Menu State
+  const [contextMenu, setContextMenu] = React.useState<{ x: number; y: number; date: Date } | null>(null);
+  const [showBlockModal, setShowBlockModal] = React.useState<Date | null>(null);
+  const [showScheduleModal, setShowScheduleModal] = React.useState<Date | null>(null);
+  const [pendingConflict, setPendingConflict] = React.useState<{
+    appointmentId: string;
+    newStartIso: string;
+    message: string;
+  } | null>(null);
 
   const weekStart = React.useMemo(() => new Date(weekStartIso), [weekStartIso]);
   const dayStart = React.useMemo(() => {
@@ -51,21 +84,64 @@ export function ScheduleCalendar({ weekStartIso, appointments, initialView = "we
     return weekStart;
   }, [weekStart]);
 
-  const onDrop = async (appointmentId: string, dayIdx: number, slotIdx: number) => {
+  // Click handler to dismiss context menu
+  React.useEffect(() => {
+    const handleGlobalClick = () => {
+      setContextMenu(null);
+    };
+    window.addEventListener("click", handleGlobalClick);
+    return () => window.removeEventListener("click", handleGlobalClick);
+  }, []);
+
+  const onDrop = async (appointmentId: string, dayIdx: number, slotIdx: number, force = false) => {
     setError(null);
+    setPendingConflict(null);
     const newStart = new Date(weekStart);
     newStart.setDate(newStart.getDate() + dayIdx);
     newStart.setMinutes(FIRST_HOUR * 60 + slotIdx * SLOT_MIN);
+    const startIso = newStart.toISOString();
+
     setPending(true);
     try {
       const r = await rescheduleAppointmentAction({
         appointmentId,
-        newStartIso: newStart.toISOString(),
+        newStartIso: startIso,
+        force,
+      });
+
+      if (!r.ok) {
+        if (r.code === "CONFLICT") {
+          setPendingConflict({
+            appointmentId,
+            newStartIso: startIso,
+            message: r.error,
+          });
+        } else {
+          setError(r.error);
+        }
+      } else {
+        router.refresh();
+      }
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleForceDrop = async () => {
+    if (!pendingConflict) return;
+    const { appointmentId, newStartIso } = pendingConflict;
+    setPending(true);
+    try {
+      const r = await rescheduleAppointmentAction({
+        appointmentId,
+        newStartIso,
+        force: true,
       });
       if (!r.ok) setError(r.error);
       else router.refresh();
     } finally {
       setPending(false);
+      setPendingConflict(null);
     }
   };
 
@@ -75,8 +151,57 @@ export function ScheduleCalendar({ weekStartIso, appointments, initialView = "we
     router.push(`/clinic/schedule?week=${iso}&view=${view}`);
   };
 
+  const handleSlotContextMenu = (e: React.MouseEvent, dayIdx: number, slotIdx: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + dayIdx);
+    d.setMinutes(FIRST_HOUR * 60 + slotIdx * SLOT_MIN);
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      date: d,
+    });
+  };
+
+  const formatDayHeader = (d: Date): string => {
+    const month = d.toLocaleDateString("en-US", { timeZone, month: "short" });
+    const dayNum = d.toLocaleDateString("en-US", { timeZone, day: "numeric" });
+    const year = d.toLocaleDateString("en-US", { timeZone, year: "numeric" });
+    const weekday = d.toLocaleDateString("en-US", { timeZone, weekday: "long" });
+    return `${month} ${dayNum} – ${year} (${weekday})`;
+  };
+
+  const formatWeekRange = (start: Date): string => {
+    const end = addDays(start, 6);
+    const sameMonth = start.getMonth() === end.getMonth();
+    const startFmt = start.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+    const endFmt = end.toLocaleDateString(undefined, {
+      month: sameMonth ? undefined : "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    return `${startFmt} – ${endFmt}`;
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
+      {/* Dynamic Header */}
+      <div className="mb-6">
+        <Eyebrow className="mb-2">Schedule</Eyebrow>
+        <h1 className="font-display text-3xl text-text tracking-tight">
+          {view === "day" ? formatDayHeader(dayStart) : formatWeekRange(weekStart)}
+        </h1>
+        <p className="text-[14px] text-text-muted mt-1.5">
+          Right-click empty space to block time or schedule. Drag appointments to reschedule.
+        </p>
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="inline-flex rounded-lg border border-border bg-surface p-1">
@@ -87,7 +212,7 @@ export function ScheduleCalendar({ weekStartIso, appointments, initialView = "we
               onClick={() => setView(v)}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-md capitalize transition-colors",
-                view === v ? "bg-accent text-accent-ink" : "text-text-muted hover:text-text",
+                view === v ? "bg-accent text-accent-ink font-semibold" : "text-text-subtle hover:text-text",
               )}
             >
               {v}
@@ -119,6 +244,7 @@ export function ScheduleCalendar({ weekStartIso, appointments, initialView = "we
           weekStart={weekStart}
           appointments={appointments}
           onDrop={onDrop}
+          onContextMenu={handleSlotContextMenu}
           pending={pending}
         />
       )}
@@ -134,7 +260,116 @@ export function ScheduleCalendar({ weekStartIso, appointments, initialView = "we
             );
             return onDrop(apptId, dayIdx, slotIdx);
           }}
+          onContextMenu={(e, slotIdx) => {
+            const dayIdx = Math.round(
+              (dayStart.getTime() - weekStart.getTime()) / 86_400_000,
+            );
+            return handleSlotContextMenu(e, dayIdx, slotIdx);
+          }}
           pending={pending}
+        />
+      )}
+
+      {/* Floating Context Menu */}
+      {contextMenu && (
+        <div
+          className="absolute z-40 bg-surface border border-border rounded-xl shadow-xl py-1.5 w-48 text-left"
+          style={{ top: contextMenu.y - 120, left: contextMenu.x - 260 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              setShowScheduleModal(contextMenu.date);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-xs font-semibold text-text hover:bg-surface-muted transition-colors"
+          >
+            🗓 Schedule Patient
+          </button>
+          <button
+            onClick={() => {
+              setShowBlockModal(contextMenu.date);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-4 py-2 text-xs font-semibold text-text hover:bg-surface-muted transition-colors border-t border-border/45"
+          >
+            ⏱ New Time Block
+          </button>
+        </div>
+      )}
+
+      {/* Collision Conflict Dialog */}
+      {pendingConflict && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface p-6 rounded-2xl border border-border shadow-2xl w-[400px]">
+            <h2 className="text-lg font-bold text-text mb-2">Double-Book Confirmation</h2>
+            <p className="text-sm text-text-subtle mb-6">{pendingConflict.message}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPendingConflict(null)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleForceDrop}>
+                Double Book
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Block Time Modal */}
+      {showBlockModal && (
+        <BlockModal
+          startDate={showBlockModal}
+          onClose={() => setShowBlockModal(null)}
+          onSave={async (reason, duration, notes) => {
+            setShowBlockModal(null);
+            setPending(true);
+            try {
+              const startIso = showBlockModal.toISOString();
+              const endIso = new Date(showBlockModal.getTime() + duration * 60000).toISOString();
+              const r = await createSpecialBlockAction({
+                startIso,
+                endIso,
+                reason,
+                notes,
+              });
+              if (!r.ok) setError(r.error);
+              else router.refresh();
+            } finally {
+              setPending(false);
+            }
+          }}
+        />
+      )}
+
+      {/* Schedule Patient Modal */}
+      {showScheduleModal && (
+        <ScheduleModal
+          startDate={showScheduleModal}
+          patients={patients}
+          appointments={appointments}
+          timeZone={timeZone}
+          onClose={() => setShowScheduleModal(null)}
+          onSave={async (patientId, duration, modality, notes, force) => {
+            setShowScheduleModal(null);
+            setPending(true);
+            try {
+              const startIso = showScheduleModal.toISOString();
+              const endIso = new Date(showScheduleModal.getTime() + duration * 60000).toISOString();
+              const r = await createPatientAppointmentAction({
+                patientId,
+                startIso,
+                endIso,
+                notes,
+                modality,
+                force,
+              });
+              if (!r.ok) setError(r.error);
+              else router.refresh();
+            } finally {
+              setPending(false);
+            }
+          }}
         />
       )}
     </div>
@@ -147,11 +382,13 @@ function WeekGrid({
   weekStart,
   appointments,
   onDrop,
+  onContextMenu,
   pending,
 }: {
   weekStart: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, dayIdx: number, slotIdx: number) => void;
+  onContextMenu: (e: React.MouseEvent, dayIdx: number, slotIdx: number) => void;
   pending: boolean;
 }) {
   return (
@@ -202,6 +439,7 @@ function WeekGrid({
                     slotIdx={slotIdx}
                     appointment={findAppt(appointments, weekStart, dayIdx, slotIdx)}
                     onDrop={(apptId) => onDrop(apptId, dayIdx, slotIdx)}
+                    onContextMenu={(e) => onContextMenu(e, dayIdx, slotIdx)}
                     pending={pending}
                     hourMark={isHourMark}
                   />
@@ -220,6 +458,7 @@ function Slot({
   slotIdx,
   appointment,
   onDrop,
+  onContextMenu,
   pending,
   hourMark,
 }: {
@@ -227,6 +466,7 @@ function Slot({
   slotIdx: number;
   appointment: AppointmentDTO | null;
   onDrop: (apptId: string) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
   pending: boolean;
   hourMark: boolean;
 }) {
@@ -244,8 +484,9 @@ function Slot({
         const apptId = e.dataTransfer.getData("text/appt-id");
         if (apptId) onDrop(apptId);
       }}
+      onContextMenu={onContextMenu}
       className={cn(
-        "border-r border-border/40",
+        "border-r border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
         hourMark && "border-t border-border/60",
         isOver && "bg-accent-soft/50",
         pending && "opacity-70",
@@ -263,11 +504,13 @@ function DayGrid({
   day,
   appointments,
   onDrop,
+  onContextMenu,
   pending,
 }: {
   day: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, slotIdx: number) => void;
+  onContextMenu: (e: React.MouseEvent, slotIdx: number) => void;
   pending: boolean;
 }) {
   return (
@@ -306,8 +549,9 @@ function DayGrid({
                     const apptId = e.dataTransfer.getData("text/appt-id");
                     if (apptId) onDrop(apptId, slotIdx);
                   }}
+                  onContextMenu={(e) => onContextMenu(e, slotIdx)}
                   className={cn(
-                    "border-l border-border/40",
+                    "border-l border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
                     isHourMark && "border-t border-border/60",
                     pending && "opacity-70",
                   )}
@@ -336,7 +580,6 @@ function ListView({ appointments }: { appointments: AppointmentDTO[] }) {
       </Card>
     );
   }
-  // Group by day for legibility.
   const groups = new Map<string, AppointmentDTO[]>();
   for (const a of appointments) {
     const key = new Date(a.startAtIso).toDateString();
@@ -358,12 +601,18 @@ function ListView({ appointments }: { appointments: AppointmentDTO[] }) {
                   <span className="text-xs font-mono tabular-nums text-text-subtle w-16 shrink-0">
                     {formatTime(a.startAtIso)}
                   </span>
-                  <Link
-                    href={`/clinic/patients/${a.patientId}`}
-                    className="flex-1 min-w-0 text-sm text-text hover:text-accent truncate"
-                  >
-                    {a.patientName}
-                  </Link>
+                  {a.patientName.includes("System CalendarBlock") ? (
+                    <span className="flex-1 text-sm font-semibold text-text-subtle">
+                      {a.notes?.replace(/\[CalendarBlock:.*?\]/, "").trim() || "Blocked Time"}
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/clinic/patients/${a.patientId}`}
+                      className="flex-1 min-w-0 text-sm text-text hover:text-accent truncate"
+                    >
+                      {a.patientName}
+                    </Link>
+                  )}
                   <Badge tone={statusTone(a.status)} className="text-[10px]">
                     {a.status}
                   </Badge>
@@ -387,20 +636,346 @@ function AppointmentChip({ appt }: { appt: AppointmentDTO }) {
     1,
     Math.round((end.getTime() - start.getTime()) / (SLOT_MIN * 60_000)),
   );
+
+  const isBlock = appt.patientName.includes("System CalendarBlock");
+
+  if (isBlock) {
+    let blockType = "Block";
+    let colorClass = "bg-neutral-100 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200";
+    if (appt.notes?.includes("CalendarBlock:MEETING")) {
+      blockType = "Meeting";
+      colorClass = "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300";
+    } else if (appt.notes?.includes("CalendarBlock:VACATION")) {
+      blockType = "Vacation";
+      colorClass = "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-300";
+    } else if (appt.notes?.includes("CalendarBlock:DO_NOT_BOOK")) {
+      blockType = "Do Not Book";
+      colorClass = "bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 text-red-900 dark:text-red-300";
+    }
+
+    return (
+      <div
+        className={cn(
+          "block rounded-lg px-2.5 py-1.5 mx-0.5 my-0.5 text-[11px] truncate border select-none shadow-sm",
+          colorClass
+        )}
+        style={{ height: slotCount * SQUARE - 4 }}
+        title={`${blockType} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)}`}
+      >
+        <div className="font-bold uppercase tracking-wider text-[9px] opacity-75">{blockType}</div>
+        <div className="truncate text-xs font-semibold mt-0.5">
+          {appt.notes?.replace(/\[CalendarBlock:.*?\]/, "").trim() || "Blocked Time"}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Link
       href={`/clinic/patients/${appt.patientId}`}
       draggable
       onDragStart={(e) => e.dataTransfer.setData("text/appt-id", appt.id)}
       className={cn(
-        "block rounded-md px-2 py-1 mx-0.5 my-0.5 text-[11px] truncate cursor-grab active:cursor-grabbing",
-        "bg-accent-soft border border-accent/30 text-accent hover:bg-accent/15 transition-colors",
+        "block rounded-lg px-2.5 py-1.5 mx-0.5 my-0.5 text-[11px] truncate cursor-grab active:cursor-grabbing",
+        "bg-accent-soft border border-accent/20 text-accent hover:bg-accent/15 transition-all shadow-sm",
       )}
       style={{ height: slotCount * SQUARE - 4 }}
       title={`${appt.patientName} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)} · ${appt.status}`}
     >
-      <span className="font-medium truncate">{appt.patientName}</span>
+      <span className="font-semibold truncate">{appt.patientName}</span>
+      <div className="text-[9px] opacity-80 mt-0.5">{formatTime(appt.startAtIso)}</div>
     </Link>
+  );
+}
+
+// ── Modal components ──────────────────────────────────────────────
+
+function BlockModal({
+  startDate,
+  onClose,
+  onSave,
+}: {
+  startDate: Date;
+  onClose: () => void;
+  onSave: (reason: "meeting" | "vacation" | "do_not_book", duration: number, notes: string) => void;
+}) {
+  const [reason, setReason] = React.useState<"meeting" | "vacation" | "do_not_book">("meeting");
+  const [duration, setDuration] = React.useState<number>(30);
+  const [notes, setNotes] = React.useState<string>("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-surface p-6 rounded-2xl border border-border shadow-2xl w-full max-w-md">
+        <h2 className="text-lg font-bold text-text mb-1">Block Time</h2>
+        <p className="text-xs text-text-subtle mb-4">
+          Reserve calendar capacity on {startDate.toLocaleDateString()} at {formatTime(startDate.toISOString())}.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Block Type</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as any)}
+              className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              <option value="meeting">Meeting</option>
+              <option value="vacation">Vacation / OOO</option>
+              <option value="do_not_book">Do Not Book</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Duration</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value, 10))}
+              className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes</option>
+              <option value={45}>45 Minutes</option>
+              <option value={60}>1 Hour</option>
+              <option value={120}>2 Hours</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Description / Note</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Clinical review, staff meeting, out of office..."
+              rows={3}
+              className="w-full p-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => onSave(reason, duration, notes)}>
+            Save Block
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleModal({
+  startDate,
+  patients,
+  appointments,
+  timeZone,
+  onClose,
+  onSave,
+}: {
+  startDate: Date;
+  patients: PatientDTO[];
+  appointments: AppointmentDTO[];
+  timeZone: string;
+  onClose: () => void;
+  onSave: (patientId: string, duration: number, modality: string, notes: string, force: boolean) => void;
+}) {
+  const [search, setSearch] = React.useState("");
+  const [selectedPatient, setSelectedPatient] = React.useState<PatientDTO | null>(null);
+  const [duration, setDuration] = React.useState<number>(30);
+  const [modality, setModality] = React.useState<string>("in_person");
+  const [notes, setNotes] = React.useState<string>("");
+  const [force, setForce] = React.useState<boolean>(false);
+
+  // Filter patients by search query
+  const filteredPatients = React.useMemo(() => {
+    if (!search.trim()) return [];
+    const q = search.toLowerCase();
+    return patients.filter((p) => {
+      const name = `${p.firstName} ${p.lastName}`.toLowerCase();
+      const phone = p.phone?.toLowerCase() || "";
+      const email = p.email?.toLowerCase() || "";
+      return name.includes(q) || phone.includes(q) || email.includes(q);
+    });
+  }, [search, patients]);
+
+  // Check duplicate booking in same week
+  const duplicateWarning = React.useMemo(() => {
+    if (!selectedPatient) return false;
+    
+    const getSundayStr = (d: Date) => {
+      const out = new Date(d);
+      out.setHours(0, 0, 0, 0);
+      out.setDate(out.getDate() - out.getDay());
+      return out.toDateString();
+    };
+
+    const weekStartStr = getSundayStr(startDate);
+
+    return appointments.some((a) => {
+      if (a.patientId !== selectedPatient.id) return false;
+      const apptDate = new Date(a.startAtIso);
+      return getSundayStr(apptDate) === weekStartStr;
+    });
+  }, [selectedPatient, startDate, appointments]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-surface p-6 rounded-2xl border border-border shadow-2xl w-full max-w-md">
+        <h2 className="text-lg font-bold text-text mb-1">Schedule Patient Visit</h2>
+        <p className="text-xs text-text-subtle mb-4">
+          Book appointment on {startDate.toLocaleDateString()} at {formatTime(startDate.toISOString())}.
+        </p>
+
+        <div className="space-y-4">
+          <div className="relative">
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Search Patient</label>
+            {selectedPatient ? (
+              <div className="flex items-center justify-between border border-accent/20 bg-accent-soft/30 p-2.5 rounded-lg">
+                <div>
+                  <div className="text-sm font-semibold text-text">
+                    {selectedPatient.firstName} {selectedPatient.lastName}
+                  </div>
+                  {selectedPatient.phone && (
+                    <div className="text-[11px] text-text-subtle">
+                      Phone: {selectedPatient.phone}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPatient(null)}
+                  className="text-xs text-accent hover:text-accent-hover font-semibold"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Type name, phone number, or email..."
+                  className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  autoFocus
+                />
+                {filteredPatients.length > 0 && (
+                  <div className="absolute left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                    {filteredPatients.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPatient(p);
+                          setSearch("");
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-surface-muted transition-colors border-b border-border/30 last:border-b-0"
+                      >
+                        <div className="font-bold text-sm text-text">
+                          {p.firstName} {p.lastName}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1 text-[11px] text-text-subtle">
+                          <div>
+                            <span className="font-semibold">DOB:</span>{" "}
+                            {p.dateOfBirthIso
+                              ? new Date(p.dateOfBirthIso).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                  year: "numeric",
+                                })
+                              : "N/A"}
+                          </div>
+                          <div>
+                            <span className="font-semibold">Age:</span>{" "}
+                            {computeAge(p.dateOfBirthIso) ?? "N/A"}
+                          </div>
+                          <div className="col-span-2">
+                            <span className="font-semibold">Phone:</span> {p.phone || "N/A"}
+                          </div>
+                          <div className="col-span-2 truncate">
+                            <span className="font-semibold">Address:</span> {p.address || "N/A"}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {duplicateWarning && (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400">
+              <span className="font-bold">⚠️ Weekly Booking Warning:</span> This patient is already scheduled for another visit during this week.
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="force-checkbox"
+                  checked={force}
+                  onChange={(e) => setForce(e.target.checked)}
+                  className="rounded border-border focus:ring-accent"
+                />
+                <label htmlFor="force-checkbox" className="font-semibold select-none cursor-pointer">
+                  Ignore warning and double-book
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Duration</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value, 10))}
+              className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes</option>
+              <option value={45}>45 Minutes</option>
+              <option value={60}>1 Hour</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Modality</label>
+            <select
+              value={modality}
+              onChange={(e) => setModality(e.target.value)}
+              className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              <option value="in_person">In-Person Visit</option>
+              <option value="video">Video Session</option>
+              <option value="phone">Phone Consultation</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Reason for visit, symptoms, prep actions..."
+              rows={2}
+              className="w-full p-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!selectedPatient || (duplicateWarning && !force)}
+            onClick={() => onSave(selectedPatient!.id, duration, modality, notes, force)}
+          >
+            Schedule Visit
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -456,4 +1031,16 @@ function statusTone(
     default:
       return "neutral";
   }
+}
+
+function computeAge(dobIso: string | null): number | null {
+  if (!dobIso) return null;
+  const birth = new Date(dobIso);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
 }

@@ -13,6 +13,10 @@ import {
 import { z } from "zod";
 import { freezeNoteSnapshot } from "@/lib/agents/guardrails/note-guardrails";
 import { logger } from "@/lib/observability/log";
+import {
+  PATIENT_DEMEANOR_OPTIONS,
+  type PatientDemeanor,
+} from "@/lib/domain/notes";
 
 const blockSchema = z.object({
   heading: z.string(),
@@ -271,15 +275,7 @@ function buildSnapshotFromNoteBlocks(
 // encounter (briefingContext.patientDemeanor). No schema migration needed —
 // briefingContext is already a Json field used for visit metadata.
 
-export const PATIENT_DEMEANOR_OPTIONS = [
-  { emoji: "\u{1F60A}", label: "Bright", value: "bright" },
-  { emoji: "\u{1F642}", label: "Positive", value: "positive" },
-  { emoji: "\u{1F610}", label: "Neutral", value: "neutral" },
-  { emoji: "\u{1F614}", label: "Withdrawn", value: "withdrawn" },
-  { emoji: "\u{1F622}", label: "Distressed", value: "distressed" },
-] as const;
-
-export type PatientDemeanor = typeof PATIENT_DEMEANOR_OPTIONS[number]["value"];
+// Definitions moved to @/lib/domain/notes to prevent "use server" client bundle issues
 
 const VALID_DEMEANORS: ReadonlySet<string> = new Set(
   PATIENT_DEMEANOR_OPTIONS.map((o) => o.value),

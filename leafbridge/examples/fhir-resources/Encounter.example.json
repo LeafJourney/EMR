@@ -1,0 +1,37 @@
+{
+  "resourceType": "Encounter",
+  "id": "encounter-001",
+  "meta": {
+    "profile": [
+      "http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter"
+    ]
+  },
+  "status": "finished",
+  "class": {
+    "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+    "code": "AMB",
+    "display": "ambulatory"
+  },
+  "type": [
+    {
+      "coding": [
+        {
+          "system": "http://loinc.org",
+          "code": "99213-9",
+          "display": "Outpatient established 15 min"
+        }
+      ]
+    }
+  ],
+  "subject": { "reference": "Patient/patient-001", "display": "Riya Singh" },
+  "participant": [
+    {
+      "individual": { "reference": "Practitioner/practitioner-001", "display": "Dr. Asha Patel" }
+    }
+  ],
+  "period": {
+    "start": "2026-05-18T15:00:00-07:00",
+    "end": "2026-05-18T15:30:00-07:00"
+  },
+  "serviceProvider": { "reference": "Organization/organization-001" }
+}

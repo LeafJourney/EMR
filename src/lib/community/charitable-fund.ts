@@ -217,7 +217,11 @@ export const LEAFJOURNEY_COMPLIANCE: ComplianceSummary = {
   ein: "00-0000000",
   irsDeterminationDate: "2025-04-12",
   publicCharityClassification: "509(a)(2)",
-  formNineNinetyUrl: "/legal/form-990.pdf",
+  // Form 990 PDF not yet hosted (EMR-717). Route requests through
+  // the marketing contact form so anyone interested in our financials
+  // reaches the founders' inbox instead of a 404. Replace with the
+  // real PDF URL once the 501(c)(3) filing is signed and uploaded.
+  formNineNinetyUrl: "/contact?role=foundation-form-990",
   boardSize: 7,
   independentBoardMembers: 5,
   programServiceRatioPct: 88,

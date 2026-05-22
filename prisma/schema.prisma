@@ -36,6 +36,7 @@ enum Role {
   implementation_admin
   super_admin
   system
+  leafnerd
 }
 
 model Organization {
@@ -137,6 +138,11 @@ model Organization {
   timeZone            String? // IANA tz, e.g. "America/Los_Angeles"
   ExternalProvider    ExternalProvider[]
   OutboundReferral    OutboundReferral[]
+
+  // EMR-751 — Per-org subscription / billing state.
+  // One-to-one with Organization. Created on first paid event or via the
+  // admin tooling; absent for orgs that haven't onboarded billing yet.
+  practiceSubscription PracticeSubscription?
 }
 
 // EMR-420 — A Practice is a single clinical location/group under an
@@ -215,11 +221,16 @@ model User {
 }
 
 model Membership {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
   organizationId String
   role           Role
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  // EMR-725 — Super-admin MFA enforcement grace window. Set on first
+  // post-deploy sign-in for an existing super_admin who lacks MFA;
+  // null otherwise (including fresh bootstrap grants, which require
+  // MFA at grant time and therefore never need a grace).
+  mfaGraceUntil  DateTime?
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -335,6 +346,18 @@ model Patient {
   dispenses                DispensaryDispense[]      @relation("DispensePatient")
   pdmpChecks               CuresPdmpCheck[]          @relation("PdmpPatient")
   OutboundReferral         OutboundReferral[]
+
+  // EMR-086 — Gamification Engine
+  dailyStreak  DailyCheckInStreak?
+  freezeTokens FreezeToken[]
+
+  // EMR-107 — ChatCB AI Coach
+  aiCoachThreads AICoachThread[]
+  pastMedicalConditions PastMedicalCondition[]
+  pastSurgeries         PastSurgery[]
+
+  // EMR-098 — Gamification Badges
+  patientBadges PatientBadge[]
 
   @@index([organizationId, status])
   @@index([lastName, firstName])
@@ -1785,6 +1808,69 @@ model ControllerAuditLog {
   @@index([subjectId, at])
   @@index([organizationId, at])
   @@index([actorUserId, at])
+}
+
+// EMR-726 — Bootstrap allowlist rotation audit.
+//
+// One row per *change* of SUPER_ADMIN_BOOTSTRAP_EMAILS as observed at boot.
+// The boot-audit helper computes a SHA-256 over the sorted/normalised email
+// list and inserts a snapshot only when the hash differs from the most
+// recent row. That makes idempotent reboots silent while still catching a
+// silent expansion of the allowlist between deploys — which is the whole
+// point of EMR-726.
+model BootstrapAllowlistSnapshot {
+  id        String   @id @default(cuid())
+  /// SHA-256 hex of `sorted(lowercased(trimmed(emails))).join(",")`.
+  hash      String
+  /// The parsed allowlist at the moment of capture.
+  emails    String[]
+  /// Resolved from RENDER_GIT_COMMIT / GIT_SHA at boot. Null in dev.
+  deploySha String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+}
+
+// EMR-730 — Per-actor mutation budget alarm ledger.
+//
+// One row per (actor, alarm-fire). The cron at
+// /api/cron/mutation-budget-sweep reads the most-recent row per actor to
+// dedupe re-fires inside a 10-minute window. We don't UPDATE existing rows
+// — every alarm fire is its own row so on-call has a forensic history of
+// when an account tripped the budget and how badly.
+model MutationBudgetAlarm {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  firstSeenAt    DateTime
+  lastAlertedAt  DateTime
+  perMinAtAlert  Int
+  per5MinAtAlert Int
+
+  @@index([actorUserId, lastAlertedAt(sort: Desc)])
+}
+
+// EMR-727 — Fleet-wide session kill-list for emergency revoke.
+//
+// One row per actively-killed user. The auth gate consults this on every
+// authenticated request (with a 1s in-process TTL cache layered on top to
+// keep p99 latency under budget) so a revoke takes effect on the *next*
+// request across every replica — not whenever the JWT/cookie expires.
+//
+// `userId` is the PK because at most one kill exists per user at a time.
+// A subsequent emergency-revoke UPSERTs, refreshing `revokedAt` /
+// `expiresAt`. `expiresAt` MUST exceed the longest possible session
+// lifetime; the endpoint sets it to now + 90d.
+//
+// See: prisma/migrations/20260517140000_add_session_kill_list/migration.sql
+// and src/lib/auth/session-kill-list.ts.
+model SessionKillList {
+  userId      String   @id
+  revokedAt   DateTime @default(now())
+  expiresAt   DateTime
+  reason      String
+  revokedById String
+
+  @@index([expiresAt])
 }
 
 // --------------------------------------------------------------
@@ -4197,6 +4283,31 @@ model MigrationProfile {
   @@index([status])
 }
 
+// EMR-732 — Per-practice composite health score (0–100).
+//
+// Denormalized snapshot recomputed at most every 5 minutes by the
+// cron at `src/app/api/cron/practice-health/route.ts`. The HQ
+// dashboard (E1) reads `score` and `breakdown` directly off this
+// table rather than running aggregate queries at request time.
+//
+// `breakdown` is a stable JSON shape:
+//   { publish: number, agentErrors: number, billing: number, loginFailures: number }
+// Any change to the keys is a contract break for the HQ dashboard.
+//
+// PHI posture: rates and integer subscores only — never names, IDs
+// beyond `organizationId`, claim numbers, or any patient field.
+model PracticeHealth {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  score          Int
+  breakdown      Json
+  computedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([score])
+}
+
 // --------------------------------------------------------------
 // Leafly Integrations & Strain Parsers
 // --------------------------------------------------------------
@@ -4206,7 +4317,7 @@ model ChemovarRecord {
   internalId           String   @unique
   displayName          String
   chemotype            Int // 1: THC dominant, 2: Mixed, 3: CBD dominant
-  terpeneProfile       String
+  terpeneProfile       String?
   therapeuticTags      String[]
   externalReferenceUrl String?
   createdAt            DateTime @default(now())
@@ -4753,4 +4864,269 @@ model OutboundReferral {
 
   @@index([organizationId, status])
   @@index([patientId, status])
+}
+
+// --------------------------------------------------------------
+// EMR-086 — Gamification Engine (Streaks & Freeze Tokens)
+// --------------------------------------------------------------
+
+model DailyCheckInStreak {
+  id              String  @id @default(cuid())
+  patientId       String  @unique
+  currentStreak   Int     @default(0) // Consecutive days
+  longestStreak   Int     @default(0) // All-time high
+  lastCheckInDate String? // YYYY-MM-DD
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+model FreezeToken {
+  id         String  @id @default(cuid())
+  patientId  String
+  source     String // e.g. "7_day_perfect_week", "admin_granted"
+  isUsed     Boolean @default(false)
+  usedOnDate String? // YYYY-MM-DD when it was applied to save a streak
+
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, isUsed])
+}
+
+// --------------------------------------------------------------
+// EMR-107 — ChatCB AI Coach
+// --------------------------------------------------------------
+
+model AICoachThread {
+  id        String   @id @default(cuid())
+  patientId String
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient  Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages AICoachMessage[]
+
+  @@index([patientId])
+}
+
+model AICoachMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  role      String // 'user' | 'assistant'
+  content   String
+  metadata  Json? // For tool calls, functional UI elements (e.g. log_dose modal trigger)
+  createdAt DateTime @default(now())
+
+  thread AICoachThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
+// --------------------------------------------------------------
+// EMR-098 — Gamification Engine (Badges)
+// --------------------------------------------------------------
+
+model Badge {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String
+  tier        String // 'bronze' | 'silver' | 'gold' | 'diamond'
+  iconUrl     String? // Optional custom SVG/PNG
+
+  patients PatientBadge[]
+}
+
+model PatientBadge {
+  id        String   @id @default(cuid())
+  patientId String
+  badgeId   String
+  earnedAt  DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  badge   Badge   @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, badgeId])
+}
+
+// EMR-750 — verification ledger for the nightly ControllerAuditLog JSONL
+// export. One row per (covered) UTC day. Re-running the export for the
+// same day upserts the row, so `coveredDate` is the natural primary key
+// for idempotency. Stats are content-addressable: `sha256` is over the
+// gzipped bytes uploaded to `storageKey`, so compliance reviewers can
+// verify the artefact hasn't drifted by re-hashing the object.
+//
+// Failure case: if the upload fails we do NOT write a row here — a missing
+// row for a date IS the alarm signal that the export didn't land. The
+// cron route also emits a structured error log (Sentry-bound downstream).
+model ControllerAuditExport {
+  id          String   @id @default(cuid())
+  /// UTC calendar day covered by this export (midnight UTC).
+  coveredDate DateTime @unique
+  /// Object-storage key, e.g. "audit/controller/2026/05/17.jsonl.gz".
+  storageKey  String
+  /// Number of ControllerAuditLog rows included in the export.
+  rowCount    Int
+  /// Size of the uploaded gzipped artefact in bytes.
+  byteCount   Int
+  /// Hex-encoded SHA-256 of the uploaded gzipped artefact.
+  sha256      String
+  /// When this export run completed (and uploaded).
+  runAt       DateTime @default(now())
+
+  @@index([runAt])
+}
+
+// --------------------------------------------------------------
+// EMR-734 — Anomaly Detector Framework
+// --------------------------------------------------------------
+// Detectors are pure functions that scan recent state and emit zero or more
+// `Anomaly` rows. Each row carries a severity, TTL, target `practiceId` (or
+// null for fleet-wide), a stable `kind` (the detector identifier), a human
+// `message`, a `deeplinkUrl` for the HQ surface, raw `context` JSON, and an
+// `idempotencyKey` that is unique within a kind — re-detection on the next
+// sweep is upserted, NOT duplicated.
+//
+// Lifecycle states (see src/lib/anomaly/framework.ts for the full state
+// machine):
+//   - live              → resolvedAt = null, expiresAt > now
+//   - resolved-by-ttl   → resolvedAt = null, expiresAt < now  (filtered from feed)
+//   - resolved-by-detector → resolvedAt != null               (kept for audit)
+//
+// Concrete detectors land in EMR-737 / EMR-740 / EMR-741. This model + the
+// framework + the sweep cron are the v1 substrate; the registry starts empty.
+
+enum AnomalySeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Anomaly {
+  id             String          @id @default(cuid())
+  /// Stable URL slug for the HQ feed. Unique across the table.
+  slug           String          @unique
+  /// Detector identifier — e.g. "stuck_publish", "webhook_health". Pairs
+  /// with `idempotencyKey` for upsert.
+  kind           String
+  severity       AnomalySeverity
+  /// Null = fleet-wide anomaly (e.g. webhook-provider outage). Otherwise
+  /// the practice the anomaly targets. Untyped String to match the
+  /// PracticeConfiguration precedent — no FK, since practice ids may
+  /// reference rows the anomaly detector doesn't own.
+  practiceId     String?
+  message        String
+  deeplinkUrl    String
+  context        Json
+  /// Stable key the detector generates for this anomaly instance. Same key
+  /// across sweeps = same anomaly; bumps `lastSeenAt` + `expiresAt` instead
+  /// of creating a new row. Unique within (kind, idempotencyKey).
+  idempotencyKey String
+  /// TTL in seconds, captured at emission. Used by the sweep to compute
+  /// `expiresAt = lastSeenAt + ttlSeconds` on every upsert.
+  ttlSeconds     Int
+  firstSeenAt    DateTime        @default(now())
+  lastSeenAt     DateTime        @default(now())
+  expiresAt      DateTime
+  /// Set when the detector stops emitting the anomaly on a subsequent
+  /// sweep (auto-resolve). Once set, the row is retained for the audit
+  /// trail but filtered from the active HQ feed.
+  resolvedAt     DateTime?
+
+  @@unique([kind, idempotencyKey])
+  @@index([resolvedAt, severity, lastSeenAt(sort: Desc)])
+  @@index([practiceId, resolvedAt])
+  @@index([kind, resolvedAt])
+}
+
+// --------------------------------------------------------------
+// EMR-751 — Per-organization subscription (billing tier + Stripe link)
+// --------------------------------------------------------------
+//
+// One row per Organization. Drives:
+//   - Seat-count enforcement at provider creation ([[EMR-752]] / seat-enforcement.ts).
+//   - Per-practice cost guardrails ([[EMR-756]]) via includedMonthlyTokens.
+//   - MRR/ARR fleet tile ([[EMR-753]]) via monthlyRevenueCents.
+//
+// Stripe webhook handler (EMR-751 follow-up) writes this row on
+// customer.subscription.{created,updated,deleted}; the Prisma model is
+// kept storage-only here so the rest of the system can read tier/status
+// without taking a Stripe dependency.
+//
+// `tier` values mirror the BILLING_TIERS array in
+// src/lib/billing/seat-enforcement.ts; values not in that list are
+// invalid (validated at write time, falls back to "team" on read).
+
+model PracticeSubscription {
+  id                    String    @id @default(cuid())
+  organizationId        String    @unique
+  /// "solo" | "team" | "practice" | "enterprise"
+  tier                  String
+  /// "trialing" | "active" | "past_due" | "canceled" | "incomplete"
+  status                String
+  monthlyRevenueCents   Int       @default(0)
+  /// Hard cap; enforced by seat-enforcement.ts. Mirror of the tier
+  /// default but persisted so per-customer adjustments survive tier
+  /// renames. Null = unlimited.
+  seatLimit             Int?
+  /// Token allowance per calendar month (EMR-756 soft/hard caps work
+  /// off this number). Null = no allowance enforced.
+  includedMonthlyTokens Int?
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?   @unique
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  /// Operator-set kill-switch for the broker — EMR-756. When true,
+  /// invoke() short-circuits with a structured 429.
+  throttled             Boolean   @default(false)
+  /// Optional override note set when an operator manually adjusts caps.
+  /// EMR-756 requires the reason; the column itself is freeform text.
+  overrideReason        String?
+  overrideSetAt         DateTime?
+  overrideSetByUserId   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([tier])
+}
+
+model PastMedicalCondition {
+  id           String    @id @default(cuid())
+  patientId    String
+  condition    String    // e.g., "Diabetes Mellitus Type 2"
+  notes        String?   // Clinician notes or description
+  onsetYear    Int?      // Estimated or actual year of onset
+  source       String?   // e.g., "intake", "clinician", "imported", "ai"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // Soft delete timestamp
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+model PastSurgery {
+  id                String    @id @default(cuid())
+  patientId         String
+  procedure         String    // e.g., "Left Total Knee Arthroplasty"
+  notes             String?   // Surgical notes or details
+  performedDateText String?   // Flexible display text (e.g., "August 2022")
+  source            String?   // e.g., "intake", "clinician", "imported", "ai"
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime? // Soft delete timestamp
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
 }

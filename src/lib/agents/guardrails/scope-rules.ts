@@ -119,6 +119,7 @@ const CONSUMER_RULES: ScopeRule[] = [
     ),
     decide: () => ({
       action: "refuse",
+      handoffTo: "clinician",
       reason:
         "Personalized dosing belongs to a licensed clinician — consumer surfaces stay general.",
       refusal: {
@@ -147,6 +148,7 @@ const CONSUMER_RULES: ScopeRule[] = [
     ),
     decide: () => ({
       action: "refuse",
+      handoffTo: "clinician",
       reason: "Diagnosis is out of scope for consumer chat surfaces.",
       refusal: {
         en:
