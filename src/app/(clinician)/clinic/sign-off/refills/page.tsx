@@ -1,22 +1,11 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RefillsView, type RefillRow } from "./refills-view";
 import { evaluateRefill } from "@/lib/agents/refill-copilot-agent";
 import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Refill Queue" };
-
-// MALLIK-007 — Refill Queue
-//
-// Landing page for pending refill requests. Each request is evaluated by
-// the Refill Copilot on first load if it hasn't been already — that way the
-// physician always sees a suggestion + safety flags without having to click
-// through. The evaluation is deterministic and cheap, so running it on
-// pageload is fine at Phase 1 demo scale. We persist the result on the
-// RefillRequest row so subsequent loads skip re-evaluation.
 
 export default async function RefillsPage() {
   const user = await requireUser();
@@ -38,15 +27,17 @@ export default async function RefillsPage() {
     },
   });
 
-  // Evaluate any refills that haven't been scored yet. Fire-and-forget
-  // from the physician's perspective — we await so the first paint already
-  // has suggestions, but each call is a handful of queries.
+  // Evaluate any refills that haven't been scored yet.
   const toEvaluate = pending.filter((r) => !r.copilotSuggestion);
   if (toEvaluate.length > 0) {
     await Promise.all(
       toEvaluate.map((r) =>
         evaluateRefill(r.id).catch((err) => {
-          logger.error({ event: "clinic.refills.copilot_eval_failed", refillId: r.id, err });
+          logger.error({
+            event: "clinic.refills.copilot_eval_failed",
+            refillId: r.id,
+            err,
+          });
         })
       )
     );
@@ -65,11 +56,7 @@ export default async function RefillsPage() {
         patient: { select: { id: true, firstName: true, lastName: true } },
         medication: true,
         lastRelevantLab: {
-          select: {
-            id: true,
-            panelName: true,
-            receivedAt: true,
-          },
+          select: { id: true, panelName: true, receivedAt: true },
         },
       },
     })
@@ -90,9 +77,7 @@ export default async function RefillsPage() {
         receivedAt: r.receivedAt.toISOString(),
         status: r.status,
         copilotSuggestion: r.copilotSuggestion,
-        safetyFlags: Array.isArray(r.safetyFlags)
-          ? (r.safetyFlags as string[])
-          : [],
+        safetyFlags: Array.isArray(r.safetyFlags) ? (r.safetyFlags as string[]) : [],
         rationale: r.rationale,
         lastRelevantLab: r.lastRelevantLab
           ? {
@@ -104,33 +89,16 @@ export default async function RefillsPage() {
       }))
     );
 
-  return (
-    <PageShell maxWidth="max-w-[1080px]">
-      <Link
-        href="/clinic"
-        className="text-sm text-accent hover:underline mb-4 inline-block"
-      >
-        &larr; Back to Command
-      </Link>
-
-      <PageHeader
-        eyebrow="Mission Control"
-        title="Refill Queue"
-        description={
-          rows.length === 0
-            ? "No refills waiting."
-            : `${rows.length} refill${rows.length === 1 ? "" : "s"} waiting for review. Copilot flags high-risk items first; routine ones are ready to approve.`
-        }
-      />
-
-      {rows.length === 0 ? (
+  if (rows.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full p-12">
         <EmptyState
           title="Queue clear"
           description="Nothing to sign. New refill requests will appear here as they arrive."
         />
-      ) : (
-        <RefillsView rows={rows} />
-      )}
-    </PageShell>
-  );
+      </div>
+    );
+  }
+
+  return <RefillsView rows={rows} />;
 }

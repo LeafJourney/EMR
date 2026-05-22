@@ -64,6 +64,7 @@ export async function approveRefillAction(
   });
 
   revalidatePath("/clinic/refills");
+  revalidatePath("/clinic/sign-off/refills");
   return { ok: true, newStatus: "approved" };
 }
 
@@ -125,5 +126,6 @@ export async function denyRefillAction(
   });
 
   revalidatePath("/clinic/refills");
+  revalidatePath("/clinic/sign-off/refills");
   return { ok: true, newStatus: "denied" };
 }
