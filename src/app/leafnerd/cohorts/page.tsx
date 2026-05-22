@@ -7,6 +7,15 @@ import Link from "next/link";
 export default async function CohortsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
+
+  // 2. Permission gate
+  const memberships = await prisma.membership.findMany({
+    where: { userId: user.id }
+  });
+  const hasAccess = memberships.some((m: { role: string }) => m.role === 'leafnerd' || m.role === 'super_admin');
+  if (!hasAccess) {
+    redirect("/leafnerd");
+  }
   
   const statusCounts = await prisma.patient.groupBy({
     by: ['status'],

@@ -353,6 +353,8 @@ model Patient {
 
   // EMR-107 — ChatCB AI Coach
   aiCoachThreads AICoachThread[]
+  pastMedicalConditions PastMedicalCondition[]
+  pastSurgeries         PastSurgery[]
 
   // EMR-098 — Gamification Badges
   patientBadges PatientBadge[]
@@ -5095,4 +5097,36 @@ model PracticeSubscription {
 
   @@index([status])
   @@index([tier])
+}
+
+model PastMedicalCondition {
+  id           String    @id @default(cuid())
+  patientId    String
+  condition    String    // e.g., "Diabetes Mellitus Type 2"
+  notes        String?   // Clinician notes or description
+  onsetYear    Int?      // Estimated or actual year of onset
+  source       String?   // e.g., "intake", "clinician", "imported", "ai"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // Soft delete timestamp
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+model PastSurgery {
+  id                String    @id @default(cuid())
+  patientId         String
+  procedure         String    // e.g., "Left Total Knee Arthroplasty"
+  notes             String?   // Surgical notes or details
+  performedDateText String?   // Flexible display text (e.g., "August 2022")
+  source            String?   // e.g., "intake", "clinician", "imported", "ai"
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime? // Soft delete timestamp
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
 }

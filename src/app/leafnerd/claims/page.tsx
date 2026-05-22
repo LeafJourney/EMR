@@ -8,6 +8,15 @@ export default async function ClaimsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
 
+  // 2. Permission gate
+  const memberships = await prisma.membership.findMany({
+    where: { userId: user.id }
+  });
+  const hasAccess = memberships.some((m: { role: string }) => m.role === 'leafnerd' || m.role === 'super_admin');
+  if (!hasAccess) {
+    redirect("/leafnerd");
+  }
+
   // Fetch anomalies along with their claims details to display in the workbench
   const anomalies = await prisma.claimScrubResult.findMany({
     include: {
