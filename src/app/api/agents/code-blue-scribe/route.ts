@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
+import {
+  AI_CONSENT_DISCLAIMER,
+  prependConsentDisclaimer,
+} from "@/lib/clinical/ai-consent-disclaimer";
 
 // EMR-161: Smart Code Blue Auto-Scribe
 // Critical emergency agent triggered during a Cardiac Arrest (Code Blue). 
@@ -51,10 +55,15 @@ export async function POST(req: Request) {
     const encounter = await prisma.encounter.findUnique({ where: { id: encounterId } });
     
     if (encounter) {
-      const updatedReason = encounter.reason 
-        ? `${encounter.reason}\n${logEntry}` 
-        : `--- CODE BLUE INITIATED ---\n${logEntry}`;
-        
+      // EMR-784: Voice-driven Code Blue auto-scribe — the running log
+      // is AI-documented, so the patient verbal-consent disclaimer must
+      // head the flow sheet. prependConsentDisclaimer is idempotent so
+      // appending subsequent code events leaves a single banner.
+      const baseReason = encounter.reason
+        ? `${encounter.reason}\n${logEntry}`
+        : `--- CODE BLUE INITIATED ---\n${AI_CONSENT_DISCLAIMER}\n${logEntry}`;
+      const updatedReason = prependConsentDisclaimer(baseReason);
+
       await prisma.encounter.update({
         where: { id: encounterId },
         data: { reason: updatedReason }

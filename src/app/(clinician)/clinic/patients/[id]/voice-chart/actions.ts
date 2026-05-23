@@ -24,6 +24,7 @@ import {
   freezeNoteSnapshot,
   type NoteSnapshot,
 } from "@/lib/agents/guardrails/note-guardrails";
+import { ensureConsentDisclaimerBlock } from "@/lib/clinical/ai-consent-disclaimer";
 import { logger } from "@/lib/observability/log";
 
 // ── Result types ───────────────────────────────────────────────
@@ -300,6 +301,11 @@ ${summaryMd}
       scrubbedTranscript,
       patientContext,
     );
+
+    // EMR-784: Voice/ambient AI scribe must always carry the patient
+    // verbal-consent disclaimer at the top of the draft. Added after the
+    // hallucination scan so its boilerplate copy doesn't pollute the report.
+    blocks = ensureConsentDisclaimerBlock(blocks);
     const guardrails = {
       redactionCounts,
       hallucinationConfidence: hallucination.confidence,

@@ -82,6 +82,11 @@ export default async function FinancialCockpitPage() {
         description="One landing page for AR, claims, denials, dispensary revenue, and the daily close. Drill into any tile for the full surface."
         actions={
           <div className="flex items-center gap-2">
+            <Link href="/ops/financial-cockpit/ai-rcm">
+              <Button variant="secondary" size="sm">
+                AI RCM dashboard
+              </Button>
+            </Link>
             <Link href="/ops/revenue">
               <Button variant="secondary" size="sm">
                 Revenue cockpit
@@ -125,6 +130,13 @@ export default async function FinancialCockpitPage() {
 
       <Eyebrow className="mb-4">Drill-downs</Eyebrow>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+        <DrilldownCard
+          href="/ops/financial-cockpit/ai-rcm"
+          title="AI RCM dashboard"
+          description="Benchmark our AI revenue cycle against Epic, Athena, R1 RCM, and Optum. Clean-claim, A/R, denials — every metric, side-by-side."
+          badge="New"
+          badgeTone="accent"
+        />
         <DrilldownCard
           href="/ops/revenue"
           title="Revenue cockpit"

@@ -635,6 +635,11 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
                 patientId={patient.id}
                 patientName={`${patient.firstName} ${patient.lastName}`}
               />
+              <Link href={`/clinic/patients/${params.id}/download`}>
+                <Button variant="ghost" size="sm">
+                  Download chart
+                </Button>
+              </Link>
               <Link href={`/clinic/patients/${params.id}/voice-chart`}>
                 <Button variant="ghost" size="sm">
                   Voice chart

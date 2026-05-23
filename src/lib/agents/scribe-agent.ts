@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
+import { ensureConsentDisclaimerBlock } from "@/lib/clinical/ai-consent-disclaimer";
 import { startReasoning } from "./memory/agent-reasoning";
 import { formatPersonaForPrompt, resolvePersona } from "./persona";
 
@@ -529,6 +530,10 @@ Non-negotiable safety rules (these OVERRIDE every other guideline):
     // 7. Persist the draft note
     // ------------------------------------------------------------------
     ctx.assertCan("write.note.draft");
+
+    // EMR-784: Voice/ambient AI scribe drafts must always carry the
+    // patient verbal-consent disclaimer.
+    blocks = ensureConsentDisclaimerBlock(blocks);
 
     const note = await prisma.note.create({
       data: {

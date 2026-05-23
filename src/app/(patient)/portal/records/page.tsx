@@ -91,6 +91,9 @@ export default async function RecordsPage({
         description="Upload notes, labs, and letters. We organize them so your care team is ready for your visit."
         actions={
           <div className="flex items-center gap-2">
+            <Link href="/portal/records/download">
+              <Button variant="secondary">Download my chart</Button>
+            </Link>
             <Link href="/portal/records/release">
               <Button variant="secondary">Send to another doctor</Button>
             </Link>

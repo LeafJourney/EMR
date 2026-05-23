@@ -86,6 +86,11 @@ export default async function PatientPrintPage({ params }: PageProps) {
           </Link>
           <div className="flex items-center gap-2">
             <p className="text-xs text-text-subtle">Print preview</p>
+            <Link href={`/clinic/patients/${params.id}/download`}>
+              <Button variant="ghost" size="sm">
+                Customize export
+              </Button>
+            </Link>
             <PrintButton />
           </div>
         </div>

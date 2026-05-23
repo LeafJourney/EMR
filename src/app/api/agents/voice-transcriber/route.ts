@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 import { requireUser } from "@/lib/auth/session";
+import { appendConsentDisclaimer } from "@/lib/clinical/ai-consent-disclaimer";
 
 // EMR-070: Voice Note AI Transcription Engine
 // Accepts raw audio blobs from the clinician's microphone, runs it through an 
@@ -33,11 +34,14 @@ A: Chronic back pain, stable. Insomnia, uncontrolled.
 P: Increase PM dose of high-CBD/THC tincture by 0.25mL. Follow up in 4 weeks.
     `.trim();
 
+    // EMR-784: AI scribe output must carry the patient verbal-consent disclaimer.
+    const soapNoteWithConsent = appendConsentDisclaimer(mockSoapNote);
+
     // 3. Update the encounter notes
     const encounter = await prisma.encounter.update({
       where: { id: encounterId },
       data: {
-        reason: mockSoapNote // Storing the draft in the reason/clinical note field
+        reason: soapNoteWithConsent // Storing the draft in the reason/clinical note field
       }
     });
 
@@ -47,10 +51,10 @@ P: Increase PM dose of high-CBD/THC tincture by 0.25mL. Follow up in 4 weeks.
       providerId: user.id 
     });
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       rawTranscript: mockTranscript,
-      structuredNote: mockSoapNote
+      structuredNote: soapNoteWithConsent
     });
 
   } catch (error) {
