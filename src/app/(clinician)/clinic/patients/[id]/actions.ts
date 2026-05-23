@@ -12,6 +12,7 @@ import {
   hasPermission,
   requirePermission,
 } from "@/lib/rbac/permissions";
+import { encodeSourceRef } from "@/lib/domain/unresolved-followups";
 
 /**
  * Start a visit: find or create an in-progress encounter for today,
@@ -318,6 +319,91 @@ export async function deletePastSurgeryAction(patientId: string, id: string) {
   });
   revalidatePath(`/clinic/patients/${patientId}`);
   return { ok: true };
+}
+
+/* ── EMR-675 — Convert an unresolved follow-up into a Task ─────── */
+
+export type ConvertFollowUpResult =
+  | { ok: true; taskId: string }
+  | { ok: false; error: string };
+
+/**
+ * Convert an unresolved follow-up (from a finalized note or triaged
+ * thread) into a chart Task. The `sourceRef` is embedded in the
+ * description so the panel auto-hides converted items.
+ */
+export async function convertFollowUpToTask(input: {
+  patientId: string;
+  title: string;
+  detail?: string;
+  sourceRef: string; // e.g. "noteId:abc" or "threadId:xyz"
+  dueInDays?: number; // optional clinician-set due date hint
+}): Promise<ConvertFollowUpResult> {
+  const user = await requireUser();
+
+  // Same gate as note edits — clinicians + mid-levels only.
+  if (!hasPermission(user, "notes.edit")) {
+    return { ok: false, error: "Forbidden: read-only access to chart" };
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: {
+      id: input.patientId,
+      organizationId: user.organizationId!,
+      deletedAt: null,
+    },
+    select: { id: true, organizationId: true },
+  });
+  if (!patient) return { ok: false, error: "Patient not found" };
+
+  try {
+    await assertChartAccess(user, input.patientId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "Forbidden: chart is restricted" };
+    }
+    throw err;
+  }
+
+  const title = input.title.trim().slice(0, 200);
+  if (title.length < 3) return { ok: false, error: "Title is required" };
+  const detail = (input.detail ?? "").trim().slice(0, 500);
+  const ref = encodeSourceRef(input.sourceRef.slice(0, 120));
+
+  const dueAt =
+    input.dueInDays && input.dueInDays > 0 && input.dueInDays <= 365
+      ? new Date(Date.now() + input.dueInDays * 86_400_000)
+      : null;
+
+  const task = await prisma.task.create({
+    data: {
+      organizationId: patient.organizationId,
+      patientId: patient.id,
+      title,
+      description: detail ? `${detail}\n\n${ref}` : ref,
+      status: "open",
+      assigneeUserId: user.id,
+      dueAt,
+    },
+    select: { id: true },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: patient.organizationId,
+      actorUserId: user.id,
+      action: "patient.followup.converted_to_task",
+      subjectType: "Task",
+      subjectId: task.id,
+      metadata: {
+        patientId: patient.id,
+        sourceRef: input.sourceRef,
+      } as any,
+    },
+  });
+
+  revalidatePath(`/clinic/patients/${input.patientId}`);
+  return { ok: true, taskId: task.id };
 }
 
 /* ── EMR-786 — Chart privacy management ────────────────────────── */

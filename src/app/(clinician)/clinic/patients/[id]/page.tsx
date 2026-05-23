@@ -26,7 +26,7 @@ import { dueScreenings } from "@/lib/domain/uspstf-screenings";
 import { CorrespondenceTab, type SerializedThread } from "./correspondence-tab";
 import { MemoryTab } from "./memory-tab";
 import { ChartingTimer } from "./charting-timer";
-import { startVisit } from "./actions";
+import { startVisit, convertFollowUpToTask } from "./actions";
 import { checkInteractions, getSeverityLabel, type DrugInteraction } from "@/lib/domain/drug-interactions";
 import { InteractionBadge } from "@/components/ui/interaction-badge";
 import { generateCDSAlerts } from "@/lib/domain/clinical-decision-support";
@@ -47,6 +47,8 @@ import {
 } from "@/lib/utils/patient-age";
 import { CarePlanSection } from "@/components/patient/CarePlanSection";
 import { ChartTaskList } from "@/components/patient/ChartTaskList";
+import { UnresolvedFollowUpsPanel } from "@/components/patient/UnresolvedFollowUpsPanel";
+import { buildUnresolvedFollowUps } from "@/lib/domain/unresolved-followups";
 import { logger } from "@/lib/observability/log";
 import { BirthdayBanner } from "./birthday-banner";
 import { MessagePatientDock } from "@/app/(clinician)/clinic/messages/dock-compose";
@@ -659,6 +661,31 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Unresolved follow-up items (EMR-675) ───────────── */}
+      {/* Derived from finalized notes (Plan/Follow-up blocks) +
+          triaged message threads. One-click converts each loose end
+          into a Task via convertFollowUpToTask; converted items drop
+          off this panel automatically because the Task description
+          embeds the sourceRef. Sits above ChartTaskList so the
+          clinician's eye lands here first when reviewing a chart. */}
+      {(() => {
+        const followUps = buildUnresolvedFollowUps({
+          patientId: params.id,
+          notes: allNotes.slice(0, 20) as any,
+          threads: threads as any,
+          existingTasks: openTasks as any,
+        });
+        return followUps.length > 0 ? (
+          <div className="mb-6">
+            <UnresolvedFollowUpsPanel
+              patientId={params.id}
+              items={followUps}
+              onConvert={convertFollowUpToTask}
+            />
+          </div>
+        ) : null;
+      })()}
 
       {/* ── Chart task list / to-do on open (EMR-180) ─────── */}
       {/* Built from data we already fetched: open tasks + unsigned notes.
