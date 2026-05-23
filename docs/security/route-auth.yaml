@@ -285,6 +285,12 @@ routes:
     auth: required
     owner: scribe
 
+  patients/search:
+    methods: [GET]
+    auth: required
+    owner: scheduling
+    notes: "EMR-683. Org-scoped patient search for launching video visits. Gated via requireApiAuth."
+
   patients/[id]/export/lfj:
     methods: [GET]
     auth: required
