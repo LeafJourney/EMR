@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { formatRelative } from "@/lib/utils/format";
 
 export type CallRow = {
@@ -54,33 +55,22 @@ function badgeTone(status: string): "success" | "warning" | "danger" | "neutral"
   }
 }
 
+const DETAIL_TITLES: Record<ModalItem["kind"], string> = {
+  call: "Call details",
+  fax: "Fax details",
+  broadcast: "Broadcast details",
+};
+
 function DetailModal({ item, onClose }: { item: ModalItem; onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-      onClick={onClose}
+    <ModalShell
+      open={true}
+      onClose={onClose}
+      title={DETAIL_TITLES[item.kind]}
+      placement="center"
+      maxWidth="max-w-md"
     >
-      <div
-        className="w-full max-w-md bg-surface-raised rounded-xl border border-border shadow-xl p-6 space-y-4"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="font-display text-lg text-text">
-            {item.kind === "call" && "Call details"}
-            {item.kind === "fax" && "Fax details"}
-            {item.kind === "broadcast" && "Broadcast details"}
-          </h3>
-          <button
-            onClick={onClose}
-            className="text-text-subtle hover:text-text text-xl leading-none shrink-0"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
+      <div className="px-6 py-5 space-y-4">
         <dl className="space-y-2 text-sm">
           {item.kind === "call" && (
             <>
@@ -111,7 +101,7 @@ function DetailModal({ item, onClose }: { item: ModalItem; onClose: () => void }
           )}
         </dl>
 
-        <div className="flex items-center gap-2 pt-2">
+        <div className="flex items-center gap-2 pt-2 flex-wrap">
           {item.kind === "call" && item.data.patientId && (
             <Link href={`/clinic/patients/${item.data.patientId}`}>
               <Button size="sm" variant="secondary">View chart</Button>
@@ -135,7 +125,7 @@ function DetailModal({ item, onClose }: { item: ModalItem; onClose: () => void }
           <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
