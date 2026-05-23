@@ -86,10 +86,20 @@ export function DialogTrigger({ asChild, children }: DialogTriggerProps) {
 
 export type DialogContentProps = HTMLAttributes<HTMLDivElement>;
 
+// a11y: collect focusable descendants once per Tab, so we can wrap focus
+// inside the dialog (WCAG 2.4.3 Focus Order + 2.1.2 No Keyboard Trap —
+// allowing Esc as the documented exit satisfies "no trap").
+const FOCUSABLE_SELECTOR =
+  'a[href], area[href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), iframe, object, embed, [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"])';
+
 export function DialogContent({ className, children, ...props }: DialogContentProps) {
   const { open, onOpenChange, titleId } = useDialogContext("DialogContent");
   const [showConfirm, setShowConfirm] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Remember whatever had focus before the dialog opened so we can return
+  // focus to it on close — keyboard / screen-reader users otherwise get
+  // dropped at document body.
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const handleCloseAttempt = () => {
     let isDirty = false;
@@ -121,15 +131,68 @@ export function DialogContent({ className, children, ...props }: DialogContentPr
 
   useEffect(() => {
     if (!open) return;
+    // Snapshot the previously focused element so we can restore it on close.
+    previouslyFocusedRef.current =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
+
+    // Move focus into the dialog — first focusable, else the dialog itself.
+    const focusInitial = () => {
+      const node = dialogRef.current;
+      if (!node) return;
+      const focusable = node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      // Skip the close button (first match) when there's a more meaningful
+      // control inside — otherwise the dialog opens with focus parked on "X"
+      // which is awkward for keyboard users.
+      const target = focusable[1] ?? focusable[0] ?? node;
+      target.focus();
+    };
+    focusInitial();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         handleCloseAttempt();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const node = dialogRef.current;
+      if (!node) return;
+      const focusable = Array.from(
+        node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (focusable.length === 0) {
+        e.preventDefault();
+        node.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !node.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      // Restore focus to the trigger element when the dialog unmounts.
+      const prev = previouslyFocusedRef.current;
+      if (prev && typeof prev.focus === "function") {
+        // Defer so React finishes unmounting before we restore focus.
+        queueMicrotask(() => prev.focus());
+      }
+    };
+    // handleCloseAttempt is intentionally not in the dep array — including it
+    // would re-attach the listener on every render and break the previously-
+    // focused snapshot. Same pattern as pre-existing code in this file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;
@@ -146,8 +209,10 @@ export function DialogContent({ className, children, ...props }: DialogContentPr
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         className={cn(
           "relative z-10 w-full max-w-lg rounded-lg border border-border bg-surface p-6 shadow-xl overflow-hidden",
+          "focus:outline-none focus-visible:outline-none",
           className,
         )}
         {...props}

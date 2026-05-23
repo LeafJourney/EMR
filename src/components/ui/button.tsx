@@ -45,12 +45,16 @@ const SIZES: Record<Size, string> = {
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
-    { className, variant = "primary", size = "md", leadingIcon, trailingIcon, children, ...props },
+    { className, variant = "primary", size = "md", leadingIcon, trailingIcon, type, children, ...props },
     ref
   ) => {
+    // a11y: default to type="button" so primitives don't accidentally submit
+    // ancestor forms when consumers omit the prop. Callers can still pass
+    // type="submit" / "reset" explicitly.
     return (
       <button
         ref={ref}
+        type={type ?? "button"}
         className={cn(BASE, VARIANTS[variant], SIZES[size], className)}
         {...props}
       >
