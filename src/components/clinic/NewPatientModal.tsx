@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AvatarUpload } from "@/components/ui/avatar-upload";
@@ -27,6 +28,7 @@ interface EmergencyContactInput {
 }
 
 export function NewPatientModal({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
   const [isPending, startTransition] = useTransition();
@@ -185,6 +187,9 @@ export function NewPatientModal({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         setOpen(false);
         resetForm();
+        // EMR-684: After creating, jump straight to the new chart so the
+        // clinician can begin documenting without an extra click.
+        router.push(`/clinic/patients/${res.patientId}`);
       } else {
         setSubmitError(res.error || "Failed to create patient chart.");
       }

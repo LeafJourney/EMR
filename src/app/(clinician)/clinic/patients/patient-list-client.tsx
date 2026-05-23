@@ -31,9 +31,7 @@ interface PatientRow {
 
 interface StatusCounts {
   all: number;
-  active: number;
   prospect: number;
-  inactive: number;
 }
 
 interface Props {
@@ -47,7 +45,9 @@ interface Props {
 /*  Power filter chips (EMR-clinician power-tools)                     */
 /* ------------------------------------------------------------------ */
 
-type PowerFilter = "all" | "active" | "new" | "vip" | "high-risk";
+// EMR-684: "active" used to be a chip; it was dropped along with the
+// active/inactive segmented toggle. Keep the union minimal.
+type PowerFilter = "all" | "new" | "vip" | "high-risk";
 
 const POWER_FILTERS: { key: PowerFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -236,7 +236,6 @@ export function PatientListClient({
   /* Power filter predicate ----------------------------------------- */
   const matchesPowerFilter = (p: PatientRow): boolean => {
     if (powerFilter === "all") return true;
-    if (powerFilter === "active") return p.status === "active";
     if (powerFilter === "new") {
       const created = new Date(p.updatedAt).getTime();
       const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -415,7 +414,7 @@ export function PatientListClient({
             <div className="px-5 pb-6">
               <EmptyState
                 title="No patients match your search"
-                description="Try adjusting your search terms or changing the status filter."
+                description="Try adjusting your search terms or selecting a different filter chip."
               />
             </div>
           ) : (

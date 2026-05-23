@@ -97,12 +97,13 @@ export default async function PatientsPage({
     }
   }
 
-  // Compute status counts
+  // EMR-684: Dr. Patel removed the active/inactive toggles in Doc 2 — a
+  // patient is either visible or soft-deleted, no third state. We still
+  // surface "in intake" (prospects) because that drives clinician workflow,
+  // but "active" and "inactive" buckets are gone.
   const statusCounts = {
     all: patients.length,
-    active: patients.filter((p) => p.status === "active").length,
     prospect: patients.filter((p) => p.status === "prospect").length,
-    inactive: patients.filter((p) => p.status === "inactive").length,
   };
 
   // Compute avg chart readiness
