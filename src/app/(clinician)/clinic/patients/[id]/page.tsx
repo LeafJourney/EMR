@@ -53,6 +53,8 @@ import {
 } from "@/lib/utils/patient-age";
 import { CarePlanSection } from "@/components/patient/CarePlanSection";
 import { ChartTaskList } from "@/components/patient/ChartTaskList";
+import { PatientActivityTimeline } from "@/components/patient/PatientActivityTimeline";
+import { loadPatientActivity } from "@/lib/domain/patient-activity";
 import { UnresolvedFollowUpsPanel } from "@/components/patient/UnresolvedFollowUpsPanel";
 import { buildUnresolvedFollowUps } from "@/lib/domain/unresolved-followups";
 import { logger } from "@/lib/observability/log";
@@ -341,9 +343,21 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       })
     : [];
 
+  // Activity timeline (Linear/Notion-style chart event feed). We only
+  // hit the timeline aggregator when the tab is actually open — every
+  // other render keeps its zero-cost baseline. The count shown on the
+  // tab badge is an approximation derived from data we already have so
+  // it doesn't require its own query on every chart open.
+  const activityEvents = tab === "timeline"
+    ? await loadPatientActivity(prisma, params.id, { limit: 200 })
+    : [];
+  const timelineCount =
+    patient.encounters.length + threads.length + allNotes.length;
+
   const counts = {
     demographics: 1,
     memory: patientMemories.length + openObservationCount,
+    timeline: timelineCount,
     records: recordDocs.length,
     images: imageDocs.length,
     labs: labDocs.length + assessmentResponses.length,
@@ -843,6 +857,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           observations={clinicalObservations}
           patientFirstName={patient.firstName}
         />
+      )}
+      {tab === "timeline" && (
+        <PatientActivityTimeline events={activityEvents} />
       )}
       {tab === "correspondence" && (
         <CorrespondenceTab

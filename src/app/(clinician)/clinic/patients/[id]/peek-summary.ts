@@ -19,6 +19,10 @@ import { logger } from "@/lib/observability/log";
 const TAB_LABELS: Record<TabKey, string> = {
   demographics: "Demographics",
   memory: "Memory",
+  // Activity feed tab — currently no peek/summary is wired (the
+  // timeline IS the summary). Label kept so the Record type stays
+  // exhaustive against TabKey.
+  timeline: "Timeline",
   records: "Records",
   images: "Images",
   labs: "Labs",
