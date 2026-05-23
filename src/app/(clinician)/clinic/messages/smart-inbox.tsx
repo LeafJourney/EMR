@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { Card } from "@/components/ui/card";
@@ -155,6 +156,71 @@ function SearchIcon() {
     >
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
+    </svg>
+  );
+}
+
+function PaperclipIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.83l-8.57 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+// EMR-659 — Rx symbol used in the per-thread tool row. Stroke-only "Rx"
+// glyph keeps it visually aligned with the other small SVG controls.
+function RxIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 4h6a4 4 0 0 1 0 8H5z" />
+      <path d="M5 4v16" />
+      <path d="M11 12l8 8" />
+      <path d="m15 16 4-4" />
+    </svg>
+  );
+}
+
+// EMR-659 — Memo icon (notepad with pencil). Triggers a templated body
+// insert prefixed with "Memo:" for routing to staff / MA / front / back / provider.
+function MemoIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 4h12l4 4v12a0 0 0 0 1 0 0H4z" />
+      <path d="M16 4v4h4" />
+      <path d="M8 12h8" />
+      <path d="M8 16h5" />
     </svg>
   );
 }
@@ -579,9 +645,24 @@ function ReplySubmitButton({ isDraft }: { isDraft?: boolean }) {
 
 const DRAFT_KEY = (threadId: string) => `msg-draft:${threadId}`;
 
-function InlineReplyCompose({ threadId }: { threadId: string }) {
+// EMR-659 — Memo template prefix. When the clinician hits the Memo symbol we
+// prepend this so the recipient sees a clear "internal memo" framing. The
+// real routing UI (staff / MA / front / back / provider) will land in a
+// follow-up; the template at least makes the intent explicit.
+const MEMO_TEMPLATE = "Memo to staff:\n\n";
+
+function InlineReplyCompose({
+  threadId,
+  patientId,
+}: {
+  threadId: string;
+  /** EMR-659 — used by the Rx symbol to deep-link to the prescribe page. */
+  patientId?: string;
+}) {
+  const router = useRouter();
   const [state, formAction] = useFormState(sendReply, null);
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // EMR-657 — restore saved draft on mount; save on every keystroke.
   const [text, setText] = useState<string>(() => {
@@ -589,6 +670,17 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
     return localStorage.getItem(DRAFT_KEY(threadId)) ?? "";
   });
   const [showSlashCommands, setShowSlashCommands] = useState(false);
+
+  // EMR-659 — toolbar actions
+  const insertMemoTemplate = () => {
+    setText((prev) => (prev.startsWith(MEMO_TEMPLATE) ? prev : MEMO_TEMPLATE + prev));
+    // Defer focus so the prepend is visible before caret moves.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+  const openPrescribe = () => {
+    if (!patientId) return;
+    router.push(`/clinic/patients/${patientId}/prescribe?thread=${threadId}`);
+  };
 
   // Persist draft on every change.
   useEffect(() => {
@@ -637,9 +729,35 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
         className="flex flex-col gap-2"
       >
         <input type="hidden" name="threadId" value={threadId} />
+        {/* EMR-659 — per-thread tool row. Rx links to the patient's prescribe
+            page; Memo prepends an internal-memo template to the reply body. */}
+        <div className="flex items-center gap-1 -mb-1">
+          <button
+            type="button"
+            onClick={openPrescribe}
+            disabled={!patientId}
+            title="Open prescribe (Rx)"
+            aria-label="Open prescribe page for this patient"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-text hover:bg-surface-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RxIcon />
+            <span className="hidden sm:inline">Rx</span>
+          </button>
+          <button
+            type="button"
+            onClick={insertMemoTemplate}
+            title="Insert internal memo template"
+            aria-label="Insert internal memo template"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+          >
+            <MemoIcon />
+            <span className="hidden sm:inline">Memo</span>
+          </button>
+        </div>
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <Textarea
+              ref={textareaRef}
               name="body"
               rows={2}
               value={text}
@@ -710,6 +828,10 @@ export function SmartInboxView({
   );
   const [showCompose, setShowCompose] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  // EMR-659 — in-thread search: filters the visible message timeline by body
+  // text (case-insensitive substring). Resets whenever the selected thread
+  // changes so a stale query doesn't carry across threads.
+  const [threadSearch, setThreadSearch] = useState("");
 
   // Compute counts per priority. EMR-708 — `brief` counts threads with
   // category=follow_up (the closest current proxy for "morning brief item")
@@ -796,6 +918,12 @@ export function SmartInboxView({
       setSelectedThreadId(filtered[0]?.threadId ?? null);
     }
   }, [filtered, selectedThreadId]);
+
+  // EMR-659 — clear the in-thread search whenever the active thread changes
+  // so the query box always reflects the thread the clinician is looking at.
+  useEffect(() => {
+    setThreadSearch("");
+  }, [selectedThreadId]);
 
   // Empty state: no threads at all
   if (triaged.length === 0) {
@@ -983,9 +1111,28 @@ export function SmartInboxView({
                               {t.patientName}
                             </p>
                           </div>
-                          <span className="text-[11px] text-text-subtle whitespace-nowrap shrink-0">
-                            {formatRelative(t.lastMessageAt)}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* EMR-659 — paperclip + count when the thread
+                                has any attachment-like artifacts (detected
+                                by server-side heuristic on message bodies). */}
+                            {(t.attachmentCount ?? 0) > 0 && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[11px] text-text-subtle"
+                                title={`${t.attachmentCount} attachment${
+                                  (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                                }`}
+                                aria-label={`${t.attachmentCount} attachment${
+                                  (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                                }`}
+                              >
+                                <PaperclipIcon className="opacity-80" />
+                                {t.attachmentCount}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-text-subtle whitespace-nowrap">
+                              {formatRelative(t.lastMessageAt)}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Row 2: subject */}
@@ -1048,6 +1195,23 @@ export function SmartInboxView({
                   </div>
                   {selectedTriage && (
                     <div className="flex items-center gap-2">
+                      {/* EMR-659 — in-thread search. Filters the visible
+                          timeline below by case-insensitive substring across
+                          message bodies (words, numbers, dates all flow
+                          through as plain text). */}
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-subtle pointer-events-none">
+                          <SearchIcon />
+                        </span>
+                        <Input
+                          type="search"
+                          value={threadSearch}
+                          onChange={(e) => setThreadSearch(e.target.value)}
+                          placeholder="Search this thread…"
+                          aria-label="Search messages in this thread"
+                          className="h-8 w-44 pl-7 text-xs"
+                        />
+                      </div>
                       <CallLaunchButtons
                         patientId={selectedTriage.patientId}
                         messageThreadId={selectedTriage.threadId}
@@ -1102,9 +1266,29 @@ export function SmartInboxView({
               </div>
 
               {/* Message history — messages and call records interleaved
-                  chronologically. EMR-604. */}
+                  chronologically. EMR-604. EMR-659 — when an in-thread
+                  search is active, the timeline is filtered to message
+                  bubbles whose body contains the query (call bubbles are
+                  hidden during search since they have no text body). */}
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-                {buildTimeline(selectedThread).map((item) => {
+                {(() => {
+                  const timeline = buildTimeline(selectedThread);
+                  const q = threadSearch.trim().toLowerCase();
+                  const visible = q
+                    ? timeline.filter(
+                        (item) =>
+                          item.kind === "message" &&
+                          item.data.body.toLowerCase().includes(q),
+                      )
+                    : timeline;
+                  if (q && visible.length === 0) {
+                    return (
+                      <p className="text-center text-xs text-text-muted py-6">
+                        No messages match &ldquo;{threadSearch}&rdquo;.
+                      </p>
+                    );
+                  }
+                  return visible.map((item) => {
                   if (item.kind === "call") {
                     return (
                       <CallBubble
@@ -1194,11 +1378,15 @@ export function SmartInboxView({
                       </div>
                     </div>
                   );
-                })}
+                  });
+                })()}
               </div>
 
               {/* Reply area */}
-              <InlineReplyCompose threadId={selectedThread.threadId} />
+              <InlineReplyCompose
+                threadId={selectedThread.threadId}
+                patientId={selectedThread.patientId}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">

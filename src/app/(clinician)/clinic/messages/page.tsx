@@ -101,6 +101,23 @@ export default async function ClinicMessagesPage({
     }),
   ]);
 
+  // EMR-659 — heuristic until Message gains a real attachments column. We flag
+  // a thread as carrying attachments when any message body mentions a file
+  // URL, a familiar attachment extension, or the words "attached/attachment".
+  const ATTACHMENT_RE =
+    /(https?:\/\/\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|(\b\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|\battach(?:ed|ment)\b/i;
+  function countAttachments(messages: { body: string }[]): number {
+    let n = 0;
+    for (const m of messages) {
+      const matches = m.body.match(
+        /(https?:\/\/\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|(\b[A-Za-z0-9._-]+\.(?:pdf|docx?|jpe?g|png|heic)\b)/gi,
+      );
+      if (matches) n += matches.length;
+      else if (ATTACHMENT_RE.test(m.body)) n += 1;
+    }
+    return n;
+  }
+
   // Triage each thread and build serialized data for the client component
   const triaged: TriagedMessage[] = threads.map((t) => {
     const messagesForTriage = t.messages.map((m) => ({
@@ -115,6 +132,8 @@ export default async function ClinicMessagesPage({
     const unreadCount = t.messages.filter(
       (m) => m.status !== "read" && m.senderUserId !== user.id && !m.senderAgent,
     ).length;
+
+    const attachmentCount = countAttachments(t.messages);
 
     // Build a short summary from the most recent patient message
     const latestPatientMsg = t.messages.find(
@@ -142,6 +161,7 @@ export default async function ClinicMessagesPage({
       triageReason: result.triageReason,
       suggestedAction: result.suggestedAction,
       needsClinician: result.needsClinician,
+      attachmentCount,
     };
   });
 
