@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRelative } from "@/lib/utils/format";
 import { CampaignComposeForm } from "./compose-form";
+import { SendNowButton } from "./send-now-button";
 
 export const metadata = { title: "Outreach broadcasts" };
 
@@ -100,28 +101,45 @@ export default async function BroadcastsPage() {
                 description="Send your first broadcast to see it here."
               />
             ) : (
-              campaigns.map((c) => (
-                <div
-                  key={c.id}
-                  className="rounded-lg px-3 py-2 hover:bg-surface-muted"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-text truncate">
-                      {c.name}
+              campaigns.map((c) => {
+                const af = (c.audienceFilter ?? {}) as {
+                  dualChannel?: boolean;
+                  frequency?: string | null;
+                };
+                const channelLabel = af.dualChannel
+                  ? "SMS+TEXT"
+                  : c.channel.toUpperCase();
+                const canSend =
+                  c.status === "draft" || c.status === "scheduled";
+                return (
+                  <div
+                    key={c.id}
+                    className="rounded-lg px-3 py-2 hover:bg-surface-muted"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-text truncate">
+                        {c.name}
+                      </p>
+                      <Badge tone={campaignBadgeTone(c.status)}>
+                        {c.status}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-text-subtle">
+                      {channelLabel} · {c._count.recipients} recipients
+                      {af.frequency ? ` · ${af.frequency}` : ""}
                     </p>
-                    <Badge tone={campaignBadgeTone(c.status)}>{c.status}</Badge>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-text-subtle">
+                        {c.createdBy
+                          ? `${c.createdBy.firstName} ${c.createdBy.lastName}`
+                          : "system"}{" "}
+                        · {formatRelative(c.createdAt.toISOString())}
+                      </p>
+                      {canSend ? <SendNowButton campaignId={c.id} /> : null}
+                    </div>
                   </div>
-                  <p className="text-[11px] text-text-subtle">
-                    {c.channel.toUpperCase()} · {c._count.recipients} recipients
-                  </p>
-                  <p className="text-[11px] text-text-subtle">
-                    {c.createdBy
-                      ? `${c.createdBy.firstName} ${c.createdBy.lastName}`
-                      : "system"}{" "}
-                    · {formatRelative(c.createdAt.toISOString())}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -130,19 +148,23 @@ export default async function BroadcastsPage() {
   );
 }
 
+// EMR-707 bubble colors: Active=green, Scheduled=yellow, Completed=red.
+// `sending` is also considered Active. Failed/cancelled keep their own tone.
 function campaignBadgeTone(
   status: string,
 ): "success" | "warning" | "danger" | "neutral" | "info" {
   switch (status) {
-    case "completed":
+    case "sending":
+    case "draft":
       return "success";
     case "scheduled":
-    case "sending":
-      return "info";
+      return "warning";
+    case "completed":
+      return "danger";
     case "failed":
       return "danger";
     case "cancelled":
-      return "warning";
+      return "neutral";
     default:
       return "neutral";
   }
