@@ -3,6 +3,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ResearchEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { LeafSprig } from "@/components/ui/ornament";
 import { ResearchSearchForm } from "./research-form";
 import { formatRelative } from "@/lib/utils/format";
@@ -182,8 +183,14 @@ export default async function ResearchConsolePage({
             </Card>
           ) : (
             <EmptyState
-              title="Run your first search"
-              description="Type a symptom, condition, or treatment keyword to query the research database."
+              illustration={<ResearchEmptyIllustration />}
+              title="Ask the literature anything"
+              description="Type a symptom, condition, or treatment keyword above and we'll surface ranked evidence with traceable citations in seconds."
+              tips={[
+                "Multi-word phrases work — try \"neuropathic pain CBD\" or \"insomnia low-dose THC\"",
+                "Results link out to PubMed, UpToDate, and Lexicomp in a new tab",
+                "Saved searches appear in the sidebar so you can come back later",
+              ]}
             />
           )}
         </div>
@@ -201,7 +208,9 @@ export default async function ResearchConsolePage({
             </CardHeader>
             <CardContent>
               {recent.length === 0 ? (
-                <p className="text-sm text-text-muted">No searches yet.</p>
+                <p className="text-sm text-text-muted leading-relaxed">
+                  Your recent searches will appear here once you run one. We&apos;ll save the last five so you can jump back without retyping.
+                </p>
               ) : (
                 <ul className="space-y-3 -mx-2">
                   {recent.map((q) => {

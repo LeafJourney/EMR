@@ -9,6 +9,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  PatientsEmptyIllustration,
+  ResearchEmptyIllustration,
+} from "@/components/ui/empty-illustrations";
 import { Button } from "@/components/ui/button";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
@@ -412,15 +416,46 @@ export function PatientListClient({
           {patients.length === 0 ? (
             <div className="px-5 pb-6">
               <EmptyState
-                title="No patients in the system yet"
-                description="Add your first patient to get started with chart management."
+                illustration={<PatientsEmptyIllustration />}
+                title="Add your first patient"
+                description="Your roster lives here. Once you add a patient their charts, messages, and visits all roll up into a single timeline."
+                primaryAction={
+                  <Link href="/clinic/patients/new">
+                    <Button size="sm">Add patient</Button>
+                  </Link>
+                }
+                secondaryAction={
+                  <Link href="/clinic/patients/import">
+                    <Button size="sm" variant="ghost">
+                      Import from CSV
+                    </Button>
+                  </Link>
+                }
+                tips={[
+                  "Bulk import existing patients from a CSV export",
+                  "Front desk can intake new patients without touching the chart",
+                  "Every new patient gets an auto-generated portal invite",
+                ]}
               />
             </div>
           ) : filtered.length === 0 ? (
             <div className="px-5 pb-6">
               <EmptyState
-                title="No patients match your search"
-                description="Try adjusting your search terms or selecting a different filter chip."
+                illustration={<ResearchEmptyIllustration />}
+                title="No matches for that search"
+                description="We couldn't find anyone in your roster matching this query. Try a shorter search term, or clear your filter chips."
+                secondaryAction={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSearch("");
+                      setPowerFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                }
               />
             </div>
           ) : (

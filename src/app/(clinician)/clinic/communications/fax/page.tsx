@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FaxEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { formatRelative } from "@/lib/utils/format";
 import { FaxComposeForm } from "./fax-compose";
 
@@ -63,8 +64,14 @@ export default async function FaxPage() {
           <CardContent className="space-y-2 max-h-[640px] overflow-y-auto">
             {records.length === 0 ? (
               <EmptyState
-                title="No faxes yet"
-                description="Send your first fax to see it here."
+                illustration={<FaxEmptyIllustration />}
+                title="Nothing in flight"
+                description="Inbound and outbound faxes will show up here with delivery status, page count, and the patient they belong to."
+                tips={[
+                  "Outbound faxes ship through the practice's provider in seconds",
+                  "Delivery status updates live — no need to refresh the page",
+                  "Older entries archive automatically for 7 years per retention",
+                ]}
               />
             ) : (
               records.map((fax) => (
