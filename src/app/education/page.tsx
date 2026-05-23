@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Search, ArrowRight, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Search, ArrowRight, Sparkles, Pill } from "lucide-react";
 import { Eyebrow } from "@/components/ui/ornament";
 import { SiteHeader } from "@/components/marketing/SiteHeader";
 import { SiteFooter } from "@/components/marketing/SiteFooter";
@@ -71,6 +72,20 @@ export default function EducationPage() {
           explore cannabinoid science, and join the community — all free,
           no login required.
         </p>
+
+        {/* EMR-617 — direct CTA for the Drug Mix standalone module so
+            patients arriving on /education can jump straight to the
+            interaction checker without first discovering the tab strip. */}
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link
+            href="/education/drug-mix"
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold shadow-md hover:bg-accent/90 transition-all hover:-translate-y-0.5"
+          >
+            <Pill className="w-4 h-4" aria-hidden="true" />
+            Open Drug Mix
+            <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </Link>
+        </div>
       </section>
 
       <EducationTabs activeTab={activeTab} onTabChange={setActiveTab} />

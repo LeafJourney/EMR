@@ -48,7 +48,7 @@ export const DEFAULT_GROUPS: MobileNavGroup[] = [
       { label: "ChatCB", href: "/education", icon: "❦" },
       { label: "Research", href: "/education#research", icon: "⚘" },
       { label: "Wheel", href: "/education#wheel", icon: "", wheelGradient: true },
-      { label: "Drug Mix", href: "/education#drugmix", icon: "⚗" },
+      { label: "Drug Mix", href: "/education/drug-mix", icon: "⚗" },
     ],
   },
   {
