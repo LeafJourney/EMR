@@ -641,7 +641,7 @@ export async function PlantTasksWidget({ userId }: { userId: string }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
         <PWASyncTasks tasks={patient.tasks} />
         {/* Plant companion */}
-        <Link href="/portal/garden" className="block min-h-[44px]">
+        <Link href="/portal/garden" className="block min-h-[44px] rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="Open your virtual garden companion">
           <Card tone="glass" className="card-hover h-full">
             <CardContent className="flex items-center gap-5 py-5">
               <div className="shrink-0">

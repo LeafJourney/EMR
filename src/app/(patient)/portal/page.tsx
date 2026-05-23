@@ -161,7 +161,7 @@ export default async function PatientHome() {
         <Eyebrow>Your progress</Eyebrow>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 md:mb-8">
-        <Link href="/portal/goals" className="min-h-[44px]">
+        <Link href="/portal/goals" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Goals">
           <Card tone="ambient" className="card-hover text-center py-5">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">🎯</span>
@@ -169,7 +169,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/streaks" className="min-h-[44px]">
+        <Link href="/portal/streaks" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Streaks">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">🔥</span>
@@ -177,7 +177,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/efficacy" className="min-h-[44px]">
+        <Link href="/portal/efficacy" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Product Efficacy">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">💚</span>
@@ -185,7 +185,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/weekly-recap" className="min-h-[44px]">
+        <Link href="/portal/weekly-recap" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Weekly Recap">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">📰</span>
@@ -197,7 +197,7 @@ export default async function PatientHome() {
 
       {/* ── Quick links ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Link href="/portal/storybook" className="min-h-[44px]">
+        <Link href="/portal/storybook" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View My Storybook">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">{"\uD83D\uDCD6"}</span>
@@ -205,7 +205,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/education" className="min-h-[44px]">
+        <Link href="/portal/education" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Care Guide">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">{"\uD83D\uDCDA"}</span>
@@ -213,7 +213,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/roadmap" className="min-h-[44px]">
+        <Link href="/portal/roadmap" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Roadmap">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">{"\uD83D\uDDFA\uFE0F"}</span>
@@ -221,7 +221,7 @@ export default async function PatientHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/portal/medications/explainer" className="min-h-[44px]">
+        <Link href="/portal/medications/explainer" className="block min-h-[44px] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="View Medication Explainer">
           <Card tone="ambient" className="card-hover text-center py-5 h-full">
             <CardContent className="py-0">
               <span className="text-2xl block mb-2">{"\uD83D\uDC8A"}</span>
