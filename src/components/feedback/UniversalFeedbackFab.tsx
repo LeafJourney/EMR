@@ -113,7 +113,7 @@ export function UniversalFeedbackFab() {
             <p className="text-xs uppercase tracking-wider text-text-subtle">Whisper</p>
             <h3 className="font-display text-lg text-text mt-0.5">What's on your mind?</h3>
             <p className="text-xs text-text-muted mt-1">
-              Goes straight to Dr. Patel & Scott. No bots in between.
+              Goes straight to Scott & Neal. No bots in between.
             </p>
           </div>
           <button onClick={close} className="text-text-subtle hover:text-text text-lg leading-none px-2" aria-label="Close">

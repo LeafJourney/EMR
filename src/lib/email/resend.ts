@@ -32,6 +32,9 @@ export interface SendEmailInput {
   from?: string;
   /** Optional reply-to header. */
   replyTo?: string;
+  /** Optional Cc list — e.g. area-specialised inboxes that should see
+   * the message without replacing the primary recipients (EMR-640). */
+  cc?: string[];
   /** Optional tag set (Resend supports custom tags for searching). */
   tags?: Array<{ name: string; value: string }>;
 }
@@ -53,6 +56,7 @@ export async function sendEmail(
   const body = {
     from: input.from ?? process.env.EMAIL_FROM ?? DEFAULT_FROM,
     to: input.to,
+    cc: input.cc,
     subject: input.subject,
     text: input.text,
     html: input.html,
