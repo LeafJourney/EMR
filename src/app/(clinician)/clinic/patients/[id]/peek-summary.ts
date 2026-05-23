@@ -23,6 +23,12 @@ const TAB_LABELS: Record<TabKey, string> = {
   images: "Images",
   labs: "Labs",
   notes: "Notes",
+  // EMR-588 — Private clinician-only notes never feed the peek summary
+  // pipeline (no agent ever reads or paraphrases them). We keep the
+  // label present so the Record type is total, but loadPeekSummaries
+  // only iterates `peeks` entries — and the page never seeds a peek for
+  // `private_notes`, so no summary is ever generated.
+  private_notes: "Private notes",
   correspondence: "Correspondence",
   rx: "Cannabis Rx",
   billing: "Billing",

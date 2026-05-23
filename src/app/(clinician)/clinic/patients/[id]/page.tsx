@@ -6,6 +6,7 @@ import {
   ForbiddenError,
   assertChartAccess,
   canViewSection,
+  canEditSection,
 } from "@/lib/rbac/permissions";
 import { AccessDenied } from "@/components/rbac/access-denied";
 import { PageShell } from "@/components/shell/PageHeader";
@@ -25,6 +26,11 @@ import { TrackPatientView } from "@/components/shell/recent-patients";
 import { dueScreenings } from "@/lib/domain/uspstf-screenings";
 import { CorrespondenceTab, type SerializedThread } from "./correspondence-tab";
 import { MemoryTab } from "./memory-tab";
+// EMR-588 — Confidential clinician-only notes (private provider notes).
+// Tab + server-action surface; storage is interim-backed by AuditLog
+// rows until Legal sign-off on retention. See private-notes-actions.ts.
+import { PrivateNotesTab } from "./private-notes-tab";
+import { listPrivateNotes } from "./private-notes-actions";
 import { ChartingTimer } from "./charting-timer";
 import { startVisit } from "./actions";
 import { checkInteractions, getSeverityLabel, type DrugInteraction } from "@/lib/domain/drug-interactions";
@@ -111,6 +117,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     "labs",
     "imaging",
     "problems",
+    // EMR-588 — private clinician-only notes are clinical-tier and must
+    // bounce front-office users back to demographics like the rest.
+    "private_notes",
   ]);
   if (CLINICAL_TABS.has(tab) && !canViewSection(user, "notes")) {
     redirect(`/clinic/patients/${params.id}?tab=demographics`);
@@ -314,6 +323,22 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     (o: any) => !o.acknowledgedAt,
   ).length;
 
+  // EMR-588 — Pull private clinician-only notes for the chart sidebar
+  // count + the tab render. Loader is permission-gated internally and
+  // writes a read-audit row; we only call it when the caller can see
+  // notes at all, so back-office without notes.read never triggers it.
+  const userCanSeePrivateNotes = canViewSection(user, "notes");
+  const privateNotes = userCanSeePrivateNotes
+    ? await listPrivateNotes(params.id).catch((err) => {
+        logger.error({
+          event: "private_notes_load_failed",
+          patientId: params.id,
+          err: String(err),
+        });
+        return [];
+      })
+    : [];
+
   const counts = {
     demographics: 1,
     memory: patientMemories.length + openObservationCount,
@@ -321,6 +346,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     images: imageDocs.length,
     labs: labDocs.length + assessmentResponses.length,
     notes: allNotes.length,
+    private_notes: privateNotes.length,
     correspondence: threads.length,
     rx: activeRegimens.length,
     billing: openClaimCount,
@@ -755,6 +781,20 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           patientId={params.id}
           startVisitAction={startVisitWithPatient}
           scribeProcessing={searchParams.scribe === "processing"}
+        />
+      )}
+      {tab === "private_notes" && userCanSeePrivateNotes && (
+        // EMR-588 — Confidential clinician-only notes. Section-gated on
+        // canViewSection(notes) so back-office without notes.read
+        // (already redirected by the CLINICAL_TABS guard) and patients
+        // (already on a different surface entirely) can never reach
+        // this render path. Authoring requires notes.edit, surfaced
+        // here as canAuthor for the client component.
+        <PrivateNotesTab
+          patientId={params.id}
+          notes={privateNotes}
+          canAuthor={canEditSection(user, "notes")}
+          patientFirstName={patient.firstName}
         />
       )}
       {tab === "memory" && (
