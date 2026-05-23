@@ -20,6 +20,8 @@ import { formatDate, formatRelative } from "@/lib/utils/format";
 import { applyFreezeTokenAction } from "@/app/(patient)/portal/apply-freeze-action";
 import { withTimeout } from "@/lib/utils/with-timeout";
 import { PWASyncNextVisit, PWASyncTasks, PWASyncStreak } from "@/components/portal/pwa-sync";
+import { FadeInWidget } from "@/components/ui/fade-in-widget";
+
 
 
 const PATIENT_QUERY_TIMEOUT_MS = 5_000;
@@ -151,7 +153,8 @@ export async function HeroGreetingWidget({ userId }: { userId: string }) {
   const hasCheckedInToday = patient.dailyStreak?.lastCheckInDate === todayStr;
 
   return (
-    <section className="relative overflow-hidden rounded-2xl md:rounded-3xl liquid-glass-strong mb-6 md:mb-8">
+    <FadeInWidget>
+      <section className="relative overflow-hidden rounded-2xl md:rounded-3xl liquid-glass-strong mb-6 md:mb-8">
       <PWASyncStreak streak={patient.dailyStreak} />
       <div className="relative px-6 sm:px-8 md:px-12 py-8 md:py-12 max-w-2xl">
         <div className="flex items-center gap-4 mb-3">
@@ -192,6 +195,7 @@ export async function HeroGreetingWidget({ userId }: { userId: string }) {
         </div>
       </div>
     </section>
+  </FadeInWidget>
   );
 }
 
@@ -238,7 +242,8 @@ export async function SparklinesWidget({ userId }: { userId: string }) {
   const latestSleep = latestMetric.sleep;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 md:mb-8">
+    <FadeInWidget>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 md:mb-8">
       <MetricTile label="Pain" accent="forest" value={latestPain !== undefined ? latestPain.toFixed(1) : "—"} hint="0-10 scale" />
       <MetricTile label="Sleep" accent="amber" value={latestSleep !== undefined ? latestSleep.toFixed(1) : "—"} hint="0-10 scale" />
       <div className="bg-surface-raised border border-border rounded-xl p-4 shadow-sm">
@@ -249,7 +254,8 @@ export async function SparklinesWidget({ userId }: { userId: string }) {
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">Sleep trend</p>
         <Sparkline data={sleepSeries.length > 1 ? sleepSeries : [5, 5, 6, 6, 7, 7]} width={180} height={44} />
       </div>
-    </div>
+      </div>
+    </FadeInWidget>
   );
 }
 
@@ -310,7 +316,8 @@ export async function RhythmsWidget({ userId }: { userId: string }) {
   });
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
+    <FadeInWidget>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5 mb-6 md:mb-8">
       {/* Health Rings */}
       <div className="md:col-span-3 h-full">
         <Card tone="glass" className="h-full text-center">
@@ -380,7 +387,8 @@ export async function RhythmsWidget({ userId }: { userId: string }) {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </FadeInWidget>
   );
 }
 
@@ -440,7 +448,8 @@ export async function CannabisNextVisitMoodWidget({ userId }: { userId: string }
   const latestMood = latestMetric.mood;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
+    <FadeInWidget>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
       <PWASyncNextVisit visit={nextVisit} />
       {/* Cannabis Module */}
       <Card tone="glass">
@@ -580,7 +589,8 @@ export async function CannabisNextVisitMoodWidget({ userId }: { userId: string }
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </FadeInWidget>
   );
 }
 
@@ -627,63 +637,65 @@ export async function PlantTasksWidget({ userId }: { userId: string }) {
       );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
-      <PWASyncTasks tasks={patient.tasks} />
-      {/* Plant companion */}
-      <Link href="/portal/garden" className="block min-h-[44px]">
-        <Card tone="glass" className="card-hover h-full">
-          <CardContent className="flex items-center gap-5 py-5">
-            <div className="shrink-0">
-              <HealthPlant health={plantHealth} size="sm" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-1">
-                Your plant
-              </p>
-              <p className="font-display text-base text-text tracking-tight">
-                {STAGE_LABELS[plantHealth.stage]}
-              </p>
-              <p className="text-xs text-text-muted mt-1 leading-relaxed line-clamp-2">
-                {plantHealth.score >= 71
-                  ? "Thriving — you\u2019ve been consistent."
-                  : plantHealth.score >= 40
-                    ? "Growing nicely. A few more check-ins would help."
-                    : "Needs love. Try logging today."}
-              </p>
-            </div>
+    <FadeInWidget>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 mb-6 md:mb-8">
+        <PWASyncTasks tasks={patient.tasks} />
+        {/* Plant companion */}
+        <Link href="/portal/garden" className="block min-h-[44px]">
+          <Card tone="glass" className="card-hover h-full">
+            <CardContent className="flex items-center gap-5 py-5">
+              <div className="shrink-0">
+                <HealthPlant health={plantHealth} size="sm" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-1">
+                  Your plant
+                </p>
+                <p className="font-display text-base text-text tracking-tight">
+                  {STAGE_LABELS[plantHealth.stage]}
+                </p>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed line-clamp-2">
+                  {plantHealth.score >= 71
+                    ? "Thriving — you\u2019ve been consistent."
+                    : plantHealth.score >= 40
+                      ? "Growing nicely. A few more check-ins would help."
+                      : "Needs love. Try logging today."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Tasks */}
+        <Card className="md:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Your next steps</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {patient.tasks.length === 0 ? (
+              <p className="text-sm text-text-muted py-2">You&apos;re all caught up.</p>
+            ) : (
+              <ul className="divide-y divide-border/70 -mx-4">
+                {patient.tasks.slice(0, 3).map((task: any) => (
+                  <li key={task.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                    <div className="flex gap-2 min-w-0">
+                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-text">{task.title}</p>
+                        {task.dueAt && (
+                          <p className="text-xs text-text-subtle mt-0.5">Due {formatDate(task.dueAt)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Button size="sm" variant="secondary">Open</Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
-      </Link>
-
-      {/* Tasks */}
-      <Card className="md:col-span-2">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Your next steps</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {patient.tasks.length === 0 ? (
-            <p className="text-sm text-text-muted py-2">You&apos;re all caught up.</p>
-          ) : (
-            <ul className="divide-y divide-border/70 -mx-4">
-              {patient.tasks.slice(0, 3).map((task: any) => (
-                <li key={task.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                  <div className="flex gap-2 min-w-0">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-text">{task.title}</p>
-                      {task.dueAt && (
-                        <p className="text-xs text-text-subtle mt-0.5">Due {formatDate(task.dueAt)}</p>
-                      )}
-                    </div>
-                  </div>
-                  <Button size="sm" variant="secondary">Open</Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      </div>
+    </FadeInWidget>
   );
 }
 
@@ -710,7 +722,8 @@ export async function BadgeShowcaseWidget({ userId }: { userId: string }) {
   if (!patient) return null;
 
   return (
-    <div className="mt-8">
+    <FadeInWidget>
+      <div className="mt-8">
       <BadgeShowcase 
         badges={
           patient.patientBadges?.map((pb: any) => ({
@@ -722,7 +735,8 @@ export async function BadgeShowcaseWidget({ userId }: { userId: string }) {
           })) || []
         } 
       />
-    </div>
+      </div>
+    </FadeInWidget>
   );
 }
 
