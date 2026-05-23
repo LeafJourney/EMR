@@ -26,7 +26,19 @@ export default async function ClinicianLayout({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
+
+  // EMR-786 — clinic surface is shared by all clinic-floor roles
+  // (clinicians, mid-levels, back office, front office) and practice
+  // owners. Within the surface, `src/lib/rbac/permissions.ts` decides
+  // who can see / edit each chart section.
+  const CLINIC_FLOOR_ROLES: Array<typeof user.roles[number]> = [
+    "clinician",
+    "midlevel",
+    "back_office",
+    "front_office",
+    "practice_owner",
+  ];
+  if (!user.roles.some((r) => CLINIC_FLOOR_ROLES.includes(r))) {
     redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
   }
 

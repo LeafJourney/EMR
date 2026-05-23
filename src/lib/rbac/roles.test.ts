@@ -49,6 +49,9 @@ describe("primaryRole", () => {
     for (const role of [
       "patient",
       "clinician",
+      "midlevel",
+      "back_office",
+      "front_office",
       "operator",
       "practice_owner",
       "practice_admin",

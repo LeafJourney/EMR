@@ -26,6 +26,10 @@ import { logger } from "@/lib/observability/log";
 import { NewVisitModal } from "@/components/clinic/NewVisitModal";
 import { RelaxPopup } from "@/components/clinic/RelaxPopup";
 import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
+import {
+  categorizeQueueItem,
+  URGENCY_TAG_CONFIG,
+} from "@/lib/domain/queue-urgency";
 
 // EMR-205: guard the mission-control fan-out so a single hung query
 // can never wedge the Suspense boundary and strand clinicians on the
@@ -842,12 +846,27 @@ export default async function ClinicHomePage() {
           </Card>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
-            {todaysEncounters.map((enc: any) => {
+            {(todaysEncounters as any[])
+              .map((enc: any) => ({
+                enc,
+                urgency: categorizeQueueItem({
+                  kind: "visit",
+                  reason: enc.reason ?? enc.patient.presentingConcerns ?? null,
+                  observations: (enc.patient.observations ?? []).map((o: any) => ({
+                    severity: o.severity,
+                    summary: o.summary ?? null,
+                  })),
+                  documents: enc.patient.documents ?? [],
+                  scheduledFor: enc.scheduledFor ?? null,
+                }),
+              }))
+              // Most urgent first; on ties keep ascending scheduled time
+              // so morning slots still lead within the same tier.
+              .sort((a, b) => b.urgency.score - a.urgency.score)
+              .map(({ enc, urgency }) => {
               const readiness = enc.patient.chartSummary?.completenessScore ?? null;
               const status = readinessStatus(readiness);
-              const isUrgent = enc.patient.observations?.some(
-                (o: any) => o.severity === "urgent" || o.severity === "concern"
-              );
+              const tag = URGENCY_TAG_CONFIG[urgency.urgency];
               const labsCount = enc.patient.documents?.filter((d: any) => d.kind === "lab").length ?? 0;
               const consultsCount = enc.patient.documents?.filter((d: any) => d.kind === "letter").length ?? 0;
               const imagesCount = enc.patient.documents?.filter((d: any) => d.kind === "image").length ?? 0;
@@ -871,15 +890,13 @@ export default async function ClinicHomePage() {
                             <p className="text-sm font-medium text-text truncate group-hover:text-accent transition-colors">
                               {enc.patient.firstName} {enc.patient.lastName}
                             </p>
-                            {isUrgent ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-danger/10 text-danger text-[9px] font-bold uppercase tracking-wider animate-pulse shrink-0">
-                                AI: Urgent
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-surface-muted text-text-subtle text-[9px] font-medium uppercase tracking-wider shrink-0">
-                                Regular
-                              </span>
-                            )}
+                            <span
+                              title={urgency.reason}
+                              aria-label={`${tag.label}: ${urgency.reason}`}
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${tag.className}`}
+                            >
+                              {tag.label}
+                            </span>
                           </div>
                           <p className="text-xs text-text-subtle tabular-nums mt-0.5">
                             {enc.scheduledFor?.toLocaleTimeString("en-US", {
@@ -894,6 +911,16 @@ export default async function ClinicHomePage() {
                       {(enc.reason || enc.patient.presentingConcerns) && (
                         <p className="text-xs text-text-muted mt-2 line-clamp-1">
                           {enc.reason ?? enc.patient.presentingConcerns}
+                        </p>
+                      )}
+
+                      {/* AI urgency rationale — hidden for low to keep the rail calm. */}
+                      {urgency.urgency !== "low" && (
+                        <p
+                          className="text-[10px] text-text-subtle italic mt-1 line-clamp-1"
+                          title={urgency.reason}
+                        >
+                          Why: {urgency.reason}
                         </p>
                       )}
 

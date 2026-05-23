@@ -30,6 +30,17 @@ datasource db {
 enum Role {
   patient
   clinician
+  // EMR-786 — Mid-level providers (NP, PA, etc.). Can chart and prescribe
+  // within scope, but certain sensitive sections may require a clinician
+  // co-signature before they leave the draft state.
+  midlevel
+  // EMR-786 — Back office: billers, coders, MAs. Read-only on clinical
+  // notes; full edit on billing/coding entities.
+  back_office
+  // EMR-786 — Front office: schedulers, receptionists. Demographics +
+  // billing only. Medical notes / clinical history / sensitive diagnoses
+  // are denied or masked.
+  front_office
   operator
   practice_owner
   practice_admin
@@ -285,6 +296,15 @@ model Patient {
   contraindications      String[]            @default([]) // e.g. ["MAOIs", "Blood thinners"]
   qualificationStatus    QualificationStatus @default(unknown)
   qualificationExpiresAt DateTime?
+  // EMR-786 — Chart privacy. When chartRestricted=true the chart is
+  // "doctor-only" and only User IDs in restrictedProviderIds may view
+  // clinical sections (demographics + billing still visible to office
+  // roles). Used to honor patient privacy preferences (celebrity charts,
+  // domestic violence, behavioral health, etc.).
+  chartRestricted        Boolean             @default(false)
+  restrictedProviderIds  String[]            @default([])
+  chartRestrictedReason  String?
+  chartRestrictedAt      DateTime?
   // Soft delete
   deletedAt              DateTime?
   createdAt              DateTime            @default(now())
@@ -540,6 +560,10 @@ model Encounter {
 enum NoteStatus {
   draft
   needs_review
+  // EMR-786 — Mid-level providers cannot finalize sensitive notes
+  // on their own; the workflow flips the note to `pending_cosign`
+  // and the supervising clinician picks it up on the sign-off queue.
+  pending_cosign
   finalized
   amended
 }

@@ -1,18 +1,21 @@
-// EMR-033 — Provider-to-Provider Secure Portal (real DB-backed view).
+// EMR-033 / EMR-666 — Provider-to-Provider Secure Portal.
 //
-// Replaces the prior demo. Threads are scoped to the caller's
+// iMessage-style two-pane layout: left = directory-searchable list of
+// peer providers (with any existing thread surfaced inline); right =
+// open thread or compose. Threads are scoped to the caller's
 // organization; bodies are decrypted on the server and shipped to the
-// client component, which never sees ciphertext. A clinician can also
-// start a brand-new thread from this page.
+// client component, which never sees ciphertext.
 
-import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
-import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { decryptMessageBodySafe } from "@/lib/communications/message-crypto";
-import { ProviderInboxView, type DecryptedThread } from "./view";
+import {
+  ProviderInboxView,
+  type DecryptedThread,
+  type DirectoryProvider,
+} from "./view";
 
 export const metadata = { title: "Provider Messages" };
 
@@ -91,7 +94,7 @@ export default async function ProviderMessagesPage() {
     };
   });
 
-  // Co-providers in same org for the "new thread" form.
+  // Co-providers in same org for the directory + composer.
   const providers = await prisma.provider.findMany({
     where: {
       organizationId: orgId,
@@ -104,36 +107,33 @@ export default async function ProviderMessagesPage() {
     orderBy: { createdAt: "asc" },
   });
 
-  const recipientOptions = providers.map((p) => ({
+  const directory: DirectoryProvider[] = providers.map((p) => ({
     userId: p.user.id,
-    name: `${p.user.firstName} ${p.user.lastName}`,
-    title: p.title ?? null,
+    firstName: p.user.firstName,
+    lastName: p.user.lastName,
+    title: p.title,
+    specialties: p.specialties,
+    practiceAddress: p.practiceAddress,
+    hospitalAffiliations: p.hospitalAffiliations,
   }));
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <Eyebrow className="mb-2">Secure provider channel</Eyebrow>
-          <h1 className="font-display text-2xl text-text tracking-tight">
-            Provider-to-Provider Messaging
-          </h1>
-          <p className="text-sm text-text-muted mt-1">
-            HIPAA-compliant internal communication between providers about
-            patient care. Messages are encrypted at rest.
-          </p>
-        </div>
-        <Link href="/clinic/providers">
-          <Button variant="secondary" size="sm">
-            Provider directory
-          </Button>
-        </Link>
+      <div className="mb-6">
+        <Eyebrow className="mb-2">Secure provider channel</Eyebrow>
+        <h1 className="font-display text-2xl text-text tracking-tight">
+          Provider-to-Provider Messaging
+        </h1>
+        <p className="text-sm text-text-muted mt-1">
+          View and contact providers in your organization. Messages are
+          encrypted at rest and visible only to participants.
+        </p>
       </div>
 
       <ProviderInboxView
         threads={decrypted}
         currentUserId={user.id}
-        recipientOptions={recipientOptions}
+        directory={directory}
       />
     </PageShell>
   );
