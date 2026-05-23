@@ -285,6 +285,18 @@ routes:
     auth: required
     owner: scribe
 
+  patients/[id]/export/lfj:
+    methods: [GET]
+    auth: required
+    owner: clinical-safety
+    notes: "EMR-785. Download chart as .lfj layout. Gated via requireUser and assertChartAccess."
+
+  patients/[id]/export/pdf:
+    methods: [GET]
+    auth: required
+    owner: clinical-safety
+    notes: "EMR-785. Download chart as PDF layout. Gated via requireUser and assertChartAccess."
+
   # ── Leafmart commerce ─────────────────────────────────────
   leafmart/me:
     methods: [GET]
