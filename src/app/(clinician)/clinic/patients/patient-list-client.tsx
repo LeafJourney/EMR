@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  ContextMenuHint,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
+import { useRouter } from "next/navigation";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -212,6 +219,95 @@ function ChevronRight() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Patient row — wraps the existing <Link> in a right-click menu so   */
+/*  every roster row gets Monday/Linear-tier quick actions without     */
+/*  having to chase the kebab.                                         */
+/* ------------------------------------------------------------------ */
+
+function PatientRosterRow({
+  patient,
+  children,
+}: {
+  patient: PatientRow;
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  const items: ContextMenuItem[] = [
+    {
+      label: "Open chart",
+      icon: ContextMenuIcons.Open,
+      onSelect: (c) => {
+        router.push(`/clinic/patients/${patient.id}`);
+        c();
+      },
+      kbd: "↵",
+    },
+    {
+      label: "Compose message",
+      icon: ContextMenuIcons.Message,
+      onSelect: (c) => {
+        router.push(`/clinic/messages?compose=1&patient=${patient.id}`);
+        c();
+      },
+    },
+    {
+      label: "Schedule visit",
+      icon: ContextMenuIcons.Calendar,
+      onSelect: (c) => {
+        router.push(`/clinic/schedule?patient=${patient.id}`);
+        c();
+      },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Copy patient ID",
+      icon: ContextMenuIcons.Copy,
+      onSelect: (c) => {
+        try {
+          void navigator.clipboard?.writeText(patient.id);
+        } catch {
+          /* ignore */
+        }
+        c();
+      },
+      kbd: "⌘ C",
+    },
+    { divider: true, label: "" },
+    {
+      label: "Archive patient",
+      icon: ContextMenuIcons.Archive,
+      danger: true,
+      onSelect: (c) => {
+        if (
+          typeof window !== "undefined" &&
+          window.confirm(
+            `Archive ${patient.firstName} ${patient.lastName}? They will be hidden from the roster but their chart will be preserved.`,
+          )
+        ) {
+          // Mutation hook to be wired into the existing actions.ts —
+          // for now we simply navigate to the chart so the clinician
+          // can complete archival from the canonical surface.
+          router.push(`/clinic/patients/${patient.id}?archive=1`);
+        }
+        c();
+      },
+    },
+  ];
+  const ctx = useContextMenu(() => items);
+  return (
+    <div
+      onContextMenu={ctx.triggerProps.onContextMenu}
+      onTouchStart={ctx.triggerProps.onTouchStart}
+      onTouchEnd={ctx.triggerProps.onTouchEnd}
+      onTouchMove={ctx.triggerProps.onTouchMove}
+    >
+      {children}
+      {ctx.menu}
+    </div>
   );
 }
 
@@ -459,6 +555,7 @@ export function PatientListClient({
               />
             </div>
           ) : (
+            <ContextMenuHint>
             <motion.ul
               className="divide-y divide-border/60"
               // Replay stagger when the active filter/search changes.
@@ -467,6 +564,7 @@ export function PatientListClient({
             >
               {filtered.map((p) => (
                 <motion.li key={p.id} variants={childVariants}>
+                  <PatientRosterRow patient={p}>
                   <Link
                     href={`/clinic/patients/${p.id}`}
                     className="card-hover flex items-center gap-4 px-5 py-4 hover:bg-surface-muted/50 transition-colors duration-150 group"
@@ -523,9 +621,11 @@ export function PatientListClient({
                       <ChevronRight />
                     </div>
                   </Link>
+                  </PatientRosterRow>
                 </motion.li>
               ))}
             </motion.ul>
+            </ContextMenuHint>
           )}
         </CardContent>
       </Card>

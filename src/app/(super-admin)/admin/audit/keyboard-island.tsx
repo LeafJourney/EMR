@@ -16,6 +16,11 @@
 // row below each data row) so toggling never round-trips.
 
 import * as React from "react";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 export interface AuditRowView {
   id: string;
@@ -126,94 +131,14 @@ export function AuditTableIsland({
             const isSelected = idx === selected;
             const isExpanded = !!expanded[row.id];
             return (
-              <React.Fragment key={row.id}>
-                <tr
-                  className={
-                    isSelected
-                      ? "bg-accent/30 outline outline-1 outline-accent"
-                      : "hover:bg-muted/30"
-                  }
-                  onMouseEnter={() => setSelected(idx)}
-                  onClick={() => toggleExpanded(row.id)}
-                >
-                  <td className="px-3 py-2 align-top" title={row.at}>
-                    <a
-                      href={row.detailHref}
-                      className="text-accent underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {row.atRelative}
-                    </a>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.actorHref ? (
-                      <a
-                        href={row.actorHref}
-                        className="text-accent underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {row.actorLabel}
-                      </a>
-                    ) : (
-                      row.actorLabel
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top font-mono text-xs">
-                    {row.action}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.subjectHref ? (
-                      <a
-                        href={row.subjectHref}
-                        className="text-accent underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {row.subjectLabel}
-                      </a>
-                    ) : (
-                      row.subjectLabel
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.targetHref ? (
-                      <a
-                        href={row.targetHref}
-                        className="text-accent underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {row.targetLabel}
-                      </a>
-                    ) : (
-                      row.targetLabel
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <button
-                      type="button"
-                      className="text-left text-xs text-text-muted"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleExpanded(row.id);
-                      }}
-                      aria-expanded={isExpanded}
-                    >
-                      {isExpanded ? "▾ Collapse" : "▸ "}{" "}
-                      {!isExpanded && (
-                        <span className="font-mono">{row.metadataPreview || "—"}</span>
-                      )}
-                    </button>
-                  </td>
-                </tr>
-                {isExpanded && (
-                  <tr className="bg-muted/20">
-                    <td colSpan={6} className="px-3 py-3">
-                      <pre className="whitespace-pre-wrap break-all text-xs font-mono text-text-muted">
-                        {row.metadataFullJson}
-                      </pre>
-                    </td>
-                  </tr>
-                )}
-              </React.Fragment>
+              <AuditTableRow
+                key={row.id}
+                row={row}
+                isSelected={isSelected}
+                isExpanded={isExpanded}
+                onSelect={() => setSelected(idx)}
+                onToggleExpand={() => toggleExpanded(row.id)}
+              />
             );
           })}
         </tbody>
@@ -221,8 +146,183 @@ export function AuditTableIsland({
       <div className="px-3 py-2 text-xs text-text-muted border-t border-border">
         Navigate with j/k (or arrow keys); Enter expands the focused row;
         click the timestamp to open the row&apos;s detail page;
-        &quot;/&quot; jumps to the action filter.
+        &quot;/&quot; jumps to the action filter. Right-click any row for
+        quick actions (copy JSON, filter by actor/action).
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AuditTableRow — extracted into its own component so each row can host a
+// right-click context menu (Monday/Linear-tier). The `useContextMenu`
+// hook can't be called inside `.map(...)`, so we pay one mount per row.
+// ---------------------------------------------------------------------------
+
+function buildAuditQS(updates: Record<string, string | null>) {
+  // Read the current URL's params and merge, dropping anything set to
+  // null. Falls back to the empty string when not running in a browser
+  // (the menu is only ever invoked client-side anyway).
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  for (const [k, v] of Object.entries(updates)) {
+    if (v == null) params.delete(k);
+    else params.set(k, v);
+  }
+  // Cursor pagination resets when filters change — drop the cursor so
+  // the operator lands on page 1 of the new filter set.
+  params.delete("cursor");
+  const qs = params.toString();
+  return qs ? `?${qs}` : "?";
+}
+
+function AuditTableRow({
+  row,
+  isSelected,
+  isExpanded,
+  onSelect,
+  onToggleExpand,
+}: {
+  row: AuditRowView;
+  isSelected: boolean;
+  isExpanded: boolean;
+  onSelect: () => void;
+  onToggleExpand: () => void;
+}) {
+  const items: ContextMenuItem[] = [
+    {
+      label: "Open detail",
+      icon: ContextMenuIcons.Open,
+      onSelect: (c) => {
+        window.location.assign(row.detailHref);
+        c();
+      },
+      kbd: "↵",
+    },
+    {
+      label: "Copy row JSON",
+      icon: ContextMenuIcons.Copy,
+      onSelect: (c) => {
+        try {
+          void navigator.clipboard?.writeText(row.metadataFullJson);
+        } catch {
+          /* ignore */
+        }
+        c();
+      },
+      kbd: "⌘ C",
+    },
+    { divider: true, label: "" },
+    {
+      label: `Filter by actor (${row.actorLabel})`,
+      icon: ContextMenuIcons.User,
+      onSelect: (c) => {
+        window.location.assign(buildAuditQS({ actor: row.actorLabel }));
+        c();
+      },
+    },
+    {
+      label: `Filter by action (${row.action})`,
+      icon: ContextMenuIcons.Filter,
+      onSelect: (c) => {
+        window.location.assign(buildAuditQS({ action: row.action }));
+        c();
+      },
+    },
+  ];
+  const ctx = useContextMenu(() => items);
+
+  return (
+    <React.Fragment>
+      <tr
+        className={
+          isSelected
+            ? "bg-accent/30 outline outline-1 outline-accent"
+            : "hover:bg-muted/30"
+        }
+        onMouseEnter={onSelect}
+        onClick={onToggleExpand}
+        onContextMenu={ctx.triggerProps.onContextMenu}
+        onTouchStart={ctx.triggerProps.onTouchStart}
+        onTouchEnd={ctx.triggerProps.onTouchEnd}
+        onTouchMove={ctx.triggerProps.onTouchMove}
+      >
+        <td className="px-3 py-2 align-top" title={row.at}>
+          <a
+            href={row.detailHref}
+            className="text-accent underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.atRelative}
+          </a>
+        </td>
+        <td className="px-3 py-2 align-top">
+          {row.actorHref ? (
+            <a
+              href={row.actorHref}
+              className="text-accent underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.actorLabel}
+            </a>
+          ) : (
+            row.actorLabel
+          )}
+        </td>
+        <td className="px-3 py-2 align-top font-mono text-xs">{row.action}</td>
+        <td className="px-3 py-2 align-top">
+          {row.subjectHref ? (
+            <a
+              href={row.subjectHref}
+              className="text-accent underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.subjectLabel}
+            </a>
+          ) : (
+            row.subjectLabel
+          )}
+        </td>
+        <td className="px-3 py-2 align-top">
+          {row.targetHref ? (
+            <a
+              href={row.targetHref}
+              className="text-accent underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.targetLabel}
+            </a>
+          ) : (
+            row.targetLabel
+          )}
+        </td>
+        <td className="px-3 py-2 align-top">
+          <button
+            type="button"
+            className="text-left text-xs text-text-muted"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? "▾ Collapse" : "▸ "}{" "}
+            {!isExpanded && (
+              <span className="font-mono">{row.metadataPreview || "—"}</span>
+            )}
+          </button>
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr className="bg-muted/20">
+          <td colSpan={6} className="px-3 py-3">
+            <pre className="whitespace-pre-wrap break-all text-xs font-mono text-text-muted">
+              {row.metadataFullJson}
+            </pre>
+          </td>
+        </tr>
+      )}
+      {ctx.menu}
+    </React.Fragment>
   );
 }

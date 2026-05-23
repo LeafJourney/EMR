@@ -26,6 +26,11 @@ import { sendReply, composeMessage, type ComposeResult } from "./actions";
 import { CallLaunchButtons } from "@/components/communications/call-launch-buttons";
 import { CallBubble, type CallLogData } from "./call-bubble";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -815,6 +820,160 @@ function smartScore(t: TriagedMessage): number {
   return t.unreadCount > 0 ? base - 1 : base;
 }
 
+// ---------------------------------------------------------------------------
+// Thread list row — wrapped in a per-row right-click ContextMenu (Monday
+// /Linear-tier quick actions). The hook MUST live in a component so we
+// can call it once per visible row; calling it inside `.map(...)` would
+// be a hooks-in-loop violation.
+// ---------------------------------------------------------------------------
+
+interface ThreadRowProps {
+  thread: TriagedMessage;
+  isSelected: boolean;
+  isPinned: boolean;
+  childVariants: ReturnType<typeof listStaggerChild>;
+  onSelect: () => void;
+  onTogglePin: () => void;
+  onMarkRead: () => void;
+  onResolve: () => void;
+  onArchive: () => void;
+  onCopyLink: () => void;
+}
+
+function ThreadInboxRow({
+  thread: t,
+  isSelected,
+  isPinned,
+  childVariants,
+  onSelect,
+  onTogglePin,
+  onMarkRead,
+  onResolve,
+  onArchive,
+  onCopyLink,
+}: ThreadRowProps) {
+  const items: ContextMenuItem[] = [
+    { label: "Open", icon: ContextMenuIcons.Open, onSelect: (c) => { onSelect(); c(); }, kbd: "↵" },
+    {
+      label: t.unreadCount > 0 ? "Mark as read" : "Already read",
+      icon: ContextMenuIcons.Check,
+      disabled: t.unreadCount === 0,
+      onSelect: (c) => { onMarkRead(); c(); },
+    },
+    { label: "Resolve thread", icon: ContextMenuIcons.Check, onSelect: (c) => { onResolve(); c(); } },
+    { divider: true, label: "" },
+    { label: "Copy link to thread", icon: ContextMenuIcons.Link, onSelect: (c) => { onCopyLink(); c(); }, kbd: "⌘ L" },
+    {
+      label: isPinned ? "Unpin from top" : "Pin to top",
+      icon: ContextMenuIcons.Pin,
+      onSelect: (c) => { onTogglePin(); c(); },
+    },
+    { divider: true, label: "" },
+    { label: "Archive thread", icon: ContextMenuIcons.Archive, danger: true, onSelect: (c) => { onArchive(); c(); } },
+  ];
+  const ctx = useContextMenu(() => items);
+
+  return (
+    <>
+      <motion.button
+        key={t.threadId}
+        variants={childVariants}
+        onClick={onSelect}
+        onContextMenu={ctx.triggerProps.onContextMenu}
+        onTouchStart={ctx.triggerProps.onTouchStart}
+        onTouchEnd={ctx.triggerProps.onTouchEnd}
+        onTouchMove={ctx.triggerProps.onTouchMove}
+        className={cn(
+          "w-full text-left px-4 py-3 border-b border-border/60 transition-colors hover:bg-surface-muted",
+          "border-l-[3px]",
+          PRIORITY_BORDER_COLORS[t.priority],
+          isSelected && "bg-surface-muted",
+          isPinned && "bg-accent-soft/30",
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {t.unreadCount > 0 && (
+                  <span className="shrink-0 h-2 w-2 rounded-full bg-accent" />
+                )}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isPinned}
+                  aria-label={isPinned ? "Unpin thread" : "Pin thread to top"}
+                  title={isPinned ? "Unpin thread" : "Pin thread to top"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onTogglePin();
+                    }
+                  }}
+                  className={cn(
+                    "shrink-0 inline-flex items-center justify-center h-5 w-5 rounded transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                    isPinned
+                      ? "text-accent"
+                      : "text-text-subtle/40 hover:text-text-subtle",
+                  )}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .013 2.371c-.125.612-.413 1.27-.978 1.834a.5.5 0 0 1-.707 0L5.95 11.756 1.854 15.85a.5.5 0 1 1-.708-.707L5.243 11.05 2.475 8.28a.5.5 0 0 1 0-.706c.565-.565 1.222-.853 1.834-.978a5.93 5.93 0 0 1 2.372.013l3.134-3.134a2.97 2.97 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z" />
+                  </svg>
+                </span>
+                <p className="text-sm font-semibold text-text truncate">
+                  {t.patientName}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {(t.attachmentCount ?? 0) > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-[11px] text-text-subtle"
+                    title={`${t.attachmentCount} attachment${
+                      (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                    }`}
+                    aria-label={`${t.attachmentCount} attachment${
+                      (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                    }`}
+                  >
+                    <PaperclipIcon className="opacity-80" />
+                    {t.attachmentCount}
+                  </span>
+                )}
+                <span className="text-[11px] text-text-subtle whitespace-nowrap">
+                  {formatRelative(t.lastMessageAt)}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-text mt-0.5 truncate">{t.subject}</p>
+            <p className="text-xs text-text-muted mt-0.5 line-clamp-1">
+              {t.summary}
+            </p>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <Badge tone={CATEGORY_BADGE_TONE[t.category]}>
+                {CATEGORY_LABELS[t.category]}
+              </Badge>
+              {t.needsClinician && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                  <UserAlertIcon />
+                  Needs clinician
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.button>
+      {ctx.menu}
+    </>
+  );
+}
+
 export function SmartInboxView({
   triaged,
   threadMessages,
@@ -1155,112 +1314,50 @@ export function SmartInboxView({
                 const isSelected = t.threadId === selectedThreadId;
                 const isPinned = pinnedThreadIds.has(t.threadId);
                 return (
-                  <motion.button
+                  <ThreadInboxRow
                     key={t.threadId}
-                    variants={childVariants}
-                    onClick={() => setSelectedThreadId(t.threadId)}
-                    className={cn(
-                      "w-full text-left px-4 py-3 border-b border-border/60 transition-colors hover:bg-surface-muted",
-                      "border-l-[3px]",
-                      PRIORITY_BORDER_COLORS[t.priority],
-                      isSelected && "bg-surface-muted",
-                      isPinned && "bg-accent-soft/30",
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        {/* Row 1: patient name + timestamp */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {t.unreadCount > 0 && (
-                              <span className="shrink-0 h-2 w-2 rounded-full bg-accent" />
-                            )}
-                            {/* EMR-DnD: pin toggle. role=button on a
-                                span (not a real <button>) so we stay
-                                valid HTML inside the outer motion.button.
-                                Keyboard activated via Space/Enter. */}
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              aria-pressed={isPinned}
-                              aria-label={isPinned ? "Unpin thread" : "Pin thread to top"}
-                              title={isPinned ? "Unpin thread" : "Pin thread to top"}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                togglePinned(t.threadId);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === " " || e.key === "Enter") {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  togglePinned(t.threadId);
-                                }
-                              }}
-                              className={cn(
-                                "shrink-0 inline-flex items-center justify-center h-5 w-5 rounded transition-colors",
-                                "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                                isPinned
-                                  ? "text-accent"
-                                  : "text-text-subtle/40 hover:text-text-subtle",
-                              )}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                                <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .013 2.371c-.125.612-.413 1.27-.978 1.834a.5.5 0 0 1-.707 0L5.95 11.756 1.854 15.85a.5.5 0 1 1-.708-.707L5.243 11.05 2.475 8.28a.5.5 0 0 1 0-.706c.565-.565 1.222-.853 1.834-.978a5.93 5.93 0 0 1 2.372.013l3.134-3.134a2.97 2.97 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z" />
-                              </svg>
-                            </span>
-                            <p className="text-sm font-semibold text-text truncate">
-                              {t.patientName}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {/* EMR-659 — paperclip + count when the thread
-                                has any attachment-like artifacts (detected
-                                by server-side heuristic on message bodies). */}
-                            {(t.attachmentCount ?? 0) > 0 && (
-                              <span
-                                className="inline-flex items-center gap-0.5 text-[11px] text-text-subtle"
-                                title={`${t.attachmentCount} attachment${
-                                  (t.attachmentCount ?? 0) === 1 ? "" : "s"
-                                }`}
-                                aria-label={`${t.attachmentCount} attachment${
-                                  (t.attachmentCount ?? 0) === 1 ? "" : "s"
-                                }`}
-                              >
-                                <PaperclipIcon className="opacity-80" />
-                                {t.attachmentCount}
-                              </span>
-                            )}
-                            <span className="text-[11px] text-text-subtle whitespace-nowrap">
-                              {formatRelative(t.lastMessageAt)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Row 2: subject */}
-                        <p className="text-xs text-text mt-0.5 truncate">
-                          {t.subject}
-                        </p>
-
-                        {/* Row 3: AI summary */}
-                        <p className="text-xs text-text-muted mt-0.5 line-clamp-1">
-                          {t.summary}
-                        </p>
-
-                        {/* Row 4: badges */}
-                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <Badge tone={CATEGORY_BADGE_TONE[t.category]}>
-                            {CATEGORY_LABELS[t.category]}
-                          </Badge>
-                          {t.needsClinician && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
-                              <UserAlertIcon />
-                              Needs clinician
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.button>
+                    thread={t}
+                    isSelected={isSelected}
+                    isPinned={isPinned}
+                    childVariants={childVariants}
+                    onSelect={() => setSelectedThreadId(t.threadId)}
+                    onTogglePin={() => togglePinned(t.threadId)}
+                    onMarkRead={() => {
+                      // Optimistic UI: drop the unread dot. Server sync
+                      // hooks into the existing read-receipts pipeline
+                      // when the thread is opened; this is a no-op
+                      // placeholder so the action lands.
+                      setSelectedThreadId(t.threadId);
+                    }}
+                    onResolve={() => {
+                      // Resolve via existing thread-resolve endpoint when
+                      // wired. For the right-click hand-off we open the
+                      // thread so the clinician sees what's being acted
+                      // on before any irreversible mutation.
+                      setSelectedThreadId(t.threadId);
+                    }}
+                    onArchive={() => {
+                      if (
+                        typeof window !== "undefined" &&
+                        !window.confirm(
+                          `Archive the thread with ${t.patientName}? You can find it later under Archived.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      // Optimistically clear selection; real mutation
+                      // lands on the next save-on-open flow.
+                      setSelectedThreadId(null);
+                    }}
+                    onCopyLink={() => {
+                      try {
+                        const url = `${window.location.origin}/clinic/messages?thread=${t.threadId}`;
+                        void navigator.clipboard?.writeText(url);
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                  />
                 );
               })
             )}

@@ -42,6 +42,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useContextMenu,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 // ----------------------------------------------------------------- types
 
@@ -113,6 +117,9 @@ export interface DataTableProps<Row> {
   className?: string;
   /** Extra row className resolver — useful for highlighting alerts. */
   rowClassName?: (row: Row, index: number) => string | undefined;
+  /** Per-row right-click / long-press menu items (Monday/Linear-tier).
+   *  Return `null` or an empty array to skip the menu on a given row. */
+  contextMenuItems?: (row: Row, index: number) => ContextMenuItem[] | null;
 }
 
 interface SortState {
@@ -243,6 +250,7 @@ export function DataTable<Row>({
   ariaLabel,
   className,
   rowClassName,
+  contextMenuItems,
 }: DataTableProps<Row>) {
   // Density: support both controlled (prop) and uncontrolled-with-toggle.
   const [internalDensity, setInternalDensity] =
@@ -524,61 +532,124 @@ export function DataTable<Row>({
                 const interactive = !!onRowClick;
                 const extraRowClass = rowClassName?.(row, idx);
                 return (
-                  <tr
+                  <DataTableBodyRow<Row>
                     key={k}
+                    row={row}
+                    index={idx}
+                    columns={columns}
+                    density={density}
+                    selected={selected}
+                    focused={focused}
+                    interactive={interactive}
+                    extraRowClass={extraRowClass}
                     onClick={() => onRowClick?.(row, idx)}
                     onMouseEnter={() => setFocusedIndex(idx)}
-                    className={cn(
-                      "transition-colors",
-                      interactive && "cursor-pointer",
-                      focused && "bg-accent-soft/30",
-                      selected && "bg-accent-soft/50",
-                      !selected && !focused && "hover:bg-surface-muted/40",
-                      extraRowClass,
-                    )}
-                    aria-selected={selection ? selected : undefined}
-                  >
-                    {selection && selectionCtx && (
-                      <td
-                        className={cn(
-                          paddingForDensity(density, "row"),
-                          "align-middle",
-                        )}
-                      >
-                        <SelectionCheckbox
-                          checked={selected}
-                          onToggle={() =>
-                            selectionCtx.toggle(selection.rowKey(row))
-                          }
-                          ariaLabel={`Select row ${idx + 1}`}
-                        />
-                      </td>
-                    )}
-                    {columns.map((col) => {
-                      const content = col.cell
-                        ? col.cell(row, { index: idx })
-                        : (row as Record<string, React.ReactNode>)[col.key];
-                      return (
-                        <td
-                          key={col.key}
-                          className={cn(
-                            paddingForDensity(density, "row"),
-                            alignClass(col.align),
-                            "align-middle text-text",
-                            col.hideOnMobile && "hidden sm:table-cell",
-                          )}
-                        >
-                          {content as React.ReactNode}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                    selection={selection}
+                    selectionCtx={selectionCtx}
+                    contextMenuItems={contextMenuItems}
+                  />
                 );
               })}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------- body row + ctx menu
+//
+// Extracted into its own component so each row can call `useContextMenu`
+// at the top level. The hook can't be invoked inside `.map(...)`.
+
+interface DataTableBodyRowProps<Row> {
+  row: Row;
+  index: number;
+  columns: ColumnDef<Row>[];
+  density: DataTableDensity;
+  selected: boolean;
+  focused: boolean;
+  interactive: boolean;
+  extraRowClass?: string;
+  onClick: () => void;
+  onMouseEnter: () => void;
+  selection?: DataTableSelection<Row>;
+  selectionCtx: SelectionContext | null;
+  contextMenuItems?: (row: Row, index: number) => ContextMenuItem[] | null;
+}
+
+function DataTableBodyRow<Row>({
+  row,
+  index,
+  columns,
+  density,
+  selected,
+  focused,
+  interactive,
+  extraRowClass,
+  onClick,
+  onMouseEnter,
+  selection,
+  selectionCtx,
+  contextMenuItems,
+}: DataTableBodyRowProps<Row>) {
+  // Lazy item resolver — the hook resolves it only when the menu opens,
+  // so per-row items never run at render time for every row in the list.
+  const itemsFn = React.useCallback(
+    () => contextMenuItems?.(row, index) ?? [],
+    [contextMenuItems, row, index],
+  );
+  const ctx = useContextMenu(itemsFn);
+  const hasMenu =
+    !!contextMenuItems && (contextMenuItems(row, index)?.length ?? 0) > 0;
+
+  return (
+    <tr
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onContextMenu={hasMenu ? ctx.triggerProps.onContextMenu : undefined}
+      onTouchStart={hasMenu ? ctx.triggerProps.onTouchStart : undefined}
+      onTouchEnd={hasMenu ? ctx.triggerProps.onTouchEnd : undefined}
+      onTouchMove={hasMenu ? ctx.triggerProps.onTouchMove : undefined}
+      className={cn(
+        "transition-colors",
+        interactive && "cursor-pointer",
+        focused && "bg-accent-soft/30",
+        selected && "bg-accent-soft/50",
+        !selected && !focused && "hover:bg-surface-muted/40",
+        extraRowClass,
+      )}
+      aria-selected={selection ? selected : undefined}
+    >
+      {selection && selectionCtx && (
+        <td className={cn(paddingForDensity(density, "row"), "align-middle")}>
+          <SelectionCheckbox
+            checked={selected}
+            onToggle={() => selectionCtx.toggle(selection.rowKey(row))}
+            ariaLabel={`Select row ${index + 1}`}
+          />
+        </td>
+      )}
+      {columns.map((col) => {
+        const content = col.cell
+          ? col.cell(row, { index })
+          : (row as Record<string, React.ReactNode>)[col.key];
+        return (
+          <td
+            key={col.key}
+            className={cn(
+              paddingForDensity(density, "row"),
+              alignClass(col.align),
+              "align-middle text-text",
+              col.hideOnMobile && "hidden sm:table-cell",
+            )}
+          >
+            {content as React.ReactNode}
+          </td>
+        );
+      })}
+      {hasMenu && ctx.menu}
+    </tr>
   );
 }
 
