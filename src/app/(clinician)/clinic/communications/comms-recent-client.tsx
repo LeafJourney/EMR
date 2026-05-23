@@ -161,7 +161,11 @@ export function CommsRecentClient({
           </CardHeader>
           <CardContent className="space-y-1">
             {calls.length === 0 ? (
-              <EmptyState title="No calls yet" description="Calls launched from the inbox or chart will appear here." />
+              <EmptyState
+                title="No calls yet today"
+                description="Phone and video sessions launched from the inbox or any patient chart will land here automatically."
+                className="p-6"
+              />
             ) : (
               calls.map((call) => (
                 <button
@@ -188,7 +192,11 @@ export function CommsRecentClient({
           </CardHeader>
           <CardContent className="space-y-1">
             {faxes.length === 0 ? (
-              <EmptyState title="No faxes yet" description="Send your first fax from the fax tab." />
+              <EmptyState
+                title="No faxes in flight"
+                description="Both inbound and outbound fax activity show up here, with page counts and delivery state."
+                className="p-6"
+              />
             ) : (
               faxes.map((fax) => (
                 <button
@@ -218,7 +226,11 @@ export function CommsRecentClient({
           </CardHeader>
           <CardContent className="space-y-1">
             {broadcasts.length === 0 ? (
-              <EmptyState title="No campaigns yet" description="Use SMS broadcast to message patient cohorts." />
+              <EmptyState
+                title="No broadcasts yet"
+                description="Send your first cohort SMS or email and we'll log delivery, opens, and replies here."
+                className="p-6"
+              />
             ) : (
               broadcasts.map((c) => (
                 <button

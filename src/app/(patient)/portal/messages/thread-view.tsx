@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { InboxZeroIllustration } from "@/components/ui/empty-illustrations";
 import { ReplyCompose, NewThreadCompose } from "./compose";
 import { formatRelative } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
@@ -306,11 +307,17 @@ export function PatientMessagesView({ threads, currentUserId }: Props) {
 
       {threads.length === 0 && !showCompose ? (
         <EmptyState
-          title="No messages yet"
-          description="Your care team will reach out after your first visit. You can also start a conversation."
-          action={
-            <Button onClick={() => setShowCompose(true)}>New message</Button>
+          illustration={<InboxZeroIllustration />}
+          title="Your secure mailbox is ready"
+          description="This is the safest way to reach your care team for non-urgent questions. They'll usually reply within one business day."
+          primaryAction={
+            <Button onClick={() => setShowCompose(true)}>Start a message</Button>
           }
+          tips={[
+            "Use messages for refill requests, follow-up questions, or sharing symptoms",
+            "For anything urgent or after-hours, please call your care team or 911",
+            "Attachments and photos are end-to-end encrypted in transit",
+          ]}
         />
       ) : (
         <Card className="overflow-hidden">

@@ -18,6 +18,7 @@ import { MessagesTile } from "@/components/command/messages-tile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueueEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatRelative } from "@/lib/utils/format";
 import { RecentPatients } from "@/components/shell/recent-patients";
@@ -832,18 +833,25 @@ export default async function ClinicHomePage() {
         <Eyebrow className="mb-4">Today&apos;s queue</Eyebrow>
 
         {todaysEncounters.length === 0 ? (
-          <Card tone="outlined" className="py-10 px-6">
-            <div className="flex flex-col items-center text-center">
-              <LeafSprig size={32} className="text-accent/40 mb-3" />
-              <p className="font-display text-lg text-text">
-                Clear schedule.
-              </p>
-              <p className="text-sm text-text-muted mt-1 mb-6">
-                A good day to catch up on notes.
-              </p>
-              <RelaxPopup />
-            </div>
-          </Card>
+          <EmptyState
+            illustration={<QueueEmptyIllustration />}
+            title="Clear schedule — a good day to get ahead"
+            description="No visits on the books today. Perfect window to close out yesterday's notes, review labs, or knock out a quick CME."
+            primaryAction={<RelaxPopup />}
+            secondaryAction={
+              <Link
+                href="/clinic/sign-off/notes"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+              >
+                Open pending notes
+              </Link>
+            }
+            tips={[
+              "Sign off pending labs and refills while it's quiet",
+              "Tomorrow's pre-visit briefs are already prepped",
+              "Block off some focus time on your calendar — you earned it",
+            ]}
+          />
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
             {(todaysEncounters as any[])
@@ -991,8 +999,9 @@ export default async function ClinicHomePage() {
           <CardContent>
             {feed.length === 0 ? (
               <EmptyState
-                title="No recent activity"
-                description="Clinical events will appear here as they happen."
+                title="Nothing happening — yet"
+                description="Lab results, signed notes, messages, and refills will stream through here as your team works."
+                className="p-6"
               />
             ) : (
               <ul className="space-y-1 -mx-2">
