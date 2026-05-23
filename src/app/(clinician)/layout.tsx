@@ -186,7 +186,7 @@ export default async function ClinicianLayout({
       <QuoteWelcomeModal userName={user.firstName} />
       <BreathingBreak />
       <KeyboardShortcuts />
-      <CommandPalette role="clinician" />
+      <CommandPalette role="clinician" userId={user.id} />
       <ConsciousnessOverlay />
       <ClinicianTour />
       {children}

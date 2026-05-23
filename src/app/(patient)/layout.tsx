@@ -129,7 +129,7 @@ export default async function PatientLayout({
         showNavPrefs={false}
       >
         <QuoteWelcomeModal userName={user.firstName} />
-        <CommandPalette role="patient" />
+        <CommandPalette role="patient" userId={user.id} />
         <ChatCBInterface />
         <ConfettiCanvas />
         {children}
