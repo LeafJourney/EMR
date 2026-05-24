@@ -15,6 +15,7 @@
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { DiffViewer } from "@/components/ui/diff-viewer";
 import { cn } from "@/lib/utils/cn";
 
 import {
@@ -245,11 +246,17 @@ function HistoryEntry({
               <span className="inline-block transition-transform group-open:rotate-90">
                 ›
               </span>
-              Expand details
+              Expand diff
             </summary>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <SnapshotBlock label="Before" value={row.before} />
-              <SnapshotBlock label="After" value={row.after} />
+            {/* Adopted the shared DiffViewer primitive (EMR — UX run). */}
+            <div className="mt-2">
+              <DiffViewer
+                left={row.before}
+                right={row.after}
+                format="json"
+                leftLabel="Before"
+                rightLabel="After"
+              />
             </div>
           </details>
         )}
@@ -258,21 +265,3 @@ function HistoryEntry({
   );
 }
 
-function SnapshotBlock({
-  label,
-  value,
-}: {
-  label: string;
-  value: unknown;
-}) {
-  return (
-    <div className="rounded-md border border-border/60 bg-surface-muted/40 p-2">
-      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-        {label}
-      </div>
-      <pre className="text-[11px] font-mono text-text whitespace-pre-wrap break-words max-h-48 overflow-auto">
-        {value == null ? "—" : JSON.stringify(value, null, 2)}
-      </pre>
-    </div>
-  );
-}
