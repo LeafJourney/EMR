@@ -29,6 +29,9 @@ export async function GET(req: Request) {
     radiusMiles = parsed;
   }
 
+  const searchSku = url.searchParams.get("sku")?.trim();
+  const searchName = url.searchParams.get("name")?.trim();
+
   const origin = await geocodeAddress(address);
 
   const rows = await prisma.dispensary.findMany({
@@ -50,6 +53,33 @@ export async function GET(req: Request) {
       hoursLine: true,
       lastSyncedAt: true,
       _count: { select: { skus: { where: { active: true, inStock: true } } } },
+      skus: {
+        where: {
+          active: true,
+          inStock: true,
+          ...(searchSku
+            ? {
+                OR: [
+                  { sku: searchSku },
+                  { upc: searchSku },
+                ],
+              }
+            : searchName
+            ? {
+                name: { contains: searchName, mode: "insensitive" },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          sku: true,
+          upc: true,
+          name: true,
+          priceCents: true,
+          inStock: true,
+          inventoryCount: true,
+        },
+      },
     },
   });
 
@@ -70,9 +100,22 @@ export async function GET(req: Request) {
     hoursLine: r.hoursLine,
     lastSyncedAt: r.lastSyncedAt,
     skuCount: r._count.skus,
+    skus: r.skus ?? [],
   }));
 
   const results = filterNearby(dispensaryRows, origin, radiusMiles);
 
-  return NextResponse.json({ origin, radiusMiles, results });
+  const resultsWithSkus = results.map((res) => {
+    const raw = dispensaryRows.find((r) => r.id === res.id);
+    return {
+      ...res,
+      skus: raw ? raw.skus : [],
+    };
+  });
+
+  const finalResults = (searchSku || searchName)
+    ? resultsWithSkus.filter((r) => r.skus.length > 0)
+    : resultsWithSkus;
+
+  return NextResponse.json({ origin, radiusMiles, results: finalResults });
 }

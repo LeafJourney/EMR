@@ -115,6 +115,7 @@ describe("GET /api/dispensary/nearby", () => {
         },
         distanceMiles: 0,
         skuCount: 3,
+        skus: [],
       },
     ];
     hoisted.filterNearby.mockReturnValue(filtered);
