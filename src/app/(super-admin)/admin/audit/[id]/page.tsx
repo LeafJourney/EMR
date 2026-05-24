@@ -4,10 +4,10 @@
 //
 //   - A header with the humanised action, exact timestamp, actor
 //     (email + roles), and the operator-supplied `reason` if any.
-//   - A side-by-side before/after JSON diff with per-key colouring
-//     (rose = removed, emerald = added, amber = changed). The diff
-//     itself is built by `buildAuditDiff` in src/lib/admin/audit-diff.ts
-//     so it's unit-tested independently of the page.
+//   - A before/after JSON diff rendered by the shared `DiffViewer`
+//     primitive (src/components/ui/diff-viewer). The diff engine itself
+//     lives in src/lib/ui/diff-engine and is unit-tested independently
+//     so the page can stay a thin server component.
 //   - A "Subject" panel that resolves subjectType/subjectId to the
 //     real entity name when possible (User by id/email, Organization
 //     by id), with a link back to that entity's super-admin surface.
@@ -30,15 +30,12 @@ import { ArrowLeft } from "lucide-react";
 
 import { PageShell } from "@/components/shell/PageHeader";
 import { Badge } from "@/components/ui/badge";
+import { DiffViewer } from "@/components/ui/diff-viewer";
 import { Eyebrow } from "@/components/ui/ornament";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { ROLE_LABELS } from "@/lib/rbac/roles";
-import {
-  buildAuditDiff,
-  diffLineClass,
-  summariseDiff,
-} from "@/lib/admin/audit-diff";
+import { diffJson, summarizeJsonDiff } from "@/lib/ui/diff-engine";
 
 export const dynamic = "force-dynamic";
 
@@ -144,8 +141,12 @@ export default async function AuditRowDetailPage({
 
   const subjectResolved = await resolveSubject(row.subjectType, row.subjectId);
 
-  const diffLines = buildAuditDiff(row.before, row.after);
-  const summary = summariseDiff(diffLines);
+  // Use the shared diff engine (src/lib/ui/diff-engine) so this surface
+  // stays visually identical to the practice config history and any
+  // other before/after surface. The DiffViewer component renders the
+  // full split/inline UI; here we just need totals for the header chip.
+  const jsonEntries = diffJson(row.before, row.after);
+  const summary = summarizeJsonDiff(jsonEntries);
   const totalChanged = summary.added + summary.removed + summary.changed;
 
   const actorRoleLabels = (row.actorRoles as string[]).map(
@@ -290,52 +291,19 @@ export default async function AuditRowDetailPage({
                 <span className="text-amber-700 dark:text-amber-300">
                   ~{summary.changed}
                 </span>{" "}
-                <span>({summary.unchanged} unchanged)</span>
-              </span>
+                </span>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-text-muted border-b border-border bg-muted/40">
-              Before
-            </div>
-            <div className="font-mono text-xs">
-              {diffLines.length === 0 ? (
-                <div className="px-3 py-3 text-text-muted">(empty)</div>
-              ) : (
-                diffLines.map((line, idx) => (
-                  <pre
-                    key={`b-${idx}`}
-                    className={`px-3 py-1 whitespace-pre-wrap break-all ${diffLineClass(line.kind, "before")}`}
-                  >
-                    {line.before || " "}
-                  </pre>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="px-3 py-2 text-[11px] uppercase tracking-wider text-text-muted border-b border-border bg-muted/40">
-              After
-            </div>
-            <div className="font-mono text-xs">
-              {diffLines.length === 0 ? (
-                <div className="px-3 py-3 text-text-muted">(empty)</div>
-              ) : (
-                diffLines.map((line, idx) => (
-                  <pre
-                    key={`a-${idx}`}
-                    className={`px-3 py-1 whitespace-pre-wrap break-all ${diffLineClass(line.kind, "after")}`}
-                  >
-                    {line.after || " "}
-                  </pre>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        <DiffViewer
+          left={row.before}
+          right={row.after}
+          format="json"
+          leftLabel="Before"
+          rightLabel="After"
+        />
+
 
         <details className="mt-4 rounded-xl border border-border bg-muted/20">
           <summary className="cursor-pointer px-3 py-2 text-[12px] text-text-muted hover:text-text">

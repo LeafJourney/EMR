@@ -18,6 +18,7 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 
+import { DiffViewer } from "@/components/ui/diff-viewer";
 import { labelFor } from "@/lib/practice-config/labels";
 import { DiffToolbar } from "./toolbar";
 
@@ -264,6 +265,26 @@ export default async function PracticeConfigDiffPage({
           ))}
         </ol>
       )}
+
+      {/* Raw structural diff via the shared DiffViewer primitive. The
+          semantic list above is the operator-friendly summary; this is
+          the forensic view, collapsed by default. Adopting the primitive
+          here keeps the practice config surface in sync with the audit
+          log detail page. */}
+      <details className="mt-8 rounded-xl border border-border bg-surface/50">
+        <summary className="cursor-pointer px-4 py-2.5 text-[12px] text-text-muted hover:text-text">
+          Structural JSON diff
+        </summary>
+        <div className="px-3 pb-3">
+          <DiffViewer
+            left={fromSnap}
+            right={toSnap}
+            format="json"
+            leftLabel={`v${fromVersion}`}
+            rightLabel={`v${toVersion}`}
+          />
+        </div>
+      </details>
     </PageShell>
   );
 }
