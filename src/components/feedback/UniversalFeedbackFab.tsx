@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/toast";
+import { FileUpload, type FileUploadItem } from "@/components/ui/file-upload";
 
 // EMR-128 — universal feedback FAB. Mounted once at the root layout so
 // every route in every role sees the same pulse-of-the-product channel.
@@ -19,6 +20,7 @@ export function UniversalFeedbackFab() {
   const [comment, setComment] = useState("");
   const [area, setArea] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<FileUploadItem[]>([]);
   const { toast } = useToast();
 
   // Persist a stable client-id per browser to dedupe repeats / retries.
@@ -42,6 +44,7 @@ export function UniversalFeedbackFab() {
     setComment("");
     setArea("");
     setError(null);
+    setAttachments([]);
   }
 
   async function submit() {
@@ -56,6 +59,9 @@ export function UniversalFeedbackFab() {
     setState("submitting");
     setError(null);
     try {
+      const attachmentNames = attachments
+        .filter((a) => a.status === "uploaded")
+        .map((a) => a.file.name);
       const payload = {
         clientId: clientIdRef.current,
         pageUrl: window.location.href,
@@ -64,6 +70,7 @@ export function UniversalFeedbackFab() {
         userAgent: navigator.userAgent,
         viewport: { width: window.innerWidth, height: window.innerHeight },
         occurredAt: new Date().toISOString(),
+        attachments: attachmentNames,
       };
       const res = await fetch("/api/feedback/whisper", {
         method: "POST",
@@ -185,6 +192,33 @@ export function UniversalFeedbackFab() {
                 placeholder="Loved it? Confused? Frustrated? Tell us in your own words."
                 className="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
               />
+
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-text-subtle font-semibold mb-1.5">
+                  Attachments (optional)
+                </p>
+                {/*
+                  Server-side TODO: /api/feedback/whisper accepts JSON only.
+                  Screenshots are queued locally; once the route accepts
+                  multipart, swap the local handler for createFetchUploadHandler.
+                */}
+                <FileUpload
+                  accept="image/*,.pdf"
+                  maxFiles={3}
+                  maxSizeMB={8}
+                  concurrency={2}
+                  label="Drop a screenshot or attach a doc"
+                  hint="Helps us see what you saw — PNG, JPG, or PDF"
+                  onUpload={async (file, { onProgress }) => {
+                    for (let p = 0; p <= 100; p += 33) {
+                      onProgress?.(Math.min(p, 100));
+                      await new Promise((r) => setTimeout(r, 50));
+                    }
+                    return { id: `local-${file.name}`, name: file.name };
+                  }}
+                  onComplete={(items) => setAttachments(items)}
+                />
+              </div>
 
               <p className="text-[11px] text-text-subtle">
                 We'll capture the page URL automatically. Any voice memos attached are auto-deleted after 30 days for privacy.

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, FieldGroup } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FileUpload, type FileUploadItem } from "@/components/ui/file-upload";
 import { LAB_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
@@ -21,6 +22,7 @@ export function LabOrderForm({ patientName }: Props) {
   const [icd10Query, setIcd10Query] = useState("");
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
   const [priority, setPriority] = useState<Priority>("routine");
+  const [attachments, setAttachments] = useState<FileUploadItem[]>([]);
   const [submitted, setSubmitted] = useState<{
     orderId: string;
     when: string;
@@ -271,6 +273,37 @@ export function LabOrderForm({ patientName }: Props) {
               )}
             </div>
 
+            <FieldGroup label="Supporting attachments (optional)">
+              <p className="text-[11px] text-text-subtle -mt-1 mb-2">
+                Prior result PDFs, requisition forms, or insurance cards.
+                They&apos;ll travel with the order to the lab.
+              </p>
+              {/*
+                Server-side TODO: there is no /api/labs/orders/[id]/attachments
+                endpoint yet. The handler below resolves locally so the UI
+                ships ready-to-wire — once a real upload route is in place,
+                replace the resolve with `createFetchUploadHandler({ url: ... })`.
+              */}
+              <FileUpload
+                accept=".pdf,.png,.jpg,.jpeg,.heic,.webp"
+                maxFiles={5}
+                maxSizeMB={15}
+                concurrency={2}
+                label="Drop requisitions or prior results"
+                hint="PDF or image — up to 15 MB per file"
+                onUpload={async (file, { onProgress }) => {
+                  // Local-only: simulate the upload so the queue UI is
+                  // exercisable today. Replace once the server route lands.
+                  for (let p = 0; p <= 100; p += 20) {
+                    onProgress?.(p);
+                    await new Promise((r) => setTimeout(r, 80));
+                  }
+                  return { id: `local-${file.name}`, name: file.name };
+                }}
+                onComplete={(items) => setAttachments(items)}
+              />
+            </FieldGroup>
+
             <FieldGroup label="Priority">
               <div className="flex gap-2">
                 {(["routine", "stat"] as Priority[]).map((p) => (
@@ -299,6 +332,8 @@ export function LabOrderForm({ patientName }: Props) {
       <div className="flex items-center justify-end gap-3">
         <p className="text-xs text-text-subtle">
           {selected.length} lab{selected.length !== 1 ? "s" : ""} selected
+          {attachments.filter((a) => a.status === "uploaded").length > 0 &&
+            ` · ${attachments.filter((a) => a.status === "uploaded").length} attachment${attachments.filter((a) => a.status === "uploaded").length !== 1 ? "s" : ""}`}
         </p>
         <Button
           onClick={submit}

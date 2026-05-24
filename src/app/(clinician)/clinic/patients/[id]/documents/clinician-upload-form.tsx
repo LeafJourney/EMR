@@ -1,8 +1,49 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { Button } from "@/components/ui/button";
+/**
+ * ClinicianUploadForm — patient document upload.
+ *
+ * Adopts the shared `FileUpload` primitive (EMR-???/UX run) so clinicians
+ * can drop multiple lab PDFs, scans, COAs, etc. into a chart in one
+ * action. Each file is uploaded independently against the existing
+ * `uploadClinicianDocumentAction` server action; per-file failures stay
+ * inline and don't blow up the rest of the queue.
+ */
+
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
+import {
+  FileUpload,
+  type FileUploadHandler,
+  type UploadedFile,
+} from "@/components/ui/file-upload";
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE_BYTES,
+} from "@/lib/storage/document-types";
 import { uploadClinicianDocumentAction } from "./actions";
+
+const MAX_SIZE_MB = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024));
+// Express the server's MIME allowlist as an `accept` token list — matches
+// what the picker offered before, plus image/heic, plus a few extensions
+// for browsers that drop MIME on drag-drop (e.g. Safari for .heic).
+const ACCEPT = [
+  ...Array.from(ALLOWED_MIME_TYPES),
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".heic",
+  ".heif",
+  ".gif",
+  ".webp",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".csv",
+  ".txt",
+].join(",");
 
 export function ClinicianUploadForm({
   patientId,
@@ -11,47 +52,39 @@ export function ClinicianUploadForm({
   patientId: string;
   onDone?: () => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const [success, setSuccess] = useState(false);
+  const router = useRouter();
 
-  function handleSubmit() {
-    const file = inputRef.current?.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    startTransition(async () => {
+  const handler: FileUploadHandler = useCallback(
+    async (file): Promise<UploadedFile> => {
       const fd = new FormData();
       fd.append("patientId", patientId);
       fd.append("file", file);
       const result = await uploadClinicianDocumentAction(fd);
-      if (result.ok) {
-        setSuccess(true);
-        if (inputRef.current) inputRef.current.value = "";
-        setTimeout(() => {
-          setSuccess(false);
-          onDone?.();
-        }, 1500);
-      } else {
-        setError(result.error);
+      if (!result.ok) {
+        throw new Error(result.error);
       }
-    });
-  }
+      // The server action doesn't currently return the document id; that
+      // is fine — FileUpload uses the local file name when no URL is
+      // available, and a chart refresh surfaces the new row.
+      router.refresh();
+      return { id: file.name, name: file.name };
+    },
+    [patientId, router],
+  );
 
   return (
-    <div className="space-y-2">
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xlsx,.xls,.csv,.txt,.heic"
-        className="block w-full text-sm text-text file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-surface-muted file:text-text file:text-sm file:font-medium hover:file:bg-surface-muted/70"
-      />
-      {error && <p className="text-xs text-danger">{error}</p>}
-      {success && <p className="text-xs text-accent">Uploaded!</p>}
-      <Button size="sm" onClick={handleSubmit} disabled={isPending}>
-        {isPending ? "Uploading\u2026" : "Upload"}
-      </Button>
-    </div>
+    <FileUpload
+      accept={ACCEPT}
+      maxFiles={20}
+      maxSizeMB={MAX_SIZE_MB}
+      concurrency={3}
+      label="Drop chart documents here or click to browse"
+      hint={`PDF · images · Word · Excel · CSV — up to ${MAX_SIZE_MB} MB per file`}
+      onUpload={handler}
+      onComplete={(items) => {
+        const anyOk = items.some((i) => i.status === "uploaded");
+        if (anyOk) onDone?.();
+      }}
+    />
   );
 }

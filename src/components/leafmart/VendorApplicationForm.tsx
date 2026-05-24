@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FileUpload, type FileUploadItem } from "@/components/ui/file-upload";
 
 const PRODUCT_TYPES = [
   { slug: "tinctures", label: "Tinctures" },
@@ -45,6 +46,7 @@ export function VendorApplicationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [topError, setTopError] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<FileUploadItem[]>([]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -301,6 +303,46 @@ export function VendorApplicationForm() {
           <p role="alert" className="mt-2 text-[12.5px] text-[var(--danger)]">{errors.hasCoa}</p>
         )}
       </fieldset>
+
+      <div>
+        <p className="text-[13px] font-semibold text-[var(--ink)] mb-2">
+          Documents (optional)
+        </p>
+        <p className="text-[12.5px] text-[var(--muted)] mb-3">
+          Drop your latest COA, W-9, or product spec sheets. PDF or image,
+          up to 15 MB each. We&apos;ll request anything else we need
+          during review.
+        </p>
+        {/*
+          Server-side TODO: /api/leafmart/vendor-apply currently accepts
+          JSON only. Once the route gains a multipart variant (or a
+          paired /attachments endpoint), swap the local handler for
+          `createFetchUploadHandler({ url: "/api/leafmart/vendor-apply/attachments" })`.
+        */}
+        <FileUpload
+          accept=".pdf,.png,.jpg,.jpeg,.webp"
+          maxFiles={6}
+          maxSizeMB={15}
+          concurrency={2}
+          label="Drop COA / tax documents"
+          hint="PDF or image — up to 15 MB per file"
+          onUpload={async (file, { onProgress }) => {
+            for (let p = 0; p <= 100; p += 25) {
+              onProgress?.(p);
+              await new Promise((r) => setTimeout(r, 60));
+            }
+            return { id: `local-${file.name}`, name: file.name };
+          }}
+          onComplete={(items) => setDocuments(items)}
+        />
+        {documents.filter((d) => d.status === "uploaded").length > 0 && (
+          <p className="mt-2 text-[12.5px] text-[var(--leaf)]">
+            {documents.filter((d) => d.status === "uploaded").length} document
+            {documents.filter((d) => d.status === "uploaded").length !== 1 ? "s" : ""}
+            {" "}attached.
+          </p>
+        )}
+      </div>
 
       <FormField label="Tell us about your products" htmlFor="vf-desc" error={errors.description} required>
         <textarea
