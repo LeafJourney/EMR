@@ -28,6 +28,7 @@ import {
   type AuditQuery,
 } from "@/lib/admin/audit-log";
 import { AuditTableIsland, type AuditRowView } from "./keyboard-island";
+import { AuditExportMenu } from "./export-menu";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Audit log" };
@@ -79,7 +80,12 @@ function urlWithCursor(q: AuditQuery, cursor: string): string {
   return `?${params.toString()}`;
 }
 
-function exportUrl(q: AuditQuery): string {
+/**
+ * Build the query-string segment (with leading "?") that mirrors the
+ * active filter set. Passed to the export-menu island so CSV and PDF
+ * downloads stay scoped to whatever the operator is looking at.
+ */
+function exportQuery(q: AuditQuery): string {
   const params = new URLSearchParams();
   if (q.actor) params.set("actor", q.actor);
   if (q.action) params.set("action", q.action);
@@ -87,7 +93,7 @@ function exportUrl(q: AuditQuery): string {
   if (q.from) params.set("from", q.from.toISOString().slice(0, 10));
   if (q.to) params.set("to", q.to.toISOString().slice(0, 10));
   const qs = params.toString();
-  return `/api/admin/audit/export${qs ? `?${qs}` : ""}`;
+  return qs ? `?${qs}` : "";
 }
 
 export default async function AuditLogPage({
@@ -175,14 +181,7 @@ export default async function AuditLogPage({
         eyebrow="Internal"
         title="Audit log"
         description="Every controller mutation across every practice. Filter, expand, export."
-        actions={
-          <a
-            href={exportUrl(q)}
-            className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted/40"
-          >
-            Export CSV
-          </a>
-        }
+        actions={<AuditExportMenu query={exportQuery(q)} />}
       />
 
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3">

@@ -88,6 +88,14 @@ export interface StreamCsvOptions<T> {
    * OR its accessor was tagged via `practiceIdColumn()`.
    */
   requirePracticeIdColumn?: boolean;
+  /**
+   * Full filename override. When set, the Content-Disposition uses this
+   * value verbatim (after the same `[^A-Za-z0-9._-]` sanitisation that
+   * the default path applies). Lets callers ship a branded, timestamped
+   * filename (e.g. `leafjourney-audit-acme-2026-05-23-1342.csv`) without
+   * the helper's automatic `-YYYY-MM-DD.csv` suffix being appended on top.
+   */
+  filenameOverride?: string;
 }
 
 /**
@@ -162,6 +170,7 @@ export async function streamCsvResponse<T>(
     filename,
     audit,
     requirePracticeIdColumn = true,
+    filenameOverride,
   } = opts;
 
   if (!columns.length) {
@@ -228,9 +237,12 @@ export async function streamCsvResponse<T>(
   });
 
   const safeStem = filename.replace(/[^A-Za-z0-9._-]+/g, "-");
+  const safeFull = filenameOverride
+    ? filenameOverride.replace(/[^A-Za-z0-9._-]+/g, "-")
+    : `${safeStem}-${utcDateStamp()}.csv`;
   const headers = new Headers({
     "Content-Type": "text/csv; charset=utf-8",
-    "Content-Disposition": `attachment; filename="${safeStem}-${utcDateStamp()}.csv"`,
+    "Content-Disposition": `attachment; filename="${safeFull}"`,
     "Cache-Control": "no-store",
   });
 

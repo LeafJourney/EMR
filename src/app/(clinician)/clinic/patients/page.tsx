@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { PatientListClient } from "./patient-list-client";
 import { NewPatientModal } from "@/components/clinic/NewPatientModal";
+import { RosterExportMenu } from "./roster-export-menu";
 import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
@@ -141,6 +142,7 @@ export default async function PatientsPage({
             <span className="text-sm text-text-muted tabular-nums">
               {patients.length} patient{patients.length === 1 ? "" : "s"}
             </span>
+            <RosterExportMenu />
             <NewPatientModal>
               <Button variant="secondary" size="sm">
                 <svg
