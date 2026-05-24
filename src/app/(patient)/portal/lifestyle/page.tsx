@@ -17,6 +17,7 @@ import {
 import { computePlantHealth } from "@/lib/domain/plant-health";
 import { MindfulnessCheckIn } from "@/components/portal/mindfulness-check-in";
 import { LifestyleToolkit } from "./lifestyle-toolkit";
+import { LifestyleTrends, type LifestyleTrendPoint } from "./lifestyle-trends";
 
 export const metadata = { title: "Wellness Toolkit" };
 
@@ -69,6 +70,35 @@ export default async function LifestylePage() {
     (sum, tips) => sum + tips.length,
     0,
   );
+
+  // Rolling 8-week outcome score (mean of all metric values logged that week).
+  const trend: LifestyleTrendPoint[] = (() => {
+    const weeks = 8;
+    const now = Date.now();
+    const buckets = new Array<{ sum: number; n: number }>(weeks)
+      .fill({ sum: 0, n: 0 })
+      .map(() => ({ sum: 0, n: 0 }));
+    for (const log of patient.outcomeLogs) {
+      const ageDays = Math.floor(
+        (now - log.loggedAt.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const week = Math.floor(ageDays / 7);
+      if (week < 0 || week >= weeks) continue;
+      const bucket = buckets[weeks - 1 - week];
+      bucket.sum += log.value;
+      bucket.n += 1;
+    }
+    return buckets.map((b, i) => ({
+      label: `W-${weeks - 1 - i}`,
+      outcome: b.n > 0 ? Number((b.sum / b.n).toFixed(1)) : 0,
+    }));
+  })();
+
+  // Daily check-in cadence (last ~16 weeks) for the heatmap.
+  const activity = patient.outcomeLogs.map((l) => ({
+    date: l.loggedAt,
+    value: 1,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1040px]">
@@ -174,6 +204,16 @@ export default async function LifestylePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Trends band — branded chart wrappers (TrendArea / HeatmapWeek / ProgressDonut) */}
+      {patient.outcomeLogs.length > 0 && (
+        <LifestyleTrends
+          trend={trend}
+          activity={activity}
+          unlockedCount={unlockedCount}
+          totalAchievements={achievements.length}
+        />
+      )}
 
       {/* Achievements grid (EMR-161) */}
       <section className="mb-10">
