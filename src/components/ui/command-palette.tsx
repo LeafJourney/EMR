@@ -518,30 +518,48 @@ export function CommandPalette({ role, userId }: CommandPaletteProps = {}) {
     scored.sort((a, b) => b.score - a.score);
     const out: CommandDef[] = scored.map((s) => s.cmd);
 
-    // Inject async patient hits up top under their own group.
-    if (patientCommands.length > 0) {
-      out.unshift(...patientCommands);
+    // Role-aware search passthrough. Clinician gets the existing roster
+    // filter; operator gets the ops patients list; patient has nothing
+    // searchable of that shape so no passthrough there.
+    //
+    // Clinic-floor roles ALSO get a top-of-list "Search everything" entry
+    // that hands the query off to the /search global results page — that's
+    // the deeper-search counterpart to ⌘K's quick-jump posture.
+    if (trimmed.length > 0) {
+      if (role === "clinician" || role === undefined) {
+        out.unshift({
+          id: "search-all-results",
+          label: `Search everything: "${trimmed}"`,
+          hint: "Open /search — patients, messages, notes, audit",
+          group: "Search",
+          run: (r, q) => r.push(`/search?q=${encodeURIComponent(q)}`),
+        });
+        out.unshift({
+          id: "search-clinician-patients",
+          label: `Search patients: "${trimmed}"`,
+          hint: "Open the roster filtered by this query",
+          icon: "⌕",
+          group: "Search",
+          run: (r, q) =>
+            r.push(`/clinic/patients?q=${encodeURIComponent(q)}`),
+        });
+      } else if (role === "operator") {
+        out.unshift({
+          id: "search-operator-patients",
+          label: `Search patients: "${trimmed}"`,
+          hint: "Open the ops roster filtered by this query",
+          icon: "⌕",
+          group: "Search",
+          run: (r, q) =>
+            r.push(`/ops/patients?q=${encodeURIComponent(q)}`),
+        });
+      }
     }
 
-    // Search passthrough (still useful when no static command matched).
-    if (role === "clinician" || role === undefined) {
-      out.push({
-        id: "search-clinician-patients",
-        label: `Search patients: "${trimmed}"`,
-        hint: "Open the roster filtered by this query",
-        icon: "⌕",
-        group: "Search",
-        run: (r, q) => r.push(`/clinic/patients?q=${encodeURIComponent(q)}`),
-      });
-    } else if (role === "operator") {
-      out.push({
-        id: "search-operator-patients",
-        label: `Search patients: "${trimmed}"`,
-        hint: "Open the ops roster filtered by this query",
-        icon: "⌕",
-        group: "Search",
-        run: (r, q) => r.push(`/ops/patients?q=${encodeURIComponent(q)}`),
-      });
+    // Inject async patient hits up top under their own group (above the
+    // search passthroughs since concrete matches are most useful).
+    if (patientCommands.length > 0) {
+      out.unshift(...patientCommands);
     }
     return out;
   }, [query, scoped, role, recentIds, patientCommands]);
@@ -731,9 +749,13 @@ export function CommandPalette({ role, userId }: CommandPaletteProps = {}) {
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-border bg-surface-muted/40 text-[11px] text-text-subtle flex items-center justify-between">
-          <span>↑ ↓ to navigate · ↵ to select</span>
-          <span>esc to close</span>
+        <div className="px-4 py-2 border-t border-border bg-surface-muted/40 text-[11px] text-text-subtle flex items-center justify-between gap-3">
+          <span>↑ ↓ navigate · ↵ select</span>
+          {query.trim().length > 0 && (role === "clinician" || role === undefined) ? (
+            <span>↵ on top row to search all results · esc to close</span>
+          ) : (
+            <span>esc to close</span>
+          )}
         </div>
       </Card>
     </div>
