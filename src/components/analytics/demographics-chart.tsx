@@ -1,15 +1,8 @@
 "use client";
 
 import React from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DistributionBar } from "@/components/charts";
 
 export interface DemographicSegment {
   name: string;
@@ -23,35 +16,17 @@ interface DemographicsChartProps {
   metric?: string;
 }
 
-const COLORS = ["#10B981", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899", "#64748B"];
-
+/**
+ * Demographics — converted from the legacy donut to a branded `<DistributionBar>`.
+ * Bars are easier to compare than pie slices, and we get the shared hairline
+ * grid + Card-tier tooltip + reduced-motion handling for free.
+ */
 export function DemographicsChart({
   data,
   title = "Patient Demographics",
   description = "Age distribution across the clinical practice.",
-  metric = "Patients",
 }: DemographicsChartProps) {
-  
-  const CustomTooltip = ({
-    active,
-    payload,
-  }: {
-    active?: boolean;
-    payload?: Array<{ name: string; value: number }>;
-  }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-surface border border-border p-3 rounded-xl shadow-sm text-sm">
-          <p className="font-semibold text-text mb-1">{payload[0].name}</p>
-          <p className="text-text-muted">
-            <span className="font-medium text-text">{payload[0].value}</span> {metric}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
+  const bars = data.map((d) => ({ label: d.name, value: d.value }));
   return (
     <Card className="w-full">
       <CardHeader>
@@ -59,33 +34,8 @@ export function DemographicsChart({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="45%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={5}
-                dataKey="value"
-                stroke="var(--surface)"
-                strokeWidth={2}
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend 
-                verticalAlign="bottom" 
-                height={36} 
-                iconType="circle"
-                formatter={(value) => <span className="text-text-muted font-medium">{value}</span>}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="mt-2">
+          <DistributionBar data={bars} height={280} rainbow />
         </div>
       </CardContent>
     </Card>

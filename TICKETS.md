@@ -419,7 +419,7 @@ Create a disclaimer at the bottom of the platform:
 ### EMR-028: Split Window / Multi-Tab View
 **Priority:** 2 — High
 **Source:** Dr. Patel
-**Status:** in_progress
+**Status:** done
 **Description:**
 Create split window ability WITHIN the EMR so up to 3 MAX tabs can be open at the same time. Makes it easier to maneuver instead of clicking back and forth. Think Bloomberg Terminal or VS Code split panes — but for clinical workflows.
 
@@ -546,7 +546,7 @@ Add Justin's book (FreeCannabisCancerBook.com) to the educational library as a f
 | 025 | Cannabis Design Palette | High | Design | **done** |
 | 026 | Cannabis Emojis | Low | Design | **done** |
 | 027 | Platform Disclaimer | Low | Design | **done** |
-| 028 | Split Window / Multi-Tab | High | Platform | backlog |
+| 028 | Split Window / Multi-Tab | High | Platform | **done** |
 | 029 | ADA Compliance | High | Platform | **done** |
 | 030 | Multi-Language Support | Normal | Platform | **done** |
 | 031 | Responsive Cross-Device | High | Platform | backlog |
@@ -1326,7 +1326,7 @@ For EVERY medical diagnosis in the system, provide TWO treatment protocols side-
 - EMR-013: Conventional EMR Integration (needs HL7 FHIR adapter)
 - EMR-017: Dispensary Locator (needs Google Maps API key)
 - EMR-018: Leafly Strain Database (needs Leafly API)
-- EMR-028: Split Window / Multi-Tab (complex UI architecture)
+- EMR-028: Split Window / Multi-Tab (completed)
 - EMR-031: Responsive Cross-Device (audit pass)
 - EMR-037: Communications Overlay (needs Twilio/WebRTC)
 - EMR-038: Cannabis Book Integration (needs content parsing)

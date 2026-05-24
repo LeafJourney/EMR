@@ -9,6 +9,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LabSnapshot } from "./lab-snapshot";
 
 export const metadata = { title: "Analytics Lab" };
 
@@ -100,6 +101,7 @@ export default async function AnalyticsLabIndexPage() {
         title="Analytics Lab"
         description="Experimental dashboards for cohort analytics, pharmacology, and research operations. Built on top of platform-wide outcome logs and product usage data."
       />
+      <LabSnapshot />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {FEATURES.map((f) => (
           <Link key={f.href} href={f.href} className="group">

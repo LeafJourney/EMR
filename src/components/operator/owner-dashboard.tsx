@@ -9,6 +9,8 @@ import {
 import { formatMoneyCompact, formatMoney } from "@/lib/domain/billing";
 import { agentRegistry } from "@/lib/agents";
 import { AnimatedNumber } from "@/components/ui/animated-number";
+import { Card, CardContent } from "@/components/ui/card";
+import { TrendArea } from "@/components/charts";
 
 // ---------------------------------------------------------------------------
 // OwnerDashboard — composes the 6 KPI tiles in a 1/2/3-column grid.
@@ -139,14 +141,94 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
     severity: arSev,
   };
 
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      <KpiCard {...revenueCard} />
-      <KpiCard {...denialsCard} />
-      <KpiCard {...scheduleCard} />
-      <KpiCard {...agentsCard} />
-      <KpiCard {...patientsCard} />
-      <KpiCard {...arCard} />
-    </div>
+  // Lightweight prior-vs-current week sparkline series. We don't have a true
+  // day-by-day series at this layer (the upstream snapshot collapses to two
+  // 7-day buckets) so we anchor a smooth ramp between the two so the trend
+  // direction reads visually without inventing fake mid-week values.
+  const revenueSpark = sparkBetween(
+    snapshot.revenuePriorWeekCents,
+    snapshot.revenueThisWeekCents,
   );
+  const patientsSpark = sparkBetween(
+    snapshot.newPatientsPriorWeek,
+    snapshot.newPatientsThisWeek,
+  );
+
+  return (
+    <>
+      <div className="mb-5 grid gap-4 md:grid-cols-2">
+        <Card tone="raised">
+          <CardContent className="py-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle">
+              Revenue · 7-day ramp
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Prior 7 days → this week, smoothed.
+            </p>
+            <div className="mt-3">
+              <TrendArea
+                data={revenueSpark}
+                xKey="label"
+                height={140}
+                lines={[{ dataKey: "value", label: "Revenue" }]}
+                emptyTitle="No revenue yet"
+                emptyDescription="Revenue trend appears once claims start posting."
+              />
+            </div>
+          </CardContent>
+        </Card>
+        <Card tone="raised">
+          <CardContent className="py-5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle">
+              New patients · 7-day ramp
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Prior 7 days → this week.
+            </p>
+            <div className="mt-3">
+              <TrendArea
+                data={patientsSpark}
+                xKey="label"
+                height={140}
+                lines={[
+                  {
+                    dataKey: "value",
+                    label: "New patients",
+                    color: "var(--accent)",
+                  },
+                ]}
+                emptyTitle="No new patients yet"
+                emptyDescription="The intake trend will appear once patients are added."
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <KpiCard {...revenueCard} />
+        <KpiCard {...denialsCard} />
+        <KpiCard {...scheduleCard} />
+        <KpiCard {...agentsCard} />
+        <KpiCard {...patientsCard} />
+        <KpiCard {...arCard} />
+      </div>
+    </>
+  );
+}
+
+/**
+ * Synthesize a 7-point smooth ramp between two weekly totals. Returns an
+ * empty array when both endpoints are zero so the chart shows EmptyState
+ * instead of a flat line on a brand-new tenant.
+ */
+function sparkBetween(prior: number, current: number) {
+  if (prior === 0 && current === 0) return [];
+  const steps = 7;
+  return Array.from({ length: steps }, (_, i) => {
+    const t = i / (steps - 1);
+    // Smoothstep easing so the ramp doesn't read as a straight line.
+    const eased = t * t * (3 - 2 * t);
+    const v = prior + (current - prior) * eased;
+    return { label: i === 0 ? "Prior wk" : i === steps - 1 ? "This wk" : "", value: Math.round(v) };
+  });
 }

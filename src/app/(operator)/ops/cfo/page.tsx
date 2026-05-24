@@ -8,6 +8,7 @@ import { rangeForPeriod } from "@/lib/finance/period";
 import { buildCfoReport, getLatestCfoBriefing } from "@/lib/finance/report";
 import { fmtMoney, fmtPct } from "@/lib/finance/formatting";
 import { CfoTabs, KpiTile, AnomaliesPanel, MiniBarChart, GenerateReportButton } from "./components";
+import { TrendLine } from "@/components/charts";
 
 export const metadata = { title: "CFO · Leafjourney" };
 export const dynamic = "force-dynamic";
@@ -35,6 +36,13 @@ export default async function CfoOverviewPage({
   const weeklyRevenueSeries = report.weeklySeries.map((p) => p.revenueCents / 100);
   const weeklyEbitdaSeries = report.weeklySeries.map((p) => p.ebitdaCents / 100);
   const monthlySeries = report.monthlySeries.map((p) => ({ label: p.label.slice(0, 3), value: p.netIncomeCents }));
+  // Branded TrendLine: revenue vs EBITDA over the same weekly window. Cents → dollars
+  // so the y-axis ticks read as small integers, and so the tooltip stays compact.
+  const weeklyTrendData = report.weeklySeries.map((p) => ({
+    label: p.label,
+    revenue: Math.round(p.revenueCents / 100),
+    ebitda: Math.round(p.ebitdaCents / 100),
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -139,6 +147,26 @@ export default async function CfoOverviewPage({
               {fmtMoney(report.pnl.totals.netIncomeCents, { compact: true })}
             </p>
             <MiniBarChart data={monthlySeries} width={300} height={56} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Deep-look: revenue vs EBITDA — branded TrendLine wrapper */}
+      <div className="mb-10">
+        <Eyebrow className="mb-4">Revenue vs EBITDA · last 13 weeks</Eyebrow>
+        <Card tone="raised">
+          <CardContent className="pt-5 pb-5">
+            <TrendLine
+              data={weeklyTrendData}
+              xKey="label"
+              height={280}
+              lines={[
+                { dataKey: "revenue", label: "Revenue ($)" },
+                { dataKey: "ebitda", label: "EBITDA ($)" },
+              ]}
+              emptyTitle="No financial activity yet"
+              emptyDescription="Once revenue and expenses post, this chart fills in week by week."
+            />
           </CardContent>
         </Card>
       </div>
