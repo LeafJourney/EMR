@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -23,9 +23,17 @@ import {
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
 import { sendReply, composeMessage, type ComposeResult } from "./actions";
+import {
+  bulkMarkThreadsReadAction,
+  bulkResolveThreadsAction,
+  bulkAssignThreadsToMeAction,
+  bulkExportThreadsAction,
+} from "./bulk-actions";
 import { CallLaunchButtons } from "@/components/communications/call-launch-buttons";
 import { CallBubble, type CallLogData } from "./call-bubble";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { BulkActionBar, useBulkSelection } from "@/components/ui/bulk-action-bar";
+import { useToast } from "@/components/ui/toast";
 import {
   useContextMenu,
   ContextMenuIcons,
@@ -1045,6 +1053,11 @@ export function SmartInboxView({
   // changes so a stale query doesn't carry across threads.
   const [threadSearch, setThreadSearch] = useState("");
 
+  // Bulk thread selection (multi-select on the left panel).
+  const selection = useBulkSelection<string>();
+  const { toast } = useToast();
+  const lastClickedRef = useRef<string | null>(null);
+
   // Compute counts per priority. EMR-708 — `brief` counts threads with
   // category=follow_up (the closest current proxy for "morning brief item")
   // until brief-tagging is fully wired upstream.
@@ -1119,6 +1132,159 @@ export function SmartInboxView({
 
     return list;
   }, [triaged, priorityFilter, categoryFilter, search, pinnedThreadIds]);
+
+  // Visible thread IDs in current order — drives ⌘/Ctrl+A and Shift+Click
+  // range selection. Recomputed whenever the filter pipeline changes.
+  const visibleThreadIds = useMemo(
+    () => filtered.map((t) => t.threadId),
+    [filtered],
+  );
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const inField =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      if (inField) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        selection.setAllVisible(visibleThreadIds);
+      } else if (e.key === "Escape" && selection.size > 0) {
+        selection.clear();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleThreadIds, selection]);
+
+  // Selection-aware row-click handler. Plain click selects the thread
+  // for preview (current behaviour); clicking the checkbox toggles
+  // selection; Shift+Click on the checkbox extends a range.
+  const handleSelectionClick = useCallback(
+    (id: string, shift?: boolean) => {
+      if (shift) {
+        selection.selectRange(visibleThreadIds, lastClickedRef.current, id);
+      } else {
+        selection.toggle(id);
+      }
+      lastClickedRef.current = id;
+    },
+    [selection, visibleThreadIds],
+  );
+
+  // ---- Bulk handlers ----
+  const [bulkPending, setBulkPending] = useState<string | null>(null);
+
+  const handleBulkMarkRead = useCallback(async () => {
+    setBulkPending("read");
+    const res = await bulkMarkThreadsReadAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Mark read failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Marked ${res.count} message${res.count === 1 ? "" : "s"} read`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkResolve = useCallback(async () => {
+    setBulkPending("resolve");
+    const res = await bulkResolveThreadsAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Resolve failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Resolved ${res.count} thread${res.count === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkAssign = useCallback(async () => {
+    setBulkPending("assign");
+    const res = await bulkAssignThreadsToMeAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Assign failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Assigned ${res.count} thread${res.count === 1 ? "" : "s"} to you`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkExportThreads = useCallback(async () => {
+    setBulkPending("export");
+    const res = await bulkExportThreadsAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Export failed", description: res.error, variant: "error" });
+      return;
+    }
+    const header = [
+      "id",
+      "patient",
+      "subject",
+      "lastMessageAt",
+      "priority",
+      "category",
+    ];
+    const escape = (v: string | null) =>
+      v == null
+        ? ""
+        : /[",\n]/.test(v)
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+    const lines = [header.join(",")];
+    for (const r of res.rows) {
+      lines.push(
+        [
+          r.id,
+          r.patientName,
+          r.subject,
+          r.lastMessageAt,
+          r.priority,
+          r.category,
+        ]
+          .map((x) => escape(x as string | null))
+          .join(","),
+      );
+    }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `inbox-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: `Exported ${res.rows.length} thread${res.rows.length === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+  }, [selection.asArray, toast]);
 
   // Active thread detail
   const selectedTriage = triaged.find((t) => t.threadId === selectedThreadId);
@@ -1312,52 +1478,67 @@ export function SmartInboxView({
             ) : (
               filtered.map((t) => {
                 const isSelected = t.threadId === selectedThreadId;
+                const isChecked = selection.has(t.threadId);
                 const isPinned = pinnedThreadIds.has(t.threadId);
                 return (
-                  <ThreadInboxRow
-                    key={t.threadId}
-                    thread={t}
-                    isSelected={isSelected}
-                    isPinned={isPinned}
-                    childVariants={childVariants}
-                    onSelect={() => setSelectedThreadId(t.threadId)}
-                    onTogglePin={() => togglePinned(t.threadId)}
-                    onMarkRead={() => {
-                      // Optimistic UI: drop the unread dot. Server sync
-                      // hooks into the existing read-receipts pipeline
-                      // when the thread is opened; this is a no-op
-                      // placeholder so the action lands.
-                      setSelectedThreadId(t.threadId);
-                    }}
-                    onResolve={() => {
-                      // Resolve via existing thread-resolve endpoint when
-                      // wired. For the right-click hand-off we open the
-                      // thread so the clinician sees what's being acted
-                      // on before any irreversible mutation.
-                      setSelectedThreadId(t.threadId);
-                    }}
-                    onArchive={() => {
-                      if (
-                        typeof window !== "undefined" &&
-                        !window.confirm(
-                          `Archive the thread with ${t.patientName}? You can find it later under Archived.`,
-                        )
-                      ) {
-                        return;
-                      }
-                      // Optimistically clear selection; real mutation
-                      // lands on the next save-on-open flow.
-                      setSelectedThreadId(null);
-                    }}
-                    onCopyLink={() => {
-                      try {
-                        const url = `${window.location.origin}/clinic/messages?thread=${t.threadId}`;
-                        void navigator.clipboard?.writeText(url);
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                  />
+                  <div key={t.threadId} className="relative group">
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        "absolute left-2 top-3 z-10 inline-flex items-center justify-center h-4 w-4",
+                        isChecked || selection.size > 0
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 transition-opacity",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleSelectionClick(
+                            t.threadId,
+                            (e.nativeEvent as MouseEvent | undefined)?.shiftKey,
+                          );
+                        }}
+                        aria-label={`Select thread with ${t.patientName}`}
+                        className="h-4 w-4 rounded border-border-strong text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                      />
+                    </label>
+                    <ThreadInboxRow
+                      thread={t}
+                      isSelected={isSelected}
+                      isPinned={isPinned}
+                      childVariants={childVariants}
+                      onSelect={() => setSelectedThreadId(t.threadId)}
+                      onTogglePin={() => togglePinned(t.threadId)}
+                      onMarkRead={() => {
+                        setSelectedThreadId(t.threadId);
+                      }}
+                      onResolve={() => {
+                        setSelectedThreadId(t.threadId);
+                      }}
+                      onArchive={() => {
+                        if (
+                          typeof window !== "undefined" &&
+                          !window.confirm(
+                            `Archive the thread with ${t.patientName}? You can find it later under Archived.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        setSelectedThreadId(null);
+                      }}
+                      onCopyLink={() => {
+                        try {
+                          const url = `${window.location.origin}/clinic/messages?thread=${t.threadId}`;
+                          void navigator.clipboard?.writeText(url);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    />
+                  </div>
                 );
               })
             )}
@@ -1626,6 +1807,40 @@ export function SmartInboxView({
           </div>
         </div>
       )}
+
+      {/* Bulk action bar — slides up when any inbox thread is selected. */}
+      <BulkActionBar
+        count={selection.size}
+        onClear={selection.clear}
+        itemNoun="thread"
+        ariaLabel="Inbox bulk actions"
+        actions={[
+          {
+            key: "read",
+            label: "Mark read",
+            onClick: handleBulkMarkRead,
+            isPending: bulkPending === "read",
+          },
+          {
+            key: "resolve",
+            label: "Resolve",
+            onClick: handleBulkResolve,
+            isPending: bulkPending === "resolve",
+          },
+          {
+            key: "assign",
+            label: "Assign to me",
+            onClick: handleBulkAssign,
+            isPending: bulkPending === "assign",
+          },
+          {
+            key: "export",
+            label: "Export",
+            onClick: handleBulkExportThreads,
+            isPending: bulkPending === "export",
+          },
+        ]}
+      />
     </div>
     </>
   );

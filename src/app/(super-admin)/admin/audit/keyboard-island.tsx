@@ -9,6 +9,9 @@
 //   - Enter toggles the focused row's expanded metadata
 //   - "/" focuses the action filter input (id="audit-filter-action")
 //   - per-row expanded JSON renders verbatim (super-admin only surface)
+//   - bulk select via checkbox column; ⌘/Ctrl+A select-all-visible;
+//     Shift+Click range-select; BulkActionBar at the bottom for
+//     "Export selected" + "Mark reviewed".
 //
 // We deliberately keep the table markup itself on the server — this
 // island just adorns the existing rows with focus/expand state and
@@ -16,11 +19,12 @@
 // row below each data row) so toggling never round-trips.
 
 import * as React from "react";
+import { BulkActionBar, useBulkSelection } from "@/components/ui/bulk-action-bar";
+import { useToast } from "@/components/ui/toast";
 import {
-  useContextMenu,
-  ContextMenuIcons,
-  type ContextMenuItem,
-} from "@/components/ui/context-menu";
+  bulkMarkAuditReviewedAction,
+  bulkExportAuditRowsAction,
+} from "./bulk-actions";
 
 export interface AuditRowView {
   id: string;
@@ -50,6 +54,13 @@ export function AuditTableIsland({
 }) {
   const [selected, setSelected] = React.useState(0);
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  // Bulk-multiselect state — checkbox column drives this, the action
+  // bar at the bottom consumes the same Set.
+  const bulk = useBulkSelection<string>();
+  const { toast } = useToast();
+  const lastClickedRef = React.useRef<string | null>(null);
+  const [bulkPending, setBulkPending] = React.useState<string | null>(null);
+  const visibleIds = React.useMemo(() => rows.map((r) => r.id), [rows]);
 
   // Reset focus when the row set identity changes (new filter applied).
   // Avoids stale "selected" index pointing past the end of a narrower
@@ -57,7 +68,98 @@ export function AuditTableIsland({
   React.useEffect(() => {
     setSelected(0);
     setExpanded({});
+    bulk.clear();
+    lastClickedRef.current = null;
+    // bulk is stable for this purpose; we only want to clear when rows
+    // change identity (the new filter context resets the result set).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
+
+  // Bulk handlers — keep them inline; the surface is tiny.
+  const handleMarkReviewed = React.useCallback(async () => {
+    setBulkPending("review");
+    const res = await bulkMarkAuditReviewedAction({ ids: bulk.asArray });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Mark reviewed failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Marked ${res.count} row${res.count === 1 ? "" : "s"} reviewed`,
+      variant: "success",
+    });
+    bulk.clear();
+  }, [bulk, toast]);
+
+  const handleExportSelected = React.useCallback(async () => {
+    setBulkPending("export");
+    const res = await bulkExportAuditRowsAction({ ids: bulk.asArray });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Export failed", description: res.error, variant: "error" });
+      return;
+    }
+    const header = [
+      "id",
+      "at",
+      "actor",
+      "action",
+      "subjectType",
+      "subjectId",
+      "organization",
+      "reason",
+    ];
+    const escape = (v: string | null) =>
+      v == null
+        ? ""
+        : /[",\n]/.test(v)
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+    const lines = [header.join(",")];
+    for (const r of res.rows) {
+      lines.push(
+        [
+          r.id,
+          r.at,
+          r.actor,
+          r.action,
+          r.subjectType,
+          r.subjectId,
+          r.organization,
+          r.reason,
+        ]
+          .map((x) => escape(x as string | null))
+          .join(","),
+      );
+    }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: `Exported ${res.rows.length} row${res.rows.length === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+  }, [bulk.asArray, toast]);
+
+  const handleRowCheck = React.useCallback(
+    (id: string, shift?: boolean) => {
+      if (shift) {
+        bulk.selectRange(visibleIds, lastClickedRef.current, id);
+      } else {
+        bulk.toggle(id);
+      }
+      lastClickedRef.current = id;
+    },
+    [bulk, visibleIds],
+  );
 
   const toggleExpanded = React.useCallback((id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -104,12 +206,18 @@ export function AuditTableIsland({
           e.preventDefault();
           toggleExpanded(row.id);
         }
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        // ⌘/Ctrl+A — select every currently-visible audit row.
+        e.preventDefault();
+        bulk.setAllVisible(visibleIds);
+      } else if (e.key === "Escape" && bulk.size > 0) {
+        bulk.clear();
       }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, selected, toggleExpanded]);
+  }, [rows, selected, toggleExpanded, bulk, visibleIds]);
 
   if (rows.length === 0) return <>{emptyState}</>;
 
@@ -118,6 +226,23 @@ export function AuditTableIsland({
       <table className="w-full text-sm">
         <thead className="bg-muted/50">
           <tr>
+            <th className="px-3 py-2 w-8 text-left font-medium text-text-muted">
+              {/* Tri-state "select all visible" header checkbox. */}
+              <input
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate = bulk.size > 0 && bulk.size < rows.length;
+                }}
+                type="checkbox"
+                checked={bulk.size === rows.length && rows.length > 0}
+                onChange={(e) => {
+                  if (e.target.checked) bulk.setAllVisible(visibleIds);
+                  else bulk.clear();
+                }}
+                aria-label="Select all visible audit rows"
+                className="h-4 w-4 rounded border-border text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              />
+            </th>
             <th className="px-3 py-2 text-left font-medium text-text-muted">Time</th>
             <th className="px-3 py-2 text-left font-medium text-text-muted">Actor</th>
             <th className="px-3 py-2 text-left font-medium text-text-muted">Action</th>
@@ -131,14 +256,112 @@ export function AuditTableIsland({
             const isSelected = idx === selected;
             const isExpanded = !!expanded[row.id];
             return (
-              <AuditTableRow
-                key={row.id}
-                row={row}
-                isSelected={isSelected}
-                isExpanded={isExpanded}
-                onSelect={() => setSelected(idx)}
-                onToggleExpand={() => toggleExpanded(row.id)}
-              />
+              <React.Fragment key={row.id}>
+                <tr
+                  className={
+                    isSelected
+                      ? "bg-accent/30 outline outline-1 outline-accent"
+                      : bulk.has(row.id)
+                        ? "bg-accent-soft/40"
+                        : "hover:bg-muted/30"
+                  }
+                  onMouseEnter={() => setSelected(idx)}
+                  onClick={() => toggleExpanded(row.id)}
+                >
+                  <td className="px-3 py-2 align-top w-8">
+                    <input
+                      type="checkbox"
+                      checked={bulk.has(row.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleRowCheck(
+                          row.id,
+                          (e.nativeEvent as MouseEvent | undefined)?.shiftKey,
+                        );
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select audit row ${row.id}`}
+                      className="h-4 w-4 rounded border-border text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top" title={row.at}>
+                    <a
+                      href={row.detailHref}
+                      className="text-accent underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {row.atRelative}
+                    </a>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {row.actorHref ? (
+                      <a
+                        href={row.actorHref}
+                        className="text-accent underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {row.actorLabel}
+                      </a>
+                    ) : (
+                      row.actorLabel
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top font-mono text-xs">
+                    {row.action}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {row.subjectHref ? (
+                      <a
+                        href={row.subjectHref}
+                        className="text-accent underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {row.subjectLabel}
+                      </a>
+                    ) : (
+                      row.subjectLabel
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {row.targetHref ? (
+                      <a
+                        href={row.targetHref}
+                        className="text-accent underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {row.targetLabel}
+                      </a>
+                    ) : (
+                      row.targetLabel
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <button
+                      type="button"
+                      className="text-left text-xs text-text-muted"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpanded(row.id);
+                      }}
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? "▾ Collapse" : "▸ "}{" "}
+                      {!isExpanded && (
+                        <span className="font-mono">{row.metadataPreview || "—"}</span>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr className="bg-muted/20">
+                    <td colSpan={7} className="px-3 py-3">
+                      <pre className="whitespace-pre-wrap break-all text-xs font-mono text-text-muted">
+                        {row.metadataFullJson}
+                      </pre>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             );
           })}
         </tbody>
@@ -146,183 +369,30 @@ export function AuditTableIsland({
       <div className="px-3 py-2 text-xs text-text-muted border-t border-border">
         Navigate with j/k (or arrow keys); Enter expands the focused row;
         click the timestamp to open the row&apos;s detail page;
-        &quot;/&quot; jumps to the action filter. Right-click any row for
-        quick actions (copy JSON, filter by actor/action).
+        &quot;/&quot; jumps to the action filter;{" "}
+        <kbd className="font-mono">⌘A</kbd> selects every visible row.
       </div>
+
+      <BulkActionBar
+        count={bulk.size}
+        onClear={bulk.clear}
+        itemNoun="row"
+        ariaLabel="Audit log bulk actions"
+        actions={[
+          {
+            key: "export",
+            label: "Export selected",
+            onClick: handleExportSelected,
+            isPending: bulkPending === "export",
+          },
+          {
+            key: "review",
+            label: "Mark reviewed",
+            onClick: handleMarkReviewed,
+            isPending: bulkPending === "review",
+          },
+        ]}
+      />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AuditTableRow — extracted into its own component so each row can host a
-// right-click context menu (Monday/Linear-tier). The `useContextMenu`
-// hook can't be called inside `.map(...)`, so we pay one mount per row.
-// ---------------------------------------------------------------------------
-
-function buildAuditQS(updates: Record<string, string | null>) {
-  // Read the current URL's params and merge, dropping anything set to
-  // null. Falls back to the empty string when not running in a browser
-  // (the menu is only ever invoked client-side anyway).
-  if (typeof window === "undefined") return "";
-  const params = new URLSearchParams(window.location.search);
-  for (const [k, v] of Object.entries(updates)) {
-    if (v == null) params.delete(k);
-    else params.set(k, v);
-  }
-  // Cursor pagination resets when filters change — drop the cursor so
-  // the operator lands on page 1 of the new filter set.
-  params.delete("cursor");
-  const qs = params.toString();
-  return qs ? `?${qs}` : "?";
-}
-
-function AuditTableRow({
-  row,
-  isSelected,
-  isExpanded,
-  onSelect,
-  onToggleExpand,
-}: {
-  row: AuditRowView;
-  isSelected: boolean;
-  isExpanded: boolean;
-  onSelect: () => void;
-  onToggleExpand: () => void;
-}) {
-  const items: ContextMenuItem[] = [
-    {
-      label: "Open detail",
-      icon: ContextMenuIcons.Open,
-      onSelect: (c) => {
-        window.location.assign(row.detailHref);
-        c();
-      },
-      kbd: "↵",
-    },
-    {
-      label: "Copy row JSON",
-      icon: ContextMenuIcons.Copy,
-      onSelect: (c) => {
-        try {
-          void navigator.clipboard?.writeText(row.metadataFullJson);
-        } catch {
-          /* ignore */
-        }
-        c();
-      },
-      kbd: "⌘ C",
-    },
-    { divider: true, label: "" },
-    {
-      label: `Filter by actor (${row.actorLabel})`,
-      icon: ContextMenuIcons.User,
-      onSelect: (c) => {
-        window.location.assign(buildAuditQS({ actor: row.actorLabel }));
-        c();
-      },
-    },
-    {
-      label: `Filter by action (${row.action})`,
-      icon: ContextMenuIcons.Filter,
-      onSelect: (c) => {
-        window.location.assign(buildAuditQS({ action: row.action }));
-        c();
-      },
-    },
-  ];
-  const ctx = useContextMenu(() => items);
-
-  return (
-    <React.Fragment>
-      <tr
-        className={
-          isSelected
-            ? "bg-accent/30 outline outline-1 outline-accent"
-            : "hover:bg-muted/30"
-        }
-        onMouseEnter={onSelect}
-        onClick={onToggleExpand}
-        onContextMenu={ctx.triggerProps.onContextMenu}
-        onTouchStart={ctx.triggerProps.onTouchStart}
-        onTouchEnd={ctx.triggerProps.onTouchEnd}
-        onTouchMove={ctx.triggerProps.onTouchMove}
-      >
-        <td className="px-3 py-2 align-top" title={row.at}>
-          <a
-            href={row.detailHref}
-            className="text-accent underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {row.atRelative}
-          </a>
-        </td>
-        <td className="px-3 py-2 align-top">
-          {row.actorHref ? (
-            <a
-              href={row.actorHref}
-              className="text-accent underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {row.actorLabel}
-            </a>
-          ) : (
-            row.actorLabel
-          )}
-        </td>
-        <td className="px-3 py-2 align-top font-mono text-xs">{row.action}</td>
-        <td className="px-3 py-2 align-top">
-          {row.subjectHref ? (
-            <a
-              href={row.subjectHref}
-              className="text-accent underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {row.subjectLabel}
-            </a>
-          ) : (
-            row.subjectLabel
-          )}
-        </td>
-        <td className="px-3 py-2 align-top">
-          {row.targetHref ? (
-            <a
-              href={row.targetHref}
-              className="text-accent underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {row.targetLabel}
-            </a>
-          ) : (
-            row.targetLabel
-          )}
-        </td>
-        <td className="px-3 py-2 align-top">
-          <button
-            type="button"
-            className="text-left text-xs text-text-muted"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand();
-            }}
-            aria-expanded={isExpanded}
-          >
-            {isExpanded ? "▾ Collapse" : "▸ "}{" "}
-            {!isExpanded && (
-              <span className="font-mono">{row.metadataPreview || "—"}</span>
-            )}
-          </button>
-        </td>
-      </tr>
-      {isExpanded && (
-        <tr className="bg-muted/20">
-          <td colSpan={6} className="px-3 py-3">
-            <pre className="whitespace-pre-wrap break-all text-xs font-mono text-text-muted">
-              {row.metadataFullJson}
-            </pre>
-          </td>
-        </tr>
-      )}
-      {ctx.menu}
-    </React.Fragment>
   );
 }

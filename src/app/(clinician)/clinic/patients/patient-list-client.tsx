@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
+import { BulkActionBar, useBulkSelection } from "@/components/ui/bulk-action-bar";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
+import {
+  bulkArchivePatientsAction,
+  bulkExportPatientsAction,
+} from "./bulk-actions";
 import {
   useContextMenu,
   ContextMenuIcons,
@@ -329,6 +336,16 @@ export function PatientListClient({
   const listStaggerProps = useMemo(() => listStagger(reduceMotion), [reduceMotion]);
   const childVariants = useMemo(() => listStaggerChild(reduceMotion), [reduceMotion]);
 
+  // Bulk selection state — drives both the in-row checkboxes and the
+  // BulkActionBar that slides up from the bottom when count >= 1.
+  const selection = useBulkSelection<string>();
+  const { toast } = useToast();
+  // Last-clicked row id, used for Shift+Click range selection.
+  const lastClickedRef = useRef<string | null>(null);
+  // Confirm-dialog state for the destructive bulk-archive flow.
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [archivePending, setArchivePending] = useState(false);
+
   /* Hydrate saved views from localStorage -------------------------- */
   useEffect(() => {
     try {
@@ -381,6 +398,158 @@ export function PatientListClient({
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patients, search, powerFilter]);
+
+  /* Visible row IDs for ⌘/Ctrl+A select-all + Shift+Click range select. */
+  const visibleIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
+
+  /* ⌘/Ctrl+A — select every currently-visible patient. Ignored when the
+     user is typing in an input so the shortcut never hijacks ordinary
+     text editing in the search field. */
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      const inField =
+        !!t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable);
+      if (inField) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        selection.setAllVisible(visibleIds);
+      } else if (e.key === "Escape" && selection.size > 0) {
+        selection.clear();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleIds, selection]);
+
+  /* Row click — Shift extends range, plain click toggles a single row.
+     Returns true when the row click was "consumed" by selection logic
+     (i.e. the Shift was held) so the calling anchor can decide whether
+     to follow its href. We deliberately only intercept Shift+Click; a
+     normal click still navigates into the chart. */
+  const handleRowToggle = useCallback(
+    (id: string, opts?: { shift?: boolean }) => {
+      if (opts?.shift) {
+        selection.selectRange(visibleIds, lastClickedRef.current, id);
+      } else {
+        selection.toggle(id);
+      }
+      lastClickedRef.current = id;
+    },
+    [selection, visibleIds],
+  );
+
+  /* Bulk Export — runs immediately, builds CSV in the browser. */
+  const handleBulkExport = useCallback(async () => {
+    const ids = selection.asArray;
+    if (!ids.length) return;
+    const res = await bulkExportPatientsAction({ patientIds: ids });
+    if (!res.ok) {
+      toast({
+        title: "Export failed",
+        description: res.error,
+        variant: "error",
+      });
+      return;
+    }
+    // Tiny inline CSV builder — escape quotes/commas, header row first.
+    const header = [
+      "id",
+      "firstName",
+      "lastName",
+      "dob",
+      "email",
+      "phone",
+      "status",
+      "lastVisit",
+    ];
+    const escape = (v: string | null) =>
+      v == null
+        ? ""
+        : /[",\n]/.test(v)
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+    const lines = [header.join(",")];
+    for (const r of res.rows) {
+      lines.push(
+        [
+          r.id,
+          r.firstName,
+          r.lastName,
+          r.dob,
+          r.email,
+          r.phone,
+          r.status,
+          r.lastVisit,
+        ]
+          .map((x) => escape(x as string | null))
+          .join(","),
+      );
+    }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `patients-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: `Exported ${res.rows.length} patient${res.rows.length === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+  }, [selection.asArray, toast]);
+
+  /* Bulk Archive — destructive; gated behind the confirm dialog. */
+  const handleBulkArchive = useCallback(async () => {
+    const ids = selection.asArray;
+    if (!ids.length) return;
+    setArchivePending(true);
+    const res = await bulkArchivePatientsAction({ patientIds: ids });
+    setArchivePending(false);
+    setArchiveConfirmOpen(false);
+    if (!res.ok) {
+      toast({
+        title: "Archive failed",
+        description: res.error,
+        variant: "error",
+      });
+      return;
+    }
+    toast({
+      title: `Archived ${res.count} patient${res.count === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  /* Bulk Tag / Broadcast — placeholders that toast the not-yet-wired
+     server actions. The bar is wired so the second the server lands
+     these stop being stubs and start being live. */
+  const handleBulkBroadcast = useCallback(() => {
+    toast({
+      title: "Compose a broadcast",
+      description: `Selected ${selection.size} recipient${
+        selection.size === 1 ? "" : "s"
+      }. Continue in the broadcast composer (EMR-707).`,
+      variant: "info",
+    });
+  }, [selection.size, toast]);
+
+  const handleBulkTag = useCallback(() => {
+    toast({
+      title: "Tag",
+      description: "Server-side patient tags ship in EMR-684. For now, tag from each patient's chart.",
+      variant: "info",
+    });
+  }, [toast]);
 
   /* Save/load views ------------------------------------------------ */
   function handleSaveView() {
@@ -562,13 +731,56 @@ export function PatientListClient({
               key={`roster-${powerFilter}-${search}`}
               {...listStaggerProps}
             >
-              {filtered.map((p) => (
+              {filtered.map((p) => {
+                const isSelected = selection.has(p.id);
+                return (
                 <motion.li key={p.id} variants={childVariants}>
                   <PatientRosterRow patient={p}>
                   <Link
                     href={`/clinic/patients/${p.id}`}
-                    className="card-hover flex items-center gap-4 px-5 py-4 hover:bg-surface-muted/50 transition-colors duration-150 group"
+                    onClick={(e) => {
+                      // Shift+Click = range-select; intercept navigation.
+                      // Plain click still navigates into the chart.
+                      if (e.shiftKey) {
+                        e.preventDefault();
+                        handleRowToggle(p.id, { shift: true });
+                      }
+                    }}
+                    className={`card-hover flex items-center gap-4 px-5 py-4 transition-colors duration-150 group ${
+                      isSelected
+                        ? "bg-accent-soft/40"
+                        : "hover:bg-surface-muted/50"
+                    }`}
                   >
+                    {/* Bulk-select checkbox — clicking the box never
+                        navigates. Shown on hover when nothing is selected
+                        and always when the row is selected, mirroring the
+                        Gmail/Linear roster pattern. */}
+                    <label
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      className={`shrink-0 inline-flex items-center justify-center h-5 w-5 -ml-1 ${
+                        isSelected || selection.size > 0
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 transition-opacity"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleRowToggle(p.id, {
+                            shift: (e.nativeEvent as MouseEvent | undefined)
+                              ?.shiftKey,
+                          });
+                        }}
+                        aria-label={`Select ${p.firstName} ${p.lastName}`}
+                        className="h-4 w-4 rounded border-border-strong text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                      />
+                    </label>
                     {/* Avatar */}
                     <Avatar
                       firstName={p.firstName}
@@ -623,12 +835,83 @@ export function PatientListClient({
                   </Link>
                   </PatientRosterRow>
                 </motion.li>
-              ))}
+                );
+              })}
             </motion.ul>
             </ContextMenuHint>
           )}
         </CardContent>
       </Card>
+
+      {/* Bulk action bar — slides up when any patient is selected. */}
+      <BulkActionBar
+        count={selection.size}
+        onClear={selection.clear}
+        itemNoun="patient"
+        ariaLabel="Patient bulk actions"
+        actions={[
+          {
+            key: "broadcast",
+            label: "Send broadcast",
+            onClick: handleBulkBroadcast,
+          },
+          {
+            key: "tag",
+            label: "Tag",
+            onClick: handleBulkTag,
+          },
+          {
+            key: "export",
+            label: "Export to CSV",
+            onClick: handleBulkExport,
+          },
+          {
+            key: "archive",
+            label: "Archive",
+            onClick: () => setArchiveConfirmOpen(true),
+            isDestructive: true,
+            isPending: archivePending,
+          },
+        ]}
+      />
+
+      {/* Confirm dialog — destructive bulk archive. */}
+      <Dialog
+        open={archiveConfirmOpen}
+        onOpenChange={(next) => {
+          if (!archivePending) setArchiveConfirmOpen(next);
+        }}
+      >
+        <DialogContent className="max-w-md p-6">
+          <DialogTitle className="font-display text-lg font-semibold text-text">
+            Archive {selection.size} patient
+            {selection.size === 1 ? "" : "s"}?
+          </DialogTitle>
+          <p className="mt-2 text-sm text-text-muted">
+            Archived patients are hidden from your roster and any active
+            workflows. Their charts remain accessible to super-admins for
+            audit purposes. This can be undone individually from the chart.
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setArchiveConfirmOpen(false)}
+              disabled={archivePending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleBulkArchive}
+              disabled={archivePending}
+            >
+              {archivePending ? "Archiving…" : "Archive"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
