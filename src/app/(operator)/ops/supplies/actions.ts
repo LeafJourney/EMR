@@ -565,13 +565,12 @@ export async function submitDraftedOrderAsAgent(
 // callers should prefer the typed Schema-driven exports above.
 // ---------------------------------------------------------------------------
 
-function unwrap(r: ActionResult): void {
+function unwrap<T>(r: ActionResult<T>): void {
   if (!r.ok) throw new Error(r.error);
 }
 
 export async function approveSupplyOrder(orderId: string): Promise<void> {
-  const r = await approveAndSubmitOrder({ orderId });
-  if (!r.ok) throw new Error(r.error);
+  unwrap(await approveAndSubmitOrder({ orderId }));
 }
 
 export async function rejectSupplyOrder(orderId: string, reason: string): Promise<void> {
