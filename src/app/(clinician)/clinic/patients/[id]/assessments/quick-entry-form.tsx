@@ -4,8 +4,8 @@ import * as React from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { recordAssessmentQuickEntry, type QuickEntryResult } from "./actions";
+import { useToast } from "@/components/ui/toast";
 
 // EMR-160 — quick-entry form, the "I'm in clinic with the paper form" flow.
 //
@@ -38,14 +38,27 @@ export function QuickEntryForm({
   const [slug, setSlug] = React.useState(instruments[0]?.slug ?? "");
   const formRef = React.useRef<HTMLFormElement | null>(null);
   const selected = instruments.find((i) => i.slug === slug);
+  const { toast } = useToast();
 
   React.useEffect(() => {
-    if (state?.ok && formRef.current) {
+    if (!state) return;
+    if (state.ok && formRef.current) {
       formRef.current.reset();
       // Restore the slug since reset() clears the controlled select too.
       setSlug(instruments[0]?.slug ?? "");
+      toast({
+        title: "Assessment recorded",
+        description: state.label,
+        variant: "success",
+      });
+    } else if (!state.ok) {
+      toast({
+        title: "Couldn't record assessment",
+        description: state.error,
+        variant: "error",
+      });
     }
-  }, [state, instruments]);
+  }, [state, instruments, toast]);
 
   return (
     <form
@@ -116,14 +129,6 @@ export function QuickEntryForm({
         </Field>
       </div>
 
-      {state && !state.ok && (
-        <p className="md:col-span-4 text-sm text-danger">{state.error}</p>
-      )}
-      {state?.ok && (
-        <p className="md:col-span-4 text-sm text-success flex items-center gap-2">
-          Recorded · <Badge tone="accent">{state.label}</Badge>
-        </p>
-      )}
     </form>
   );
 }

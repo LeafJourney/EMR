@@ -44,7 +44,8 @@ export async function POST(req: Request) {
             serviceDate: new Date(),
             status: "draft",
             billedAmountCents: 5500, // $55.00 mock rate
-            cptCodes: [{ code: "99457", description: "RPM treatment management services, initial 20 min" }]
+            cptCodes: [{ code: "99457", description: "RPM treatment management services, initial 20 min" }],
+            icd10Codes: []
           }
         });
         

@@ -30,6 +30,30 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
     pathPillar,
   );
 
+  const [pinned, setPinned] = React.useState<boolean>(true);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem("nav:drawerPinned");
+      if (stored !== null) {
+        setPinned(stored === "true");
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  const handleTogglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    try {
+      window.localStorage.setItem("nav:drawerPinned", String(next));
+    } catch {
+      /* non-fatal */
+    }
+  };
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     if (pathPillar) {
@@ -92,6 +116,8 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
         section={activeSection}
         pathname={pathname}
         onClose={() => setActivePillar(null)}
+        pinned={pinned}
+        onTogglePin={handleTogglePin}
       />
     </div>
   );

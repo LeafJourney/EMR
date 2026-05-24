@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
-import { ROLE_HOME } from "@/lib/rbac/roles";
+import { ROLE_HOME, primaryRole } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { BreathingBreak } from "@/components/ui/breathing-break";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ConsciousnessOverlay } from "@/components/ui/consciousness-overlay";
+import { ClinicianTour } from "@/components/onboarding/clinician-tour";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { HelpDrawer } from "@/components/help/help-drawer";
 import { prisma } from "@/lib/db/prisma";
 import {
   computeApprovalsBadge,
@@ -26,9 +29,20 @@ export default async function ClinicianLayout({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
-    const primary = user.roles[0];
-    redirect(ROLE_HOME[primary] ?? "/");
+
+  // EMR-786 — clinic surface is shared by all clinic-floor roles
+  // (clinicians, mid-levels, back office, front office) and practice
+  // owners. Within the surface, `src/lib/rbac/permissions.ts` decides
+  // who can see / edit each chart section.
+  const CLINIC_FLOOR_ROLES: Array<typeof user.roles[number]> = [
+    "clinician",
+    "midlevel",
+    "back_office",
+    "front_office",
+    "practice_owner",
+  ];
+  if (!user.roles.some((r) => CLINIC_FLOOR_ROLES.includes(r))) {
+    redirect(ROLE_HOME[primaryRole(user.roles)] ?? "/");
   }
 
   const safeCount = async (fn: () => Promise<number>) => {
@@ -174,8 +188,11 @@ export default async function ClinicianLayout({
       <QuoteWelcomeModal userName={user.firstName} />
       <BreathingBreak />
       <KeyboardShortcuts />
-      <CommandPalette role="clinician" />
+      <CommandPalette role="clinician" userId={user.id} />
       <ConsciousnessOverlay />
+      <ClinicianTour />
+      <InstallPrompt />
+      <HelpDrawer />
       {children}
     </AppShell>
   );

@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { PreVisitChecklistClient } from "./pre-visit-checklist-client";
+import { AmbientMicToggle } from "./ambient-mic-toggle";
+import { LaunchVideoPopup } from "./launch-video-popup";
 
 export const metadata = { title: "Telehealth" };
 
@@ -104,9 +106,12 @@ export default async function TelehealthDashboardPage() {
         title="Video visits"
         description="Live and scheduled telehealth encounters across your clinic."
         actions={
-          <Badge tone={dailyKeyConfigured ? "success" : "warning"}>
-            {dailyKeyConfigured ? "Daily.co connected" : "Demo mode"}
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge tone={dailyKeyConfigured ? "success" : "warning"}>
+              {dailyKeyConfigured ? "Daily.co connected" : "Demo mode"}
+            </Badge>
+            <LaunchVideoPopup />
+          </div>
         }
       />
 
@@ -294,6 +299,18 @@ export default async function TelehealthDashboardPage() {
             </CardHeader>
             <CardContent>
               <PreVisitChecklistClient />
+            </CardContent>
+          </Card>
+
+          <Card tone="raised">
+            <CardHeader>
+              <CardTitle className="text-base">Ambient mic</CardTitle>
+              <CardDescription>
+                Passive microphone for hands-free note capture between visits.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AmbientMicToggle />
             </CardContent>
           </Card>
         </div>

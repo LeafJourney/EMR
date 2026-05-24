@@ -21,8 +21,8 @@ export const metadata = { title: "Shop" };
 const QUICK_BROWSE = [
   { label: "Calm", slug: "calm" },
   { label: "Focus", slug: "focus" },
-  { label: "Recovery", slug: "recovery" },
-  { label: "Sleep", slug: "sleep" },
+  { label: "Relief", slug: "recovery" },
+  { label: "Rest", slug: "sleep" },
   { label: "Energy", slug: "energy" },
 ] as const;
 

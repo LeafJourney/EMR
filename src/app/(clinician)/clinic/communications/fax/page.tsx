@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FaxEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { formatRelative } from "@/lib/utils/format";
 import { FaxComposeForm } from "./fax-compose";
 
@@ -53,16 +54,24 @@ export default async function FaxPage() {
 
         <Card tone="raised">
           <CardHeader>
+            {/* EMR-694 — copy reword + 7-year retention notice. */}
             <CardTitle className="text-base">Recent activity</CardTitle>
             <CardDescription>
-              Last 50 inbound and outbound transmissions.
+              Last 50 inbound and outbound faxes. Older entries archived for
+              7 years (2,555 days) per medical-records retention.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[640px] overflow-y-auto">
             {records.length === 0 ? (
               <EmptyState
-                title="No faxes yet"
-                description="Send your first fax to see it here."
+                illustration={<FaxEmptyIllustration />}
+                title="Nothing in flight"
+                description="Inbound and outbound faxes will show up here with delivery status, page count, and the patient they belong to."
+                tips={[
+                  "Outbound faxes ship through the practice's provider in seconds",
+                  "Delivery status updates live — no need to refresh the page",
+                  "Older entries archive automatically for 7 years per retention",
+                ]}
               />
             ) : (
               records.map((fax) => (

@@ -13,7 +13,14 @@ import { MobilePortraitNav } from "@/components/layout/MobilePortraitNav";
 // from PR #348) both exist as real internal routes. Same fix shipped
 // for MobilePortraitNav in PR #353; this completes the desktop nav.
 // Caught by commercial-conversion smoke test (pass 9).
+// Added `Features` and `Pricing` to the primary marketing nav so the
+// fully built /features and /pricing routes (the pricing one was
+// previously redirecting to `/`) are actually reachable. Stripe /
+// Linear / Vercel-tier marketing surfaces always expose pricing in
+// the top nav — it's the question every B2B evaluator asks first.
 const NAV_LINKS = [
+  { label: "Features", href: "/features" },
+  { label: "Pricing", href: "/pricing" },
   { label: "About", href: "/about" },
   { label: "Security", href: "/security" },
   { label: "Education", href: "/education" },
@@ -71,7 +78,11 @@ export function SiteHeader() {
           </a>
         </nav>
 
-        <Link href="/sign-up" className="shrink-0">
+        {/* Demo CTA in the top-right corner — route to /book-demo (sales
+            intake) rather than /sign-up (Clerk account creation). Matches
+            the same fix applied across the homepage hero CTAs and the
+            pricing/about/security closing CTAs. */}
+        <Link href="/book-demo" className="shrink-0">
           <Button size="sm" className="px-2.5 sm:px-3.5 text-xs sm:text-sm">
             Demo
           </Button>

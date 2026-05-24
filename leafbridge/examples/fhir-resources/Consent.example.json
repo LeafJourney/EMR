@@ -1,0 +1,37 @@
+{
+  "resourceType": "Consent",
+  "id": "consent-001",
+  "status": "active",
+  "scope": {
+    "coding": [
+      { "system": "http://terminology.hl7.org/CodeSystem/consentscope", "code": "patient-privacy" }
+    ]
+  },
+  "category": [
+    {
+      "coding": [
+        { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "INFAO", "display": "information access" }
+      ]
+    }
+  ],
+  "patient": { "reference": "Patient/patient-001" },
+  "dateTime": "2026-05-18T14:55:00-07:00",
+  "policyRule": {
+    "coding": [
+      { "system": "http://terminology.hl7.org/CodeSystem/consentpolicycodes", "code": "hipaa-research" }
+    ]
+  },
+  "provision": {
+    "type": "permit",
+    "period": { "start": "2026-05-18", "end": "2027-05-18" },
+    "purpose": [
+      { "system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "TREAT", "display": "treatment" }
+    ],
+    "class": [
+      { "system": "http://hl7.org/fhir/resource-types", "code": "Observation" },
+      { "system": "http://hl7.org/fhir/resource-types", "code": "Condition" },
+      { "system": "http://hl7.org/fhir/resource-types", "code": "MedicationRequest" },
+      { "system": "http://hl7.org/fhir/resource-types", "code": "DocumentReference" }
+    ]
+  }
+}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
@@ -10,17 +11,57 @@ import {
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
 import { SmartInboxView } from "./smart-inbox";
+import { MorningBriefView } from "./brief-view";
 
 export const metadata = { title: "Smart Inbox" };
+
+// EMR-708 — supported `filter=` values. `brief` renders the merged
+// Morning Brief view (previously at /clinic/morning-brief); any other
+// value falls through to the normal Smart Inbox.
+const SUPPORTED_FILTERS = ["brief"] as const;
+type SupportedFilter = (typeof SUPPORTED_FILTERS)[number];
+
+function isSupportedFilter(value: string | undefined): value is SupportedFilter {
+  return !!value && (SUPPORTED_FILTERS as readonly string[]).includes(value);
+}
 
 export default async function ClinicMessagesPage({
   searchParams,
 }: {
-  searchParams?: { thread?: string };
+  // EMR-708 — `filter=brief` is the inbound filter from the redirected
+  // /clinic/morning-brief route. The inbox shows a Brief banner + scopes
+  // the list to brief-flagged threads.
+  searchParams?: { thread?: string; filter?: string };
 }) {
   const user = await requireUser();
+  const filter = isSupportedFilter(searchParams?.filter) ? searchParams!.filter : null;
 
-  const threads = await prisma.messageThread.findMany({
+  if (filter === "brief") {
+    return (
+      <PageShell maxWidth="max-w-[1400px]">
+        <PageHeader
+          eyebrow="Messages · Brief"
+          title={`Good morning, ${user.firstName}.`}
+          description="Your daily quality checklist. Folded into the inbox as the brief filter."
+        />
+        <div className="mb-4 flex items-center gap-2 text-xs">
+          <Link
+            href="/clinic/messages"
+            className="rounded-full border border-border bg-surface px-3 py-1 text-text-muted hover:bg-surface-muted"
+          >
+            All threads
+          </Link>
+          <span className="rounded-full border border-accent bg-accent/10 px-3 py-1 text-text">
+            Brief
+          </span>
+        </div>
+        <MorningBriefView />
+      </PageShell>
+    );
+  }
+
+  const [threads, patients] = await Promise.all([
+    prisma.messageThread.findMany({
     where: { patient: { organizationId: user.organizationId! } },
     orderBy: { lastMessageAt: "desc" },
     include: {
@@ -50,8 +91,32 @@ export default async function ClinicMessagesPage({
         orderBy: { startedAt: "asc" },
       },
     },
-    take: 50,
-  });
+      take: 50,
+    }),
+    prisma.patient.findMany({
+      where: { organizationId: user.organizationId! },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      take: 300,
+    }),
+  ]);
+
+  // EMR-659 — heuristic until Message gains a real attachments column. We flag
+  // a thread as carrying attachments when any message body mentions a file
+  // URL, a familiar attachment extension, or the words "attached/attachment".
+  const ATTACHMENT_RE =
+    /(https?:\/\/\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|(\b\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|\battach(?:ed|ment)\b/i;
+  function countAttachments(messages: { body: string }[]): number {
+    let n = 0;
+    for (const m of messages) {
+      const matches = m.body.match(
+        /(https?:\/\/\S+\.(?:pdf|docx?|jpe?g|png|heic)\b)|(\b[A-Za-z0-9._-]+\.(?:pdf|docx?|jpe?g|png|heic)\b)/gi,
+      );
+      if (matches) n += matches.length;
+      else if (ATTACHMENT_RE.test(m.body)) n += 1;
+    }
+    return n;
+  }
 
   // Triage each thread and build serialized data for the client component
   const triaged: TriagedMessage[] = threads.map((t) => {
@@ -67,6 +132,8 @@ export default async function ClinicMessagesPage({
     const unreadCount = t.messages.filter(
       (m) => m.status !== "read" && m.senderUserId !== user.id && !m.senderAgent,
     ).length;
+
+    const attachmentCount = countAttachments(t.messages);
 
     // Build a short summary from the most recent patient message
     const latestPatientMsg = t.messages.find(
@@ -94,8 +161,25 @@ export default async function ClinicMessagesPage({
       triageReason: result.triageReason,
       suggestedAction: result.suggestedAction,
       needsClinician: result.needsClinician,
+      attachmentCount,
     };
   });
+
+  // EMR-657 — fetch active meds for all patients so the avatar tooltip can
+  // show "Current Meds" on hover without a separate round-trip.
+  const uniquePatientIds = [...new Set(threads.map((t) => t.patient.id))];
+  const activeMeds = uniquePatientIds.length > 0
+    ? await prisma.patientMedication.findMany({
+        where: { patientId: { in: uniquePatientIds }, active: true },
+        select: { patientId: true, name: true, dosage: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
+
+  const patientMeds: Record<string, { name: string; dosage: string | null }[]> = {};
+  for (const med of activeMeds) {
+    (patientMeds[med.patientId] ??= []).push({ name: med.name, dosage: med.dosage });
+  }
 
   // Serialize full thread messages for the detail view
   const threadMessages = threads.map((t) => ({
@@ -133,11 +217,26 @@ export default async function ClinicMessagesPage({
         title="Smart Inbox"
         description="AI-triaged message queue. Threads are prioritized so urgent patient needs surface first."
       />
+      {/* EMR-708 — filter chips. Brief is the merged Morning Brief view. */}
+      <div className="mb-4 flex items-center gap-2 text-xs">
+        <span className="rounded-full border border-accent bg-accent/10 px-3 py-1 text-text">
+          All threads
+        </span>
+        <Link
+          href="/clinic/messages?filter=brief"
+          className="rounded-full border border-border bg-surface px-3 py-1 text-text-muted hover:bg-surface-muted"
+        >
+          Brief
+        </Link>
+      </div>
       <SmartInboxView
         triaged={triaged}
         threadMessages={threadMessages}
         currentUserId={user.id}
         initialThreadId={searchParams?.thread}
+        initialFilter={searchParams?.filter}
+        patients={patients}
+        patientMeds={patientMeds}
       />
     </PageShell>
   );

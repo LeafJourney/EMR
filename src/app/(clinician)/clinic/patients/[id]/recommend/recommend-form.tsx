@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import {
@@ -8,6 +9,7 @@ import {
   type Recommendation,
 } from "./actions";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import {
   Card,
   CardContent,
@@ -154,6 +156,17 @@ export function RecommendForm({
     generateRecommendation,
     null
   );
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (state?.ok === false) {
+      toast({
+        title: "Couldn't generate recommendation",
+        description: state.error,
+        variant: "error",
+      });
+    }
+  }, [state, toast]);
 
   return (
     <div>
@@ -165,7 +178,7 @@ export function RecommendForm({
             <CardTitle>Patient summary</CardTitle>
             <CardDescription>
               The recommendation engine will use this data along with outcome
-              trends, assessment scores, and the research corpus.
+              trends, assessment scores, and the research database.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -182,9 +195,6 @@ export function RecommendForm({
             </div>
           </CardContent>
           <CardFooter>
-            {state?.ok === false && (
-              <p className="text-sm text-danger">{state.error}</p>
-            )}
             <div className="ml-auto">
               <GenerateButton />
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   Card,
   CardHeader,
@@ -9,6 +9,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 
 export interface ProviderRow {
   id: string;
@@ -28,12 +29,12 @@ type SortKey =
   | "revenue"
   | "agentAcceptance";
 
-const COLUMNS: { key: SortKey; label: string; suffix?: string }[] = [
+const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "patientsThisMonth", label: "Patients this month" },
-  { key: "notesOnTimePct", label: "Notes <24h", suffix: "%" },
+  { key: "notesOnTimePct", label: "Notes <24h" },
   { key: "satisfactionNps", label: "Satisfaction (NPS)" },
-  { key: "revenue", label: "Revenue", suffix: "$" },
-  { key: "agentAcceptance", label: "Agent acceptance", suffix: "%" },
+  { key: "revenue", label: "Revenue" },
+  { key: "agentAcceptance", label: "Agent acceptance" },
 ];
 
 const TROPHIES = ["🥇", "🥈", "🥉"];
@@ -45,18 +46,9 @@ function formatCell(key: SortKey, value: number): string {
 }
 
 export function LeaderboardView({ rows }: { rows: ProviderRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("patientsThisMonth");
-  const [dir, setDir] = useState<"asc" | "desc">("desc");
-
-  const sorted = useMemo(() => {
-    const copy = [...rows];
-    copy.sort((a, b) =>
-      dir === "desc" ? b[sortKey] - a[sortKey] : a[sortKey] - b[sortKey]
-    );
-    return copy;
-  }, [rows, sortKey, dir]);
-
-  // Top-3 per column (independent of current sort)
+  // Top-3 per column (independent of current sort) — feeds the trophy
+  // glyphs so the visual cue stays anchored to the underlying data, not
+  // to whichever column the operator happens to be sorting by.
   const topByColumn = useMemo(() => {
     const result: Record<SortKey, string[]> = {
       patientsThisMonth: [],
@@ -75,6 +67,51 @@ export function LeaderboardView({ rows }: { rows: ProviderRow[] }) {
     return result;
   }, [rows]);
 
+  // Build column defs against ProviderRow — the primitive picks up the
+  // generic so every cell(row) is fully typed.
+  const columns: ColumnDef<ProviderRow>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        label: "Provider",
+        sortable: true,
+        sortFn: (a, b) => a.name.localeCompare(b.name),
+        cell: (row) => (
+          <>
+            <p className="font-medium text-text">{row.name}</p>
+            <p className="text-xs text-text-subtle">{row.specialty}</p>
+          </>
+        ),
+      },
+      ...COLUMNS.map<ColumnDef<ProviderRow>>((col) => ({
+        key: col.key,
+        label: col.label,
+        sortable: true,
+        align: "right" as const,
+        sortFn: (a, b) => a[col.key] - b[col.key],
+        cell: (row) => {
+          const topIdx = topByColumn[col.key].indexOf(row.id);
+          return (
+            <>
+              <span
+                className={cn(
+                  "font-medium",
+                  topIdx === 0 && "text-emerald-600",
+                )}
+              >
+                {formatCell(col.key, row[col.key])}
+              </span>
+              {topIdx >= 0 && (
+                <span className="ml-1.5">{TROPHIES[topIdx]}</span>
+              )}
+            </>
+          );
+        },
+      })),
+    ],
+    [topByColumn],
+  );
+
   return (
     <Card tone="raised">
       <CardHeader>
@@ -83,78 +120,15 @@ export function LeaderboardView({ rows }: { rows: ProviderRow[] }) {
           Click any column header to sort. 🥇🥈🥉 mark the top 3 in each column.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto -mx-6">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="px-6 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle">
-                  Provider
-                </th>
-                {COLUMNS.map((col) => (
-                  <th
-                    key={col.key}
-                    className="px-4 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle text-right select-none"
-                  >
-                    <button
-                      onClick={() => {
-                        if (sortKey === col.key) {
-                          setDir(dir === "desc" ? "asc" : "desc");
-                        } else {
-                          setSortKey(col.key);
-                          setDir("desc");
-                        }
-                      }}
-                      className={cn(
-                        "inline-flex items-center gap-1 hover:text-text transition-colors",
-                        sortKey === col.key && "text-accent"
-                      )}
-                    >
-                      {col.label}
-                      {sortKey === col.key && (
-                        <span>{dir === "desc" ? "↓" : "↑"}</span>
-                      )}
-                    </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {sorted.map((row) => (
-                <tr
-                  key={row.id}
-                  className="hover:bg-surface-muted/50 transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <p className="font-medium text-text">{row.name}</p>
-                    <p className="text-xs text-text-subtle">{row.specialty}</p>
-                  </td>
-                  {COLUMNS.map((col) => {
-                    const topIdx = topByColumn[col.key].indexOf(row.id);
-                    return (
-                      <td
-                        key={col.key}
-                        className="px-4 py-4 text-right tabular-nums"
-                      >
-                        <span
-                          className={cn(
-                            "font-medium",
-                            topIdx === 0 && "text-emerald-600"
-                          )}
-                        >
-                          {formatCell(col.key, row[col.key])}
-                        </span>
-                        {topIdx >= 0 && (
-                          <span className="ml-1.5">{TROPHIES[topIdx]}</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <CardContent className="px-0 sm:px-0">
+        <DataTable<ProviderRow>
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          ariaLabel="Provider performance leaderboard"
+          className="border-0 rounded-none shadow-none"
+          showDensityToggle
+        />
       </CardContent>
     </Card>
   );

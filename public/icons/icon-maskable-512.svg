@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LeafJourney PWA icon — 512x512 "maskable" purpose.
+  Maskable spec: the inner ~80% (the safe zone) must contain the full
+  recognizable mark; the outer 10% on each edge is reserved for the
+  platform's mask shape (circle, squircle, rounded square, etc.).
+  We fill the *entire* canvas with the brand parchment so any mask
+  the OS applies still reveals brand color.
+-->
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LeafJourney">
+  <title>LeafJourney</title>
+  <!-- Full-bleed background = safe under any platform mask -->
+  <rect width="512" height="512" fill="#FFFCF7"/>
+  <!-- Glyph sits inside the 80% safe zone (centered, scaled to ~70%) -->
+  <g transform="translate(256 256)" fill="none" stroke="#1F4D37" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 36 -100 C 64 -78 88 -46 88 0 C 88 46 64 78 36 100 C 8 78 -16 46 -16 0 C -16 -46 8 -78 36 -100 Z" transform="rotate(-22)"/>
+    <path d="M 0 24 C -46 8 -80 -22 -92 -64" />
+    <path d="M -76 112 L 92 112" />
+  </g>
+</svg>

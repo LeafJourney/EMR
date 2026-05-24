@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FieldGroup, Input, Textarea } from "@/components/ui/input";
 import {
+  EmptyFilterState,
+  FilterChips,
+  MultiSelectFilter,
+  SavedViewsBar,
+  SortMenu,
+  type ActiveChip,
+} from "@/components/ui/filter-bar";
+import {
   INCIDENT_CATEGORY_LABELS,
   type IncidentCategory,
   type IncidentReport,
@@ -28,12 +36,43 @@ const SEVERITY_LABELS: Record<IncidentSeverity, string> = {
 };
 
 const SEVERITY_ORDER: IncidentSeverity[] = ["low", "medium", "high", "critical"];
+const SEVERITY_RANK: Record<IncidentSeverity, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
 const CATEGORY_OPTIONS = Object.keys(INCIDENT_CATEGORY_LABELS) as IncidentCategory[];
+
+type StatusFilter = "open" | "resolved";
+type SortKey = "newest" | "oldest" | "severity-desc" | "severity-asc";
+
+type ViewState = {
+  severities: IncidentSeverity[];
+  categories: IncidentCategory[];
+  statuses: StatusFilter[];
+  patientAffectedOnly: boolean;
+  sort: SortKey;
+};
+
+const DEFAULT_STATE: ViewState = {
+  severities: [],
+  categories: [],
+  statuses: [],
+  patientAffectedOnly: false,
+  sort: "newest",
+};
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "severity-desc", label: "Severity (high to low)" },
+  { value: "severity-asc", label: "Severity (low to high)" },
+] as const;
 
 export function IncidentsView({ initialIncidents }: { initialIncidents: IncidentReport[] }) {
   const [incidents, setIncidents] = useState<IncidentReport[]>(initialIncidents);
-  const [severityFilter, setSeverityFilter] = useState<"all" | IncidentSeverity>("all");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | IncidentCategory>("all");
+  const [state, setState] = useState<ViewState>(DEFAULT_STATE);
   const [formOpen, setFormOpen] = useState(false);
   const [resolving, setResolving] = useState<IncidentReport | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
@@ -46,11 +85,90 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
   });
 
   const filtered = useMemo(() => {
-    return incidents
-      .filter((i) => (severityFilter === "all" ? true : i.severity === severityFilter))
-      .filter((i) => (categoryFilter === "all" ? true : i.category === categoryFilter))
-      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
-  }, [incidents, severityFilter, categoryFilter]);
+    const list = incidents.filter((i) => {
+      if (state.severities.length > 0 && !state.severities.includes(i.severity)) {
+        return false;
+      }
+      if (state.categories.length > 0 && !state.categories.includes(i.category)) {
+        return false;
+      }
+      if (state.statuses.length > 0) {
+        const status: StatusFilter = i.resolvedAt ? "resolved" : "open";
+        if (!state.statuses.includes(status)) return false;
+      }
+      if (state.patientAffectedOnly && !i.patientAffected) return false;
+      return true;
+    });
+    return list.sort((a, b) => {
+      switch (state.sort) {
+        case "newest":
+          return b.reportedAt.localeCompare(a.reportedAt);
+        case "oldest":
+          return a.reportedAt.localeCompare(b.reportedAt);
+        case "severity-desc":
+          return SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity];
+        case "severity-asc":
+          return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+      }
+    });
+  }, [incidents, state]);
+
+  const chips: ActiveChip[] = [];
+  if (state.severities.length > 0) {
+    chips.push({
+      id: "severities",
+      label: "Severity",
+      value: state.severities.map((s) => SEVERITY_LABELS[s]),
+    });
+  }
+  if (state.categories.length > 0) {
+    chips.push({
+      id: "categories",
+      label: "Category",
+      value: state.categories.map((c) => INCIDENT_CATEGORY_LABELS[c]),
+    });
+  }
+  if (state.statuses.length > 0) {
+    chips.push({
+      id: "statuses",
+      label: "Status",
+      value: state.statuses.map((s) => (s === "open" ? "Open" : "Resolved")),
+    });
+  }
+  if (state.patientAffectedOnly) {
+    chips.push({ id: "patient", label: "Flag", value: "Patient affected" });
+  }
+
+  function removeChip(id: string) {
+    setState((s) => {
+      switch (id) {
+        case "severities":
+          return { ...s, severities: [] };
+        case "categories":
+          return { ...s, categories: [] };
+        case "statuses":
+          return { ...s, statuses: [] };
+        case "patient":
+          return { ...s, patientAffectedOnly: false };
+        default:
+          return s;
+      }
+    });
+  }
+
+  function clearAll() {
+    setState({ ...DEFAULT_STATE, sort: state.sort });
+  }
+
+  function isDefault(s: ViewState) {
+    return (
+      s.severities.length === 0 &&
+      s.categories.length === 0 &&
+      s.statuses.length === 0 &&
+      !s.patientAffectedOnly &&
+      s.sort === DEFAULT_STATE.sort
+    );
+  }
 
   function submit() {
     if (!draft.title.trim()) return;
@@ -84,33 +202,78 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
 
   return (
     <div className="space-y-5">
+      <SavedViewsBar
+        storageKey="ops.incidents"
+        currentState={state}
+        isDefault={isDefault}
+        onApply={(s) => setState(s)}
+        onReset={() => setState(DEFAULT_STATE)}
+      />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={severityFilter}
-            onChange={(e) => setSeverityFilter(e.target.value as "all" | IncidentSeverity)}
-            className="rounded-md border border-border-strong bg-surface px-3 h-9 text-sm text-text"
+          <MultiSelectFilter
+            label="Severity"
+            options={SEVERITY_ORDER.map((s) => ({
+              value: s,
+              label: SEVERITY_LABELS[s],
+            }))}
+            selected={state.severities}
+            onChange={(next) =>
+              setState((s) => ({ ...s, severities: next as IncidentSeverity[] }))
+            }
+            placeholder="All severities"
+          />
+          <MultiSelectFilter
+            label="Category"
+            options={CATEGORY_OPTIONS.map((c) => ({
+              value: c,
+              label: INCIDENT_CATEGORY_LABELS[c],
+            }))}
+            selected={state.categories}
+            onChange={(next) =>
+              setState((s) => ({ ...s, categories: next as IncidentCategory[] }))
+            }
+            placeholder="All categories"
+          />
+          <MultiSelectFilter
+            label="Status"
+            options={[
+              { value: "open", label: "Open" },
+              { value: "resolved", label: "Resolved" },
+            ]}
+            selected={state.statuses}
+            onChange={(next) =>
+              setState((s) => ({ ...s, statuses: next as StatusFilter[] }))
+            }
+            placeholder="Open & resolved"
+          />
+          <button
+            type="button"
+            onClick={() =>
+              setState((s) => ({ ...s, patientAffectedOnly: !s.patientAffectedOnly }))
+            }
+            className={cn(
+              "h-9 px-3 rounded-md border text-sm transition-colors",
+              state.patientAffectedOnly
+                ? "border-danger bg-red-50 text-danger font-medium"
+                : "border-border-strong bg-surface text-text-muted hover:bg-surface-muted/60",
+            )}
           >
-            <option value="all">All severities</option>
-            {SEVERITY_ORDER.map((s) => (
-              <option key={s} value={s}>{SEVERITY_LABELS[s]}</option>
-            ))}
-          </select>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as "all" | IncidentCategory)}
-            className="rounded-md border border-border-strong bg-surface px-3 h-9 text-sm text-text"
-          >
-            <option value="all">All categories</option>
-            {CATEGORY_OPTIONS.map((c) => (
-              <option key={c} value={c}>{INCIDENT_CATEGORY_LABELS[c]}</option>
-            ))}
-          </select>
+            Patient affected
+          </button>
+          <SortMenu
+            options={[...SORT_OPTIONS]}
+            value={state.sort}
+            onChange={(next) => setState((s) => ({ ...s, sort: next as SortKey }))}
+          />
         </div>
         <Button size="sm" onClick={() => setFormOpen(true)}>
           Report new incident
         </Button>
       </div>
+
+      <FilterChips chips={chips} onRemove={removeChip} onClearAll={clearAll} />
 
       <Card tone="raised">
         <div className="overflow-x-auto">
@@ -168,15 +331,17 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-text-subtle text-sm">
-                    No incidents match your filters.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+          {filtered.length === 0 && (
+            <div className="p-4">
+              <EmptyFilterState
+                title="No incidents match"
+                hint="Try widening severity or status, or clear the patient-affected toggle."
+                onClear={clearAll}
+              />
+            </div>
+          )}
         </div>
       </Card>
 

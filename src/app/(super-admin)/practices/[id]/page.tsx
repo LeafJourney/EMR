@@ -5,11 +5,12 @@
 // segment boundary, so any unauth'd request is redirected before we even
 // resolve params here.
 //
-// Tabs are URL-driven (`?tab=overview|providers|activity|billing`); the
-// disabled History tab anchor points at EMR-743. Each tab body is its
-// own loader so we only fetch the data the user is looking at — the
-// Overview loader runs unconditionally because we need the practice
-// header (name, status badges) regardless of which tab is selected.
+// Tabs are URL-driven (`?tab=overview|providers|activity|billing|history`).
+// Each tab body is its own loader so we only fetch the data the user is
+// looking at — the Overview loader runs unconditionally because we need
+// the practice header (name, status badges) regardless of which tab is
+// selected. EMR-743 wired the History tab; cursor paging on that tab is
+// driven by the `?historyCursor=` URL param so paging stays server-side.
 //
 // Impersonation surfaces ("View as this practice", "Stop impersonating")
 // are intentionally omitted; EMR-742 ships them. We do not stub a button
@@ -23,6 +24,8 @@ import { ArrowLeft, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
+import { ViewAsPracticeButton } from "@/components/super-admin/view-as-practice-button";
 
 import { loadPracticeOverview } from "../loaders";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
@@ -30,6 +33,8 @@ import { OverviewTab } from "./overview-tab";
 import { ProvidersTab } from "./providers-tab";
 import { ActivityTab } from "./activity-tab";
 import { BillingTab } from "./billing-tab";
+import { CostsTab } from "./costs-tab";
+import { HistoryTab } from "./history-tab";
 import { TabBar, isTabKey, type TabKey } from "./tab-bar";
 
 export const dynamic = "force-dynamic";
@@ -55,17 +60,13 @@ export default async function PracticeDrillInPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{ tab?: string; historyCursor?: string }>;
 }) {
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const requestedTab = sp.tab;
-  // History is intentionally non-clickable; if someone hand-types
-  // ?tab=history we fall back to overview rather than rendering a stub.
-  const activeTab: TabKey =
-    isTabKey(requestedTab) && requestedTab !== "history"
-      ? requestedTab
-      : "overview";
+  const activeTab: TabKey = isTabKey(requestedTab) ? requestedTab : "overview";
+  const historyCursor = sp.historyCursor ?? null;
 
   const practice = await loadPracticeOverview(id);
   if (!practice) {
@@ -78,6 +79,15 @@ export default async function PracticeDrillInPage({
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Practices", href: "/practices" },
+          { label: practice.practiceName },
+        ]}
+      />
+
       <div className="mb-6">
         <Link
           href="/practices"
@@ -117,6 +127,13 @@ export default async function PracticeDrillInPage({
               )}
             </div>
           </div>
+          {/* EMR-742 Phase 2 — super-admin-only; the (super-admin) layout
+              guards this segment with requireSuperAdmin() so anyone who
+              renders this page is already cleared to see the button. */}
+          <ViewAsPracticeButton
+            practiceOrgId={practice.organizationId}
+            practiceName={practice.practiceName}
+          />
         </div>
       </div>
 
@@ -134,6 +151,23 @@ export default async function PracticeDrillInPage({
       )}
       {activeTab === "billing" && (
         <BillingTab organizationId={practice.organizationId} />
+      )}
+      {activeTab === "costs" && (
+        <CostsTab organizationId={practice.organizationId} />
+      )}
+      {activeTab === "history" && (
+        <HistoryTab
+          practiceRouteId={id}
+          organizationId={practice.organizationId}
+          configurationId={practice.configId}
+          practiceName={practice.practiceName}
+          alsoSubjectIds={[
+            practice.configId,
+            practice.practiceId,
+            practice.organizationId,
+          ].filter((s): s is string => !!s)}
+          cursor={historyCursor}
+        />
       )}
     </PageShell>
   );

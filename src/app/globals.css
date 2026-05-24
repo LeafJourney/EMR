@@ -405,6 +405,11 @@
     from { opacity: 0; transform: translateX(-24px); }
     to   { opacity: 1; transform: translateX(0); }
   }
+  /* Toast notification entrance — subtle slide-up + fade. */
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
   @keyframes lm-confirm-burst {
     0%   { opacity: 0.55; transform: scale(0.4); }
     70%  { opacity: 0.15; }
@@ -723,6 +728,108 @@
 }
 
 /* ==========================================================================
+   Mobile portrait iOS polish (ux/mobile-portrait-ios-polish)
+   These rules tighten the touch experience on phones to match Apple HIG
+   without disturbing desktop rendering. They are scoped via media queries
+   and utility classes so md+ remains untouched.
+   ========================================================================== */
+
+/* iOS Safari auto-zooms when a focused input has font-size < 16px. Bumping
+   the minimum font-size on mobile prevents the disorienting zoom that
+   otherwise hijacks the viewport when patients tap a search bar. We only
+   apply this below the md breakpoint so dense desktop forms stay compact. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Apple HIG — interactive elements must hit 44×44 pt. Mark any element that
+   is intrinsically smaller (e.g. icon-only chevrons) with this class on
+   mobile to expand its hit-area without inflating its visual footprint. */
+.ios-tap-target {
+  position: relative;
+}
+.ios-tap-target::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 0 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* Suppress the dark blue tap flash on touch — iOS Safari paints this by
+   default; SF native apps don't, so the EMR's Apple aesthetic requires
+   we opt out across all interactive surfaces. */
+@media (hover: none) and (pointer: coarse) {
+  button, a, [role="button"], [role="tab"], [role="link"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Swipe-back affordance — a faint vertical scrim along the left 8px edge of
+   detail pages, mimicking the iOS edge swipe gesture hint. Apply to a
+   page wrapper with .ios-swipe-back-hint. Pure CSS, no JS gesture: the
+   browser's history.back() is already wired by Next router. */
+.ios-swipe-back-hint {
+  position: relative;
+}
+.ios-swipe-back-hint::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  pointer-events: none;
+  z-index: 30;
+  background: linear-gradient(
+    to right,
+    rgba(15, 18, 16, 0.06),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+@media (max-width: 767px) {
+  .ios-swipe-back-hint::before {
+    opacity: 1;
+  }
+}
+
+/* Safe-area helpers — Tailwind doesn't ship arbitrary env() utilities, so
+   these classes are convenient escape hatches for the few spots that
+   need them (top header, bottom nav, FAB). */
+.safe-pt { padding-top: env(safe-area-inset-top); }
+.safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+.safe-pr { padding-right: env(safe-area-inset-right); }
+.safe-pl { padding-left: env(safe-area-inset-left); }
+.safe-mt { margin-top: env(safe-area-inset-top); }
+.safe-mb { margin-bottom: env(safe-area-inset-bottom); }
+
+/* Mobile-only collapsing search bar (Apple Mail pattern). The full-width
+   bar shrinks to an icon-only pill once the page scrolls. Pages that
+   opt in toggle `data-collapsed="true"` on the bar via an IntersectionObserver
+   or scroll handler. Pure CSS handles the rest. */
+.ios-collapsing-search {
+  transition: max-width 260ms cubic-bezier(0.2, 0, 0, 1),
+              opacity 200ms ease;
+  max-width: 100%;
+}
+@media (max-width: 767px) {
+  .ios-collapsing-search[data-collapsed="true"] {
+    max-width: 44px;
+  }
+  .ios-collapsing-search[data-collapsed="true"] > .ios-search-label {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* ==========================================================================
    ADA — Reduced motion: disable ALL transitions and animations globally
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
@@ -741,4 +848,317 @@
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
+}
+
+/* ==========================================================================
+   Print stylesheet — clinical document chrome
+   ux/print-stylesheets-clinical (unticketed UX run)
+
+   Clinicians print chart summaries, lab results, Rx slips, and SOAP notes
+   constantly. The screen UI is a webapp; the printed page must read like a
+   real medical document — A4-friendly margins, serif body, hidden chrome,
+   no decorative gradients, no glass blurs, no ambient animations.
+
+   Two layers:
+     1) Global `@media print` resets — strip chrome, force black ink on
+        white paper, kill animations/gradients, smart link expansion.
+     2) `.print-document` opt-in container used by dedicated print routes
+        (`/clinic/patients/[id]/print`, `/clinic/sign-off/refills/[id]/print`,
+        `/clinic/sign-off/labs/[id]/print`, `.../notes/[noteId]/print`) for
+        the canonical clinical document layout (header / sections / footer).
+   ========================================================================== */
+@media print {
+  /* ── Page setup — Letter with conservative margins.
+        Letter, not A4: the US clinical workflow assumes 8.5×11 and front-desk
+        printers default to Letter trays. Margins kept tight so a one-page
+        chart summary fits without forcing a second sheet. */
+  @page {
+    size: letter;
+    margin: 0.6in;
+  }
+
+  /* ── Body reset — black ink, white paper, no decorative chrome.
+        WebKit needs `print-color-adjust: exact` to preserve abnormal-value
+        red and PHI-banner gold when the clinician explicitly wants them
+        printed; default is to strip backgrounds for ink economy. */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    font-family: "Times New Roman", "Iowan Old Style", Palatino, Georgia,
+      ui-serif, serif;
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+
+  /* Sans-serif for headers — visual contrast with the serif body, same
+     pattern as JAMA / NEJM article layouts. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+      Arial, sans-serif;
+    color: #000 !important;
+  }
+
+  /* ── Hide app chrome.
+        Selectors below match the persistent app shell pieces (nav rails,
+        sidebars, drawer, toolbar, search dock) plus generic interactive
+        controls. Everything is opt-out via `.print-show`. */
+  nav,
+  aside,
+  header[role="banner"],
+  footer[role="contentinfo"],
+  [data-nav-rail],
+  [data-pillar-nav],
+  [data-context-drawer],
+  [data-app-shell-chrome],
+  [data-toolbar],
+  [data-omni-search],
+  [data-print-hide],
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Buttons / form controls — clinicians don't click on a printed page.
+     Scoped *outside* `.print-document` so opt-in print views can still
+     render purposeful signature lines/check boxes. */
+  body :is(button, [role="button"], input[type="button"], input[type="submit"],
+        input[type="reset"], select):not(.print-document button):not(.print-document [role="button"]) {
+    display: none !important;
+  }
+
+  /* ── Color flattening.
+        Tailwind's gradient utilities and our liquid-glass surfaces look
+        terrible printed in greyscale — drop the backgrounds and rely on
+        borders + typography for hierarchy. */
+  [class*="bg-gradient"],
+  .liquid-glass,
+  .liquid-glass-strong,
+  .ambient,
+  .grain::before {
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Force-disable animations even when reduced-motion isn't set on the
+     OS. Printers don't have a viewport — animations would freeze a frame
+     and could ship layouts in mid-transition. */
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* ── Link expansion.
+        Show the href after EXTERNAL links only. Internal links (relative
+        URLs and our own domains) would print as long `/clinic/patients/...`
+        strings — useless on paper and visually noisy. We approximate
+        "external" with the `[href^="http"]` selector and exclude our own
+        hosts via `:not(...)`. The two-stage rule keeps mailto/tel readable. */
+  a[href^="http"]:not([href*="leafjourney.com"]):not([href*="localhost"]):not(.no-print-href)::after {
+    content: " [" attr(href) "]";
+    font-size: 9pt;
+    color: #444;
+    font-style: italic;
+    word-break: break-all;
+  }
+  a[href^="mailto:"]::after,
+  a[href^="tel:"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #444;
+  }
+  /* Strip Next.js underline default for the link href echo. */
+  a, a:visited {
+    color: #000 !important;
+    text-decoration: underline;
+  }
+
+  /* ── Page-break hygiene.
+        Avoid orphaned single rows / split section headers. Tables and
+        cards explicitly opted into `break-inside: avoid` when they should
+        stay together; the global rule is a softer "try-not-to". */
+  h1, h2, h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  tr, li, blockquote {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  table {
+    border-collapse: collapse;
+  }
+  thead {
+    display: table-header-group; /* repeat header on each page */
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Generic "card-ish" containers — keep small clinical cards together. */
+  .break-avoid,
+  .print-card,
+  article {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* ── Print document container ────────────────────────────────
+   Used by the dedicated `/.../print` routes. On screen, renders
+   as a centered letter-sized sheet so the clinician can preview
+   exactly what will land on paper. On print, the borders/shadow
+   disappear (handled inside @media print above + the rules below).
+   Reusing one container keeps Rx slips, lab printouts, SOAP notes,
+   and chart summaries visually consistent — same as a hospital
+   stamping every form with the same letterhead block. */
+.print-document {
+  background: #fff;
+  color: #111;
+  max-width: 8.5in;
+  margin: 0 auto;
+  padding: 0.6in;
+  box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.22);
+  font-family: "Times New Roman", "Iowan Old Style", Palatino, Georgia,
+    ui-serif, serif;
+  font-size: 11pt;
+  line-height: 1.45;
+}
+.print-document :is(h1, h2, h3) {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial,
+    sans-serif;
+  color: #111;
+}
+.print-document .doc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 2px solid #111;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+}
+.print-document .doc-eyebrow {
+  font-size: 9.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #444;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial,
+    sans-serif;
+  font-weight: 600;
+}
+.print-document .doc-section {
+  margin-bottom: 18px;
+}
+.print-document .doc-section h2 {
+  font-size: 10pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #444;
+  border-bottom: 1px solid #c7c7cc;
+  padding-bottom: 4px;
+  margin: 0 0 8px 0;
+  font-weight: 600;
+}
+.print-document .doc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 24px;
+}
+.print-document .doc-field-label {
+  font-size: 8.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6e6e73;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial,
+    sans-serif;
+}
+.print-document .doc-field-value {
+  font-size: 11pt;
+  color: #111;
+}
+.print-document .doc-footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid #c7c7cc;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 9.5pt;
+  color: #444;
+}
+.print-document .doc-sig {
+  border-top: 1px solid #111;
+  width: 240px;
+  margin-top: 36px;
+  padding-top: 4px;
+  font-size: 9pt;
+  color: #444;
+  text-align: center;
+}
+.print-document table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5pt;
+}
+.print-document table th {
+  text-align: left;
+  font-size: 9pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #444;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid #111;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial,
+    sans-serif;
+}
+.print-document table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #e5e5ea;
+  vertical-align: top;
+}
+.print-document .doc-callout {
+  border: 1px solid #b3261e;
+  background: #fef2f1;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 10pt;
+}
+
+/* On-screen preview frame — light grey backing so the white sheet pops. */
+.print-document-frame {
+  background: #f3f2ef;
+  min-height: 100vh;
+  padding: 32px 16px;
+}
+
+@media print {
+  .print-document {
+    box-shadow: none !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .print-document-frame {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  .print-document .doc-section,
+  .print-document .doc-header,
+  .print-document table,
+  .print-document tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

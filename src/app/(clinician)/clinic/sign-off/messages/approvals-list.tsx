@@ -18,6 +18,7 @@ import {
   type ApprovalResult,
   type BatchResult,
 } from "./actions";
+import { useToast } from "@/components/ui/toast";
 
 // ---------------------------------------------------------------------------
 // Types — generic enough that future approval kinds (note drafts, claim
@@ -461,6 +462,33 @@ function ActionButtons({
     ApprovalResult | null,
     FormData
   >(rejectMessageDraft, null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!approveState) return;
+    if (approveState.ok) {
+      toast({ title: "Draft approved & sent", variant: "success" });
+    } else {
+      toast({
+        title: "Couldn't approve draft",
+        description: approveState.error,
+        variant: "error",
+      });
+    }
+  }, [approveState, toast]);
+
+  useEffect(() => {
+    if (!rejectState) return;
+    if (rejectState.ok) {
+      toast({ title: "Draft discarded", variant: "info" });
+    } else {
+      toast({
+        title: "Couldn't discard draft",
+        description: rejectState.error,
+        variant: "error",
+      });
+    }
+  }, [rejectState, toast]);
 
   return (
     <div className="flex items-center gap-2">
@@ -475,15 +503,6 @@ function ActionButtons({
         <input type="hidden" name="messageId" value={messageId} />
         <ApproveButton />
       </form>
-      {(approveState?.ok === false || rejectState?.ok === false) && (
-        <span className="text-[11px] text-danger ml-2">
-          {approveState?.ok === false
-            ? approveState.error
-            : rejectState?.ok === false
-              ? rejectState.error
-              : ""}
-        </span>
-      )}
     </div>
   );
 }
@@ -525,6 +544,22 @@ function EditApproveForm({
     editAndApproveMessageDraft,
     null,
   );
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!state) return;
+    if (state.ok) {
+      toast({ title: "Edits sent", variant: "success" });
+      onCancel();
+    } else {
+      toast({
+        title: "Couldn't send edits",
+        description: state.error,
+        variant: "error",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, toast]);
 
   return (
     <form action={formAction} className="flex items-center gap-2">
@@ -534,9 +569,6 @@ function EditApproveForm({
         Cancel
       </Button>
       <EditSubmitButton />
-      {state?.ok === false && (
-        <span className="text-[11px] text-danger ml-2">{state.error}</span>
-      )}
     </form>
   );
 }

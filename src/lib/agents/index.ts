@@ -56,6 +56,9 @@ import { retentionRiskAgent } from "./retention-risk-agent";
 import { contentCreationAgent } from "./content-creation-agent";
 import { satisfactionAnalysisAgent } from "./satisfaction-analysis-agent";
 import { inventoryAlertAgent } from "./inventory-alert-agent";
+// EMR-787 — Practice Manager Agent v1
+import { supplyReorderAgent } from "./supply-reorder-agent";
+import { practiceManagerAgent } from "./practice-manager-agent";
 import { billingReconEnhancementAgent } from "./billing-recon-enhancement-agent";
 import { qualityImprovementAgent } from "./quality-improvement-agent";
 // Mission Control — Phase 1 (MALLIK-006 + MALLIK-007)
@@ -176,6 +179,9 @@ export const agentRegistry = {
   contentCreation: contentCreationAgent,
   satisfactionAnalysis: satisfactionAnalysisAgent,
   inventoryAlert: inventoryAlertAgent,
+  // EMR-787 — Practice Manager Agent v1
+  supplyReorder: supplyReorderAgent,
+  practiceManager: practiceManagerAgent,
   billingReconEnhancement: billingReconEnhancementAgent,
   qualityImprovement: qualityImprovementAgent,
   // Mission Control — Phase 1 (MALLIK-006 + MALLIK-007)

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LeafJourney PWA icon — 192x192 "any" purpose.
+  Brand colors pulled from globals.css design tokens:
+    --bg #FFFCF7 (warm parchment)
+    --leaf / --accent #1F4D37 (deep forest)
+  Follow-up: designer pass + PNG variants (192/512) for older Android.
+-->
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LeafJourney">
+  <title>LeafJourney</title>
+  <rect width="192" height="192" rx="42" fill="#FFFCF7"/>
+  <g transform="translate(96 96)" fill="none" stroke="#1F4D37" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Stylized cannabis-leaf / journey arc -->
+    <path d="M 16 -48 C 30 -38 40 -22 40 0 C 40 22 30 38 16 48 C 2 38 -8 22 -8 0 C -8 -22 2 -38 16 -48 Z" transform="rotate(-22)"/>
+    <path d="M 0 12 C -22 4 -38 -10 -44 -32" />
+    <path d="M -36 52 L 44 52" />
+  </g>
+</svg>

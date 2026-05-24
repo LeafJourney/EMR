@@ -30,10 +30,11 @@ export async function POST(req: Request) {
       data: {
         organizationId: payload.organizationId || "DEFAULT",
         patientId: patientId,
-        title: `Radiology Report (Accession: ${accessionNumber})`,
-        type: "clinical",
-        url: dicomViewerUrl || "pending_pacs_link",
-        // Storing the textual report in a generic field or assumed connected table
+        originalName: `Radiology Report (Accession: ${accessionNumber}).pdf`,
+        kind: "image",
+        storageKey: dicomViewerUrl || "pending_pacs_link",
+        mimeType: "application/pdf",
+        sizeBytes: 1024,
       }
     });
 

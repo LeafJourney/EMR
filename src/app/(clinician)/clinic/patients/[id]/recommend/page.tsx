@@ -41,7 +41,7 @@ export default async function RecommendPage({ params }: PageProps) {
             </h1>
             <p className="text-sm text-text-muted mt-1">
               Generate an evidence-based cannabis treatment recommendation using
-              the patient&apos;s data and the research corpus.
+              the patient&apos;s data and the research database.
             </p>
           </div>
         </div>

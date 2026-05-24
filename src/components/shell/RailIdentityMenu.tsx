@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { SignOutButton } from "@clerk/nextjs";
 import type { AuthedUser } from "@/lib/auth/session";
 import { cn } from "@/lib/utils/cn";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export function RailIdentityMenu({
   user,
@@ -62,14 +63,33 @@ export function RailIdentityMenu({
           </div>
 
           <div className="mt-2 border-t border-border/70 pt-2">
-            <SignOutButton redirectUrl="/sign-in">
-              <button
+            <div className="px-3 pb-2">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle">
+                Appearance
+              </p>
+              <ThemeToggle className="w-full justify-between" />
+            </div>
+          </div>
+
+          <div className="mt-1 border-t border-border/70 pt-2">
+            {typeof window !== "undefined" && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+              <SignOutButton redirectUrl="/sign-in">
+                <button
+                  role="menuitem"
+                  className="w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
+                >
+                  Sign out
+                </button>
+              </SignOutButton>
+            ) : (
+              <a
+                href="/sign-in"
                 role="menuitem"
-                className="w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
+                className="block w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
               >
                 Sign out
-              </button>
-            </SignOutButton>
+              </a>
+            )}
           </div>
         </div>
       )}

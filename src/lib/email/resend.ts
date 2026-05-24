@@ -32,8 +32,22 @@ export interface SendEmailInput {
   from?: string;
   /** Optional reply-to header. */
   replyTo?: string;
+  /** Optional Cc list — e.g. area-specialised inboxes that should see
+   * the message without replacing the primary recipients (EMR-640). */
+  cc?: string[];
   /** Optional tag set (Resend supports custom tags for searching). */
   tags?: Array<{ name: string; value: string }>;
+  /** Optional file attachments (EMR-792). Resend accepts a Base64
+   * `content` string + `filename`; an optional `contentType` lets us
+   * send HTML POs in v1 and swap to PDF without API changes. */
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType?: string;
+  }>;
+  /** Optional headers — Resend forwards select headers (e.g.
+   * `Message-ID`) so callers can drive idempotency. */
+  headers?: Record<string, string>;
 }
 
 export type SendEmailResult =
@@ -50,15 +64,24 @@ export async function sendEmail(
     return { ok: false, reason: "no-api-key" };
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     from: input.from ?? process.env.EMAIL_FROM ?? DEFAULT_FROM,
     to: input.to,
+    cc: input.cc,
     subject: input.subject,
     text: input.text,
     html: input.html,
     reply_to: input.replyTo,
     tags: input.tags,
+    headers: input.headers,
   };
+  if (input.attachments && input.attachments.length > 0) {
+    body.attachments = input.attachments.map((a) => ({
+      filename: a.filename,
+      content: a.content.toString("base64"),
+      content_type: a.contentType,
+    }));
+  }
 
   let res: Response;
   try {

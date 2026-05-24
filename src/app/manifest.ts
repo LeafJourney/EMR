@@ -1,33 +1,40 @@
 import type { MetadataRoute } from "next";
 
 /**
- * PWA manifest — EMR-031
+ * PWA manifest — Next 14's `app/manifest.ts` route emits
+ * `/manifest.webmanifest` with the correct content-type.
  *
- * Drives the installable web-app experience for the patient portal +
- * clinician workspace. Next 14's `app/manifest.ts` route emits
- * `/manifest.webmanifest` with the correct content-type, so the only thing
- * we need to do here is shape the JSON. Icons live under /public/icons/* —
- * the entries below match the actual filenames so we don't ship a manifest
- * that points at 404s.
+ * Aesthetic: matches the "Verdant Apothecary" tokens in
+ * `src/app/globals.css` so the installed home-screen app reads as one
+ * piece with the web shell.
+ *   --bg      #FFFCF7  (warm parchment)
+ *   --leaf    #1F4D37  (deep forest accent)
  *
- * The standalone display + theme color make Leafjourney install with the
- * Apple-style chromeless feel called out in the data-collection directive.
+ * Icons live under `public/icons/*` as SVG (crisp on every density).
+ * Follow-ups (tracked in PR description, not blocking install):
+ *   - designer pass on the leaf glyph
+ *   - PNG fallback icons (192/512) for older Android launchers
+ *   - service-worker caching strategy (review-gated, separate PR)
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Leafjourney — Modern cannabis care",
-    short_name: "Leafjourney",
+    name: "LeafJourney EMR",
+    short_name: "LeafJourney",
     description:
-      "AI-native cannabis care platform — patient portal, clinician workspace, and practice operations in one home.",
+      "AI-native specialty-adaptive EMR — patient portal, clinician workspace, and practice operations in one home.",
+    // "/" lets the auth gate route the user to the right surface
+    // (clinician → /clinic, patient → /portal, etc.) without forcing a
+    // role-specific landing for installs that come from public pages.
     start_url: "/",
     scope: "/",
     display: "standalone",
+    display_override: ["window-controls-overlay", "standalone", "minimal-ui"],
     orientation: "portrait",
-    background_color: "#f6f4ee",
-    theme_color: "#3f6e4f",
+    background_color: "#FFFCF7",
+    theme_color: "#1F4D37",
     lang: "en",
     dir: "ltr",
-    categories: ["health", "medical", "lifestyle", "productivity"],
+    categories: ["medical", "productivity", "health"],
     icons: [
       {
         src: "/icon.svg",
@@ -36,21 +43,21 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "any",
       },
       {
-        src: "/icons/icon-192.png",
+        src: "/icons/icon-192.svg",
         sizes: "192x192",
-        type: "image/png",
-        purpose: "maskable",
-      },
-      {
-        src: "/icons/icon-512.png",
-        sizes: "512x512",
-        type: "image/png",
+        type: "image/svg+xml",
         purpose: "any",
       },
       {
-        src: "/icons/icon-512.png",
+        src: "/icons/icon-512.svg",
         sizes: "512x512",
-        type: "image/png",
+        type: "image/svg+xml",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-maskable-512.svg",
+        sizes: "512x512",
+        type: "image/svg+xml",
         purpose: "maskable",
       },
     ],

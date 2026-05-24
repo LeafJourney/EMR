@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { formatRelative } from "@/lib/utils/format";
+import { SortableList, reorder } from "@/components/ui/sortable";
 
 // EMR-180 — Chart Task List / To-Do on Open
 //
@@ -73,7 +74,32 @@ const CATEGORY_DOT: Record<ChartTaskCategory, string> = {
   result: "bg-[color:var(--info)]",
 };
 
+/** 6-dot vertical grip icon used as the drag handle. */
+function DragGripIcon() {
+  return (
+    <svg
+      width="10"
+      height="16"
+      viewBox="0 0 10 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <circle cx="2" cy="3" r="1" />
+      <circle cx="2" cy="8" r="1" />
+      <circle cx="2" cy="13" r="1" />
+      <circle cx="8" cy="3" r="1" />
+      <circle cx="8" cy="8" r="1" />
+      <circle cx="8" cy="13" r="1" />
+    </svg>
+  );
+}
+
 const STORAGE_KEY_PREFIX = "chart:task-list-dismissed:v1:";
+// EMR-DnD: per-patient manual ordering override. Stores an array of
+// `${category}:${id}` keys; any task not present falls back to the
+// default severity-sorted order at the bottom. TODO(schema): when a
+// `ChartTask.sortOrder` field lands on the model, persist server-side.
+const ORDER_KEY_PREFIX = "chart:task-list-order:v1:";
 
 export function ChartTaskList({
   patientId,
@@ -82,8 +108,12 @@ export function ChartTaskList({
   className,
 }: ChartTaskListProps) {
   const storageKey = `${STORAGE_KEY_PREFIX}${patientId}`;
+  const orderKey = `${ORDER_KEY_PREFIX}${patientId}`;
   const [dismissed, setDismissed] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
+  // Manual ordering applied on top of severity-bucket sort. Initialized
+  // from localStorage on mount so SSR markup stays stable.
+  const [manualOrder, setManualOrder] = React.useState<string[] | null>(null);
 
   // Hash the items so dismissals re-appear when something genuinely
   // *new* lands on the chart. Without this, dismissing a list with
@@ -101,8 +131,19 @@ export function ChartTaskList({
     } catch {
       // ignore — Safari private mode etc.
     }
+    try {
+      const rawOrder = window.localStorage.getItem(orderKey);
+      if (rawOrder) {
+        const parsed = JSON.parse(rawOrder);
+        if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
+          setManualOrder(parsed as string[]);
+        }
+      }
+    } catch {
+      // ignore — bad JSON or private-mode storage; just fall back.
+    }
     setHydrated(true);
-  }, [storageKey, hash]);
+  }, [storageKey, hash, orderKey]);
 
   const handleDismiss = () => {
     setDismissed(true);
@@ -113,19 +154,51 @@ export function ChartTaskList({
     }
   };
 
+  // Base order: bucket by severity, surface the most urgent first.
+  // Then re-apply the clinician's manual ordering (if any) on top —
+  // we sort by manual rank when present, falling back to severity for
+  // anything new that hasn't been touched yet.
+  const taskKey = React.useCallback(
+    (t: ChartTask) => `${t.category}:${t.id}`,
+    [],
+  );
+  const sorted = React.useMemo(() => {
+    const baseSorted = items.slice().sort((a, b) => {
+      const order = { danger: 0, warning: 1, info: 2 } as const;
+      const sa = order[a.severity ?? "info"];
+      const sb = order[b.severity ?? "info"];
+      if (sa !== sb) return sa - sb;
+      return a.title.localeCompare(b.title);
+    });
+    if (!manualOrder || manualOrder.length === 0) return baseSorted;
+    const rank = new Map<string, number>();
+    manualOrder.forEach((k, i) => rank.set(k, i));
+    return baseSorted.slice().sort((a, b) => {
+      const ra = rank.get(taskKey(a));
+      const rb = rank.get(taskKey(b));
+      // Unknown (new) tasks float to the bottom, preserving severity order.
+      if (ra == null && rb == null) return 0;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      return ra - rb;
+    });
+  }, [items, manualOrder, taskKey]);
+
+  const handleReorder = (from: number, to: number) => {
+    const next = reorder(sorted, from, to);
+    const nextKeys = next.map(taskKey);
+    setManualOrder(nextKeys);
+    try {
+      window.localStorage.setItem(orderKey, JSON.stringify(nextKeys));
+    } catch {
+      // ignore
+    }
+  };
+
   if (items.length === 0) return null;
   // Until hydration completes the SSR render and the client both show
   // the panel; flipping it on/off mid-paint causes layout shift.
   if (hydrated && dismissed) return null;
-
-  // Bucket by severity to surface the most urgent first.
-  const sorted = items.slice().sort((a, b) => {
-    const order = { danger: 0, warning: 1, info: 2 } as const;
-    const sa = order[a.severity ?? "info"];
-    const sb = order[b.severity ?? "info"];
-    if (sa !== sb) return sa - sb;
-    return a.title.localeCompare(b.title);
-  });
 
   const dangerCount = items.filter((i) => i.severity === "danger").length;
   const accentBorder = dangerCount > 0 ? "border-l-danger" : "border-l-highlight";
@@ -159,12 +232,32 @@ export function ChartTaskList({
         </button>
       </div>
 
-      <ul className="divide-y divide-border/40">
-        {sorted.map((item) => (
-          <li key={`${item.category}-${item.id}`} className="hover:bg-surface-muted/40 transition-colors">
+      {/* EMR-DnD: clinicians can drag tasks (or use Space + arrow keys) to
+          re-prioritize their punch list. Order persists per-patient in
+          localStorage. */}
+      <SortableList
+        items={sorted}
+        getKey={(item) => `${item.category}-${item.id}`}
+        onReorder={handleReorder}
+        ariaLabel={title}
+        className="divide-y divide-border/40 !space-y-0"
+        renderItem={(item, { dragHandleProps, isDragging }) => (
+          <div
+            className={cn(
+              "flex items-stretch gap-1 bg-surface hover:bg-surface-muted/40 transition-colors",
+              isDragging && "bg-surface-muted/60",
+            )}
+          >
+            <span
+              {...dragHandleProps}
+              className={cn(dragHandleProps.className, "px-2 py-3")}
+              title="Drag to reorder (or Space + arrow keys)"
+            >
+              <DragGripIcon />
+            </span>
             <Link
               href={item.href}
-              className="flex items-start gap-3 px-5 py-3"
+              className="flex items-start gap-3 px-3 py-3 flex-1 min-w-0"
             >
               <span
                 aria-hidden="true"
@@ -189,14 +282,14 @@ export function ChartTaskList({
                 )}
               </div>
               {item.dueAt && (
-                <span className="text-[11px] text-text-subtle shrink-0 tabular-nums whitespace-nowrap">
+                <span className="text-[11px] text-text-subtle shrink-0 tabular-nums whitespace-nowrap self-center pr-2">
                   due {formatRelative(item.dueAt)}
                 </span>
               )}
             </Link>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
     </div>
   );
 }

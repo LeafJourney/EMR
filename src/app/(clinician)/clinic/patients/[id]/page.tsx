@@ -2,6 +2,13 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  ForbiddenError,
+  assertChartAccess,
+  canViewSection,
+  canEditSection,
+} from "@/lib/rbac/permissions";
+import { AccessDenied } from "@/components/rbac/access-denied";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,13 +26,23 @@ import { TrackPatientView } from "@/components/shell/recent-patients";
 import { dueScreenings } from "@/lib/domain/uspstf-screenings";
 import { CorrespondenceTab, type SerializedThread } from "./correspondence-tab";
 import { MemoryTab } from "./memory-tab";
+// EMR-588 — Confidential clinician-only notes (private provider notes).
+// Tab + server-action surface; storage is interim-backed by AuditLog
+// rows until Legal sign-off on retention. See private-notes-actions.ts.
+import { PrivateNotesTab } from "./private-notes-tab";
+import { listPrivateNotes } from "./private-notes-actions";
 import { ChartingTimer } from "./charting-timer";
-import { startVisit } from "./actions";
+import { startVisit, convertFollowUpToTask } from "./actions";
 import { checkInteractions, getSeverityLabel, type DrugInteraction } from "@/lib/domain/drug-interactions";
 import { InteractionBadge } from "@/components/ui/interaction-badge";
 import { generateCDSAlerts } from "@/lib/domain/clinical-decision-support";
 import { CDSPanel } from "./cds-panel";
 import { TagManager } from "./tag-manager";
+import { PatientAvatar } from "./patient-avatar";
+import { HeaderContact } from "./header-contact";
+import { AllergyManager, AllergyBadge } from "./allergy-manager";
+import { MedicalHistoryManager } from "./medical-history-manager";
+import { MedicationsManager } from "./medications-manager";
 import { ClinicianUploadForm } from "./documents/clinician-upload-form";
 import { DicomViewer } from "./dicom-viewer";
 import { AgeBandBadge } from "@/components/clinical/age-band-badge";
@@ -36,8 +53,33 @@ import {
 } from "@/lib/utils/patient-age";
 import { CarePlanSection } from "@/components/patient/CarePlanSection";
 import { ChartTaskList } from "@/components/patient/ChartTaskList";
+import { PatientActivityTimeline } from "@/components/patient/PatientActivityTimeline";
+import { loadPatientActivity } from "@/lib/domain/patient-activity";
+import { UnresolvedFollowUpsPanel } from "@/components/patient/UnresolvedFollowUpsPanel";
+import { buildUnresolvedFollowUps } from "@/lib/domain/unresolved-followups";
 import { logger } from "@/lib/observability/log";
+import { BirthdayBanner } from "./birthday-banner";
+import { MessagePatientDock } from "@/app/(clinician)/clinic/messages/dock-compose";
+// UX inline editing — Notion / Linear-style click-to-edit on chart
+// demographics + insurance. See src/components/ui/inline-edit.tsx.
+import { InlineDemographicsCard } from "./inline-demographics-card";
 
+function cleanMarkdownSummary(md: string): string {
+  if (!md) return "";
+  return md
+    // Strip headers (e.g. # Header, ## Subheader)
+    .replace(/^#+\s+/gm, "")
+    // Strip bullets and lists (e.g. - list item, * list item, 1. list item)
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    // Strip bold/italic/strike markers (e.g. **bold**, *italic*, ~~strike~~)
+    .replace(/(\*\*|\*|~~|_)/g, "")
+    // Strip links [text](url) -> text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Normalize spaces/newlines
+    .replace(/\s+/g, " ")
+    .trim();
+}
 /* ── Types ────────────────────────────────────────────────────── */
 
 interface PageProps {
@@ -52,6 +94,43 @@ interface PageProps {
 export default async function PatientChartPage({ params, searchParams }: PageProps) {
   const user = await requireUser();
   const tab = (searchParams.tab as TabKey) || "demographics";
+
+  // EMR-786 — Enforce the role/chart-privacy gate *before* loading any
+  // PHI. Front-office staff with no clinical permission, or any user
+  // hitting a chart flagged restricted/doctor-only who is not on the
+  // allowlist, lands on the AccessDenied surface instead of pulling
+  // notes/encounters/medications into the query plan.
+  try {
+    await assertChartAccess(user, params.id);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      const reason =
+        err.reason === "chart_restricted"
+          ? "This chart is flagged restricted/doctor-only. You are not on the provider allowlist."
+          : "Your role does not permit access to patient charts.";
+      return <AccessDenied reason={reason} />;
+    }
+    throw err;
+  }
+
+  // EMR-786 — Office roles cannot land on the clinical tabs at all. If
+  // a front-office user navigates to ?tab=notes or ?tab=clinical, route
+  // them back to the demographics tab they are allowed to see.
+  const CLINICAL_TABS: ReadonlySet<string> = new Set([
+    "notes",
+    "clinical",
+    "medications",
+    "prescribe",
+    "labs",
+    "imaging",
+    "problems",
+    // EMR-588 — private clinician-only notes are clinical-tier and must
+    // bounce front-office users back to demographics like the rest.
+    "private_notes",
+  ]);
+  if (CLINICAL_TABS.has(tab) && !canViewSection(user, "notes")) {
+    redirect(`/clinic/patients/${params.id}?tab=demographics`);
+  }
 
   // EMR-178 — `?tab=billing` is a legacy entry point. The billing
   // experience now lives on the dedicated /billing route (Financial
@@ -74,6 +153,8 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     patientMemories,
     clinicalObservations,
     patientClaims,
+    pastConditions,
+    pastSurgeries,
   ] = await Promise.all([
     prisma.patient.findFirst({
       where: {
@@ -188,6 +269,14 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         charges: true,
       },
     }),
+    prisma.pastMedicalCondition.findMany({
+      where: { patientId: params.id, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.pastSurgery.findMany({
+      where: { patientId: params.id, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   if (!patient) notFound();
@@ -241,13 +330,42 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     (o: any) => !o.acknowledgedAt,
   ).length;
 
+  // EMR-588 — Pull private clinician-only notes for the chart sidebar
+  // count + the tab render. Loader is permission-gated internally and
+  // writes a read-audit row; we only call it when the caller can see
+  // notes at all, so back-office without notes.read never triggers it.
+  const userCanSeePrivateNotes = canViewSection(user, "notes");
+  const privateNotes = userCanSeePrivateNotes
+    ? await listPrivateNotes(params.id).catch((err) => {
+        logger.error({
+          event: "private_notes_load_failed",
+          patientId: params.id,
+          err: String(err),
+        });
+        return [];
+      })
+    : [];
+
+  // Activity timeline (Linear/Notion-style chart event feed). We only
+  // hit the timeline aggregator when the tab is actually open — every
+  // other render keeps its zero-cost baseline. The count shown on the
+  // tab badge is an approximation derived from data we already have so
+  // it doesn't require its own query on every chart open.
+  const activityEvents = tab === "timeline"
+    ? await loadPatientActivity(prisma, params.id, { limit: 200 })
+    : [];
+  const timelineCount =
+    patient.encounters.length + threads.length + allNotes.length;
+
   const counts = {
     demographics: 1,
     memory: patientMemories.length + openObservationCount,
+    timeline: timelineCount,
     records: recordDocs.length,
     images: imageDocs.length,
     labs: labDocs.length + assessmentResponses.length,
     notes: allNotes.length,
+    private_notes: privateNotes.length,
     correspondence: threads.length,
     rx: activeRegimens.length,
     billing: openClaimCount,
@@ -259,13 +377,13 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
    * notes, and rx; 3b adds records, images, correspondence, memory,
    * and billing so every tab that carries a list has a peek. */
   const tabPeeks: TabPeeks = {
-    labs: labDocs.slice(0, 5).map((d) => ({
+    labs: labDocs.slice(0, 5).map((d: any) => ({
       id: d.id,
       title: d.originalName || "Untitled lab",
       meta: formatRelative(d.createdAt),
       href: `/clinic/patients/${params.id}?tab=labs`,
     })),
-    notes: allNotes.slice(0, 5).map((n) => {
+    notes: allNotes.slice(0, 5).map((n: any) => {
       // Notes store their chief complaint inside a Json `blocks` payload
       // whose shape is validated at write-time. For peek purposes we just
       // read defensively and fall back to the narrative or a generic label.
@@ -287,32 +405,32 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       meta: [r.dosage, r.product?.format].filter(Boolean).join(" · ") || "Active",
       href: `/clinic/patients/${params.id}?tab=rx`,
     })),
-    records: recordDocs.slice(0, 5).map((d) => ({
+    records: recordDocs.slice(0, 5).map((d: any) => ({
       id: d.id,
       title: d.originalName || "Untitled document",
       meta: `${d.kind} · ${formatRelative(d.createdAt)}`,
       href: `/clinic/patients/${params.id}?tab=records`,
     })),
-    images: imageDocs.slice(0, 5).map((d) => ({
+    images: imageDocs.slice(0, 5).map((d: any) => ({
       id: d.id,
       title: d.originalName || "Untitled image",
       meta: formatRelative(d.createdAt),
       href: `/clinic/patients/${params.id}?tab=images`,
     })),
-    correspondence: threads.slice(0, 5).map((t) => ({
+    correspondence: threads.slice(0, 5).map((t: any) => ({
       id: t.id,
       title: t.subject || "No subject",
       meta: `${t.messages.length} message${t.messages.length === 1 ? "" : "s"} · ${formatRelative(t.lastMessageAt)}`,
       href: `/clinic/patients/${params.id}?tab=correspondence`,
     })),
-    memory: patientMemories.slice(0, 5).map((m) => ({
+    memory: patientMemories.slice(0, 5).map((m: any) => ({
       id: m.id,
       title:
         m.content.length > 60 ? m.content.slice(0, 60) + "…" : m.content,
       meta: `${m.kind} · ${formatRelative(m.createdAt)}`,
       href: `/clinic/patients/${params.id}?tab=memory`,
     })),
-    billing: patientClaims.slice(0, 5).map((c) => ({
+    billing: patientClaims.slice(0, 5).map((c: any) => ({
       id: c.id,
       // Money is stored in cents; peek rows render the dollar amount
       // rounded to the nearest dollar — we're not trying to be a ledger.
@@ -366,10 +484,31 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     })),
   });
 
+  /* ── Birthday check (EMR-780) ────────────────────────────── */
+  const isBirthday = (() => {
+    if (!patient.dateOfBirth) return false;
+    const today = new Date();
+    const dob = new Date(patient.dateOfBirth);
+    return dob.getMonth() === today.getMonth() && dob.getDate() === today.getDate();
+  })();
+
   /* ── Bound start visit action ─────────────────────────────── */
   const startVisitWithPatient = startVisit.bind(null, params.id);
 
   const completenessScore = patient.chartSummary?.completenessScore ?? 0;
+
+  const intake = (patient.intakeAnswers ?? {}) as Record<string, any>;
+  const sex = intake.sex ?? intake.gender ?? "U";
+  const dob = patient.dateOfBirth ? new Date(patient.dateOfBirth) : null;
+  const age = dob
+    ? Math.floor(
+        (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
+      )
+    : null;
+
+  const chartSummaryText = patient.chartSummary?.summaryMd
+    ? cleanMarkdownSummary(patient.chartSummary.summaryMd)
+    : patient.presentingConcerns ?? "No summary available.";
 
   /* ── Serialize threads for client component ───────────────── */
   const serializedThreads: SerializedThread[] = threads.map((t: any) => ({
@@ -397,8 +536,18 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     })),
   }));
 
+  const headerDob = patient.dateOfBirth ? new Date(patient.dateOfBirth) : null;
+  const headerAge = headerDob
+    ? Math.floor(
+        (Date.now() - headerDob.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
+      )
+    : null;
+  const headerIntake = (patient.intakeAnswers ?? {}) as Record<string, any>;
+  const headerSex = headerIntake.sex ?? headerIntake.gender ?? "F";
+
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      <BirthdayBanner isBirthday={isBirthday} firstName={patient.firstName} />
       {/* Tracks this view in the localStorage "recently viewed" strip */}
       <TrackPatientView
         patientId={patient.id}
@@ -406,10 +555,15 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       />
 
       {/* ── Dossier header ────────────────────────────────── */}
-      <Card tone="ambient" className="mb-8">
+      <Card tone="ambient" className="mb-8 !overflow-visible">
         <CardContent className="pt-8 pb-8">
           <div className="flex flex-wrap items-start gap-6">
-            <Avatar firstName={patient.firstName} lastName={patient.lastName} size="lg" />
+            <PatientAvatar
+              patientId={patient.id}
+              firstName={patient.firstName}
+              lastName={patient.lastName}
+              initialPhotoUrl={intake.photoUrl ?? null}
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 mb-2">
                 <Eyebrow>Patient chart</Eyebrow>
@@ -418,34 +572,51 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
                   benchmarkSeconds={benchmarkSeconds}
                 />
               </div>
-              <h1 className="font-display text-3xl text-text tracking-tight leading-tight">
-                {patient.firstName} {patient.lastName}
-              </h1>
-              {patient.presentingConcerns && (
-                <p className="text-[15px] text-text-muted mt-1.5 leading-relaxed max-w-xl">
-                  {patient.presentingConcerns}
-                </p>
-              )}
-              <div className="flex items-center gap-2 flex-wrap mt-3">
-                <Badge tone="neutral">{patient.status}</Badge>
-                {patient.qualificationStatus !== "unknown" && (
-                  <Badge
-                    tone={
-                      patient.qualificationStatus === "qualified"
-                        ? "success"
-                        : patient.qualificationStatus === "pending"
-                          ? "warning"
-                          : patient.qualificationStatus === "ineligible"
-                            ? "danger"
-                            : "info"
-                    }
-                  >
-                    {patient.qualificationStatus}
-                  </Badge>
-                )}
-                <span className="text-xs text-text-subtle">
-                  DOB {formatDate(patient.dateOfBirth)} &middot; {patient.email ?? "No email"}
+              <h1 className="font-display text-3xl text-text tracking-tight leading-tight flex items-center gap-2">
+                <span>
+                  {patient.firstName} {patient.lastName}
+                  {age !== null ? (
+                    <span className="text-text-muted font-normal text-2xl">
+                      {" "}({age}, {sex === "Female" ? "F" : sex === "Male" ? "M" : sex})
+                    </span>
+                  ) : null}
                 </span>
+                {isBirthday && (
+                  <span aria-hidden="true" className="text-2xl leading-none">🎂</span>
+                )}
+              </h1>
+              <p
+                className="text-[15px] text-text-muted mt-1.5 leading-relaxed max-w-xl"
+                style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+              >
+                {chartSummaryText}
+              </p>
+              <div className="flex flex-col gap-1 mt-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone="neutral">{patient.status}</Badge>
+                  {patient.qualificationStatus !== "unknown" && (
+                    <Badge
+                      tone={
+                        patient.qualificationStatus === "qualified"
+                          ? "success"
+                          : patient.qualificationStatus === "pending"
+                            ? "warning"
+                            : patient.qualificationStatus === "ineligible"
+                              ? "danger"
+                              : "info"
+                      }
+                    >
+                      {patient.qualificationStatus}
+                    </Badge>
+                  )}
+                </div>
+                <HeaderContact
+                  patientId={patient.id}
+                  patientName={`${patient.firstName} ${patient.lastName}`}
+                  dateOfBirth={patient.dateOfBirth}
+                  email={patient.email}
+                  phone={patient.phone}
+                />
               </div>
 
               {/* Chart readiness bar */}
@@ -462,30 +633,71 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
                 </div>
               </div>
 
-              {/* Patient tags/labels */}
-              <div className="mt-3">
+              {/* Patient tags & Allergy trigger */}
+              <div className="mt-4 flex items-center gap-2 flex-wrap">
                 <TagManager patientId={params.id} />
+                <AllergyManager patientId={params.id} initialAllergies={patient.allergies} />
               </div>
 
-              {/* Allergies + contraindications alert (EMR-113) */}
-              {(patient.allergies?.length > 0 || patient.contraindications?.length > 0) && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {patient.allergies?.map((a: string) => (
-                    <Badge key={a} tone="danger" className="text-[10px]">
-                      ⚠ {a}
-                    </Badge>
-                  ))}
-                  {patient.contraindications?.map((c: string) => (
-                    <Badge key={c} tone="warning" className="text-[10px]">
-                      ⊘ {c}
-                    </Badge>
-                  ))}
+              {/* Allergies list prefixed with "Allergies:" */}
+              <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
+                    Allergies:
+                  </span>
+                  {patient.allergies?.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {patient.allergies.map((a: string) => (
+                        <AllergyBadge key={a} patientId={patient.id} allergyStr={a} />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-text-muted italic">None documented</span>
+                  )}
                 </div>
-              )}
+
+                {patient.contraindications?.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                    <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
+                      Contraindications:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {patient.contraindications.map((c: string) => (
+                        <Badge key={c} tone="warning" className="text-[10px]">
+                          ⊘ {c}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
+
 
             {/* Quick actions */}
             <div className="flex items-center gap-2 shrink-0 pt-1">
+              <MessagePatientDock
+                patientId={patient.id}
+                patientName={`${patient.firstName} ${patient.lastName}`}
+              />
+              <Link href={`/clinic/patients/${params.id}/download`}>
+                <Button variant="ghost" size="sm">
+                  Download chart
+                </Button>
+              </Link>
+              {/* ux/print-stylesheets-clinical — opens a server-rendered
+                  chart summary in a new tab and auto-fires the print dialog
+                  via AutoPrintTrigger. Target="_blank" keeps the working
+                  chart untouched while the printout renders. */}
+              <Link
+                href={`/clinic/patients/${params.id}/print`}
+                target="_blank"
+                rel="noopener"
+              >
+                <Button variant="ghost" size="sm">
+                  Print chart
+                </Button>
+              </Link>
               <Link href={`/clinic/patients/${params.id}/voice-chart`}>
                 <Button variant="ghost" size="sm">
                   Voice chart
@@ -505,6 +717,31 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Unresolved follow-up items (EMR-675) ───────────── */}
+      {/* Derived from finalized notes (Plan/Follow-up blocks) +
+          triaged message threads. One-click converts each loose end
+          into a Task via convertFollowUpToTask; converted items drop
+          off this panel automatically because the Task description
+          embeds the sourceRef. Sits above ChartTaskList so the
+          clinician's eye lands here first when reviewing a chart. */}
+      {(() => {
+        const followUps = buildUnresolvedFollowUps({
+          patientId: params.id,
+          notes: allNotes.slice(0, 20) as any,
+          threads: threads as any,
+          existingTasks: openTasks as any,
+        });
+        return followUps.length > 0 ? (
+          <div className="mb-6">
+            <UnresolvedFollowUpsPanel
+              patientId={params.id}
+              items={followUps}
+              onConvert={convertFollowUpToTask}
+            />
+          </div>
+        ) : null;
+      })()}
 
       {/* ── Chart task list / to-do on open (EMR-180) ─────── */}
       {/* Built from data we already fetched: open tasks + unsigned notes.
@@ -583,6 +820,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
               e.scheduledFor &&
               new Date(e.scheduledFor) >= new Date(),
           )}
+          pastConditions={pastConditions}
+          pastSurgeries={pastSurgeries}
+          canEditDemographics={canEditSection(user, "notes")}
         />
       )}
       {tab === "records" && <RecordsTab documents={recordDocs} patientId={params.id} />}
@@ -601,12 +841,29 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           scribeProcessing={searchParams.scribe === "processing"}
         />
       )}
+      {tab === "private_notes" && userCanSeePrivateNotes && (
+        // EMR-588 — Confidential clinician-only notes. Section-gated on
+        // canViewSection(notes) so back-office without notes.read
+        // (already redirected by the CLINICAL_TABS guard) and patients
+        // (already on a different surface entirely) can never reach
+        // this render path. Authoring requires notes.edit, surfaced
+        // here as canAuthor for the client component.
+        <PrivateNotesTab
+          patientId={params.id}
+          notes={privateNotes}
+          canAuthor={canEditSection(user, "notes")}
+          patientFirstName={patient.firstName}
+        />
+      )}
       {tab === "memory" && (
         <MemoryTab
           memories={patientMemories}
           observations={clinicalObservations}
           patientFirstName={patient.firstName}
         />
+      )}
+      {tab === "timeline" && (
+        <PatientActivityTimeline events={activityEvents} />
       )}
       {tab === "correspondence" && (
         <CorrespondenceTab
@@ -642,11 +899,17 @@ function DemographicsTab({
   medications,
   openTasks,
   upcomingEncounters,
+  pastConditions,
+  pastSurgeries,
+  canEditDemographics,
 }: {
   patient: any;
   medications: any[];
   openTasks: any[];
   upcomingEncounters: any[];
+  pastConditions: any[];
+  pastSurgeries: any[];
+  canEditDemographics: boolean;
 }) {
   const dob = patient.dateOfBirth ? new Date(patient.dateOfBirth) : null;
   const age = dob
@@ -658,6 +921,8 @@ function DemographicsTab({
   const showPediatricOverlay = isPediatric(dob);
 
   const intake = (patient.intakeAnswers ?? {}) as Record<string, any>;
+  const pmh = pastConditions;
+  const psh = pastSurgeries;
   const sex = intake.sex ?? intake.gender ?? "Not recorded";
   const race = intake.race ?? intake.ethnicity ?? "Not recorded";
   const maritalStatus = intake.maritalStatus ?? "Not recorded";
@@ -725,52 +990,66 @@ function DemographicsTab({
       />
 
 
-      {/* Identity & Personal */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Identity</CardTitle>
-            <CardDescription>Personal identification</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-y-4 gap-x-6">
-              <DemoField label="Full name" value={`${patient.firstName} ${patient.lastName}`} />
-              <DemoField label="Date of birth" value={dob ? `${formatDate(dob)} (age ${age})` : "Not recorded"} />
+      {/* Identity, contact, insurance — inline-editable (UX click-to-edit).
+          Each field swaps to an input on click; saves on Enter/blur, reverts
+          on Esc; errors surface via the project toast system. */}
+      <Card tone="raised">
+        <CardHeader>
+          <CardTitle className="text-base">Patient details</CardTitle>
+          <CardDescription>
+            {canEditDemographics
+              ? "Click any field to edit. Press Enter to save, Esc to cancel."
+              : "Personal identification and contact"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+            <InlineDemographicsCard
+              patientId={patient.id}
+              canEdit={canEditDemographics}
+              initial={{
+                firstName: patient.firstName ?? "",
+                lastName: patient.lastName ?? "",
+                dateOfBirth: dob ? dob.toISOString().slice(0, 10) : "",
+                email: patient.email ?? "",
+                phone: patient.phone ?? "",
+                addressLine1: patient.addressLine1 ?? "",
+                addressLine2: patient.addressLine2 ?? "",
+                city: patient.city ?? "",
+                state: patient.state ?? "",
+                postalCode: patient.postalCode ?? "",
+              }}
+              insurance={{
+                providerName:
+                  ((intake.insurance as any)?.providerName as string) ??
+                  (typeof intake.insurance === "string" ? (intake.insurance as string) : "") ??
+                  "",
+                memberId:
+                  ((intake.insurance as any)?.memberId as string) ??
+                  (intake.memberId as string) ??
+                  "",
+                groupNumber:
+                  ((intake.insurance as any)?.groupNumber as string) ?? "",
+              }}
+            />
+            <div className="grid grid-cols-1 gap-y-3 text-sm">
               <DemoField label="Sex" value={sex} />
               <DemoField label="Race / Ethnicity" value={race} />
               <DemoField label="Marital status" value={maritalStatus} />
               <DemoField label="Patient ID" value={patient.id.slice(0, 12).toUpperCase()} mono />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Contact</CardTitle>
-            <CardDescription>How to reach this patient</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-y-4">
-              <DemoField label="Email" value={patient.email ?? "Not on file"} />
-              <DemoField label="Phone" value={patient.phone ?? "Not on file"} />
-              <DemoField
-                label="Address"
-                value={
-                  [patient.addressLine1, patient.addressLine2, patient.city, patient.state, patient.postalCode]
-                    .filter(Boolean)
-                    .join(", ") || "Not on file"
-                }
-              />
               {emergencyContact && (
                 <DemoField
                   label="Emergency contact"
                   value={typeof emergencyContact === "string" ? emergencyContact : `${emergencyContact.name} — ${emergencyContact.phone}`}
                 />
               )}
+              {age != null && (
+                <DemoField label="Age" value={`${age} (${ageBand})`} />
+              )}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Alert box */}
       <Card tone="raised" className="border-l-4 border-l-[color:var(--warning)]">
@@ -815,42 +1094,21 @@ function DemographicsTab({
             </div>
           </CardContent>
         </Card>
-
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Current Medications</CardTitle>
-            <CardDescription>{medications.length} active medication{medications.length !== 1 ? "s" : ""}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {medications.length === 0 ? (
-              <p className="text-sm text-text-muted">No active medications on file.</p>
-            ) : (
-              <div className="space-y-2">
-                {medications.map((med: any) => (
-                  <div key={med.id} className="flex items-center gap-2">
-                    <Badge
-                      tone={
-                        med.type === "prescription"
-                          ? "info"
-                          : med.type === "otc"
-                            ? "neutral"
-                            : "accent"
-                      }
-                      className="text-[10px]"
-                    >
-                      {med.type}
-                    </Badge>
-                    <span className="text-sm text-text">{med.name}</span>
-                    {med.dosage && (
-                      <span className="text-xs text-text-muted">{med.dosage}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
+
+      <MedicalHistoryManager
+        patientId={patient.id}
+        initialPMH={pmh}
+        initialPSH={psh}
+      />
+
+      <MedicationsManager
+        patientId={patient.id}
+        patientName={`${patient.firstName} ${patient.lastName}`}
+        patientDOB={patient.dateOfBirth}
+        medications={medications}
+      />
+
 
       {/* Clinical notes */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

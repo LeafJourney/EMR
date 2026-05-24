@@ -3,7 +3,7 @@ import { PageShell } from "@/components/shell/PageHeader";
 export default function Loading() {
   return (
     <PageShell maxWidth="max-w-[1040px]">
-      <div className="animate-pulse space-y-6 md:space-y-8">
+      <div className="animate-pulse motion-reduce:animate-none space-y-6 md:space-y-8">
         
         {/* ── Hero greeting card skeleton ── */}
         <div className="h-56 md:h-64 rounded-2xl md:rounded-3xl bg-gradient-to-r from-surface-muted to-surface-raised border border-border/50" />

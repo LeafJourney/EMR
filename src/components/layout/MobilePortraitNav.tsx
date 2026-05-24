@@ -42,13 +42,28 @@ export const DEFAULT_GROUPS: MobileNavGroup[] = [
     ],
   },
   {
+    // Surfaces /features, /pricing, /clinicians, and /book-demo on
+    // mobile portrait — none of those marketing routes were
+    // reachable from the phone-portrait nav before. The desktop
+    // SiteHeader exposes Features + Pricing inline; this is the
+    // mobile-portrait equivalent. (ux/marketing-polish-stripe-tier)
+    id: "product",
+    label: "Product",
+    tabs: [
+      { label: "Features", href: "/features", icon: "✦" },
+      { label: "Pricing", href: "/pricing", icon: "✓" },
+      { label: "Clinicians", href: "/clinicians", icon: "✚" },
+      { label: "Demo", href: "/book-demo", icon: "☆" },
+    ],
+  },
+  {
     id: "learn",
     label: "Learn",
     tabs: [
       { label: "ChatCB", href: "/education", icon: "❦" },
       { label: "Research", href: "/education#research", icon: "⚘" },
       { label: "Wheel", href: "/education#wheel", icon: "", wheelGradient: true },
-      { label: "Drug Mix", href: "/education#drugmix", icon: "⚗" },
+      { label: "Drug Mix", href: "/education/drug-mix", icon: "⚗" },
     ],
   },
   {
@@ -74,7 +89,11 @@ export const DEFAULT_GROUPS: MobileNavGroup[] = [
     label: "Account",
     tabs: [
       { label: "Sign in", href: "/sign-in", icon: "➜" },
-      { label: "Demo", href: "/sign-up", icon: "☆" },
+      // Demo → /book-demo (sales intake), not /sign-up (Clerk
+      // account creation). Same fix as the desktop SiteHeader,
+      // the homepage hero CTAs, and the closing-CTA bands across
+      // /about, /pricing, /security.
+      { label: "Demo", href: "/book-demo", icon: "☆" },
       { label: "Security", href: "/security", icon: "☢" },
       { label: "Developer", href: "/developer", icon: "⚙" },
     ],
@@ -120,15 +139,16 @@ export function MobilePortraitNav({
       aria-label="Site navigation"
       className="md:hidden bg-surface-raised border-b border-border"
     >
-      {/* Group selector — chips */}
-      <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar">
+      {/* Group selector — chips. Apple HIG: each chip is ≥44pt tall so a
+          patient's thumb can flip between groups without missing. */}
+      <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar safe-pl safe-pr">
         {groups.map((g, i) => (
           <button
             key={g.id}
             type="button"
             onClick={() => jumpTo(i)}
             aria-pressed={i === activeIdx}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-medium uppercase tracking-wider transition-colors ${
+            className={`shrink-0 inline-flex items-center justify-center min-h-[44px] px-4 rounded-full text-[11px] font-medium uppercase tracking-wider transition-colors ${
               i === activeIdx
                 ? "bg-accent text-white"
                 : "bg-surface-muted text-text-muted hover:text-text"
@@ -155,10 +175,10 @@ export function MobilePortraitNav({
           >
             <ul className="grid grid-cols-4 gap-2">
               {g.tabs.map((t) => (
-                <li key={t.href}>
+                <li key={t.label}>
                   <Link
                     href={t.href}
-                    className="flex flex-col items-center justify-center gap-1 rounded-xl bg-surface border border-border/60 px-2 py-3 hover:bg-surface-muted hover:border-accent/40 transition-all"
+                    className="flex flex-col items-center justify-center gap-1 rounded-xl bg-surface border border-border/60 px-2 py-3 min-h-[64px] hover:bg-surface-muted hover:border-accent/40 active:scale-[0.96] transition-all"
                   >
                     {t.wheelGradient ? (
                       <span
@@ -190,18 +210,25 @@ export function MobilePortraitNav({
         ))}
       </div>
 
-      {/* Dot indicator */}
-      <div className="flex items-center justify-center gap-1.5 pb-2">
+      {/* Dot indicator — visual dot stays small (1.5px tall) but the hit
+          target is a transparent 44pt button wrapped around it, so a thumb
+          can land on either dot without surgical precision. */}
+      <div className="flex items-center justify-center gap-0.5 pb-1">
         {groups.map((g, i) => (
           <button
             key={g.id}
             type="button"
             onClick={() => jumpTo(i)}
             aria-label={`Show ${g.label}`}
-            className={`h-1.5 rounded-full transition-all ${
-              i === activeIdx ? "w-5 bg-accent" : "w-1.5 bg-border-strong/60"
-            }`}
-          />
+            className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center"
+          >
+            <span
+              aria-hidden
+              className={`h-1.5 rounded-full transition-all ${
+                i === activeIdx ? "w-5 bg-accent" : "w-1.5 bg-border-strong/60"
+              }`}
+            />
+          </button>
         ))}
       </div>
     </nav>

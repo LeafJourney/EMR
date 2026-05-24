@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { VoicemailEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { formatRelative } from "@/lib/utils/format";
 import { VoicemailRow } from "./row";
 import { LogVoicemailForm } from "./log-form";
@@ -93,8 +94,14 @@ export default async function VoicemailPage() {
           </h2>
           {active.length === 0 ? (
             <EmptyState
-              title="No voicemails to review"
-              description="Inbound recordings will appear here once a caller leaves a message."
+              illustration={<VoicemailEmptyIllustration />}
+              title="No new voicemails — you're all clear"
+              description="Inbound recordings show up here with an AI-redacted summary, so you only see clinical content. Personal data never reaches the chart unless you approve it."
+              tips={[
+                "Press play to listen — the original recording stays in secure storage",
+                "Reassign to a teammate if it belongs to someone else's panel",
+                "Archived voicemails auto-delete 30 days after recording",
+              ]}
             />
           ) : (
             active.map((vm) => (
@@ -133,9 +140,11 @@ export default async function VoicemailPage() {
           <Card tone="raised">
             <CardHeader>
               <CardTitle className="text-base">Log a voicemail</CardTitle>
+              {/* EMR-692 — reworded into plain language. */}
               <CardDescription>
-                Front-desk capture path — the transcript is redacted before
-                persistence so PHI never lands in the database raw.
+                The front desk removes private health information from the
+                notes before saving them so no personal information is
+                stored in the EMR.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -151,13 +160,18 @@ export default async function VoicemailPage() {
           <Card tone="raised">
             <CardHeader>
               <CardTitle className="text-base">Archived</CardTitle>
-              <CardDescription>Last 10 archived voicemails.</CardDescription>
+              {/* EMR-692 — confirm 30-day auto-delete policy. */}
+              <CardDescription>
+                Last 10 archived voicemails. Auto-delete 30 days after
+                recording date.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {archived.length === 0 ? (
                 <EmptyState
                   title="Nothing archived yet"
-                  description="Archived voicemails appear here for audit."
+                  description="Once you archive a voicemail it'll appear here for the next 30 days."
+                  className="p-6"
                 />
               ) : (
                 archived.map((vm) => (

@@ -33,13 +33,20 @@ export function RetentionChart({
   description = "Tracking active patient growth vs churn over time.",
 }: RetentionChartProps) {
   
-  // Custom tooltip to show rich data
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+    label,
+  }: {
+    active?: boolean;
+    payload?: Array<{ name: string; value: number; color: string }>;
+    label?: string;
+  }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-surface border border-border p-3 rounded shadow-sm text-sm">
           <p className="font-medium text-text mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
+          {payload.map((entry, index) => (
             <p key={index} style={{ color: entry.color }} className="font-medium">
               {entry.name}: {entry.name === "Retention Rate" ? `${entry.value}%` : entry.value}
             </p>

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
+import { appendConsentDisclaimer } from "@/lib/clinical/ai-consent-disclaimer";
 
 const input = z.object({
   patientId: z.string(),
@@ -137,10 +138,16 @@ Guidelines:
 
     // ── Create the draft message (NOT sent) ─────────────────────────
     ctx.assertCan("write.message.draft");
+
+    // EMR-784: AI-drafted post-visit message — append the patient
+    // verbal-consent disclaimer so the patient sees that AI was used to
+    // document the encounter that produced this outreach.
+    const bodyWithConsent = appendConsentDisclaimer(parsed.body);
+
     const message = await prisma.message.create({
       data: {
         threadId,
-        body: parsed.body,
+        body: bodyWithConsent,
         senderAgent: "agent:patientOutreach@1.0.0",
         aiDrafted: true,
         status: "draft",

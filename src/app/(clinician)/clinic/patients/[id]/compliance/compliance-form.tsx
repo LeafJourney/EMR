@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Label } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import {
   getStateForm,
@@ -235,13 +236,20 @@ export function ComplianceFormView({
         );
 
       case "date":
-        return (
+        // State compliance forms (regulatory) can land on insurance effective
+        // dates, expiry, certification dates — all benefit from the inline
+        // calendar instead of native browser pickers.
+        return readOnly ? (
           <Input
-            type="date"
+            type="text"
             value={String(value)}
-            readOnly={readOnly}
-            onChange={(e) => updateField(field.key, e.target.value)}
-            className={cn(readOnly && "bg-surface-muted text-text-muted cursor-not-allowed")}
+            readOnly
+            className={cn("bg-surface-muted text-text-muted cursor-not-allowed")}
+          />
+        ) : (
+          <DatePicker
+            value={String(value)}
+            onChange={(v) => updateField(field.key, v)}
           />
         );
 

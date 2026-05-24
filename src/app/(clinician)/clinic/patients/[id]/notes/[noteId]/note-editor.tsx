@@ -10,12 +10,15 @@ import {
   saveAndFinalizeNote,
   refineSection,
   saveEmotionalVital,
-  PATIENT_DEMEANOR_OPTIONS,
-  type PatientDemeanor,
   type RefineMode,
 } from "./actions";
-import { APSO_ORDER, NOTE_BLOCK_LABELS } from "@/lib/domain/notes";
-import type { NoteBlockType } from "@/lib/domain/notes";
+import {
+  APSO_ORDER,
+  NOTE_BLOCK_LABELS,
+  PATIENT_DEMEANOR_OPTIONS,
+  type PatientDemeanor,
+  type NoteBlockType,
+} from "@/lib/domain/notes";
 import { LeafSprig } from "@/components/ui/ornament";
 import { DictateButton } from "@/components/ui/dictation";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";
@@ -343,24 +346,37 @@ export function NoteEditor({
                     placeholder="Section heading"
                   />
                   <div className="relative">
+                    {/* EMR-135 + UX dictation primitive: dictate directly
+                        into the section. Browser SpeechRecognition with a
+                        medical-vocabulary post-pass — clinician can speak
+                        "fifteen milligrams twice a day" and it lands as
+                        "15 mg BID".
+
+                        CRITICAL: the Objective block (NoteBlockType
+                        "findings") is human-authored only per Dr. Patel
+                        and Doc 1 / Doc 3 in EMR/docs/product-feedback —
+                        suppress the mic for that block via
+                        omitForObjective. Vitals also gated downstream by
+                        the same prop. */}
                     <textarea
                       value={block.body}
                       onChange={(e) => updateBlock(i, "body", e.target.value)}
                       rows={Math.max(3, block.body.split("\n").length + 1)}
-                      className="w-full text-sm text-text-muted leading-relaxed bg-transparent border border-border/40 rounded-md p-3 pr-10 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all resize-y"
+                      className={`w-full text-sm text-text-muted leading-relaxed bg-transparent border border-border/40 rounded-md p-3 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all resize-y ${
+                        block.type === "findings" ? "" : "pr-10"
+                      }`}
                       placeholder="Note content..."
+                      data-objective-gated={block.type === "findings" ? "true" : undefined}
                     />
-                    {/* EMR-135: dictate directly into the section. Browser
-                        SpeechRecognition with a medical-vocabulary post-pass —
-                        clinician can speak "fifteen milligrams twice a day"
-                        and it lands as "15 mg BID". */}
-                    <DictateButton
-                      onText={(text) => {
-                        const sep = block.body && !/\s$/.test(block.body) ? " " : "";
-                        updateBlock(i, "body", `${block.body}${sep}${text.trim()}`);
-                      }}
-                      className="absolute top-2 right-2"
-                    />
+                    {block.type !== "findings" && (
+                      <DictateButton
+                        onText={(text) => {
+                          const sep = block.body && !/\s$/.test(block.body) ? " " : "";
+                          updateBlock(i, "body", `${block.body}${sep}${text.trim()}`);
+                        }}
+                        className="absolute top-2 right-2"
+                      />
+                    )}
                   </div>
                   {/* AI Refine buttons */}
                   <div className="flex items-center gap-1.5 pt-1">

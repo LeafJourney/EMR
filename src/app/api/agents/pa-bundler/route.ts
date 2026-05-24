@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const recentClinicalDocs = await prisma.document.findMany({
       where: { 
         patientId,
-        type: "clinical" // Grabs progress notes and imaging
+        kind: { in: ["note", "image"] }
       },
       orderBy: { createdAt: "desc" },
       take: 3

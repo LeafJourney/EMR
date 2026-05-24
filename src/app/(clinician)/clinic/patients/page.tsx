@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { PatientListClient } from "./patient-list-client";
 import { NewPatientModal } from "@/components/clinic/NewPatientModal";
+import { RosterExportMenu } from "./roster-export-menu";
 import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
@@ -97,12 +98,13 @@ export default async function PatientsPage({
     }
   }
 
-  // Compute status counts
+  // EMR-684: Dr. Patel removed the active/inactive toggles in Doc 2 — a
+  // patient is either visible or soft-deleted, no third state. We still
+  // surface "in intake" (prospects) because that drives clinician workflow,
+  // but "active" and "inactive" buckets are gone.
   const statusCounts = {
     all: patients.length,
-    active: patients.filter((p) => p.status === "active").length,
     prospect: patients.filter((p) => p.status === "prospect").length,
-    inactive: patients.filter((p) => p.status === "inactive").length,
   };
 
   // Compute avg chart readiness
@@ -140,6 +142,7 @@ export default async function PatientsPage({
             <span className="text-sm text-text-muted tabular-nums">
               {patients.length} patient{patients.length === 1 ? "" : "s"}
             </span>
+            <RosterExportMenu />
             <NewPatientModal>
               <Button variant="secondary" size="sm">
                 <svg

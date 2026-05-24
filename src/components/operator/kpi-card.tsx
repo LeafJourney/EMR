@@ -23,7 +23,14 @@ export interface KpiTrend {
 
 export interface KpiCardProps {
   eyebrow: string;
-  headline: string;
+  /**
+   * Headline shown as the big number. Accepts a string for static rendering
+   * or a ReactNode (e.g. `<AnimatedNumber value={...} />`) for tweened
+   * counters. Either way the wrapper applies tabular-nums for width stability.
+   */
+  headline: React.ReactNode;
+  /** Optional fallback string for aria-label when `headline` is a ReactNode. */
+  headlineLabel?: string;
   subtext?: string;
   href: string;
   trend?: KpiTrend;
@@ -42,6 +49,7 @@ const SEVERITY_DOT: Record<KpiSeverity, string> = {
 export function KpiCard({
   eyebrow,
   headline,
+  headlineLabel,
   subtext,
   href,
   trend,
@@ -49,10 +57,19 @@ export function KpiCard({
   pulse,
   className,
 }: KpiCardProps) {
+  // Stringify a ReactNode for screen-reader aria-label fallback when caller
+  // didn't pass an explicit headlineLabel. We only need a sane string — the
+  // AnimatedNumber primitive already exposes its own aria-label internally.
+  const headlineAria =
+    headlineLabel ??
+    (typeof headline === "string" || typeof headline === "number"
+      ? String(headline)
+      : "");
+
   return (
     <Link
       href={href}
-      aria-label={`${eyebrow}: ${headline}`}
+      aria-label={`${eyebrow}: ${headlineAria}`}
       className={cn(
         "group relative block rounded-2xl border border-border/80 bg-surface-raised",
         "shadow-sm transition-all duration-200 ease-smooth",

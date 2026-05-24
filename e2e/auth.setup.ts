@@ -27,13 +27,24 @@ setup('authenticate as test user', async ({ page }) => {
   // Click continue
   await page.click('button:has-text("Continue")');
 
-  // Wait until we land on the post-sign-in router or a secure page
-  await page.waitForURL(/.*(\/post-sign-in|\/clinic|\/portal|\/ops).*/, { timeout: 20000 }).catch(() => {
-    console.log('Did not detect typical post-auth URL. Continuing anyway to save state.');
-  });
-  
-  // Wait for the network to be idle to ensure cookies are persisted
-  await page.waitForLoadState('networkidle');
+  // Wait until we land on the post-sign-in router or a secure page.
+  // Fail loudly here rather than swallowing — if this doesn't match, the
+  // cookie wait below will time out with a misleading message.
+  await page.waitForURL(/.*(\/post-sign-in|\/clinic|\/portal|\/ops).*/, { timeout: 30000 });
+
+  // Wait until Clerk's session cookie is persisted. Don't use
+  // waitForLoadState('networkidle') — Clerk does background session polling
+  // (v1/environment, client/me, etc.) so the page never reaches networkidle
+  // and the wait times out at 60s.
+  await expect
+    .poll(
+      async () => {
+        const cookies = await page.context().cookies();
+        return cookies.some((c) => c.name === '__session' || c.name.startsWith('__session_'));
+      },
+      { timeout: 15000, message: 'Clerk __session cookie was not set after sign-in' },
+    )
+    .toBe(true);
 
   await page.context().storageState({ path: authFile });
 });

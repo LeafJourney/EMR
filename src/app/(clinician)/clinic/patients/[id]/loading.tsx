@@ -1,17 +1,14 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageShell } from "@/components/shell/PageHeader";
+import { ChartSkeleton } from "@/components/ui/skeletons";
 
+/**
+ * Patient chart shell — mirrors identity header, vitals strip, tab rail,
+ * and the two-column note feed + sidebar that the live chart renders.
+ */
 export default function Loading() {
   return (
-    <div className="px-6 lg:px-12 py-10">
-      <div className="mx-auto max-w-[1280px] space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-48 w-full rounded-xl" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-        </div>
-      </div>
-    </div>
+    <PageShell maxWidth="max-w-[1280px]">
+      <ChartSkeleton />
+    </PageShell>
   );
 }

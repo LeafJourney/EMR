@@ -1,9 +1,12 @@
-// EMR-143 — HIPAA-compliant Beam telehealth meetings.
+// EMR-143 — HIPAA-compliant Beam (nee Zoom) meetings.
 //
 // Lists scheduled and recent Beam telehealth visits and exposes a
 // scheduling form. Each meeting is created with HIPAA-safe defaults
 // (E2EE, waiting room, no cloud recording) and the passcode is stored
 // encrypted at rest — only the host's view ever shows the plaintext.
+//
+// EMR-691 — route renamed from /clinic/communications/zoom; the old
+// /zoom URL still resolves via a redirect stub in `../zoom/page.tsx`.
 
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
@@ -20,9 +23,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { decryptMessageBodySafe } from "@/lib/communications/message-crypto";
-import { formatBeamMeetingId } from "@/lib/communications/beam";
+import { formatBeamMeetingId } from "@/lib/communications/zoom";
 import { formatRelative } from "@/lib/utils/format";
-import { BeamScheduleForm } from "./beam-schedule-form";
+import { BeamScheduleForm } from "./schedule-form";
 
 export const metadata = { title: "Beam telehealth" };
 
@@ -63,7 +66,8 @@ export default async function BeamPage() {
         ],
       },
       orderBy: { zoomScheduledAt: "desc" },
-      take: 12,
+      // EMR-691 — show last 10 (was 12).
+      take: 10,
       include: {
         patient: { select: { firstName: true, lastName: true } },
         providerUser: { select: { firstName: true, lastName: true } },
@@ -123,7 +127,8 @@ export default async function BeamPage() {
               <p>· Passcode required, AES-256-GCM at rest</p>
               <p>· Join-before-host disabled, mute on entry on</p>
               <p className="pt-1 italic">
-                BAA must be on file with the telehealth provider for production use.
+                BAA must be on file with the Beam video provider for
+                production use.
               </p>
             </CardContent>
           </Card>
@@ -231,7 +236,8 @@ export default async function BeamPage() {
           <Card tone="raised">
             <CardHeader>
               <CardTitle className="text-base">Recent visits</CardTitle>
-              <CardDescription>Last 12 completed or past Beam visits.</CardDescription>
+              {/* EMR-691 — relabeled from "Last 12" to "Last 10" per spec. */}
+              <CardDescription>Last 10 completed or past Beam visits.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {recent.length === 0 ? (

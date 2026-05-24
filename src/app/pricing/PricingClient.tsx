@@ -48,7 +48,10 @@ const TIERS: Tier[] = [
       "Priority support",
       "Custom intake forms",
     ],
-    cta: { label: "Request demo", href: "/sign-up" },
+    // Professional is the B2B funnel — route to /book-demo (sales
+    // intake) rather than /sign-up (Clerk account creation). Matches
+    // the fix applied to the homepage hero CTAs in PR #258.
+    cta: { label: "Request demo", href: "/book-demo" },
     featured: true,
   },
   {

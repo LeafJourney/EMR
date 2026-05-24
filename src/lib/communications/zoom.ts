@@ -210,8 +210,8 @@ async function fetchServerToServerToken(creds: S2SCreds): Promise<string> {
 }
 
 /**
- * Format a Zoom meeting id (e.g. 81234567890) as the
- * "812 3456 7890" layout Zoom uses in its emails.
+ * Format a Beam meeting id (e.g. 81234567890) as the
+ * "812 3456 7890" layout used in meeting invites.
  */
 export function formatZoomMeetingId(id: string): string {
   const digits = id.replace(/\D/g, "");
@@ -221,3 +221,7 @@ export function formatZoomMeetingId(id: string): string {
   }
   return `${digits.slice(0, 3)} ${digits.slice(3, 7)} ${digits.slice(7)}`;
 }
+
+// Beam-branded aliases — prefer these in new code.
+export { scheduleHipaaZoomMeeting as scheduleHipaaBeamMeeting };
+export { formatZoomMeetingId as formatBeamMeetingId };

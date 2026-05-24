@@ -5,6 +5,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FieldGroup, Input } from "@/components/ui/input";
+import {
+  EmptyFilterState,
+  FilterChips,
+  MultiSelectFilter,
+  SavedViewsBar,
+  SortMenu,
+  type ActiveChip,
+} from "@/components/ui/filter-bar";
 import type { Vendor } from "@/lib/domain/overnight-batch";
 import { cn } from "@/lib/utils/cn";
 
@@ -21,7 +29,6 @@ const CATEGORIES = [
 
 // Today is 2026-04-16 per CLAUDE.md
 const TODAY = new Date("2026-04-16T00:00:00Z");
-const THIRTY_DAYS_MS = 30 * 86_400_000;
 
 function daysUntil(end?: string): number | null {
   if (!end) return null;
@@ -29,10 +36,33 @@ function daysUntil(end?: string): number | null {
   return Math.round((d.getTime() - TODAY.getTime()) / 86_400_000);
 }
 
+type SortKey = "name-asc" | "ends-asc" | "ends-desc" | "cost-desc" | "cost-asc";
+
+type ViewState = {
+  query: string;
+  categories: string[];
+  expiringOnly: boolean;
+  sort: SortKey;
+};
+
+const DEFAULT_STATE: ViewState = {
+  query: "",
+  categories: [],
+  expiringOnly: false,
+  sort: "name-asc",
+};
+
+const SORT_OPTIONS = [
+  { value: "name-asc", label: "Name (A-Z)" },
+  { value: "ends-asc", label: "Contract ends (soonest)" },
+  { value: "ends-desc", label: "Contract ends (latest)" },
+  { value: "cost-desc", label: "Monthly cost (high to low)" },
+  { value: "cost-asc", label: "Monthly cost (low to high)" },
+] as const;
+
 export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"all" | string>("all");
+  const [state, setState] = useState<ViewState>(DEFAULT_STATE);
   const [showAdd, setShowAdd] = useState(false);
   const [draft, setDraft] = useState({
     name: "",
@@ -45,9 +75,15 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
   });
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return vendors.filter((v) => {
-      if (category !== "all" && v.category !== category) return false;
+    const q = state.query.trim().toLowerCase();
+    const list = vendors.filter((v) => {
+      if (state.categories.length > 0 && !state.categories.includes(v.category)) {
+        return false;
+      }
+      if (state.expiringOnly) {
+        const d = daysUntil(v.contractEnds);
+        if (d === null || d < 0 || d > 30) return false;
+      }
       if (!q) return true;
       return (
         v.name.toLowerCase().includes(q) ||
@@ -55,7 +91,28 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
         (v.email ?? "").toLowerCase().includes(q)
       );
     });
-  }, [vendors, query, category]);
+
+    return list.sort((a, b) => {
+      switch (state.sort) {
+        case "name-asc":
+          return a.name.localeCompare(b.name);
+        case "ends-asc": {
+          const ad = daysUntil(a.contractEnds) ?? Infinity;
+          const bd = daysUntil(b.contractEnds) ?? Infinity;
+          return ad - bd;
+        }
+        case "ends-desc": {
+          const ad = daysUntil(a.contractEnds) ?? -Infinity;
+          const bd = daysUntil(b.contractEnds) ?? -Infinity;
+          return bd - ad;
+        }
+        case "cost-desc":
+          return (b.monthlyCost ?? 0) - (a.monthlyCost ?? 0);
+        case "cost-asc":
+          return (a.monthlyCost ?? 0) - (b.monthlyCost ?? 0);
+      }
+    });
+  }, [vendors, state]);
 
   const expiring = useMemo(
     () =>
@@ -65,6 +122,43 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
       }),
     [vendors],
   );
+
+  const chips: ActiveChip[] = [];
+  if (state.query.trim()) {
+    chips.push({ id: "query", label: "Search", value: state.query.trim() });
+  }
+  if (state.categories.length > 0) {
+    chips.push({
+      id: "categories",
+      label: "Category",
+      value: state.categories,
+    });
+  }
+  if (state.expiringOnly) {
+    chips.push({ id: "expiring", label: "Status", value: "Expiring ≤ 30 days" });
+  }
+
+  function removeChip(id: string) {
+    setState((s) => {
+      if (id === "query") return { ...s, query: "" };
+      if (id === "categories") return { ...s, categories: [] };
+      if (id === "expiring") return { ...s, expiringOnly: false };
+      return s;
+    });
+  }
+
+  function clearAll() {
+    setState({ ...DEFAULT_STATE, sort: state.sort });
+  }
+
+  function isDefault(s: ViewState) {
+    return (
+      s.query === "" &&
+      s.categories.length === 0 &&
+      !s.expiringOnly &&
+      s.sort === DEFAULT_STATE.sort
+    );
+  }
 
   function addVendor() {
     if (!draft.name.trim()) return;
@@ -96,41 +190,78 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
     <div className="space-y-5">
       {expiring.length > 0 && (
         <Card tone="raised" className="border-amber-300/60 bg-amber-50/60">
-          <CardContent className="py-4">
-            <p className="text-sm font-medium text-amber-900">
-              {expiring.length} {expiring.length === 1 ? "contract" : "contracts"} expiring in 30 days
-            </p>
-            <p className="text-xs text-amber-800/80 mt-1">
-              {expiring.map((v) => `${v.name} (${v.contractEnds})`).join(" · ")}
-            </p>
+          <CardContent className="py-4 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-medium text-amber-900">
+                {expiring.length} {expiring.length === 1 ? "contract" : "contracts"} expiring in 30 days
+              </p>
+              <p className="text-xs text-amber-800/80 mt-1">
+                {expiring.map((v) => `${v.name} (${v.contractEnds})`).join(" · ")}
+              </p>
+            </div>
+            {!state.expiringOnly && (
+              <button
+                type="button"
+                onClick={() => setState((s) => ({ ...s, expiringOnly: true }))}
+                className="text-xs font-medium text-amber-900 underline underline-offset-2 hover:no-underline"
+              >
+                Show only expiring →
+              </button>
+            )}
           </CardContent>
         </Card>
       )}
+
+      <SavedViewsBar
+        storageKey="ops.vendors"
+        currentState={state}
+        isDefault={isDefault}
+        onApply={(s) => setState(s)}
+        onReset={() => setState(DEFAULT_STATE)}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <Input
             type="search"
             placeholder="Search vendors…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="md:w-64"
+            value={state.query}
+            onChange={(e) => setState((s) => ({ ...s, query: e.target.value }))}
+            className="md:w-64 h-9"
           />
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="rounded-md border border-border-strong bg-surface px-3 h-9 text-sm text-text"
+          <MultiSelectFilter
+            label="Category"
+            options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+            selected={state.categories}
+            onChange={(next) => setState((s) => ({ ...s, categories: next }))}
+            placeholder="All categories"
+          />
+          <button
+            type="button"
+            onClick={() =>
+              setState((s) => ({ ...s, expiringOnly: !s.expiringOnly }))
+            }
+            className={cn(
+              "h-9 px-3 rounded-md border text-sm transition-colors",
+              state.expiringOnly
+                ? "border-accent bg-accent-soft text-accent font-medium"
+                : "border-border-strong bg-surface text-text-muted hover:bg-surface-muted/60",
+            )}
           >
-            <option value="all">All categories</option>
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+            Expiring ≤ 30d
+          </button>
+          <SortMenu
+            options={[...SORT_OPTIONS]}
+            value={state.sort}
+            onChange={(next) => setState((s) => ({ ...s, sort: next as SortKey }))}
+          />
         </div>
         <Button size="sm" onClick={() => setShowAdd(true)}>
           Add vendor
         </Button>
       </div>
+
+      <FilterChips chips={chips} onRemove={removeChip} onClearAll={clearAll} />
 
       <Card tone="raised">
         <div className="overflow-x-auto">
@@ -147,7 +278,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
             <tbody>
               {filtered.map((v) => {
                 const d = daysUntil(v.contractEnds);
-                const expiring = d !== null && d >= 0 && d <= 30;
+                const isExpiring = d !== null && d >= 0 && d <= 30;
                 return (
                   <tr key={v.id} className="border-b border-border/40 hover:bg-surface-muted/40">
                     <td className="px-5 py-3.5">
@@ -165,14 +296,14 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
                     <td className="px-5 py-3.5 text-right tabular-nums">
                       {v.monthlyCost ? `$${v.monthlyCost.toLocaleString()}` : "—"}
                     </td>
-                    <td className={cn("px-5 py-3.5 text-xs", expiring ? "text-[color:var(--highlight-hover)]" : "text-text-muted")}>
+                    <td className={cn("px-5 py-3.5 text-xs", isExpiring ? "text-[color:var(--highlight-hover)]" : "text-text-muted")}>
                       {v.contractEnds ? (
                         <>
                           <div>{v.contractEnds}</div>
                           {d !== null && (
                             <div className="text-[10px] text-text-subtle">
                               {d < 0 ? "expired" : `${d} days`}
-                              {expiring && " — renew soon"}
+                              {isExpiring && " — renew soon"}
                             </div>
                           )}
                         </>
@@ -181,15 +312,17 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
                   </tr>
                 );
               })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-text-subtle text-sm">
-                    No vendors match your filters.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+          {filtered.length === 0 && (
+            <div className="p-4">
+              <EmptyFilterState
+                title="No vendors match your filters"
+                hint="Try removing a category or the expiring-only toggle."
+                onClear={clearAll}
+              />
+            </div>
+          )}
         </div>
       </Card>
 

@@ -17,6 +17,12 @@ const VALUE_LABELS: Record<Metric, string> = {
   patientGrowth: "New patients",
 };
 
+const EMPTY_HINTS: Record<Metric, string> = {
+  claims: "Practices ranked by claims filed this month appear here once claims flow.",
+  billed: "Practices ranked by dollars billed this month appear here once charges post.",
+  patientGrowth: "Practices ranked by new-patient intake this month appear here once charts are created.",
+};
+
 function formatMetric(metric: Metric, raw: number): string {
   if (metric === "billed") return formatUSDCents(raw);
   return formatCount(raw);
@@ -38,7 +44,18 @@ function Leaderboard({ metric, rows }: { metric: Metric; rows: TopPracticeRow[] 
         <span className="text-[11px] text-text-subtle">MTD</span>
       </header>
       {rows.length === 0 ? (
-        <p className="text-sm text-text-subtle">No data yet.</p>
+        <div className="py-2">
+          <p className="text-sm text-text">No data yet.</p>
+          <p className="mt-1.5 text-[12px] text-text-muted leading-snug">
+            {EMPTY_HINTS[metric]}
+          </p>
+          <Link
+            href="/onboarding"
+            className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.14em] text-accent hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface rounded"
+          >
+            Start a practice <span aria-hidden="true">→</span>
+          </Link>
+        </div>
       ) : (
         <ol className="space-y-2">
           {rows.map((row, idx) => (

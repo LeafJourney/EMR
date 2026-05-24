@@ -10,14 +10,16 @@ export interface ContextDrawerProps {
   section: NavSection | null;
   pathname: string;
   onClose: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
 }
 
-export function ContextDrawer({ section, pathname, onClose }: ContextDrawerProps) {
+export function ContextDrawer({ section, pathname, onClose, pinned, onTogglePin }: ContextDrawerProps) {
   const open = section !== null;
   const ref = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || pinned) return;
     const handler = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
@@ -28,16 +30,16 @@ export function ContextDrawer({ section, pathname, onClose }: ContextDrawerProps
     };
     document.addEventListener("pointerdown", handler);
     return () => document.removeEventListener("pointerdown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, pinned]);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || pinned) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, pinned]);
 
   return (
     <div
@@ -46,9 +48,13 @@ export function ContextDrawer({ section, pathname, onClose }: ContextDrawerProps
       aria-label={section?.label ?? "Navigation"}
       aria-hidden={!open}
       className={cn(
-        "hidden md:flex flex-col w-60 shrink-0 border-r border-border bg-surface",
-        "transition-all duration-200 ease-smooth",
-        open ? "opacity-100" : "pointer-events-none w-0 border-r-0 opacity-0",
+        "hidden md:flex flex-col border-border bg-surface",
+        "transition-all duration-300 ease-smooth",
+        pinned
+          ? "relative border-r w-60 opacity-100"
+          : "absolute left-16 top-0 bottom-0 z-50 border-r shadow-2xl w-60",
+        pinned && !open && "w-0 border-r-0 opacity-0 pointer-events-none",
+        !pinned && !open && "-translate-x-full opacity-0 pointer-events-none border-r-0"
       )}
     >
       {section && (
@@ -96,6 +102,26 @@ export function ContextDrawer({ section, pathname, onClose }: ContextDrawerProps
               })}
             </ul>
           </nav>
+          
+          {/* Monday.com-style Pin Footer */}
+          <div className="mt-auto border-t border-border/80 p-3">
+            <button
+              type="button"
+              onClick={onTogglePin}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-surface-muted/50 py-2 text-xs font-medium text-text-subtle hover:bg-surface-muted hover:text-text transition-colors"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className={cn("transition-transform duration-200", !pinned && "rotate-45")}
+              >
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+              </svg>
+              {pinned ? "Collapse sidebar" : "Pin sidebar"}
+            </button>
+          </div>
         </>
       )}
     </div>

@@ -22,17 +22,19 @@ export async function POST(req: Request) {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const noShowEncounters = await prisma.encounter.findMany({
+    const noShowAppointments = await prisma.appointment.findMany({
       where: {
         status: "no_show",
-        // scheduledFor: { ... }
+      },
+      include: {
+        patient: true
       },
       take: 50
     });
 
     let feesCharged = 0;
 
-    for (const encounter of noShowEncounters) {
+    for (const appointment of noShowAppointments) {
       // 2. Logic: Process payment via external gateway (Stripe/Square)
       const chargeSuccess = true; // Mock transaction
       const feeAmountCents = 5000; // $50.00
@@ -41,17 +43,17 @@ export async function POST(req: Request) {
         // 3. Log the successful charge against the ledger
         logger.warn({ 
           event: "agents.no_show_enforcer.fee_charged", 
-          encounterId: encounter.id, 
-          patientId: encounter.patientId 
+          encounterId: appointment.id, 
+          patientId: appointment.patientId 
         });
 
         await prisma.auditLog.create({
           data: {
-            organizationId: encounter.organizationId,
+            organizationId: appointment.patient.organizationId,
             action: "NO_SHOW_FEE_PROCESSED",
             subjectType: "Patient",
-            subjectId: encounter.patientId,
-            metadata: { encounterId: encounter.id, amountCents: feeAmountCents, status: "paid" }
+            subjectId: appointment.patientId,
+            metadata: { appointmentId: appointment.id, amountCents: feeAmountCents, status: "paid" }
           }
         });
 
@@ -60,14 +62,14 @@ export async function POST(req: Request) {
         // Payment failed - add to collections queue
         logger.error({ 
           event: "agents.no_show_enforcer.charge_failed", 
-          encounterId: encounter.id 
+          encounterId: appointment.id 
         });
       }
     }
 
     return NextResponse.json({ 
       success: true, 
-      scanned: noShowEncounters.length,
+      scanned: noShowAppointments.length,
       feesCharged
     });
 

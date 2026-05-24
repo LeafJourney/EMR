@@ -22,7 +22,9 @@
     "pm": "tsx --conditions=react-server scripts/pm-agent.ts",
     "manifests:lint": "tsx --conditions=react-server scripts/lint-manifests.ts",
     "audit:export": "tsx --conditions=react-server scripts/export-audit-log.ts",
-    "lint:modality": "tsx --conditions=react-server scripts/lint-modality-bleed.ts"
+    "lint:modality": "tsx --conditions=react-server scripts/lint-modality-bleed.ts",
+    "lint:audit": "tsx --conditions=react-server scripts/lint-audit-log-coverage.ts",
+    "load:synthetic": "tsx scripts/load-synthetic.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.1",

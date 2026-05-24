@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         await prisma.encounter.update({
           where: { id: encounter.id },
           data: {
-            status: "draft", // Push it back to the provider's sign-off queue
+            status: "in_progress", // Push it back to the provider's sign-off queue
             briefingContext: {
               auditDefects: defects
             }

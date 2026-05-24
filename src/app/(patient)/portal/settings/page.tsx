@@ -32,15 +32,15 @@ export default async function SettingsPage() {
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
             <CardDescription>
-              Choose between light and dark mode. Your preference is saved locally.
+              Choose Light, Dark, or follow your system preference. Your choice is saved locally.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <p className="text-sm font-medium text-text">Theme</p>
                 <p className="text-xs text-text-subtle mt-0.5">
-                  Toggle between light and dark mode
+                  Light, Dark, or System (follows OS)
                 </p>
               </div>
               <ThemeToggle />

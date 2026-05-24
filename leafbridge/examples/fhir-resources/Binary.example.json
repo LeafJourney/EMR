@@ -1,0 +1,14 @@
+{
+  "resourceType": "Binary",
+  "id": "binary-001",
+  "meta": {
+    "tag": [
+      {
+        "system": "http://leafbridge.dev/storage",
+        "code": "leafbridge-storage-url",
+        "display": "s3://leafbridge-bronze/tenant-001/outside-ehr/deadbeefdeadbeefdeadbeef.pdf"
+      }
+    ]
+  },
+  "contentType": "application/pdf"
+}

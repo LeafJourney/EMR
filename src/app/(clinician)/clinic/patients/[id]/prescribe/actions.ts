@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { checkInteractions } from "@/lib/domain/drug-interactions";
+import { recommendNarcan } from "@/lib/domain/cures";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { logger } from "@/lib/observability/log";
 
@@ -30,6 +31,13 @@ const schema = z.object({
   contraindicationOverrideReason: z.string().max(2000).optional(),
   contraindicationIds: z.string().optional(), // JSON array of ids
   contraindicationCoSignerUserId: z.string().optional(),
+  // EMR-781: CURES + Narcan attestation fields
+  curesAcknowledged: z.string().optional(),
+  curesQueriedAt: z.string().optional(),
+  curesFlags: z.string().optional(), // JSON array of PdmpFlag
+  curesMmePerDay: z.coerce.number().nonnegative().optional(),
+  narcanCoPrescribe: z.string().optional(),
+  narcanDeclineReason: z.string().max(2000).optional(),
 });
 
 export type PrescribeResult = { ok: true } | { ok: false; error: string };
@@ -63,6 +71,12 @@ export async function createPrescriptionAction(
     contraindicationIds: formData.get("contraindicationIds") || undefined,
     contraindicationCoSignerUserId:
       formData.get("contraindicationCoSignerUserId") || undefined,
+    curesAcknowledged: formData.get("curesAcknowledged") || undefined,
+    curesQueriedAt: formData.get("curesQueriedAt") || undefined,
+    curesFlags: formData.get("curesFlags") || undefined,
+    curesMmePerDay: formData.get("curesMmePerDay") || undefined,
+    narcanCoPrescribe: formData.get("narcanCoPrescribe") || undefined,
+    narcanDeclineReason: formData.get("narcanDeclineReason") || undefined,
   });
 
   if (!parsed.success) {
@@ -148,6 +162,40 @@ export async function createPrescriptionAction(
     }
   }
 
+  // EMR-781: Narcan safety check — if the prescribed medication or any
+  // active patient medication is an opioid, the prescriber must record
+  // a Narcan decision (co-prescribe or declined-with-reason).
+  const candidateMedNameForNarcan =
+    product?.name ?? customProductName ?? null;
+  const narcanScopeNames: string[] = [];
+  if (candidateMedNameForNarcan) narcanScopeNames.push(candidateMedNameForNarcan);
+  const activePatientMeds = await prisma.patientMedication.findMany({
+    where: { patientId, active: true },
+    select: { name: true },
+  });
+  for (const m of activePatientMeds) narcanScopeNames.push(m.name);
+
+  const narcanRec = recommendNarcan(narcanScopeNames);
+  const narcanCoPrescribe = parsed.data.narcanCoPrescribe === "true";
+  const narcanDeclineReason = parsed.data.narcanDeclineReason?.trim() ?? "";
+
+  if (narcanRec.recommended) {
+    if (!narcanCoPrescribe && narcanDeclineReason.length === 0) {
+      return {
+        ok: false,
+        error:
+          "Opioid detected. Document your Narcan (naloxone) decision before signing — either co-prescribe Narcan or provide a clinical reason for declining.",
+      };
+    }
+    if (!narcanCoPrescribe && narcanDeclineReason.length < 10) {
+      return {
+        ok: false,
+        error:
+          "Narcan decline reason must be at least 10 characters describing the clinical rationale.",
+      };
+    }
+  }
+
   // Auto-calculate mg per dose and per day
   let thcMgPerDose: number | null = null;
   let cbdMgPerDose: number | null = null;
@@ -175,6 +223,34 @@ export async function createPrescriptionAction(
     }
   }
 
+  // EMR-781: parse CURES snapshot fields for the structured notes
+  let curesFlagsParsed: string[] = [];
+  if (parsed.data.curesFlags) {
+    try {
+      const raw = JSON.parse(parsed.data.curesFlags);
+      const result = z.array(z.string()).safeParse(raw);
+      curesFlagsParsed = result.success ? result.data : [];
+    } catch {
+      curesFlagsParsed = [];
+    }
+  }
+
+  const curesSummary = {
+    acknowledged: parsed.data.curesAcknowledged === "true",
+    queriedAt: parsed.data.curesQueriedAt ?? null,
+    flags: curesFlagsParsed,
+    mmePerDay: parsed.data.curesMmePerDay ?? null,
+  };
+
+  const narcanSummary = narcanRec.recommended
+    ? {
+        recommended: true,
+        opioids: narcanRec.opioids,
+        decision: narcanCoPrescribe ? ("co_prescribe" as const) : ("declined" as const),
+        declineReason: narcanCoPrescribe ? null : narcanDeclineReason,
+      }
+    : { recommended: false as const };
+
   // Build structured clinician notes with metadata
   const structuredNotes = JSON.stringify({
     noteToPharmacy: noteToPharmacy || null,
@@ -185,6 +261,8 @@ export async function createPrescriptionAction(
     productType,
     customProductName: customProductName || null,
     interactionAcknowledged: interactionAcknowledged === "true",
+    cures: curesSummary,
+    narcan: narcanSummary,
   });
 
   // Auto-generate patient instructions if not provided
@@ -283,6 +361,46 @@ export async function createPrescriptionAction(
           subjectType: "DosingRegimen",
           subjectId: regimen.id,
           metadata: contraindicationOverride,
+        },
+      });
+    }
+
+    // EMR-781: audit the Narcan decision whenever an opioid was in scope.
+    if (narcanRec.recommended) {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: user.organizationId!,
+          actorUserId: user.id,
+          action: narcanCoPrescribe
+            ? "prescribing.narcan.co_prescribed"
+            : "prescribing.narcan.declined",
+          subjectType: "DosingRegimen",
+          subjectId: regimen.id,
+          metadata: {
+            opioids: narcanRec.opioids,
+            rationale: narcanRec.rationale,
+            ...(narcanCoPrescribe
+              ? {}
+              : { declineReason: narcanDeclineReason }),
+          },
+        },
+      });
+    }
+
+    // EMR-781: audit the CURES review whenever the snapshot was acknowledged.
+    if (curesSummary.acknowledged) {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: user.organizationId!,
+          actorUserId: user.id,
+          action: "prescribing.cures.reviewed",
+          subjectType: "DosingRegimen",
+          subjectId: regimen.id,
+          metadata: {
+            queriedAt: curesSummary.queriedAt,
+            flags: curesSummary.flags,
+            mmePerDay: curesSummary.mmePerDay,
+          },
         },
       });
     }

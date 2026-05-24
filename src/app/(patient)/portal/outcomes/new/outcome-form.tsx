@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormState } from "react-dom";
 import Link from "next/link";
 import { submitOutcomeAction, type OutcomeResult } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -17,17 +17,16 @@ import {
 import { Eyebrow } from "@/components/ui/ornament";
 import { LeafSprig } from "@/components/ui/ornament";
 import { LeafCelebration } from "@/components/ui/leaf-celebration";
+import { SubmitButton as SharedSubmitButton } from "@/lib/ui/form-helpers";
 
 // ---------------------------------------------------------------------------
-// Submit button
+// Submit button — uses shared `<SubmitButton>` so the spinner + "Saving check-in…"
+// pending state come from useFormStatus automatically.
 // ---------------------------------------------------------------------------
 
 function SubmitButton() {
-  const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="lg" disabled={pending}>
-      {pending ? "Saving..." : "Save check-in"}
-    </Button>
+    <SharedSubmitButton size="lg" idleLabel="Save check-in" pendingLabel="Saving check-in…" />
   );
 }
 

@@ -24,8 +24,7 @@ export async function POST(req: Request) {
 
     const recentDispenses = await prisma.dispensaryDispense.findMany({
       where: {
-        status: "complete",
-        dispensedAt: { gte: yesterday }
+                dispensedAt: { gte: yesterday }
       },
       take: 100
     });

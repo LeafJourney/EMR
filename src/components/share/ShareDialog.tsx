@@ -7,10 +7,14 @@
 // platform target. Each click POSTs an analytics event to /api/share and
 // then opens the platform deep link in a new tab. Native Web Share is
 // preferred when available (mobile).
+//
+// Migrated to the canonical `<Dialog>` primitive (ux/modal-consistency-sweep)
+// for unified backdrop, focus trap, and close affordance.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react";
-import { X, Check } from "lucide-react";
+import { useState } from "react";
+import { Check } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils/cn";
 import { SHARE_TARGETS } from "./share-targets";
 import { buildLeafArtSvg } from "./leaf-art";
@@ -23,15 +27,6 @@ interface ShareDialogProps {
 
 export function ShareDialog({ payload, onClose }: ShareDialogProps) {
   const [copied, setCopied] = useState(false);
-
-  // Esc to close.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const svg = buildLeafArtSvg({
     seed: payload.url,
@@ -89,18 +84,10 @@ export function ShareDialog({ payload, onClose }: ShareDialogProps) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-label="Share"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
         className={cn(
-          "w-full sm:w-[480px] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl",
-          "animate-in slide-in-from-bottom-4 duration-300",
-          "p-6",
+          "max-w-[480px] bg-white p-6 rounded-3xl",
         )}
       >
         <div className="flex items-start justify-between mb-4">
@@ -108,16 +95,12 @@ export function ShareDialog({ payload, onClose }: ShareDialogProps) {
             <p className="text-xs uppercase tracking-widest text-text-muted font-bold mb-1">
               Share
             </p>
-            <h2 className="font-display text-xl text-text">{payload.title}</h2>
+            <DialogTitle className="font-display text-xl text-text">
+              {payload.title}
+            </DialogTitle>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Dialog primitive ships an absolute-positioned X — keep the spot
+              clear so the two affordances don't collide. */}
         </div>
 
         {/* Leaf-art preview */}
@@ -151,7 +134,7 @@ export function ShareDialog({ payload, onClose }: ShareDialogProps) {
         <p className="text-xs text-text-muted text-center">
           Sharing helps more people find evidence-based cannabis care.
         </p>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

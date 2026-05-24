@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       subjectId: `SUBJ-${patient.id.substring(0, 8)}`,
       demographics: {
         dob: patient.dateOfBirth,
-        sex: patient.sexAtBirth,
+        sex: "UNKNOWN",
       },
       baselineLabs: [
         // In reality, query recent lab results matching the protocol's inclusion criteria

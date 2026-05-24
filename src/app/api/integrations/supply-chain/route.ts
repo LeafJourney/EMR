@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     // Using CannabisProduct table as a proxy for all inventory in this schema
     const lowStockItems = await prisma.cannabisProduct.findMany({
       where: {
-        stockLevel: { lte: 10 } // Mock Par Level
+        active: true
       },
       take: 100
     });
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
         logger.info({ 
           event: "integrations.supply_chain.po_transmitted", 
           poNumber, 
-          sku: item.sku, 
+          sku: item.id, 
           quantity: quantityToOrder 
         });
 

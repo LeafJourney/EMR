@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { createPrescriptionAction, type PrescribeResult } from "./actions";
 import { Button } from "@/components/ui/button";
-import { Input, Textarea, FieldGroup } from "@/components/ui/input";
+import { Input, FieldGroup } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -27,6 +27,9 @@ import {
 import { PharmacySelector } from "./pharmacy-selector";
 import { RxPreview } from "./rx-preview";
 import type { Pharmacy } from "@/lib/domain/e-prescribe";
+import { CuresPlugin } from "@/components/cures/cures-plugin";
+import { CuresTextarea, CuresShortcutHint } from "@/components/cures/cures-textarea";
+import { recommendNarcan } from "@/components/cures/cures-client";
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -228,6 +231,11 @@ export function PrescribeForm({
   const [signing, setSigning] = useState(false);
   const [signed, setSigned] = useState(false);
 
+  // --- EMR-781: CURES + Narcan ---
+  const [curesAcknowledged, setCuresAcknowledged] = useState(false);
+  const [narcanDecision, setNarcanDecision] =
+    useState<"co_prescribe" | "declined" | null>(null);
+
   // Derived state
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId) ?? null,
@@ -324,10 +332,32 @@ export function PrescribeForm({
     hasBlockingContraindication &&
     (!contraindicationAcknowledged || contraindicationOverrideReason.trim().length < 20);
   const mustAcknowledgeControlled = !!controlledMatch && !controlledAcknowledged;
+
+  // EMR-781: Narcan recommendation — driven by the candidate Rx + the
+  // patient's existing opioid meds. The block on signing only fires
+  // when an opioid is detected and the prescriber hasn't recorded a
+  // decision yet.
+  const candidateMedicationName =
+    selectedProduct?.name ?? (customProductName.trim() || null);
+  const narcanRecommendation = useMemo(
+    () =>
+      recommendNarcan([
+        ...medications.map((m) => m.name),
+        ...(candidateMedicationName ? [candidateMedicationName] : []),
+      ]),
+    [medications, candidateMedicationName],
+  );
+  const mustAcknowledgeNarcan =
+    narcanRecommendation.recommended && narcanDecision === null;
+  const mustAcknowledgeCures =
+    !!controlledMatch && !curesAcknowledged;
+
   const mustAcknowledge =
     mustAcknowledgeInteraction ||
     mustAcknowledgeContraindication ||
-    mustAcknowledgeControlled;
+    mustAcknowledgeControlled ||
+    mustAcknowledgeNarcan ||
+    mustAcknowledgeCures;
 
   // Toggle diagnosis selection
   function toggleDiagnosis(dx: DiagnosisOption) {
@@ -997,6 +1027,17 @@ export function PrescribeForm({
         </CardContent>
       </Card>
 
+      {/* ── EMR-781: CURES plugin ──────────────────────────────── */}
+      <CuresPlugin
+        patientId={patientId}
+        patientName={patientName}
+        existingMedicationNames={medications.map((m) => m.name)}
+        candidateMedicationName={candidateMedicationName}
+        narcan={narcanRecommendation}
+        onCuresAcknowledgedChange={setCuresAcknowledged}
+        onNarcanDecisionChange={setNarcanDecision}
+      />
+
       {/* ── Section 4: Diagnosis Linking ───────────────────────── */}
       <Card tone="raised">
         <CardHeader>
@@ -1124,28 +1165,30 @@ export function PrescribeForm({
             htmlFor="noteToPatient"
             hint="Shown to the patient on their medications page"
           >
-            <Textarea
+            <CuresTextarea
               id="noteToPatient"
               name="noteToPatient"
-              rows={3}
+              rows={4}
               value={noteToPatient}
-              onChange={(e) => setNoteToPatient(e.target.value)}
+              onChange={setNoteToPatient}
               placeholder="Take with food. Avoid driving for 2 hours after dose."
             />
+            <CuresShortcutHint />
           </FieldGroup>
           <FieldGroup
             label="Note to pharmacy"
             htmlFor="noteToPharmacy"
             hint="Internal only - not shown to patient"
           >
-            <Textarea
+            <CuresTextarea
               id="noteToPharmacy"
               name="noteToPharmacy"
-              rows={2}
+              rows={3}
               value={noteToPharmacy}
-              onChange={(e) => setNoteToPharmacy(e.target.value)}
+              onChange={setNoteToPharmacy}
               placeholder="Brand medically necessary. Do not substitute."
             />
+            <CuresShortcutHint />
           </FieldGroup>
         </CardContent>
       </Card>

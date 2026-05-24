@@ -1,5 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
+import { AnimatedNumber } from "./animated-number";
+import { MiniSparkline } from "./mini-sparkline";
 
 export function MetricTile({
   label,
@@ -8,6 +10,10 @@ export function MetricTile({
   hint,
   accent,
   className,
+  /** Optional 7-ish point trend series rendered as an inline mini sparkline. */
+  trend,
+  /** When `value` is a plain number, animate it 0 → value (or prev → next on update). */
+  animate = true,
 }: {
   label: string;
   value: React.ReactNode;
@@ -15,6 +21,8 @@ export function MetricTile({
   hint?: string;
   accent?: "forest" | "amber" | "none";
   className?: string;
+  trend?: number[];
+  animate?: boolean;
 }) {
   const accentClass =
     accent === "forest"
@@ -22,6 +30,17 @@ export function MetricTile({
       : accent === "amber"
         ? "before:bg-highlight"
         : "before:bg-border-strong/50";
+
+  // If value is a plain finite number, route it through AnimatedNumber so we
+  // get a smooth ease-out tween + tabular-nums width-stability for free.
+  // Everything else (strings, JSX, "$1.2k", "84%") renders as-is — the
+  // upstream caller has already done bespoke formatting.
+  const renderedValue =
+    animate && typeof value === "number" && Number.isFinite(value) ? (
+      <AnimatedNumber value={value} />
+    ) : (
+      value
+    );
 
   return (
     <div
@@ -37,10 +56,15 @@ export function MetricTile({
       </p>
       <div className="mt-2 flex items-baseline gap-2">
         <span className="font-display text-3xl font-medium text-text tabular-nums leading-none">
-          {value}
+          {renderedValue}
         </span>
         {delta && (
           <span className="text-xs text-text-muted tabular-nums">{delta}</span>
+        )}
+        {trend && trend.length > 1 && (
+          <span className="ml-auto self-center opacity-80">
+            <MiniSparkline values={trend} />
+          </span>
         )}
       </div>
       {hint && <p className="text-xs text-text-subtle mt-2">{hint}</p>}

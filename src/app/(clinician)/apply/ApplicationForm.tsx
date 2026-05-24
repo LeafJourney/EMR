@@ -26,13 +26,28 @@ const STATES = [
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
 ];
 
+const REQUIRED_FIELD_NAMES = ["firstName", "lastName", "email", "phone", "npi", "bio", "cashRateCents"] as const;
+type RequiredFieldName = (typeof REQUIRED_FIELD_NAMES)[number];
+
 export function ApplicationForm() {
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<ApplicationSubmitResult | null>(null);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<Set<RequiredFieldName>>(new Set());
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const emptyFields = new Set(
+      REQUIRED_FIELD_NAMES.filter((name) => !String(formData.get(name) ?? "").trim())
+    );
+    if (emptyFields.size > 0) {
+      setInvalidFields(emptyFields);
+      setClientError("Please complete each field.");
+      return;
+    }
+    setInvalidFields(new Set());
+    setClientError(null);
     startTransition(async () => {
       const res = await submitClinicianApplication(formData);
       setResult(res);
@@ -41,9 +56,14 @@ export function ApplicationForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-8">
-      <Field label="First name" name="firstName" required errors={result?.fieldErrors?.firstName} />
-      <Field label="Last name" name="lastName" required errors={result?.fieldErrors?.lastName} />
+    <form onSubmit={onSubmit} noValidate className="space-y-8">
+      {clientError && (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/5 px-4 py-3 text-sm font-medium text-danger">
+          {clientError}
+        </p>
+      )}
+      <Field label="First name" name="firstName" required errors={result?.fieldErrors?.firstName} invalid={invalidFields.has("firstName")} />
+      <Field label="Last name" name="lastName" required errors={result?.fieldErrors?.lastName} invalid={invalidFields.has("lastName")} />
 
       <div>
         <label className="block text-sm font-semibold text-text mb-2">
@@ -62,22 +82,30 @@ export function ApplicationForm() {
         </select>
       </div>
 
-      <Field label="Email" name="email" type="email" required errors={result?.fieldErrors?.email} />
-      <Field label="Phone" name="phone" required errors={result?.fieldErrors?.phone} />
-      <Field label="NPI (10 digits)" name="npi" required errors={result?.fieldErrors?.npi} />
+      <Field label="Email" name="email" type="email" required errors={result?.fieldErrors?.email} invalid={invalidFields.has("email")} />
+      <Field label="Phone" name="phone" required errors={result?.fieldErrors?.phone} invalid={invalidFields.has("phone")} />
+      <Field label="NPI (10 digits)" name="npi" required errors={result?.fieldErrors?.npi} invalid={invalidFields.has("npi")} />
 
       <div>
         <label className="block text-sm font-semibold text-text mb-2">
-          Short bio
+          Short bio <span aria-hidden="true" className="text-danger">*</span>
         </label>
         <textarea
           name="bio"
           required
           rows={4}
-          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          aria-invalid={invalidFields.has("bio") || undefined}
+          className={`w-full px-3 py-2 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 transition-colors ${
+            invalidFields.has("bio")
+              ? "border-danger focus:ring-danger/20"
+              : "border-slate-200 focus:ring-accent"
+          }`}
         />
+        {invalidFields.has("bio") && !result?.fieldErrors?.bio && (
+          <p className="text-xs text-danger mt-1">This field is required.</p>
+        )}
         {result?.fieldErrors?.bio && (
-          <p className="text-xs text-red-600 mt-1">
+          <p className="text-xs text-danger mt-1">
             {result.fieldErrors.bio.join(" ")}
           </p>
         )}
@@ -114,6 +142,7 @@ export function ApplicationForm() {
         name="cashRateCents"
         type="number"
         required
+        invalid={invalidFields.has("cashRateCents")}
       />
 
       <button
@@ -125,7 +154,7 @@ export function ApplicationForm() {
       </button>
 
       {result && !result.ok && result.message && (
-        <p className="text-sm text-red-600">{result.message}</p>
+        <p className="text-sm text-danger">{result.message}</p>
       )}
       {result && result.ok && (
         <p className="text-sm text-accent font-semibold">{result.message}</p>
@@ -140,24 +169,37 @@ function Field({
   type = "text",
   required,
   errors,
+  invalid,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   errors?: string[];
+  invalid?: boolean;
 }) {
   return (
     <div>
-      <label className="block text-sm font-semibold text-text mb-2">{label}</label>
+      <label className="block text-sm font-semibold text-text mb-2">
+        {label}
+        {required && <span aria-hidden="true" className="text-danger ml-0.5">*</span>}
+      </label>
       <input
         name={name}
         type={type}
         required={required}
-        className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+        aria-invalid={invalid || undefined}
+        className={`w-full h-11 px-3 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 transition-colors ${
+          invalid
+            ? "border-danger focus:ring-danger/20"
+            : "border-slate-200 focus:ring-accent"
+        }`}
       />
+      {invalid && !errors && (
+        <p className="text-xs text-danger mt-1">This field is required.</p>
+      )}
       {errors && (
-        <p className="text-xs text-red-600 mt-1">{errors.join(" ")}</p>
+        <p className="text-xs text-danger mt-1">{errors.join(" ")}</p>
       )}
     </div>
   );

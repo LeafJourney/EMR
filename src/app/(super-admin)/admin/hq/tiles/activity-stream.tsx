@@ -31,7 +31,18 @@ export function ActivityStream({ rows }: { rows: RecentActivityRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-text-subtle">No super-admin activity in the last 24 hours.</p>
+      <div className="py-2">
+        <p className="text-sm text-text">All quiet.</p>
+        <p className="mt-1.5 text-[12px] text-text-muted leading-snug max-w-md">
+          No super-admin actions in the last 24 hours. Every privileged action across the fleet shows up here in near-real-time.
+        </p>
+        <Link
+          href="/admin/audit"
+          className="mt-3 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.14em] text-accent hover:underline focus:outline-none focus-visible:underline rounded"
+        >
+          Browse full audit log <span aria-hidden="true">→</span>
+        </Link>
+      </div>
     );
   }
 

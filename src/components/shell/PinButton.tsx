@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useNavPrefs } from "./NavPrefsContext";
 
 /**
@@ -39,13 +40,15 @@ export function PinButton({
     else prefs.pin({ href, label });
   };
 
+  const tip = pinned ? `Unpin ${label}` : `Pin ${label}`;
+
   return (
+    <Tooltip content={tip} side="right" delay={400}>
     <button
       type="button"
       onClick={onClick}
       aria-pressed={pinned}
-      aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
-      title={pinned ? `Unpin ${label}` : `Pin ${label}`}
+      aria-label={tip}
       className={cn(
         "inline-flex items-center justify-center h-6 w-6 rounded-md text-text-subtle",
         "transition-all duration-150 ease-smooth",
@@ -71,5 +74,6 @@ export function PinButton({
         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
       </svg>
     </button>
+    </Tooltip>
   );
 }

@@ -2,16 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shell/PageHeader";
 import { cn } from "@/lib/utils/cn";
+import { listStagger, listStaggerChild } from "@/lib/ui/motion";
 import {
   QUEUE_STATUS_CONFIG,
   calculateWaitTime,
   type QueueEntry,
   type QueueStatus,
 } from "@/lib/domain/queue-board";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 const COLUMN_ORDER: QueueStatus[] = [
   "scheduled",
@@ -121,6 +128,13 @@ function QueueColumn({
   entries: QueueEntry[];
 }) {
   const config = QUEUE_STATUS_CONFIG[status];
+  // Shared motion: stagger queue card fan-in within the column. No-op
+  // under prefers-reduced-motion. Each card slides up a hair on entry,
+  // which makes the 30-second auto-refresh feel "live" instead of
+  // suddenly mutated.
+  const reduceMotion = useReducedMotion() ?? false;
+  const listProps = listStagger(reduceMotion);
+  const childVariants = listStaggerChild(reduceMotion);
 
   return (
     <div className="flex flex-col">
@@ -133,27 +147,106 @@ function QueueColumn({
         </Badge>
       </div>
 
-      <div className="space-y-2 min-h-[80px] rounded-xl bg-surface-muted/40 p-2">
+      <motion.div
+        className="space-y-2 min-h-[80px] rounded-xl bg-surface-muted/40 p-2"
+        // Replay stagger when the entries array identity changes (auto-refresh).
+        key={`queue-${status}-${entries.length}`}
+        {...listProps}
+      >
         {entries.length === 0 ? (
           <div className="text-center py-6 text-[11px] text-text-subtle italic">
             empty
           </div>
         ) : (
           entries.map((entry) => (
-            <QueueCard key={entry.encounterId} entry={entry} />
+            <motion.div key={entry.encounterId} variants={childVariants}>
+              <QueueCard entry={entry} />
+            </motion.div>
           ))
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
 
 function QueueCard({ entry }: { entry: QueueEntry }) {
+  const router = useRouter();
   const wait = entry.minutesWaiting;
   const waitClass = waitToneClass(wait);
 
+  // EMR-UX — right-click context menu so the front desk can drive the
+  // queue without ever leaving the board. Status mutations land on the
+  // existing `/api/ops/queue/[encounterId]/status` endpoint when wired;
+  // the menu currently routes to the canonical surfaces so the action
+  // surface is never silent. Cancel is the destructive last item.
+  const items: ContextMenuItem[] = [
+    {
+      label: "Open chart",
+      icon: ContextMenuIcons.Open,
+      onSelect: (c) => {
+        router.push(`/clinic/patients?q=${encodeURIComponent(entry.patientName)}`);
+        c();
+      },
+      kbd: "↵",
+    },
+    {
+      label: "Mark arrived",
+      icon: ContextMenuIcons.Check,
+      disabled: entry.status !== "scheduled",
+      onSelect: (c) => {
+        router.refresh();
+        c();
+      },
+    },
+    {
+      label: "Move to rooming",
+      icon: ContextMenuIcons.Calendar,
+      disabled: entry.status === "completed",
+      onSelect: (c) => {
+        router.refresh();
+        c();
+      },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Copy patient name",
+      icon: ContextMenuIcons.Copy,
+      onSelect: (c) => {
+        try {
+          void navigator.clipboard?.writeText(entry.patientName);
+        } catch {
+          /* ignore */
+        }
+        c();
+      },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Cancel visit",
+      icon: ContextMenuIcons.Archive,
+      danger: true,
+      onSelect: (c) => {
+        if (
+          typeof window !== "undefined" &&
+          window.confirm(`Cancel ${entry.patientName}'s visit?`)
+        ) {
+          router.refresh();
+        }
+        c();
+      },
+    },
+  ];
+  const ctx = useContextMenu(() => items);
+
   return (
-    <Card tone="raised" className="px-3 py-2.5">
+    <Card
+      tone="raised"
+      className="px-3 py-2.5"
+      onContextMenu={ctx.triggerProps.onContextMenu}
+      onTouchStart={ctx.triggerProps.onTouchStart}
+      onTouchEnd={ctx.triggerProps.onTouchEnd}
+      onTouchMove={ctx.triggerProps.onTouchMove}
+    >
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-sm font-medium text-text truncate flex-1">
           {entry.patientName}
@@ -191,6 +284,7 @@ function QueueCard({ entry }: { entry: QueueEntry }) {
           )}
         </div>
       )}
+      {ctx.menu}
     </Card>
   );
 }

@@ -126,7 +126,15 @@ export function MobileNav({ tabs, activeId, className }: MobileNavProps) {
         WebkitTransform: "translate3d(0,0,0)",
       }}
     >
-      <ul className="flex w-full items-stretch justify-around px-1">
+      <ul
+        className="flex w-full items-stretch justify-around px-1"
+        style={{
+          // Safe-area horizontal so landscape iPhone notch (or Pro Max
+          // Dynamic Island in landscape) doesn't crop the outer tabs.
+          paddingLeft: "max(0.25rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.25rem, env(safe-area-inset-right))",
+        }}
+      >
         {visible.map((tab) => {
           const isActive = tab.id === active;
           return (

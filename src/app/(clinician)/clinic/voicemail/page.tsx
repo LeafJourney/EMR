@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { VoicemailEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { formatRelative } from "@/lib/utils/format";
 import {
   buildCallbackQueue,
@@ -126,8 +127,14 @@ export default async function ClinicianVoicemailPage() {
 
       {queue.length === 0 && (
         <EmptyState
-          title="Inbox clear"
-          description="No callbacks waiting. Inbound voicemails appear here with a redacted clinical summary."
+          illustration={<VoicemailEmptyIllustration />}
+          title="Callback queue is clear — nice work"
+          description="No outstanding voicemails. Inbound recordings show up here with an AI-redacted clinical summary so you can triage in seconds."
+          tips={[
+            "Personal data is stripped before the recording is summarized",
+            "Reassign any voicemail to a teammate without losing the audit trail",
+            "Listened voicemails auto-move to follow-up until you close the loop",
+          ]}
         />
       )}
     </PageShell>

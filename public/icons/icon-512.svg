@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LeafJourney PWA icon — 512x512 "any" purpose.
+  Larger canvas for richer detail; same brand language as icon-192.svg.
+-->
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LeafJourney">
+  <title>LeafJourney</title>
+  <rect width="512" height="512" rx="112" fill="#FFFCF7"/>
+  <g transform="translate(256 256)" fill="none" stroke="#1F4D37" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 44 -128 C 80 -100 108 -58 108 0 C 108 58 80 100 44 128 C 8 100 -20 58 -20 0 C -20 -58 8 -100 44 -128 Z" transform="rotate(-22)"/>
+    <path d="M 0 32 C -58 12 -100 -28 -116 -84" />
+    <path d="M -96 140 L 116 140" />
+  </g>
+</svg>

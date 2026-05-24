@@ -1,6 +1,6 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormState } from "react-dom";
 import Link from "next/link";
 import { submitAssessmentAction, type SubmitResult } from "./actions";
 import type { AssessmentTemplate } from "./templates";
@@ -15,17 +15,19 @@ import {
 } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/ornament";
 import { Badge } from "@/components/ui/badge";
+import { SubmitButton as SharedSubmitButton } from "@/lib/ui/form-helpers";
 
 // ---------------------------------------------------------------------------
-// Submit button with pending state
+// Submit button — driven by useFormStatus via the shared SubmitButton helper.
 // ---------------------------------------------------------------------------
 
 function SubmitButton() {
-  const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="lg" disabled={pending}>
-      {pending ? "Submitting..." : "Submit assessment"}
-    </Button>
+    <SharedSubmitButton
+      size="lg"
+      idleLabel="Submit assessment"
+      pendingLabel="Submitting…"
+    />
   );
 }
 

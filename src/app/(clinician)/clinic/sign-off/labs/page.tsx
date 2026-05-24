@@ -33,7 +33,7 @@ export default async function LabsReviewPage() {
   // queue ever grows to hundreds.
   const rows: LabRow[] = await Promise.all(
     pending.map(async (lab) => {
-      const prior = await prisma.labResult.findFirst({
+      const priors = await prisma.labResult.findMany({
         where: {
           patientId: lab.patientId,
           panelName: lab.panelName,
@@ -41,8 +41,10 @@ export default async function LabsReviewPage() {
           receivedAt: { lt: lab.receivedAt },
         },
         orderBy: { receivedAt: "desc" },
+        take: 4,
         select: { id: true, receivedAt: true, results: true },
       });
+      const prior = priors[0] ?? null;
       return {
         id: lab.id,
         patientId: lab.patient.id,
@@ -59,6 +61,10 @@ export default async function LabsReviewPage() {
               results: prior.results as Record<string, unknown>,
             }
           : null,
+        history: priors.map((p) => ({
+          receivedAt: p.receivedAt.toISOString(),
+          results: p.results as Record<string, unknown>,
+        })),
         outreach: lab.outreach
           ? {
               id: lab.outreach.id,

@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
+import { listStagger, listStaggerChild } from "@/lib/ui/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -18,9 +22,23 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
-import { sendReply } from "./actions";
+import { sendReply, composeMessage, type ComposeResult } from "./actions";
+import {
+  bulkMarkThreadsReadAction,
+  bulkResolveThreadsAction,
+  bulkAssignThreadsToMeAction,
+  bulkExportThreadsAction,
+} from "./bulk-actions";
 import { CallLaunchButtons } from "@/components/communications/call-launch-buttons";
 import { CallBubble, type CallLogData } from "./call-bubble";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { BulkActionBar, useBulkSelection } from "@/components/ui/bulk-action-bar";
+import { useToast } from "@/components/ui/toast";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,11 +64,29 @@ interface ThreadMessageData {
   callLogs: CallLogData[];
 }
 
+interface PatientOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+interface PatientMed {
+  name: string;
+  dosage: string | null;
+}
+
 interface Props {
   triaged: TriagedMessage[];
   threadMessages: ThreadMessageData[];
   currentUserId: string;
   initialThreadId?: string;
+  /** EMR-656 — patient picker options for the New Message modal. */
+  patients: PatientOption[];
+  /** EMR-708 — supports `?filter=brief` from the redirected morning-brief
+   *  route. Unknown values fall back to "all". */
+  initialFilter?: string;
+  /** EMR-657 — map of patientId → active meds for the hover tooltip. */
+  patientMeds?: Record<string, PatientMed[]>;
 }
 
 // EMR-604 — chronological timeline that interleaves messages and call records
@@ -76,10 +112,15 @@ function buildTimeline(thread: ThreadMessageData): TimelineItem[] {
 // Priority filter config
 // ---------------------------------------------------------------------------
 
-type PriorityFilter = "all" | MessagePriority;
+// EMR-708 — `brief` is a synthetic filter for items migrated from the
+// retired /clinic/morning-brief surface. The Smart Inbox tags relevant
+// threads with category=follow_up by triage rules today; the brief filter
+// surfaces those plus anything flagged via a future `brief` priority.
+type PriorityFilter = "all" | "brief" | MessagePriority;
 
 const PRIORITY_FILTERS: { key: PriorityFilter; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "brief", label: "Brief" },
   { key: "urgent", label: "Urgent" },
   { key: "high", label: "High" },
   { key: "routine", label: "Routine" },
@@ -131,6 +172,71 @@ function SearchIcon() {
     >
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
+    </svg>
+  );
+}
+
+function PaperclipIcon({ className }: { className?: string } = {}) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.83l-8.57 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+// EMR-659 — Rx symbol used in the per-thread tool row. Stroke-only "Rx"
+// glyph keeps it visually aligned with the other small SVG controls.
+function RxIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 4h6a4 4 0 0 1 0 8H5z" />
+      <path d="M5 4v16" />
+      <path d="M11 12l8 8" />
+      <path d="m15 16 4-4" />
+    </svg>
+  );
+}
+
+// EMR-659 — Memo icon (notepad with pencil). Triggers a templated body
+// insert prefixed with "Memo:" for routing to staff / MA / front / back / provider.
+function MemoIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 4h12l4 4v12a0 0 0 0 1 0 0H4z" />
+      <path d="M16 4v4h4" />
+      <path d="M8 12h8" />
+      <path d="M8 16h5" />
     </svg>
   );
 }
@@ -257,6 +363,223 @@ function SparklesIcon() {
   );
 }
 
+function PencilSquareIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compose modal (EMR-656)
+// ---------------------------------------------------------------------------
+
+function ComposeSubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" size="sm" disabled={pending}>
+      {pending ? "Sending..." : "Send Message"}
+    </Button>
+  );
+}
+
+function ComposeModal({
+  patients,
+  onClose,
+  onSent,
+}: {
+  patients: PatientOption[];
+  onClose: () => void;
+  onSent: (threadId: string) => void;
+}) {
+  const [state, formAction] = useFormState(composeMessage, null);
+  const [patientQuery, setPatientQuery] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    firstInputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (state?.ok) {
+      onSent(state.threadId);
+    }
+  }, [state, onSent]);
+
+  const filteredPatients = useMemo(() => {
+    if (!patientQuery.trim()) return patients.slice(0, 6);
+    const q = patientQuery.toLowerCase();
+    return patients
+      .filter(
+        (p) =>
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q),
+      )
+      .slice(0, 6);
+  }, [patients, patientQuery]);
+
+  function handleSelectPatient(p: PatientOption) {
+    setSelectedPatient(p);
+    setPatientQuery(`${p.firstName} ${p.lastName}`);
+    setDropdownOpen(false);
+  }
+
+  function handlePatientInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setPatientQuery(e.target.value);
+    setSelectedPatient(null);
+    setDropdownOpen(true);
+  }
+
+  // EMR-642 — the compose form is a true edit surface, so any progress
+  // typed by the clinician should be guarded against accidental dismissal.
+  const isDirty =
+    patientQuery.length > 0 ||
+    (formRef.current?.elements
+      ? Array.from(formRef.current.elements).some((el) => {
+          if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+            if (el.type === "hidden") return false;
+            return el.value.length > 0;
+          }
+          return false;
+        })
+      : false);
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      confirmCloseOnDirty
+      isDirty={isDirty}
+    >
+      <DialogContent className="max-w-lg p-0 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-2 text-text">
+            <PencilSquareIcon />
+            <DialogTitle className="font-display text-lg font-semibold">
+              New Message
+            </DialogTitle>
+          </div>
+          {/* Dialog primitive renders the X close button absolutely. */}
+        </div>
+
+        {/* Form */}
+        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4">
+          {selectedPatient && (
+            <input type="hidden" name="patientId" value={selectedPatient.id} />
+          )}
+
+          {/* Patient autocomplete */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              To (patient)
+            </label>
+            <div className="relative">
+              <Input
+                ref={firstInputRef}
+                value={patientQuery}
+                onChange={handlePatientInputChange}
+                onFocus={() => setDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                placeholder="Search by name..."
+                autoComplete="off"
+              />
+              {dropdownOpen && filteredPatients.length > 0 && (
+                <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg overflow-hidden">
+                  {filteredPatients.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="w-full text-left px-4 py-2.5 text-sm text-text hover:bg-surface-muted transition-colors"
+                      onMouseDown={() => handleSelectPatient(p)}
+                    >
+                      {p.lastName}, {p.firstName}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              Subject
+            </label>
+            <Input
+              name="subject"
+              placeholder="e.g. Follow-up on your recent visit"
+              required
+              maxLength={200}
+            />
+          </div>
+
+          {/* Body */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text">
+              Message
+            </label>
+            <Textarea
+              name="body"
+              rows={5}
+              placeholder="Write your message..."
+              required
+              className="resize-none"
+            />
+          </div>
+
+          {/* Error */}
+          {state?.ok === false && (
+            <p className="text-xs text-danger">{state.error}</p>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-1">
+            <Button type="button" variant="secondary" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <ComposeSubmitButton />
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Hover Meds
 // ---------------------------------------------------------------------------
@@ -289,6 +612,50 @@ function HoverMedsText({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// EMR-657 — Avatar meds tooltip
+// Wraps any child with a hover popover listing the patient's active meds.
+// ---------------------------------------------------------------------------
+
+function MedsTooltip({ meds, children }: { meds: PatientMed[]; children: React.ReactNode }) {
+  return (
+    <span className="relative group/meds inline-flex">
+      {children}
+      {meds.length > 0 && (
+        <span
+          role="tooltip"
+          className={cn(
+            "pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50",
+            "w-52 rounded-lg border border-border bg-surface-raised shadow-xl p-3",
+            "opacity-0 group-hover/meds:opacity-100 transition-opacity duration-150",
+          )}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-subtle mb-1.5">
+            Current Meds
+          </p>
+          <ul className="space-y-1">
+            {meds.slice(0, 6).map((m) => (
+              <li key={m.name} className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-medium text-text truncate">{m.name}</span>
+                {m.dosage && (
+                  <span className="text-[10px] text-text-muted whitespace-nowrap shrink-0">
+                    {m.dosage}
+                  </span>
+                )}
+              </li>
+            ))}
+            {meds.length > 6 && (
+              <li className="text-[10px] text-text-subtle pt-0.5">
+                +{meds.length - 6} more
+              </li>
+            )}
+          </ul>
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reply compose (inline)
 // ---------------------------------------------------------------------------
 
@@ -301,18 +668,62 @@ function ReplySubmitButton({ isDraft }: { isDraft?: boolean }) {
   );
 }
 
-function InlineReplyCompose({ threadId }: { threadId: string }) {
+const DRAFT_KEY = (threadId: string) => `msg-draft:${threadId}`;
+
+// EMR-659 — Memo template prefix. When the clinician hits the Memo symbol we
+// prepend this so the recipient sees a clear "internal memo" framing. The
+// real routing UI (staff / MA / front / back / provider) will land in a
+// follow-up; the template at least makes the intent explicit.
+const MEMO_TEMPLATE = "Memo to staff:\n\n";
+
+function InlineReplyCompose({
+  threadId,
+  patientId,
+}: {
+  threadId: string;
+  /** EMR-659 — used by the Rx symbol to deep-link to the prescribe page. */
+  patientId?: string;
+}) {
+  const router = useRouter();
   const [state, formAction] = useFormState(sendReply, null);
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // EMR-657 — restore saved draft on mount; save on every keystroke.
+  const [text, setText] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(DRAFT_KEY(threadId)) ?? "";
+  });
+  const [showSlashCommands, setShowSlashCommands] = useState(false);
+
+  // EMR-659 — toolbar actions
+  const insertMemoTemplate = () => {
+    setText((prev) => (prev.startsWith(MEMO_TEMPLATE) ? prev : MEMO_TEMPLATE + prev));
+    // Defer focus so the prepend is visible before caret moves.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+  const openPrescribe = () => {
+    if (!patientId) return;
+    router.push(`/clinic/patients/${patientId}/prescribe?thread=${threadId}`);
+  };
+
+  // Persist draft on every change.
+  useEffect(() => {
+    if (text) {
+      localStorage.setItem(DRAFT_KEY(threadId), text);
+    } else {
+      localStorage.removeItem(DRAFT_KEY(threadId));
+    }
+  }, [threadId, text]);
+
+  // Clear draft + form after successful send.
   useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset();
+      setText("");
+      localStorage.removeItem(DRAFT_KEY(threadId));
     }
-  }, [state]);
-
-  const [text, setText] = useState("");
-  const [showSlashCommands, setShowSlashCommands] = useState(false);
+  }, [state, threadId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "/") {
@@ -343,9 +754,35 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
         className="flex flex-col gap-2"
       >
         <input type="hidden" name="threadId" value={threadId} />
+        {/* EMR-659 — per-thread tool row. Rx links to the patient's prescribe
+            page; Memo prepends an internal-memo template to the reply body. */}
+        <div className="flex items-center gap-1 -mb-1">
+          <button
+            type="button"
+            onClick={openPrescribe}
+            disabled={!patientId}
+            title="Open prescribe (Rx)"
+            aria-label="Open prescribe page for this patient"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-text hover:bg-surface-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RxIcon />
+            <span className="hidden sm:inline">Rx</span>
+          </button>
+          <button
+            type="button"
+            onClick={insertMemoTemplate}
+            title="Insert internal memo template"
+            aria-label="Insert internal memo template"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+          >
+            <MemoIcon />
+            <span className="hidden sm:inline">Memo</span>
+          </button>
+        </div>
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <Textarea
+              ref={textareaRef}
               name="body"
               rows={2}
               value={text}
@@ -376,24 +813,258 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
 // Main component
 // ---------------------------------------------------------------------------
 
+// EMR-657 — Assign a numeric score so urgent+unread threads always surface
+// first regardless of recency. Lower score = higher in list.
+const PRIORITY_SCORE: Record<MessagePriority, number> = {
+  urgent: 0,
+  high: 2,
+  routine: 4,
+  low: 6,
+};
+
+function smartScore(t: TriagedMessage): number {
+  const base = PRIORITY_SCORE[t.priority];
+  // Unread bump: −1 so unread urgent beats read urgent, etc.
+  return t.unreadCount > 0 ? base - 1 : base;
+}
+
+// ---------------------------------------------------------------------------
+// Thread list row — wrapped in a per-row right-click ContextMenu (Monday
+// /Linear-tier quick actions). The hook MUST live in a component so we
+// can call it once per visible row; calling it inside `.map(...)` would
+// be a hooks-in-loop violation.
+// ---------------------------------------------------------------------------
+
+interface ThreadRowProps {
+  thread: TriagedMessage;
+  isSelected: boolean;
+  isPinned: boolean;
+  childVariants: ReturnType<typeof listStaggerChild>;
+  onSelect: () => void;
+  onTogglePin: () => void;
+  onMarkRead: () => void;
+  onResolve: () => void;
+  onArchive: () => void;
+  onCopyLink: () => void;
+}
+
+function ThreadInboxRow({
+  thread: t,
+  isSelected,
+  isPinned,
+  childVariants,
+  onSelect,
+  onTogglePin,
+  onMarkRead,
+  onResolve,
+  onArchive,
+  onCopyLink,
+}: ThreadRowProps) {
+  const items: ContextMenuItem[] = [
+    { label: "Open", icon: ContextMenuIcons.Open, onSelect: (c) => { onSelect(); c(); }, kbd: "↵" },
+    {
+      label: t.unreadCount > 0 ? "Mark as read" : "Already read",
+      icon: ContextMenuIcons.Check,
+      disabled: t.unreadCount === 0,
+      onSelect: (c) => { onMarkRead(); c(); },
+    },
+    { label: "Resolve thread", icon: ContextMenuIcons.Check, onSelect: (c) => { onResolve(); c(); } },
+    { divider: true, label: "" },
+    { label: "Copy link to thread", icon: ContextMenuIcons.Link, onSelect: (c) => { onCopyLink(); c(); }, kbd: "⌘ L" },
+    {
+      label: isPinned ? "Unpin from top" : "Pin to top",
+      icon: ContextMenuIcons.Pin,
+      onSelect: (c) => { onTogglePin(); c(); },
+    },
+    { divider: true, label: "" },
+    { label: "Archive thread", icon: ContextMenuIcons.Archive, danger: true, onSelect: (c) => { onArchive(); c(); } },
+  ];
+  const ctx = useContextMenu(() => items);
+
+  return (
+    <>
+      <motion.button
+        key={t.threadId}
+        variants={childVariants}
+        onClick={onSelect}
+        onContextMenu={ctx.triggerProps.onContextMenu}
+        onTouchStart={ctx.triggerProps.onTouchStart}
+        onTouchEnd={ctx.triggerProps.onTouchEnd}
+        onTouchMove={ctx.triggerProps.onTouchMove}
+        className={cn(
+          "w-full text-left px-4 py-3 border-b border-border/60 transition-colors hover:bg-surface-muted",
+          "border-l-[3px]",
+          PRIORITY_BORDER_COLORS[t.priority],
+          isSelected && "bg-surface-muted",
+          isPinned && "bg-accent-soft/30",
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {t.unreadCount > 0 && (
+                  <span className="shrink-0 h-2 w-2 rounded-full bg-accent" />
+                )}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isPinned}
+                  aria-label={isPinned ? "Unpin thread" : "Pin thread to top"}
+                  title={isPinned ? "Unpin thread" : "Pin thread to top"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onTogglePin();
+                    }
+                  }}
+                  className={cn(
+                    "shrink-0 inline-flex items-center justify-center h-5 w-5 rounded transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                    isPinned
+                      ? "text-accent"
+                      : "text-text-subtle/40 hover:text-text-subtle",
+                  )}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .013 2.371c-.125.612-.413 1.27-.978 1.834a.5.5 0 0 1-.707 0L5.95 11.756 1.854 15.85a.5.5 0 1 1-.708-.707L5.243 11.05 2.475 8.28a.5.5 0 0 1 0-.706c.565-.565 1.222-.853 1.834-.978a5.93 5.93 0 0 1 2.372.013l3.134-3.134a2.97 2.97 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z" />
+                  </svg>
+                </span>
+                <p className="text-sm font-semibold text-text truncate">
+                  {t.patientName}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {(t.attachmentCount ?? 0) > 0 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-[11px] text-text-subtle"
+                    title={`${t.attachmentCount} attachment${
+                      (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                    }`}
+                    aria-label={`${t.attachmentCount} attachment${
+                      (t.attachmentCount ?? 0) === 1 ? "" : "s"
+                    }`}
+                  >
+                    <PaperclipIcon className="opacity-80" />
+                    {t.attachmentCount}
+                  </span>
+                )}
+                <span className="text-[11px] text-text-subtle whitespace-nowrap">
+                  {formatRelative(t.lastMessageAt)}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-text mt-0.5 truncate">{t.subject}</p>
+            <p className="text-xs text-text-muted mt-0.5 line-clamp-1">
+              {t.summary}
+            </p>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <Badge tone={CATEGORY_BADGE_TONE[t.category]}>
+                {CATEGORY_LABELS[t.category]}
+              </Badge>
+              {t.needsClinician && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                  <UserAlertIcon />
+                  Needs clinician
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.button>
+      {ctx.menu}
+    </>
+  );
+}
+
 export function SmartInboxView({
   triaged,
   threadMessages,
   currentUserId,
   initialThreadId,
+  patients,
+  initialFilter,
+  patientMeds = {},
 }: Props) {
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const initialPriority: PriorityFilter =
+    initialFilter === "brief" ||
+    initialFilter === "urgent" ||
+    initialFilter === "high" ||
+    initialFilter === "routine" ||
+    initialFilter === "low"
+      ? initialFilter
+      : "all";
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(initialPriority);
   const [categoryFilter, setCategoryFilter] = useState<MessageCategory | "all">("all");
   const [search, setSearch] = useState("");
+  // EMR-DnD: clinician-pinned threads bubble to the top of the list,
+  // beating priority-based smart sort. Persisted in localStorage as a
+  // Set<threadId>. TODO(schema): mirror to a `MessageThread.pinnedBy`
+  // join table so pins survive a logout / device swap.
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("inbox:pinned:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
+          setPinnedThreadIds(new Set(parsed as string[]));
+        }
+      }
+    } catch {
+      // ignore — bad JSON or unavailable storage.
+    }
+  }, []);
+  const togglePinned = (threadId: string) => {
+    setPinnedThreadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(threadId)) next.delete(threadId);
+      else next.add(threadId);
+      try {
+        window.localStorage.setItem(
+          "inbox:pinned:v1",
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+  // Shared motion: subtle stagger on the triaged list. No-op under
+  // prefers-reduced-motion. Variants are stable across renders.
+  const reduceMotion = useReducedMotion() ?? false;
+  const listStaggerProps = useMemo(() => listStagger(reduceMotion), [reduceMotion]);
+  const childVariants = useMemo(() => listStaggerChild(reduceMotion), [reduceMotion]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
     initialThreadId ?? triaged[0]?.threadId ?? null,
   );
+  const [showCompose, setShowCompose] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  // EMR-659 — in-thread search: filters the visible message timeline by body
+  // text (case-insensitive substring). Resets whenever the selected thread
+  // changes so a stale query doesn't carry across threads.
+  const [threadSearch, setThreadSearch] = useState("");
 
-  // Compute counts per priority
+  // Bulk thread selection (multi-select on the left panel).
+  const selection = useBulkSelection<string>();
+  const { toast } = useToast();
+  const lastClickedRef = useRef<string | null>(null);
+
+  // Compute counts per priority. EMR-708 — `brief` counts threads with
+  // category=follow_up (the closest current proxy for "morning brief item")
+  // until brief-tagging is fully wired upstream.
   const priorityCounts = useMemo(() => {
     const counts: Record<PriorityFilter, number> = {
       all: triaged.length,
+      brief: 0,
       urgent: 0,
       high: 0,
       routine: 0,
@@ -401,6 +1072,7 @@ export function SmartInboxView({
     };
     for (const t of triaged) {
       counts[t.priority]++;
+      if (t.category === "follow_up") counts.brief++;
     }
     return counts;
   }, [triaged]);
@@ -423,7 +1095,11 @@ export function SmartInboxView({
   const filtered = useMemo(() => {
     let list = triaged;
 
-    if (priorityFilter !== "all") {
+    if (priorityFilter === "brief") {
+      // EMR-708 — Brief view scopes to follow-up category until brief-flag
+      // tagging lands upstream.
+      list = list.filter((t) => t.category === "follow_up");
+    } else if (priorityFilter !== "all") {
       list = list.filter((t) => t.priority === priorityFilter);
     }
 
@@ -441,8 +1117,174 @@ export function SmartInboxView({
       );
     }
 
+    // EMR-657 — smart sort: urgent+unread first, then high+unread, etc.;
+    // within the same score bucket, fall back to recency (newest first).
+    // EMR-DnD — pinned threads sort above all unpinned threads regardless
+    // of priority, then the existing smart-sort logic resolves ties.
+    list = [...list].sort((a, b) => {
+      const aPinned = pinnedThreadIds.has(a.threadId) ? 0 : 1;
+      const bPinned = pinnedThreadIds.has(b.threadId) ? 0 : 1;
+      if (aPinned !== bPinned) return aPinned - bPinned;
+      const scoreDiff = smartScore(a) - smartScore(b);
+      if (scoreDiff !== 0) return scoreDiff;
+      return b.lastMessageAt.localeCompare(a.lastMessageAt);
+    });
+
     return list;
-  }, [triaged, priorityFilter, categoryFilter, search]);
+  }, [triaged, priorityFilter, categoryFilter, search, pinnedThreadIds]);
+
+  // Visible thread IDs in current order — drives ⌘/Ctrl+A and Shift+Click
+  // range selection. Recomputed whenever the filter pipeline changes.
+  const visibleThreadIds = useMemo(
+    () => filtered.map((t) => t.threadId),
+    [filtered],
+  );
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const inField =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      if (inField) return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        selection.setAllVisible(visibleThreadIds);
+      } else if (e.key === "Escape" && selection.size > 0) {
+        selection.clear();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleThreadIds, selection]);
+
+  // Selection-aware row-click handler. Plain click selects the thread
+  // for preview (current behaviour); clicking the checkbox toggles
+  // selection; Shift+Click on the checkbox extends a range.
+  const handleSelectionClick = useCallback(
+    (id: string, shift?: boolean) => {
+      if (shift) {
+        selection.selectRange(visibleThreadIds, lastClickedRef.current, id);
+      } else {
+        selection.toggle(id);
+      }
+      lastClickedRef.current = id;
+    },
+    [selection, visibleThreadIds],
+  );
+
+  // ---- Bulk handlers ----
+  const [bulkPending, setBulkPending] = useState<string | null>(null);
+
+  const handleBulkMarkRead = useCallback(async () => {
+    setBulkPending("read");
+    const res = await bulkMarkThreadsReadAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Mark read failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Marked ${res.count} message${res.count === 1 ? "" : "s"} read`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkResolve = useCallback(async () => {
+    setBulkPending("resolve");
+    const res = await bulkResolveThreadsAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Resolve failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Resolved ${res.count} thread${res.count === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkAssign = useCallback(async () => {
+    setBulkPending("assign");
+    const res = await bulkAssignThreadsToMeAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Assign failed", description: res.error, variant: "error" });
+      return;
+    }
+    toast({
+      title: `Assigned ${res.count} thread${res.count === 1 ? "" : "s"} to you`,
+      variant: "success",
+    });
+    selection.clear();
+  }, [selection, toast]);
+
+  const handleBulkExportThreads = useCallback(async () => {
+    setBulkPending("export");
+    const res = await bulkExportThreadsAction({
+      threadIds: selection.asArray,
+    });
+    setBulkPending(null);
+    if (!res.ok) {
+      toast({ title: "Export failed", description: res.error, variant: "error" });
+      return;
+    }
+    const header = [
+      "id",
+      "patient",
+      "subject",
+      "lastMessageAt",
+      "priority",
+      "category",
+    ];
+    const escape = (v: string | null) =>
+      v == null
+        ? ""
+        : /[",\n]/.test(v)
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+    const lines = [header.join(",")];
+    for (const r of res.rows) {
+      lines.push(
+        [
+          r.id,
+          r.patientName,
+          r.subject,
+          r.lastMessageAt,
+          r.priority,
+          r.category,
+        ]
+          .map((x) => escape(x as string | null))
+          .join(","),
+      );
+    }
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `inbox-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: `Exported ${res.rows.length} thread${res.rows.length === 1 ? "" : "s"}`,
+      variant: "success",
+    });
+  }, [selection.asArray, toast]);
 
   // Active thread detail
   const selectedTriage = triaged.find((t) => t.threadId === selectedThreadId);
@@ -460,18 +1302,57 @@ export function SmartInboxView({
     }
   }, [filtered, selectedThreadId]);
 
+  // EMR-659 — clear the in-thread search whenever the active thread changes
+  // so the query box always reflects the thread the clinician is looking at.
+  useEffect(() => {
+    setThreadSearch("");
+  }, [selectedThreadId]);
+
   // Empty state: no threads at all
   if (triaged.length === 0) {
     return (
-      <EmptyState
-        icon={<CheckCircleIcon />}
-        title="Inbox zero — all caught up."
-        description="No patient messages to review. Enjoy the calm."
-      />
+      <>
+        {showCompose && (
+          <ComposeModal
+            patients={patients}
+            onClose={() => setShowCompose(false)}
+            onSent={(threadId) => {
+              setShowCompose(false);
+              setSelectedThreadId(threadId);
+            }}
+          />
+        )}
+        <div className="flex justify-end mb-4">
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon={<PencilSquareIcon />}
+            onClick={() => setShowCompose(true)}
+          >
+            New Message
+          </Button>
+        </div>
+        <EmptyState
+          icon={<CheckCircleIcon />}
+          title="Inbox zero — all caught up."
+          description="No patient messages to review. Enjoy the calm."
+        />
+      </>
     );
   }
 
   return (
+    <>
+      {showCompose && (
+        <ComposeModal
+          patients={patients}
+          onClose={() => setShowCompose(false)}
+          onSent={(threadId) => {
+            setShowCompose(false);
+            setSelectedThreadId(threadId);
+          }}
+        />
+      )}
     <div className="space-y-4">
       {/* Top bar: filters + stats */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -545,27 +1426,33 @@ export function SmartInboxView({
           </div>
         </div>
 
-        {/* Right: stats */}
-        <div className="flex items-center gap-4 text-xs text-text-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <InboxIcon />
-            {triaged.length} total
-          </span>
-          {urgentCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
-              <AlertTriangleIcon />
-              {urgentCount} urgent
-            </span>
-          )}
-          {needsClinicianCount > 0 && (
+        {/* Right: stats + new message */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 text-xs text-text-muted">
             <span className="inline-flex items-center gap-1.5">
-              <StethoscopeIcon />
-              {needsClinicianCount} needs clinician
+              <InboxIcon />
+              {triaged.length} total
             </span>
-          )}
-          <Button onClick={() => setComposeOpen(true)} size="sm" className="ml-4 shadow-sm hover:shadow-md transition-shadow bg-accent hover:bg-accent-light text-white font-medium px-4 py-2 rounded-full">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M12 5v14M5 12h14"/></svg>
-            Compose
+            {urgentCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
+                <AlertTriangleIcon />
+                {urgentCount} urgent
+              </span>
+            )}
+            {needsClinicianCount > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <StethoscopeIcon />
+                {needsClinicianCount} needs clinician
+              </span>
+            )}
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon={<PencilSquareIcon />}
+            onClick={() => setShowCompose(true)}
+          >
+            New Message
           </Button>
         </div>
       </div>
@@ -574,7 +1461,14 @@ export function SmartInboxView({
       <div className="flex flex-col md:flex-row gap-4 min-h-[600px]">
         {/* Left panel: triaged message list */}
         <Card className="md:w-[40%] shrink-0 overflow-hidden">
-          <div className="overflow-y-auto max-h-[700px]">
+          <motion.div
+            className="overflow-y-auto max-h-[700px]"
+            // Motion: list-stagger fan-in. The key includes filter + search so
+            // the stagger replays when the filter set changes, giving the
+            // refresh a real "rebuilt" feel instead of a silent swap.
+            key={`inbox-${priorityFilter}-${categoryFilter}-${search}`}
+            {...listStaggerProps}
+          >
             {filtered.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-sm text-text-muted">
@@ -584,63 +1478,71 @@ export function SmartInboxView({
             ) : (
               filtered.map((t) => {
                 const isSelected = t.threadId === selectedThreadId;
+                const isChecked = selection.has(t.threadId);
+                const isPinned = pinnedThreadIds.has(t.threadId);
                 return (
-                  <button
-                    key={t.threadId}
-                    onClick={() => setSelectedThreadId(t.threadId)}
-                    className={cn(
-                      "w-full text-left px-4 py-3 border-b border-border/60 transition-colors hover:bg-surface-muted",
-                      "border-l-[3px]",
-                      PRIORITY_BORDER_COLORS[t.priority],
-                      isSelected && "bg-surface-muted",
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        {/* Row 1: patient name + timestamp */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {t.unreadCount > 0 && (
-                              <span className="shrink-0 h-2 w-2 rounded-full bg-accent" />
-                            )}
-                            <p className="text-sm font-semibold text-text truncate">
-                              {t.patientName}
-                            </p>
-                          </div>
-                          <span className="text-[11px] text-text-subtle whitespace-nowrap shrink-0">
-                            {formatRelative(t.lastMessageAt)}
-                          </span>
-                        </div>
-
-                        {/* Row 2: subject */}
-                        <p className="text-xs text-text mt-0.5 truncate">
-                          {t.subject}
-                        </p>
-
-                        {/* Row 3: AI summary */}
-                        <p className="text-xs text-text-muted mt-0.5 line-clamp-1">
-                          {t.summary}
-                        </p>
-
-                        {/* Row 4: badges */}
-                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                          <Badge tone={CATEGORY_BADGE_TONE[t.category]}>
-                            {CATEGORY_LABELS[t.category]}
-                          </Badge>
-                          {t.needsClinician && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700">
-                              <UserAlertIcon />
-                              Needs clinician
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
+                  <div key={t.threadId} className="relative group">
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      className={cn(
+                        "absolute left-2 top-3 z-10 inline-flex items-center justify-center h-4 w-4",
+                        isChecked || selection.size > 0
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 transition-opacity",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleSelectionClick(
+                            t.threadId,
+                            (e.nativeEvent as MouseEvent | undefined)?.shiftKey,
+                          );
+                        }}
+                        aria-label={`Select thread with ${t.patientName}`}
+                        className="h-4 w-4 rounded border-border-strong text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                      />
+                    </label>
+                    <ThreadInboxRow
+                      thread={t}
+                      isSelected={isSelected}
+                      isPinned={isPinned}
+                      childVariants={childVariants}
+                      onSelect={() => setSelectedThreadId(t.threadId)}
+                      onTogglePin={() => togglePinned(t.threadId)}
+                      onMarkRead={() => {
+                        setSelectedThreadId(t.threadId);
+                      }}
+                      onResolve={() => {
+                        setSelectedThreadId(t.threadId);
+                      }}
+                      onArchive={() => {
+                        if (
+                          typeof window !== "undefined" &&
+                          !window.confirm(
+                            `Archive the thread with ${t.patientName}? You can find it later under Archived.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        setSelectedThreadId(null);
+                      }}
+                      onCopyLink={() => {
+                        try {
+                          const url = `${window.location.origin}/clinic/messages?thread=${t.threadId}`;
+                          void navigator.clipboard?.writeText(url);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    />
+                  </div>
                 );
               })
             )}
-          </div>
+          </motion.div>
         </Card>
 
         {/* Right panel: thread detail */}
@@ -650,21 +1552,45 @@ export function SmartInboxView({
               {/* Thread header */}
               <div className="px-5 py-4 border-b border-border">
                 <div className="flex items-center gap-3">
-                  <Avatar
-                    firstName={selectedThread.patientName.split(" ")[0] ?? ""}
-                    lastName={selectedThread.patientName.split(" ")[1] ?? ""}
-                    size="sm"
-                  />
+                  {/* EMR-657 — hover avatar to see patient's current meds */}
+                  <MedsTooltip meds={patientMeds[selectedThread.patientId] ?? []}>
+                    <Avatar
+                      firstName={selectedThread.patientName.split(" ")[0] ?? ""}
+                      lastName={selectedThread.patientName.split(" ")[1] ?? ""}
+                      size="sm"
+                    />
+                  </MedsTooltip>
                   <div className="flex-1 min-w-0">
                     <h2 className="font-display text-lg text-text leading-tight truncate">
                       {selectedThread.subject}
                     </h2>
-                    <p className="text-xs text-text-muted">
+                    {/* EMR-657 — clicking name opens the patient chart */}
+                    <Link
+                      href={`/clinic/patients/${selectedThread.patientId}`}
+                      className="text-xs text-text-muted hover:text-accent hover:underline transition-colors"
+                    >
                       {selectedThread.patientName}
-                    </p>
+                    </Link>
                   </div>
                   {selectedTriage && (
                     <div className="flex items-center gap-2">
+                      {/* EMR-659 — in-thread search. Filters the visible
+                          timeline below by case-insensitive substring across
+                          message bodies (words, numbers, dates all flow
+                          through as plain text). */}
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-text-subtle pointer-events-none">
+                          <SearchIcon />
+                        </span>
+                        <Input
+                          type="search"
+                          value={threadSearch}
+                          onChange={(e) => setThreadSearch(e.target.value)}
+                          placeholder="Search this thread…"
+                          aria-label="Search messages in this thread"
+                          className="h-8 w-44 pl-7 text-xs"
+                        />
+                      </div>
                       <CallLaunchButtons
                         patientId={selectedTriage.patientId}
                         messageThreadId={selectedTriage.threadId}
@@ -719,9 +1645,29 @@ export function SmartInboxView({
               </div>
 
               {/* Message history — messages and call records interleaved
-                  chronologically. EMR-604. */}
+                  chronologically. EMR-604. EMR-659 — when an in-thread
+                  search is active, the timeline is filtered to message
+                  bubbles whose body contains the query (call bubbles are
+                  hidden during search since they have no text body). */}
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-                {buildTimeline(selectedThread).map((item) => {
+                {(() => {
+                  const timeline = buildTimeline(selectedThread);
+                  const q = threadSearch.trim().toLowerCase();
+                  const visible = q
+                    ? timeline.filter(
+                        (item) =>
+                          item.kind === "message" &&
+                          item.data.body.toLowerCase().includes(q),
+                      )
+                    : timeline;
+                  if (q && visible.length === 0) {
+                    return (
+                      <p className="text-center text-xs text-text-muted py-6">
+                        No messages match &ldquo;{threadSearch}&rdquo;.
+                      </p>
+                    );
+                  }
+                  return visible.map((item) => {
                   if (item.kind === "call") {
                     return (
                       <CallBubble
@@ -811,11 +1757,15 @@ export function SmartInboxView({
                       </div>
                     </div>
                   );
-                })}
+                  });
+                })()}
               </div>
 
               {/* Reply area */}
-              <InlineReplyCompose threadId={selectedThread.threadId} />
+              <InlineReplyCompose
+                threadId={selectedThread.threadId}
+                patientId={selectedThread.patientId}
+              />
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
@@ -857,6 +1807,41 @@ export function SmartInboxView({
           </div>
         </div>
       )}
+
+      {/* Bulk action bar — slides up when any inbox thread is selected. */}
+      <BulkActionBar
+        count={selection.size}
+        onClear={selection.clear}
+        itemNoun="thread"
+        ariaLabel="Inbox bulk actions"
+        actions={[
+          {
+            key: "read",
+            label: "Mark read",
+            onClick: handleBulkMarkRead,
+            isPending: bulkPending === "read",
+          },
+          {
+            key: "resolve",
+            label: "Resolve",
+            onClick: handleBulkResolve,
+            isPending: bulkPending === "resolve",
+          },
+          {
+            key: "assign",
+            label: "Assign to me",
+            onClick: handleBulkAssign,
+            isPending: bulkPending === "assign",
+          },
+          {
+            key: "export",
+            label: "Export",
+            onClick: handleBulkExportThreads,
+            isPending: bulkPending === "export",
+          },
+        ]}
+      />
     </div>
+    </>
   );
 }

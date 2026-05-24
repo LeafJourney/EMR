@@ -2,12 +2,28 @@
 
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "leafmart-theme";
+// Unified with the main app toggle so user preference persists
+// when navigating between leafmart and the clinician/patient shells.
+const STORAGE_KEY = "leafjourney-theme";
+const LEGACY_KEY = "leafmart-theme";
 
 type ThemeMode = "light" | "dark";
 
 function getStoredMode(): ThemeMode | null {
   if (typeof window === "undefined") return null;
+  // Migrate any pre-existing "leafmart-theme" value once, so users who
+  // toggled before the unification don't lose their preference.
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_KEY);
+    if (legacy === "dark" || legacy === "light") {
+      if (!window.localStorage.getItem(STORAGE_KEY)) {
+        window.localStorage.setItem(STORAGE_KEY, legacy);
+      }
+      window.localStorage.removeItem(LEGACY_KEY);
+    }
+  } catch {
+    // ignore
+  }
   const v = window.localStorage.getItem(STORAGE_KEY);
   return v === "dark" || v === "light" ? v : null;
 }
@@ -24,6 +40,14 @@ function applyMode(mode: ThemeMode) {
   wrappers.forEach((el) => {
     el.classList.toggle("dark", mode === "dark");
   });
+  // Also flip the data-theme attribute on <html> so the unified
+  // bootstrap script (src/app/layout.tsx) and tailwind's dark:
+  // selector see the same source of truth across the whole app.
+  if (mode === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
 }
 
 export function ThemeToggle() {

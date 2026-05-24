@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TranscriptsEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { formatRelative } from "@/lib/utils/format";
 import { TranscriptReviewForm } from "./review-form";
 
@@ -79,8 +80,14 @@ export default async function TranscriptsPage() {
           </h2>
           {pending.length === 0 ? (
             <EmptyState
-              title="No transcripts to review"
-              description="Approved summaries appear in the recent decisions panel."
+              illustration={<TranscriptsEmptyIllustration />}
+              title="Queue clear — every transcript reviewed"
+              description="New AI-summarized calls land here for a quick approve or reject. Your approved summaries are already on the chart."
+              tips={[
+                "Approving attaches the redacted summary to the patient chart",
+                "Rejecting drops the AI summary — nothing reaches the chart",
+                "Decisions show up in the recent panel for the next 12 reviews",
+              ]}
             />
           ) : (
             pending.map((t) => {
@@ -151,7 +158,8 @@ export default async function TranscriptsPage() {
             {recent.length === 0 ? (
               <EmptyState
                 title="No decisions yet"
-                description="Approved or rejected transcripts appear here."
+                description="Once you approve or reject a transcript it will show up here so the team can see what was added to charts."
+                className="p-6"
               />
             ) : (
               recent.map((t) => (

@@ -136,7 +136,12 @@ async function doAudit(): Promise<void> {
   }
 
   await prisma.bootstrapAllowlistSnapshot.create({
-    data: { hash, emails, deploySha },
+    // The Prisma column is non-null String (we want every snapshot to
+    // identify the deploy that produced it). `resolveDeploySha()` returns
+    // null when both RENDER_GIT_COMMIT and GIT_SHA are unset (local dev /
+    // unstamped builds). Coalesce to "unknown" so the column is satisfied
+    // and ops can grep for that sentinel.
+    data: { hash, emails, deploySha: deploySha ?? "unknown" },
   });
 
   if (!previous) {

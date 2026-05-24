@@ -1,18 +1,9 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormState } from "react-dom";
 import { saveIntakeAction, type IntakeResult } from "./actions";
-import { Button } from "@/components/ui/button";
 import { Input, Textarea, FieldGroup } from "@/components/ui/input";
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending}>
-      {pending ? "Saving…" : "Save intake"}
-    </Button>
-  );
-}
+import { SubmitButton } from "@/lib/ui/form-helpers";
 
 interface InitialValues {
   presentingConcerns: string;
@@ -110,7 +101,7 @@ export function IntakeForm({ initial }: { initial: InitialValues }) {
       )}
 
       <div className="flex items-center justify-end gap-2 pt-2">
-        <SubmitButton />
+        <SubmitButton idleLabel="Save intake" pendingLabel="Saving intake…" />
       </div>
     </form>
   );

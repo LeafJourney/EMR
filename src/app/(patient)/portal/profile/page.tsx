@@ -13,7 +13,7 @@ import {
 import { EditorialRule, Eyebrow } from "@/components/ui/ornament";
 import { ProfileForm, type ProfileValues } from "./profile-form";
 import { CommunicationPreferences } from "./communication-preferences";
-import { AvatarUpload } from "@/components/ui/avatar-upload";
+import { PortalAvatarUpload } from "./portal-avatar-upload";
 
 export const metadata = { title: "Profile" };
 
@@ -73,10 +73,12 @@ export default async function ProfilePage() {
       <PatientSectionNav section="account" />
       {/* ---- Avatar upload ---- */}
       <div className="flex justify-center mb-8">
-        <AvatarUpload
+        <PortalAvatarUpload
           initials={`${patient.firstName?.[0] ?? ""}${patient.lastName?.[0] ?? ""}`.toUpperCase()}
+          initialSrc={(intake.photoUrl as string) ?? null}
         />
       </div>
+
 
       <EditorialRule className="mb-8" />
 

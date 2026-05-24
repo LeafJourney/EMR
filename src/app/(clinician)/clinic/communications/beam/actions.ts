@@ -1,18 +1,17 @@
 "use server";
 
-// EMR-143 — schedule a HIPAA-compliant Beam telehealth meeting from the EMR.
+// EMR-143 — schedule a HIPAA-compliant Zoom meeting from the EMR.
 //
 // Persists the meeting as a CallLog row (channel='video', status='initiated',
-// zoom* columns populated — DB column names retained for backward compat).
-// The passcode is encrypted at rest with the same envelope used for
-// provider-to-provider message bodies — only the host should ever see the
-// plaintext.
+// zoom* columns populated). The passcode is encrypted at rest with the
+// same envelope used for provider-to-provider message bodies — only the
+// host should ever see the plaintext.
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-import { scheduleHipaaBeamMeeting } from "@/lib/communications/beam";
+import { scheduleHipaaBeamMeeting } from "@/lib/communications/zoom";
 import { encryptMessageBody } from "@/lib/communications/message-crypto";
 
 const scheduleSchema = z
@@ -118,7 +117,9 @@ export async function scheduleBeamMeetingAction(
   });
 
   revalidatePath("/clinic/communications");
+  // EMR-691 — beam is the canonical path; zoom retained as redirect.
   revalidatePath("/clinic/communications/beam");
+  revalidatePath("/clinic/communications/zoom");
   return {
     ok: true,
     callId: call.id,
@@ -157,5 +158,6 @@ export async function cancelBeamMeetingAction(
   });
 
   revalidatePath("/clinic/communications/beam");
+  revalidatePath("/clinic/communications/zoom");
   return { ok: true };
 }

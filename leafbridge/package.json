@@ -1,0 +1,24 @@
+{
+  "name": "leafbridge",
+  "version": "0.0.1",
+  "private": true,
+  "description": "FHIR-native infrastructure for safe clinical AI — open-source clinical data lakehouse + AI orchestration.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "dev": "echo \"Bring services up via infra/docker-compose, then start individual apps with their package scripts.\"",
+    "conformance": "pnpm -r --filter @leafbridge/* run conformance"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ]
+}

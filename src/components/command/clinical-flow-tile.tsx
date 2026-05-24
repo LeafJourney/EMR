@@ -3,6 +3,8 @@ import type { AuthedUser } from "@/lib/auth/session";
 import { Tile } from "@/components/ui/tile";
 import { TileErrorBody } from "@/components/command/tile-error";
 import { Sparkline } from "@/components/ui/sparkline";
+import { getLocalDayBounds } from "@/lib/utils/timezone";
+import { FlowTrendButton } from "@/components/command/FlowTrendModal";
 
 /**
  * Clinical Flow tile — "how did my time go today?"
@@ -39,13 +41,12 @@ async function renderFlowTile(user: AuthedUser) {
       })
     : null;
 
-  const now = new Date();
-  const startOfDay = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate()
-  );
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { timeZone: true },
+  });
+  const tz = org?.timeZone || "America/Los_Angeles";
+  const { startOfDay, endOfDay } = getLocalDayBounds(tz);
 
   const encounters = await prisma.encounter.findMany({
     where: {
@@ -110,7 +111,7 @@ async function renderFlowTile(user: AuthedUser) {
       : "—";
 
   return (
-    <FlowShell>
+    <FlowShell action={<FlowTrendButton />}>
       <div className="flex flex-col h-full gap-3">
         <dl className="space-y-2">
           <FlowRow
@@ -162,7 +163,7 @@ async function renderFlowTile(user: AuthedUser) {
   );
 }
 
-function FlowShell({ children }: { children?: React.ReactNode }) {
+function FlowShell({ children, action }: { children?: React.ReactNode; action?: React.ReactNode }) {
   return (
     <Tile
       eyebrow="Clinical Flow"
@@ -170,6 +171,7 @@ function FlowShell({ children }: { children?: React.ReactNode }) {
       icon="⏱"
       span="1x1"
       tone="default"
+      action={action}
     >
       {children}
     </Tile>

@@ -7,6 +7,9 @@ import { CommandPalette } from "@/components/ui/command-palette";
 import { ChatCBInterface } from "@/components/ask-cindy/ChatCBInterface";
 import { PortalCustomizationProvider } from "@/components/portal/portal-customization-provider";
 import { ConfettiCanvas } from "@/components/portal/confetti-canvas";
+import { ServiceWorkerRegister } from "@/components/portal/service-worker-register";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
+
 
 const PATIENT_SECTIONS: NavSection[] = [
   {
@@ -119,6 +122,7 @@ export default async function PatientLayout({
 
   return (
     <PortalCustomizationProvider patientId={user.id}>
+      <ServiceWorkerRegister />
       <AppShell
         user={user}
         activeRole="patient"
@@ -127,9 +131,10 @@ export default async function PatientLayout({
         showNavPrefs={false}
       >
         <QuoteWelcomeModal userName={user.firstName} />
-        <CommandPalette role="patient" />
+        <CommandPalette role="patient" userId={user.id} />
         <ChatCBInterface />
         <ConfettiCanvas />
+        <InstallPrompt />
         {children}
       </AppShell>
     </PortalCustomizationProvider>

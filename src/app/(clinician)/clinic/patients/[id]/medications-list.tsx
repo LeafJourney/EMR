@@ -1,12 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useEffect } from "react";
 
-// Inline MM/dd/yyyy formatter — date-fns wasn't declared in
-// package.json (TS2307) and pulling in a date library for one
-// formatter isn't worth a 30kB dependency. (EMR-760 cleanup.)
-function format(d: Date, _pattern: "MM/dd/yyyy"): string {
+function format(date: Date, fmt: string) {
+  const d = new Date(date);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const yyyy = d.getFullYear();
@@ -21,6 +18,13 @@ interface MedicationsListProps {
 
 export function MedicationsList({ patientId, medications, patient }: MedicationsListProps) {
   const [viewMed, setViewMed] = useState<any | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; med: any } | null>(null);
+
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    window.addEventListener("click", handleClose);
+    return () => window.removeEventListener("click", handleClose);
+  }, []);
 
   return (
     <>
@@ -29,13 +33,17 @@ export function MedicationsList({ patientId, medications, patient }: Medications
           <span className="text-xs text-text-muted">No medications on file</span>
         ) : (
           medications.map((med) => (
-            <div 
+            <div
               key={med.id}
               className="group flex flex-col p-1.5 hover:bg-surface-muted rounded-md cursor-pointer transition-colors"
               onClick={() => window.location.href = `/clinic/patients/${patientId}?tab=rx`}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setViewMed(med);
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  med,
+                });
               }}
             >
               <div className="flex items-center justify-between">
@@ -51,6 +59,26 @@ export function MedicationsList({ patientId, medications, patient }: Medications
         )}
       </div>
 
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[120] bg-surface-raised rounded-lg shadow-lg border border-border py-1 text-xs text-text min-w-[120px] select-none"
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setViewMed(contextMenu.med);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 hover:bg-surface-muted transition-colors font-medium flex items-center gap-1.5"
+          >
+            <span>👁</span> View Details
+          </button>
+        </div>
+      )}
+
       {viewMed && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl bg-surface rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -60,7 +88,7 @@ export function MedicationsList({ patientId, medications, patient }: Medications
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto space-y-6">
               {/* Patient Info */}
               <section>

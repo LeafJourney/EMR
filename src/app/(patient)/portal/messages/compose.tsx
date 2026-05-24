@@ -1,22 +1,18 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
-import { useEffect, useRef, useState } from "react";
+import { useFormState } from "react-dom";
+import { useEffect, useRef } from "react";
 import { sendReplyAction, createThreadAction } from "./actions";
 import type { ReplyResult, NewThreadResult } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, FieldGroup } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SubmitButton } from "@/lib/ui/form-helpers";
 
 // ---------- Reply compose bar ----------
 
 function ReplySubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="sm" disabled={pending}>
-      {pending ? "Sending..." : "Send"}
-    </Button>
-  );
+  return <SubmitButton size="sm" idleLabel="Send" pendingLabel="Sending…" />;
 }
 
 export function ReplyCompose({ threadId }: { threadId: string }) {
@@ -61,12 +57,7 @@ export function ReplyCompose({ threadId }: { threadId: string }) {
 // ---------- New thread compose ----------
 
 function NewThreadSubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" size="sm" disabled={pending}>
-      {pending ? "Sending..." : "Send message"}
-    </Button>
-  );
+  return <SubmitButton size="sm" idleLabel="Send message" pendingLabel="Sending message…" />;
 }
 
 export function NewThreadCompose({

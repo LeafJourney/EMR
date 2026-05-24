@@ -154,6 +154,7 @@ async function probeElements(page: Page): Promise<ElementProbe[]> {
       document.querySelectorAll(sel).forEach((el) => {
         if (!(el instanceof HTMLElement)) return;
         if (seen.has(el)) return;
+        if (el.classList.contains("sr-only")) return;
         // Skip elements hidden via CSS — Playwright can't click them
         // anyway and findings would be misleading.
         const rect = el.getBoundingClientRect();
@@ -409,6 +410,19 @@ async function clickAndObserve(
   await page.close();
   return local;
 }
+
+// Each route fires up to MAX_CLICKS_PER_ROUTE per-click pages; with
+// CLICK_OBSERVE_MS=2s plus nav+probe time this easily breaches the
+// 30s default test timeout. The previous attempt called
+// `test.setTimeout(180_000)` inside the describe body — that's a no-op
+// in Playwright (the static helper only takes effect inside a test or
+// hook callback). `test.describe.configure({ timeout })` is the
+// supported API for raising the budget for every test in a describe
+// group, and it actually works.
+// Heavy marketing routes (/leafmart, /leafmart/shop) consistently brushed
+// up against 180s on staging and timed out — see issue #371. Lifting to
+// 300s gives those pages enough headroom while still bounding the suite.
+test.describe.configure({ timeout: 300_000 });
 
 test.describe("Click handlers — find-and-fix pass 8", () => {
   // Each route fires up to MAX_CLICKS_PER_ROUTE per-click pages; with

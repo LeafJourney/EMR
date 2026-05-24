@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
     const delinquentClaims = await prisma.claim.findMany({
       where: {
-        status: "patient_responsibility",
+        status: "partial",
         updatedAt: { lte: oneHundredTwentyDaysAgo },
         billedAmountCents: { gt: 0 } // Must have a balance
       },
@@ -44,7 +44,11 @@ export async function POST(req: Request) {
         // 4. Update the claim status so it isn't sent twice
         await prisma.claim.update({
           where: { id: claim.id },
-          data: { status: "sent_to_collections" }
+          data: {
+            status: "partial",
+            closureType: "collections",
+            closedAt: new Date()
+          }
         });
 
         logger.info({ 

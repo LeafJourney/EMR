@@ -16,6 +16,7 @@ import {
 import { resolveAgentMeta } from "@/lib/agents/ui-registry";
 import { formatRelative } from "@/lib/utils/format";
 import { sendChartReply, type ChartReplyResult } from "./correspondence-actions";
+import { useToast } from "@/components/ui/toast";
 
 /* ── Serialized types ─────────────────────────────────────────── */
 
@@ -108,12 +109,21 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
     null
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    if (state?.ok) {
+    if (!state) return;
+    if (state.ok) {
       formRef.current?.reset();
+      toast({ title: "Reply sent", variant: "success" });
+    } else {
+      toast({
+        title: "Couldn't send reply",
+        description: state.error,
+        variant: "error",
+      });
     }
-  }, [state]);
+  }, [state, toast]);
 
   return (
     <form
@@ -134,9 +144,6 @@ function InlineReplyCompose({ threadId }: { threadId: string }) {
         </div>
         <ReplySubmitButton />
       </div>
-      {state?.ok === false && (
-        <p className="text-xs text-danger mt-2">{state.error}</p>
-      )}
     </form>
   );
 }

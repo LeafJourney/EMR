@@ -8,9 +8,9 @@
 // audit row carries the active filter set so we can correlate an
 // exported file to the operator/intent that produced it.
 //
-// Columns: at, actorEmail, actorRole (first), action, subjectType,
-// subjectId, organizationId, practice_id (alias of organizationId — used
-// by the csv-export utility's requirePracticeIdColumn enforcement).
+// Column order and branded filename are shared with the PDF route
+// (`/api/admin/audit/export-pdf`) via `@/lib/admin/audit-export` so both
+// artifacts describe the same rows in the same order.
 
 import type { NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/auth/api-gate";
@@ -20,31 +20,15 @@ import {
   iterateAuditRows,
   parseAuditQuery,
 } from "@/lib/admin/audit-log";
+import { streamCsvResponse } from "@/lib/admin/csv-export";
 import {
-  type CsvColumn,
-  practiceIdColumn,
-  streamCsvResponse,
-} from "@/lib/admin/csv-export";
+  AUDIT_EXPORT_COLUMNS,
+  auditExportFilename,
+  auditExportFilterMap,
+} from "@/lib/admin/audit-export";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const COLUMNS: ReadonlyArray<CsvColumn<AuditRow>> = [
-  { header: "At", get: (r) => r.at },
-  { header: "Actor User ID", get: (r) => r.actorUserId },
-  { header: "Actor Email", get: (r) => r.actorEmail ?? "" },
-  { header: "Actor Role", get: (r) => (r.actorRoles[0] ?? "") },
-  { header: "Action", get: (r) => r.action },
-  { header: "Subject Type", get: (r) => r.subjectType },
-  { header: "Subject ID", get: (r) => r.subjectId },
-  { header: "Organization ID", get: (r) => r.organizationId ?? "" },
-  // The csv-export utility enforces a `practice_id` column on every export.
-  // We alias the same value here so the contract is satisfied without
-  // duplicating data in a confusing way — see practiceIdColumn() for the
-  // sentinel tag.
-  practiceIdColumn<AuditRow>("Practice ID", (r) => r.organizationId ?? ""),
-  { header: "Reason", get: (r) => r.reason ?? "" },
-];
 
 export async function GET(req: NextRequest) {
   const gate = await requireApiAuth({ role: "super_admin" });
@@ -58,19 +42,19 @@ export async function GET(req: NextRequest) {
   url.searchParams.delete("cursor");
   const q = parseAuditQuery(url.searchParams);
 
+  // Org fragment for the filename. When the operator scopes to a single
+  // tenant via the `target` filter we use that; otherwise the file is a
+  // fleet-wide sweep and we encode that as `all-orgs` in the filename.
+  const orgFragment = q.target ?? actor.organizationId ?? null;
+
   return streamCsvResponse<AuditRow>({
     rows: iterateAuditRows(prisma, q),
-    columns: COLUMNS,
-    filename: "controller-audit-log",
+    columns: AUDIT_EXPORT_COLUMNS,
+    filename: "leafjourney-audit",
+    filenameOverride: auditExportFilename({ orgId: orgFragment, ext: "csv" }),
     audit: {
       entity: "ControllerAuditLog",
-      filters: {
-        actor: q.actor,
-        action: q.action,
-        target: q.target,
-        from: q.from?.toISOString() ?? null,
-        to: q.to?.toISOString() ?? null,
-      },
+      filters: auditExportFilterMap(q),
       actor: {
         id: actor.id,
         email: actor.email,

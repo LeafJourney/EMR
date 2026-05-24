@@ -12,9 +12,13 @@ import {
 import { MetricTile } from "@/components/ui/metric-tile";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Avatar } from "@/components/ui/avatar";
+import { TileGrid } from "@/components/ui/tile-grid";
+import { ScheduleTile } from "@/components/command/schedule-tile";
+import { MessagesTile } from "@/components/command/messages-tile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QueueEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatRelative } from "@/lib/utils/format";
 import { RecentPatients } from "@/components/shell/recent-patients";
@@ -22,6 +26,12 @@ import { withTimeout } from "@/lib/utils/with-timeout";
 import { logger } from "@/lib/observability/log";
 import { NewVisitModal } from "@/components/clinic/NewVisitModal";
 import { RelaxPopup } from "@/components/clinic/RelaxPopup";
+import { UniversalPatientSearch } from "@/components/clinic/UniversalPatientSearch";
+import {
+  categorizeQueueItem,
+  URGENCY_TAG_CONFIG,
+} from "@/lib/domain/queue-urgency";
+import { QueueRailClient, type QueueRailCard } from "./queue-rail-client";
 
 // EMR-205: guard the mission-control fan-out so a single hung query
 // can never wedge the Suspense boundary and strand clinicians on the
@@ -236,6 +246,15 @@ export default async function ClinicHomePage() {
   const user = await requireUser();
   const organizationId = user.organizationId!;
 
+  const practiceConfig = await prisma.practiceConfiguration.findFirst({
+    where: { organizationId },
+    orderBy: { version: 'desc' },
+  });
+
+  const showQuickResearch =
+    practiceConfig?.selectedSpecialty === "cannabis-medicine" ||
+    (practiceConfig?.enabledModalities ?? []).includes("cannabis-medicine");
+
   const today = new Date();
   const startOfDay = new Date(
     today.getFullYear(),
@@ -283,7 +302,21 @@ export default async function ClinicHomePage() {
         scheduledFor: { gte: startOfDay, lt: endOfDay },
         patient: { deletedAt: null },
       },
-      include: { patient: { include: { chartSummary: true } } },
+      include: {
+        patient: {
+          include: {
+            chartSummary: true,
+            observations: {
+              where: { acknowledgedAt: null },
+              select: { severity: true },
+            },
+            documents: {
+              where: { deletedAt: null },
+              select: { kind: true },
+            },
+          },
+        },
+      },
       orderBy: { scheduledFor: "asc" },
       take: 200,
     }),
@@ -576,10 +609,13 @@ export default async function ClinicHomePage() {
           <div className="flex items-center gap-3 shrink-0">
             <LeafSprig size={20} className="text-accent/70 hidden sm:block" />
             <div>
-              <h1 className="font-display text-xl font-medium text-text tracking-tight leading-tight">
-                {greeting()},{" "}
-                <span className="text-accent">{user.firstName}</span>
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-xl font-medium text-text tracking-tight leading-tight">
+                  {greeting()},{" "}
+                  <span className="text-accent">{user.firstName}</span>
+                </h1>
+                <RelaxPopup />
+              </div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-text-subtle mt-0.5">
                 {dateStr}
               </p>
@@ -612,27 +648,20 @@ export default async function ClinicHomePage() {
               color="var(--text-subtle)"
               count={activeThreads}
               label="Threads"
-              href="/clinic/messages"
             />
           </div>
 
           {/* Right: Quick actions */}
           <div className="flex items-center gap-3 shrink-0">
-            <form
-              action="/clinic/patients"
-              method="get"
-              className="hidden md:flex items-center gap-2"
-            >
-              <input
-                type="search"
-                name="q"
-                placeholder="Search name, DOB, or phone..."
-                className="h-9 w-56 rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 transition-colors"
-              />
-              <Button type="submit" variant="secondary" size="sm">
-                Search
+            <div data-tour="palette" className="hidden md:block">
+              <UniversalPatientSearch />
+            </div>
+            <Link href="/clinic/mindful" title="Take a mindful break">
+              <Button variant="ghost" size="sm" className="hidden sm:inline-flex text-text-subtle hover:text-accent gap-1.5">
+                <span aria-hidden="true">🍃</span>
+                Relax
               </Button>
-            </form>
+            </Link>
             <NewVisitModal>
               <Button size="sm">New visit</Button>
             </NewVisitModal>
@@ -697,7 +726,7 @@ export default async function ClinicHomePage() {
         }
 
         return (
-          <section className="mb-8">
+          <section className="mb-8" data-tour="agent-fleet">
             <div className="flex items-center justify-between mb-3">
               <Eyebrow>Your AI team — last 24 hours</Eyebrow>
               <Link
@@ -803,30 +832,60 @@ export default async function ClinicHomePage() {
       {/* ============================================================
           2. PATIENT QUEUE — horizontal scroll rail
           ============================================================ */}
-      <section className="mb-10">
+      <section className="mb-10" data-tour="queue">
         <Eyebrow className="mb-4">Today&apos;s queue</Eyebrow>
 
         {todaysEncounters.length === 0 ? (
-          <Card tone="outlined" className="py-10 px-6">
-            <div className="flex flex-col items-center text-center">
-              <LeafSprig size={32} className="text-accent/40 mb-3" />
-              <p className="font-display text-lg text-text">
-                Clear schedule.
-              </p>
-              <p className="text-sm text-text-muted mt-1 mb-6">
-                A good day to catch up on notes.
-              </p>
-              <RelaxPopup />
-            </div>
-          </Card>
+          <EmptyState
+            illustration={<QueueEmptyIllustration />}
+            title="Clear schedule — a good day to get ahead"
+            description="No visits on the books today. Perfect window to close out yesterday's notes, review labs, or knock out a quick CME."
+            primaryAction={<RelaxPopup />}
+            secondaryAction={
+              <Link
+                href="/clinic/sign-off/notes"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+              >
+                Open pending notes
+              </Link>
+            }
+            tips={[
+              "Sign off pending labs and refills while it's quiet",
+              "Tomorrow's pre-visit briefs are already prepped",
+              "Block off some focus time on your calendar — you earned it",
+            ]}
+          />
         ) : (
-          <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
-            {todaysEncounters.map((enc: any) => {
+          // EMR-DnD: clinicians can drag (or use Space + arrows) to pin
+          // their personal preferred order on top of the AI urgency
+          // ranking. Order persists per-day in localStorage.
+          (() => {
+            const queueCards: QueueRailCard[] = (todaysEncounters as any[])
+              .map((enc: any) => ({
+                enc,
+                urgency: categorizeQueueItem({
+                  kind: "visit",
+                  reason: enc.reason ?? enc.patient.presentingConcerns ?? null,
+                  observations: (enc.patient.observations ?? []).map((o: any) => ({
+                    severity: o.severity,
+                    summary: o.summary ?? null,
+                  })),
+                  documents: enc.patient.documents ?? [],
+                  scheduledFor: enc.scheduledFor ?? null,
+                }),
+              }))
+              // Most urgent first; on ties keep ascending scheduled time
+              // so morning slots still lead within the same tier.
+              .sort((a, b) => b.urgency.score - a.urgency.score)
+              .map(({ enc, urgency }) => {
               const readiness = enc.patient.chartSummary?.completenessScore ?? null;
               const status = readinessStatus(readiness);
+              const tag = URGENCY_TAG_CONFIG[urgency.urgency];
+              const labsCount = enc.patient.documents?.filter((d: any) => d.kind === "lab").length ?? 0;
+              const consultsCount = enc.patient.documents?.filter((d: any) => d.kind === "letter").length ?? 0;
+              const imagesCount = enc.patient.documents?.filter((d: any) => d.kind === "image").length ?? 0;
 
-              return (
-                <div key={enc.id} className="shrink-0 snap-start">
+              const node = (
                   <Card
                     tone="raised"
                     className="w-64 card-hover flex flex-col justify-between p-4 group"
@@ -840,9 +899,18 @@ export default async function ClinicHomePage() {
                           size="sm"
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-text truncate group-hover:text-accent transition-colors">
-                            {enc.patient.firstName} {enc.patient.lastName}
-                          </p>
+                          <div className="flex items-center justify-between gap-1">
+                            <p className="text-sm font-medium text-text truncate group-hover:text-accent transition-colors">
+                              {enc.patient.firstName} {enc.patient.lastName}
+                            </p>
+                            <span
+                              title={urgency.reason}
+                              aria-label={`${tag.label}: ${urgency.reason}`}
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${tag.className}`}
+                            >
+                              {tag.label}
+                            </span>
+                          </div>
                           <p className="text-xs text-text-subtle tabular-nums mt-0.5">
                             {enc.scheduledFor?.toLocaleTimeString("en-US", {
                               hour: "numeric",
@@ -857,6 +925,37 @@ export default async function ClinicHomePage() {
                         <p className="text-xs text-text-muted mt-2 line-clamp-1">
                           {enc.reason ?? enc.patient.presentingConcerns}
                         </p>
+                      )}
+
+                      {/* AI urgency rationale — hidden for low to keep the rail calm. */}
+                      {urgency.urgency !== "low" && (
+                        <p
+                          className="text-[10px] text-text-subtle italic mt-1 line-clamp-1"
+                          title={urgency.reason}
+                        >
+                          Why: {urgency.reason}
+                        </p>
+                      )}
+
+                      {/* Labs, Consults, Images badges */}
+                      {(labsCount > 0 || consultsCount > 0 || imagesCount > 0) && (
+                        <div className="flex items-center gap-1 mt-2.5 flex-wrap">
+                          {labsCount > 0 && (
+                            <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[9px] font-medium leading-none">
+                              🧪 {labsCount} Lab{labsCount > 1 ? "s" : ""}
+                            </span>
+                          )}
+                          {consultsCount > 0 && (
+                            <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[9px] font-medium leading-none">
+                              📄 {consultsCount} Consult{consultsCount > 1 ? "s" : ""}
+                            </span>
+                          )}
+                          {imagesCount > 0 && (
+                            <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-medium leading-none">
+                              🖼️ {imagesCount} Image{imagesCount > 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </Link>
 
@@ -875,10 +974,13 @@ export default async function ClinicHomePage() {
                       </Link>
                     </div>
                   </Card>
-                </div>
               );
-            })}
-          </div>
+              return { id: enc.id, node };
+            });
+
+            const dayKey = startOfDay.toISOString().slice(0, 10);
+            return <QueueRailClient cards={queueCards} dayKey={dayKey} />;
+          })()
         )}
       </section>
 
@@ -889,7 +991,13 @@ export default async function ClinicHomePage() {
           ============================================================ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* -------- Left column (2/3): Activity feed -------- */}
-        <Card tone="raised" className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          <TileGrid>
+            <ScheduleTile user={user} />
+            <MessagesTile user={user} />
+          </TileGrid>
+
+          <Card tone="raised">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <LeafSprig size={16} className="text-accent/80" />
@@ -899,8 +1007,9 @@ export default async function ClinicHomePage() {
           <CardContent>
             {feed.length === 0 ? (
               <EmptyState
-                title="No recent activity"
-                description="Clinical events will appear here as they happen."
+                title="Nothing happening — yet"
+                description="Lab results, signed notes, messages, and refills will stream through here as your team works."
+                className="p-6"
               />
             ) : (
               <ul className="space-y-1 -mx-2">
@@ -938,6 +1047,7 @@ export default async function ClinicHomePage() {
             )}
           </CardContent>
         </Card>
+        </div>
 
         {/* -------- Right column (1/3): Stats + Drafts + Research -------- */}
         <div className="space-y-6">
@@ -952,38 +1062,12 @@ export default async function ClinicHomePage() {
               accent="forest"
             />
             <MetricTile
-              label="This week"
-              value={weekVisits}
-              hint="Visits"
-              accent="forest"
-            />
-            <MetricTile
-              label="Finalized"
-              value={weekFinalizedNotes}
-              hint="Notes this week"
-              accent="amber"
-            />
-            <MetricTile
               label="Chart ready"
               value={`${avgReadiness}%`}
               hint="Avg readiness"
               accent="none"
             />
           </div>
-
-          {/* Weekly visits sparkline */}
-          <Card tone="default" className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">
-              Visits — last 7 days
-            </p>
-            <Sparkline
-              data={dailyEncounterCounts}
-              width={280}
-              height={48}
-              color="var(--accent)"
-              fill="var(--accent-soft)"
-            />
-          </Card>
 
           {/* Notes needing attention */}
           <Card tone="default">
@@ -1034,26 +1118,28 @@ export default async function ClinicHomePage() {
           </Card>
 
           {/* Research shortcut */}
-          <Card tone="outlined" className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">
-              Quick research
-            </p>
-            <form
-              action="/clinic/research"
-              method="get"
-              className="flex items-center gap-2"
-            >
-              <input
-                type="text"
-                name="q"
-                placeholder="e.g. CBD for neuropathic pain..."
-                className="flex-1 h-9 rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 transition-colors"
-              />
-              <Button size="sm" variant="secondary" type="submit">
-                Go
-              </Button>
-            </form>
-          </Card>
+          {showQuickResearch && (
+            <Card tone="outlined" className="p-4">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-2">
+                Quick research
+              </p>
+              <form
+                action="/clinic/research"
+                method="get"
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  name="q"
+                  placeholder="e.g. CBD for neuropathic pain..."
+                  className="flex-1 h-9 rounded-md border border-border bg-surface px-3 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 transition-colors"
+                />
+                <Button size="sm" variant="secondary" type="submit">
+                  Go
+                </Button>
+              </form>
+            </Card>
+          )}
         </div>
       </div>
     </PageShell>

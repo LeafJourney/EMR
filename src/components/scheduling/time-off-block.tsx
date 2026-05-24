@@ -5,6 +5,7 @@ import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 
 export type TimeOffReason = "vacation" | "conference" | "sick" | "personal" | "cme" | "other";
 
@@ -84,7 +85,6 @@ export function TimeOffBlockForm({
     setSaving(true);
     try {
       if (onSave) await onSave(block);
-      else console.log("Time-off block:", block);
     } finally {
       setSaving(false);
     }
@@ -103,22 +103,20 @@ export function TimeOffBlockForm({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="to-start-date">Start date</Label>
-              <Input
+              <DatePicker
                 id="to-start-date"
-                type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={setStartDate}
                 required
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="to-end-date">End date</Label>
-              <Input
+              <DatePicker
                 id="to-end-date"
-                type="date"
                 value={endDate}
                 min={startDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={setEndDate}
                 required
               />
             </div>
@@ -138,20 +136,20 @@ export function TimeOffBlockForm({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="to-start-time">Start time</Label>
-                <Input
+                <TimePicker
                   id="to-start-time"
-                  type="time"
                   value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
+                  onChange={setStartTime}
+                  step={15}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="to-end-time">End time</Label>
-                <Input
+                <TimePicker
                   id="to-end-time"
-                  type="time"
                   value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
+                  onChange={setEndTime}
+                  step={15}
                 />
               </div>
             </div>

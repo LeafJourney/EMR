@@ -251,7 +251,7 @@ export default async function OperatorLayout({
       roleLabel="Practice ops"
       showNavPrefs={false}
     >
-      <CommandPalette role="operator" />
+      <CommandPalette role="operator" userId={user.id} />
       {children}
     </AppShell>
   );

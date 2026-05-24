@@ -1,5 +1,8 @@
+"use client";
+
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   USE_TYPE_LABEL,
   type CannabisUseType,
@@ -37,17 +40,20 @@ export function CannabisUseTypeBadge({
   showEmoji?: boolean;
 }) {
   return (
-    <span
-      title={USE_TYPE_LABEL[type]}
-      aria-label={`Cannabis use type: ${USE_TYPE_LABEL[type]}`}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
-        STYLES[type],
-        className,
-      )}
-    >
-      {showEmoji && <span aria-hidden>{EMOJI[type]}</span>}
-      {USE_TYPE_LABEL[type]}
-    </span>
+    <Tooltip content={USE_TYPE_LABEL[type]}>
+      <span
+        tabIndex={0}
+        aria-label={`Cannabis use type: ${USE_TYPE_LABEL[type]}`}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          STYLES[type],
+          className,
+        )}
+      >
+        {showEmoji && <span aria-hidden>{EMOJI[type]}</span>}
+        {USE_TYPE_LABEL[type]}
+      </span>
+    </Tooltip>
   );
 }

@@ -47,9 +47,9 @@ export async function POST(req: Request) {
       return {
         organizationId: payload.organizationId || "DEFAULT",
         action: "SCHEDULE_OB_MILESTONE",
-        subjectType: "Patient",
-        subjectId: payload.patientId,
-        metadata: { milestone: m.name, targetWeek: m.weeks, targetDate }
+        entity: "Patient",
+        entityId: payload.patientId,
+        details: { milestone: m.name, targetWeek: m.weeks, targetDate }
       };
     });
 

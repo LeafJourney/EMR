@@ -14,7 +14,18 @@ import { useChartFrame, type ChartTabPosition } from "./chart-frame";
 const TABS = [
   { key: "demographics", label: "Demographics", dot: "bg-[color:var(--info)]", group: "Overview" },
   { key: "memory", label: "Memory", dot: "bg-accent", group: "Overview" },
+  // Unified chronological feed of every meaningful chart event
+  // (visits, messages, notes, labs, refills, tasks). Filterable and
+  // grouped by day — Linear/Notion style activity rail. Lives in
+  // Overview because it answers "what happened recently?" the same
+  // way Memory answers "what do we know?".
+  { key: "timeline", label: "Timeline", dot: "bg-[color:var(--info)]", group: "Overview" },
   { key: "notes", label: "Notes", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
+  // EMR-588 — Confidential clinician-only notes (private provider
+  // notes). NOT part of the legal chart, never released to the patient
+  // or to export packets. Rendered with a danger-toned dot so the rail
+  // already telegraphs "this is a sensitive surface" before click.
+  { key: "private_notes", label: "Private notes", dot: "bg-danger", group: "Clinical" },
   { key: "labs", label: "Labs", dot: "bg-[color:var(--success)]", group: "Clinical" },
   { key: "images", label: "Images", dot: "bg-[color:var(--info)]", group: "Clinical" },
   { key: "rx", label: "Cannabis Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
   type CmeCredit,
   type CmeBoard,
@@ -73,58 +74,13 @@ export function CmeLedgerView({
         <CardHeader>
           <CardTitle>Research sessions</CardTitle>
         </CardHeader>
-        <CardContent>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wider">
-                <th className="pb-2 font-medium">Topic</th>
-                <th className="pb-2 font-medium">Engaged</th>
-                <th className="pb-2 font-medium">Refs</th>
-                <th className="pb-2 font-medium">Credit</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {credits.map((c) => {
-                const s = sessionById.get(c.sessionId);
-                const minutes = s ? Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 60000) : 0;
-                return (
-                  <tr key={c.id}>
-                    <td className="py-3 align-top">
-                      <p className="text-text">{c.topic}</p>
-                      <p className="text-[11px] text-text-subtle font-mono">{c.attestationHash.slice(0, 12)}…</p>
-                    </td>
-                    <td className="py-3 align-top text-text-muted tabular-nums">{minutes}m</td>
-                    <td className="py-3 align-top text-text-muted tabular-nums">{s?.referencesViewed ?? "—"}</td>
-                    <td className="py-3 align-top text-text-muted tabular-nums">
-                      {c.creditMinutes === 0 ? (
-                        <span className="text-[11px] text-text-subtle">below floor</span>
-                      ) : (
-                        formatCreditHours(c.creditMinutes)
-                      )}
-                    </td>
-                    <td className="py-3 align-top">
-                      <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>
-                    </td>
-                    <td className="py-3 align-top text-right">
-                      {c.status === "pending" && c.creditMinutes > 0 && (
-                        <Button size="sm" variant="secondary" onClick={() => attest(c.id)}>
-                          Attest
-                        </Button>
-                      )}
-                      {c.status === "earned" && (
-                        <SubmitMenu onSubmit={(b) => submit(c.id, b)} />
-                      )}
-                      {(c.status === "submitted" || c.status === "verified") && (
-                        <span className="text-[11px] text-text-subtle">to {c.submittedTo}</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <CardContent className="px-0 sm:px-0">
+          <CreditsTable
+            credits={credits}
+            sessionById={sessionById}
+            attest={attest}
+            submit={submit}
+          />
         </CardContent>
       </Card>
 
@@ -143,6 +99,122 @@ export function CmeLedgerView({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ---------------------------------------------------------- credits table
+//
+// Pulled out into its own component so the column defs (and the
+// per-credit derived fields like "engaged minutes") can live behind a
+// single useMemo without crowding the host view.
+
+function CreditsTable({
+  credits,
+  sessionById,
+  attest,
+  submit,
+}: {
+  credits: CmeCredit[];
+  sessionById: Map<string, ResearchSession>;
+  attest: (id: string) => void;
+  submit: (id: string, board: CmeBoard) => void;
+}) {
+  type Row = CmeCredit & { _minutes: number; _refs: number | null };
+  const rows: Row[] = useMemo(
+    () =>
+      credits.map((c) => {
+        const s = sessionById.get(c.sessionId);
+        const minutes = s
+          ? Math.round(
+              (new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 60000,
+            )
+          : 0;
+        return { ...c, _minutes: minutes, _refs: s?.referencesViewed ?? null };
+      }),
+    [credits, sessionById],
+  );
+
+  const columns: ColumnDef<Row>[] = [
+    {
+      key: "topic",
+      label: "Topic",
+      sortable: true,
+      sortFn: (a, b) => a.topic.localeCompare(b.topic),
+      cell: (c) => (
+        <>
+          <p className="text-text">{c.topic}</p>
+          <p className="text-[11px] text-text-subtle font-mono">
+            {c.attestationHash.slice(0, 12)}…
+          </p>
+        </>
+      ),
+    },
+    {
+      key: "_minutes",
+      label: "Engaged",
+      sortable: true,
+      align: "right",
+      cell: (c) => <span className="text-text-muted">{c._minutes}m</span>,
+    },
+    {
+      key: "_refs",
+      label: "Refs",
+      sortable: true,
+      align: "right",
+      hideOnMobile: true,
+      cell: (c) => (
+        <span className="text-text-muted">{c._refs ?? "—"}</span>
+      ),
+    },
+    {
+      key: "creditMinutes",
+      label: "Credit",
+      sortable: true,
+      align: "right",
+      cell: (c) =>
+        c.creditMinutes === 0 ? (
+          <span className="text-[11px] text-text-subtle">below floor</span>
+        ) : (
+          <span className="text-text-muted">{formatCreditHours(c.creditMinutes)}</span>
+        ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      sortFn: (a, b) => a.status.localeCompare(b.status),
+      cell: (c) => <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>,
+    },
+    {
+      key: "action",
+      label: "Action",
+      align: "right",
+      cell: (c) => (
+        <>
+          {c.status === "pending" && c.creditMinutes > 0 && (
+            <Button size="sm" variant="secondary" onClick={() => attest(c.id)}>
+              Attest
+            </Button>
+          )}
+          {c.status === "earned" && (
+            <SubmitMenu onSubmit={(b) => submit(c.id, b)} />
+          )}
+          {(c.status === "submitted" || c.status === "verified") && (
+            <span className="text-[11px] text-text-subtle">to {c.submittedTo}</span>
+          )}
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <DataTable<Row>
+      columns={columns}
+      rows={rows}
+      rowKey={(c) => c.id}
+      ariaLabel="CME credits"
+      className="border-0 rounded-none shadow-none"
+    />
   );
 }
 

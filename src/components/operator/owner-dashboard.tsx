@@ -7,6 +7,8 @@ import {
   type OwnerKpiSnapshot,
 } from "@/lib/domain/owner-kpis";
 import { formatMoneyCompact, formatMoney } from "@/lib/domain/billing";
+import { agentRegistry } from "@/lib/agents";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 
 // ---------------------------------------------------------------------------
 // OwnerDashboard — composes the 6 KPI tiles in a 1/2/3-column grid.
@@ -28,7 +30,16 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
   );
   const revenueCard = {
     eyebrow: "Revenue this week",
-    headline: formatMoneyCompact(snapshot.revenueThisWeekCents),
+    // Animate revenue from prior-week → this-week so the tile feels alive
+    // on refresh. We format the *interpolated* cents value with the same
+    // compact-money helper used everywhere else for consistency.
+    headline: (
+      <AnimatedNumber
+        value={snapshot.revenueThisWeekCents}
+        format={(n) => formatMoneyCompact(Math.round(n))}
+      />
+    ),
+    headlineLabel: formatMoneyCompact(snapshot.revenueThisWeekCents),
     subtext:
       snapshot.revenuePriorWeekCents > 0
         ? `${formatMoneyCompact(snapshot.revenuePriorWeekCents)} prior 7 days`
@@ -45,7 +56,8 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
   const denialsSev: KpiSeverity = denialSeverity(snapshot.denials);
   const denialsCard = {
     eyebrow: "Denials queue",
-    headline: snapshot.denials.unresolvedCount.toString(),
+    headline: <AnimatedNumber value={snapshot.denials.unresolvedCount} />,
+    headlineLabel: snapshot.denials.unresolvedCount.toString(),
     subtext:
       snapshot.denials.unresolvedCount === 0
         ? "All denials resolved"
@@ -69,10 +81,20 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
   };
 
   // ---------- 4. Agent fleet status ----------
+  // EMR-795: the headline count is driven by AgentJob rows in the DB
+  // (see `loadAgents` in owner-kpis.ts), so newly-registered agent
+  // classes are discovered automatically as soon as they record jobs.
+  // No tile-side wiring is needed for the new Practice Manager Agent
+  // beyond surfacing its presence via the sub-label below.
+  const hasPracticeManagerAgent = "practiceManager" in agentRegistry;
+  const baseAgentSubtext = `${snapshot.agents.running} processing, ${snapshot.agents.completedToday} completed today`;
   const agentsCard = {
     eyebrow: "Agent fleet",
-    headline: snapshot.agents.running.toString(),
-    subtext: `${snapshot.agents.running} processing, ${snapshot.agents.completedToday} completed today`,
+    headline: <AnimatedNumber value={snapshot.agents.running} />,
+    headlineLabel: snapshot.agents.running.toString(),
+    subtext: hasPracticeManagerAgent
+      ? `${baseAgentSubtext} • incl. Practice Manager`
+      : baseAgentSubtext,
     href: "/ops/agents",
     pulse: snapshot.agents.running > 0,
   };
@@ -84,7 +106,8 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
   );
   const patientsCard = {
     eyebrow: "New patients (7d)",
-    headline: snapshot.newPatientsThisWeek.toString(),
+    headline: <AnimatedNumber value={snapshot.newPatientsThisWeek} />,
+    headlineLabel: snapshot.newPatientsThisWeek.toString(),
     subtext:
       snapshot.newPatientsPriorWeek > 0
         ? `${snapshot.newPatientsPriorWeek} in the prior 7 days`

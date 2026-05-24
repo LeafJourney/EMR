@@ -4,163 +4,173 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-
-/**
- * EMR-655 — createPatient server action
- * -------------------------------------
- * Creates a Patient + 3 emergency contacts + 1 PatientCoverage row in a
- * single $transaction so a clinician adding a patient from the roster modal
- * never lands on a partially-populated chart.
- *
- * Schema notes (read these before changing the model):
- * - There is no dedicated `EmergencyContact` model in the Prisma schema as
- *   of 2026-05. To avoid a migration from this slice we stash the contact
- *   array on `Patient.intakeAnswers.emergencyContacts` (JSON). The portal
- *   profile form uses the same `intakeAnswers` blob for demographics that
- *   don't yet have columns (sex/race/maritalStatus/uniqueThing), so we're
- *   following the established escape hatch.
- * - Insurance maps to the existing `PatientCoverage` model (type = primary).
- *   The shape mirrors the fields the modal collects.
- */
-
-const personalSchema = z.object({
-  firstName: z.string().trim().min(1, "First name is required").max(100),
-  lastName: z.string().trim().min(1, "Last name is required").max(100),
-  dateOfBirth: z.string().optional().default(""),
-  email: z.string().email("Invalid email").or(z.literal("")).optional().default(""),
-  phone: z.string().max(30).optional().default(""),
-  addressLine1: z.string().max(200).optional().default(""),
-  addressLine2: z.string().max(200).optional().default(""),
-  city: z.string().max(100).optional().default(""),
-  state: z.string().max(50).optional().default(""),
-  postalCode: z.string().max(20).optional().default(""),
-  sex: z.string().max(50).optional().default(""),
-  race: z.string().max(100).optional().default(""),
-  maritalStatus: z.string().max(50).optional().default(""),
-  // Photo arrives as a data URL — we stash it on intakeAnswers for now.
-  // A real upload pipeline (S3 / Supabase Storage) is out of scope for
-  // EMR-655; the field is purely so the modal can echo it back later.
-  avatarDataUrl: z.string().max(5_000_000).optional().default(""),
-});
+import { patientMatchesQuery } from "@/lib/search/patient-search";
 
 const emergencyContactSchema = z.object({
-  name: z.string().trim().min(1, "Contact name is required").max(120),
-  phone: z.string().trim().min(1, "Contact phone is required").max(30),
-  email: z.string().email("Invalid contact email").or(z.literal("")).optional().default(""),
-  relationship: z.string().trim().min(1, "Relationship is required").max(60),
+  name: z.string().min(1, "Name is required"),
+  relationship: z.string().min(1, "Relationship is required"),
+  phone: z.string().min(1, "Phone is required"),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
 });
 
-const insuranceSchema = z.object({
-  payerName: z.string().trim().min(1, "Insurance payer is required").max(120),
-  memberId: z.string().trim().min(1, "Member ID is required").max(60),
-  groupNumber: z.string().max(60).optional().default(""),
-  planName: z.string().max(120).optional().default(""),
-  subscriberName: z.string().max(120).optional().default(""),
-  relationshipToSubscriber: z.string().max(40).optional().default("self"),
+const createPatientSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  dateOfBirth: z.string().min(1, "Date of birth is required"),
+  phone: z.string().optional().or(z.literal("")),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  addressLine1: z.string().optional().or(z.literal("")),
+  addressLine2: z.string().optional().or(z.literal("")),
+  city: z.string().optional().or(z.literal("")),
+  state: z.string().optional().or(z.literal("")),
+  postalCode: z.string().optional().or(z.literal("")),
+  sex: z.string().optional().or(z.literal("")),
+  race: z.string().optional().or(z.literal("")),
+  maritalStatus: z.string().optional().or(z.literal("")),
+  photoUrl: z.string().optional().or(z.literal("")),
+  emergencyContacts: z.array(emergencyContactSchema).min(1, "At least one emergency contact is required"),
+  insurance: z.object({
+    providerName: z.string().min(1, "Provider name is required"),
+    memberId: z.string().min(1, "Member ID is required"),
+    groupNumber: z.string().optional().or(z.literal("")),
+  }).optional(),
 });
 
-const inputSchema = z.object({
-  personal: personalSchema,
-  // Exactly three emergency contacts per the ticket spec.
-  emergencyContacts: z.array(emergencyContactSchema).length(3, "Exactly 3 emergency contacts are required"),
-  insurance: insuranceSchema,
-});
+export type CreatePatientResult = { ok: true; patientId: string } | { ok: false; error: string };
 
-export type CreatePatientInput = z.infer<typeof inputSchema>;
-
-export type CreatePatientResult =
-  | { ok: true; patientId: string }
-  | { ok: false; error: string };
-
-export async function createPatient(
-  input: CreatePatientInput,
+export async function createPatientAction(
+  data: z.infer<typeof createPatientSchema>
 ): Promise<CreatePatientResult> {
-  const parsed = inputSchema.safeParse(input);
-  if (!parsed.success) {
-    const first = parsed.error.errors[0];
-    return { ok: false, error: first?.message ?? "Invalid input." };
-  }
-
   const user = await requireUser();
-  const organizationId = user.organizationId;
-  if (!organizationId) {
-    return { ok: false, error: "No organization on session." };
+  const orgId = user.organizationId!;
+
+  const parsed = createPatientSchema.safeParse(data);
+  if (!parsed.success) {
+    const firstError = parsed.error.errors[0];
+    return { ok: false, error: firstError?.message ?? "Invalid input." };
   }
 
-  const { personal, emergencyContacts, insurance } = parsed.data;
+  const payload = parsed.data;
 
-  try {
-    const patientId = await prisma.$transaction(async (tx) => {
-      const patient = await tx.patient.create({
-        data: {
-          organizationId,
-          status: "prospect",
-          firstName: personal.firstName,
-          lastName: personal.lastName,
-          dateOfBirth: personal.dateOfBirth ? new Date(personal.dateOfBirth) : null,
-          email: personal.email || null,
-          phone: personal.phone || null,
-          addressLine1: personal.addressLine1 || null,
-          addressLine2: personal.addressLine2 || null,
-          city: personal.city || null,
-          state: personal.state || null,
-          postalCode: personal.postalCode || null,
-          intakeAnswers: {
-            sex: personal.sex || undefined,
-            race: personal.race || undefined,
-            maritalStatus: personal.maritalStatus || undefined,
-            avatarDataUrl: personal.avatarDataUrl || undefined,
-            // Stored as JSON until a dedicated EmergencyContact model lands.
-            emergencyContacts: emergencyContacts.map((c) => ({
-              name: c.name,
-              phone: c.phone,
-              email: c.email || undefined,
-              relationship: c.relationship,
-            })),
-          } as any,
-        },
-      });
+  // Create the patient in active status
+  const patient = await prisma.patient.create({
+    data: {
+      organizationId: orgId,
+      status: "active",
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      dateOfBirth: new Date(payload.dateOfBirth),
+      phone: payload.phone || null,
+      email: payload.email || null,
+      addressLine1: payload.addressLine1 || null,
+      addressLine2: payload.addressLine2 || null,
+      city: payload.city || null,
+      state: payload.state || null,
+      postalCode: payload.postalCode || null,
+      intakeAnswers: {
+        sex: payload.sex || undefined,
+        race: payload.race || undefined,
+        maritalStatus: payload.maritalStatus || undefined,
+        photoUrl: payload.photoUrl || undefined,
+        emergencyContacts: payload.emergencyContacts,
+        insurance: payload.insurance || undefined,
+      } as any,
+    },
+  });
 
-      await tx.patientCoverage.create({
-        data: {
-          patientId: patient.id,
-          type: "primary",
-          payerName: insurance.payerName,
-          memberId: insurance.memberId,
-          groupNumber: insurance.groupNumber || null,
-          planName: insurance.planName || null,
-          subscriberName: insurance.subscriberName || null,
-          relationshipToSubscriber:
-            insurance.relationshipToSubscriber || "self",
-          active: true,
-        },
-      });
+  // Audit trail creation
+  await prisma.auditLog.create({
+    data: {
+      organizationId: orgId,
+      actorUserId: user.id,
+      action: "patient.created",
+      subjectType: "Patient",
+      subjectId: patient.id,
+      metadata: {
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+      },
+    },
+  });
 
-      await tx.auditLog.create({
-        data: {
-          organizationId,
-          actorUserId: user.id,
-          action: "patient.created",
-          subjectType: "Patient",
-          subjectId: patient.id,
-          metadata: {
-            source: "clinic.patients.new_patient_modal",
-            emergencyContactCount: emergencyContacts.length,
-            hasInsurance: true,
-          },
-        },
-      });
+  revalidatePath("/clinic/patients");
+  return { ok: true, patientId: patient.id };
+}
 
-      return patient.id;
-    });
+export async function searchPatientsAction(query: string) {
+  const user = await requireUser();
+  const orgId = user.organizationId!;
 
-    revalidatePath("/clinic/patients");
+  const patients = await prisma.patient.findMany({
+    where: {
+      organizationId: orgId,
+      deletedAt: null,
+    },
+    include: {
+      appointments: {
+        where: { status: "confirmed" },
+        orderBy: { startAt: "desc" },
+        take: 1,
+      },
+    },
+  });
 
-    return { ok: true, patientId };
-  } catch (err) {
+  const matches = patients.filter((p) => {
+    const searchable = {
+      firstName: p.firstName,
+      lastName: p.lastName,
+      dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
+      phone: p.phone,
+    };
+    return patientMatchesQuery(searchable, query);
+  });
+
+  return matches.map((p) => ({
+    id: p.id,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
+    phone: p.phone,
+    email: p.email,
+    addressLine1: p.addressLine1,
+    addressLine2: p.addressLine2,
+    city: p.city,
+    state: p.state,
+    postalCode: p.postalCode,
+    lastVisit: p.appointments[0]?.startAt ? p.appointments[0].startAt.toISOString() : null,
+    intakeAnswers: p.intakeAnswers,
+  }));
+}
+
+export async function checkDuplicateAppointmentAction(patientId: string) {
+  const user = await requireUser();
+  const orgId = user.organizationId!;
+
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+  const existing = await prisma.appointment.findFirst({
+    where: {
+      patientId,
+      status: "confirmed",
+      startAt: {
+        gte: startOfWeek,
+        lt: endOfWeek,
+      },
+    },
+    orderBy: { startAt: "asc" },
+  });
+
+  if (existing) {
     return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to create patient.",
+      hasDuplicate: true,
+      scheduledAt: existing.startAt.toISOString(),
     };
   }
+
+  return { hasDuplicate: false };
 }

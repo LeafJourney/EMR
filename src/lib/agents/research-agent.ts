@@ -227,16 +227,24 @@ Write a brief, evidence-based synthesis paragraph.`;
       }
     }
 
-    // Persist results
+    // Persist results.
+    //
+    // EMR-668: pass through `pmid` and `url` so the research console can
+    // render PubMed article titles as hyperlinks that open the source in a
+    // new tab (the page.tsx renderer already reads those fields).
     await prisma.researchResult.deleteMany({ where: { queryId } });
     await prisma.researchResult.createMany({
-      data: citations.map((c, idx) => ({
+      data: hits.map((h, idx) => ({
         queryId,
-        title: c.title,
-        source: c.source,
-        year: c.year ?? null,
-        summary: c.snippet,
-        citation: c.source,
+        title: h.title,
+        source: citations[idx]?.source ?? h.source,
+        year: h.year ?? null,
+        summary: citations[idx]?.snippet ?? h.summary,
+        citation: citations[idx]?.source ?? h.source,
+        url:
+          h.url ??
+          (h.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${h.pmid}/` : null),
+        pmid: h.pmid ?? null,
         rank: idx,
       })),
     });

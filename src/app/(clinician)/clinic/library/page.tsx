@@ -1,13 +1,23 @@
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
+import { EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import Link from "next/link";
+import { getAllInteractions } from "@/lib/domain/drug-interactions";
 import { PdfExportButton } from "./pdf-export-button";
+import { InteractionBubbles } from "./interaction-bubbles";
+import { getCurrentUser } from "@/lib/auth/session";
+import { isModalityEnabled } from "@/lib/modality/server";
+import { ChatCB } from "../research/chat-cb";
 
 export const metadata = { title: "Clinical Library" };
 
-export default function LibraryPage() {
+export default async function LibraryPage() {
+  const user = await getCurrentUser();
+  const cannabisEnabled = user?.organizationId
+    ? await isModalityEnabled(user.organizationId, "cannabis-medicine")
+    : false;
+  const interactions = getAllInteractions();
   return (
     <PageShell maxWidth="max-w-[960px]">
       <PageHeader
@@ -121,7 +131,7 @@ export default function LibraryPage() {
       <Card tone="raised" className="mb-6">
         <CardHeader>
           <CardTitle>Dosing guidelines by condition</CardTitle>
-          <CardDescription>Evidence-based starting doses from the research corpus. Titrate based on response.</CardDescription>
+          <CardDescription>Evidence-based starting doses from the research database. Titrate based on response.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -146,7 +156,7 @@ export default function LibraryPage() {
             </table>
           </div>
           <p className="text-xs text-text-subtle mt-4">
-            Source: Curated research corpus (50+ studies). See{" "}
+            Source: Curated research database (50+ studies). See{" "}
             <Link href="/clinic/research" className="text-accent hover:underline">Research Console</Link>{" "}
             for full citations and evidence search.
           </p>
@@ -190,28 +200,25 @@ export default function LibraryPage() {
       <Card tone="raised" className="mb-6">
         <CardHeader>
           <CardTitle>Drug interaction reference</CardTitle>
-          <CardDescription>Cannabis-drug interactions are checked automatically in the Cannabis Rx tab.</CardDescription>
+          <CardDescription>
+            Click any bubble to see mechanism and recommendation.{" "}
+            {interactions.length} interactions in the database — checked automatically when prescribing.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <Badge tone="danger">Red</Badge>
-              <p className="text-sm text-text-muted">Contraindicated: Warfarin (CYP2C9), Clobazam (dramatic CBD interaction, FDA warning)</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <Badge tone="warning">Yellow</Badge>
-              <p className="text-sm text-text-muted">Caution: Opioids (additive CNS depression), Benzodiazepines, SSRIs (CYP2D6), Statins (CYP3A4), Immunosuppressants, Antiepileptics</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <Badge tone="success">Green</Badge>
-              <p className="text-sm text-text-muted">Generally safe: Acetaminophen, Ibuprofen, Vitamin D, Melatonin, Magnesium, Probiotics</p>
-            </div>
-          </div>
-          <p className="text-xs text-text-subtle mt-4">
-            43 interactions in the database. Full interaction check runs automatically when prescribing.
-          </p>
+          <InteractionBubbles interactions={interactions} />
         </CardContent>
       </Card>
+
+      {/* ChatCB — AI evidence assistant, cannabis-modality only */}
+      {cannabisEnabled && (
+        <div className="mb-6">
+          <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-3">
+            AI evidence assistant
+          </p>
+          <ChatCB />
+        </div>
+      )}
 
       {/* Justin Kander's book (EMR-036) */}
       <Card tone="ambient" className="mb-6">
@@ -258,7 +265,7 @@ export default function LibraryPage() {
       <Card>
         <CardContent className="py-6 flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-text">Research corpus</p>
+            <p className="text-sm font-medium text-text">Research database</p>
             <p className="text-xs text-text-muted mt-1">50+ peer-reviewed studies with structured dosing data</p>
           </div>
           <Link href="/clinic/research">

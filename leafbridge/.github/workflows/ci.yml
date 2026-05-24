@@ -1,0 +1,94 @@
+# LeafBridge CI scaffold (EMR-773)
+#
+# Runs on every PR against main. Phase 0 stages — more added as services
+# come online.
+
+name: leafbridge-ci
+
+on:
+  pull_request:
+    paths:
+      - "leafbridge/**"
+  push:
+    branches: [main]
+    paths:
+      - "leafbridge/**"
+
+defaults:
+  run:
+    working-directory: leafbridge
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: DCO check
+        run: |
+          base="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          head="${{ github.event.pull_request.head.sha || 'HEAD' }}"
+          missing=$(git log --no-merges --format='%H %(trailers:key=Signed-off-by,valueonly)' "$base..$head" | awk '$2==""{print $1}')
+          if [ -n "$missing" ]; then
+            echo "::error::Commits missing DCO sign-off:"
+            echo "$missing"
+            exit 1
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: leafbridge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: leafbridge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: leafbridge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: leafbridge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: FHIR profile conformance
+        run: pnpm conformance

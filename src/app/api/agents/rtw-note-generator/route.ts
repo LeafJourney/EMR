@@ -57,10 +57,11 @@ export async function POST(req: Request) {
         data: {
           organizationId: payload.organizationId || "DEFAULT",
           patientId: patientId,
-          title: `Return to Work/School Note (${returnDate.toISOString().split("T")[0]})`,
-          type: "administrative",
-          url: "generated_pdf_placeholder",
-          // In reality, we would store the note text or generate a PDF buffer
+          originalName: `Return to Work/School Note (${returnDate.toISOString().split("T")[0]}).pdf`,
+          kind: "letter",
+          storageKey: "generated_pdf_placeholder",
+          mimeType: "application/pdf",
+          sizeBytes: 1024,
         }
       });
 

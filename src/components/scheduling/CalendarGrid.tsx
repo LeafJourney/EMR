@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils/cn";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export type CalendarView = "day" | "week" | "month";
 
@@ -672,28 +673,30 @@ function AppointmentChip({ appt }: { appt: CalendarAppointment }) {
     Math.round((end.getTime() - start.getTime()) / (SLOT_MIN * 60_000)),
   );
   const tone = toneFor(appt.modality);
+  const apptTip = `${appt.patientName} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)} · ${tone.label}`;
   return (
-    <Link
-      href={`/clinic/patients/${appt.patientId}`}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/appt-id", appt.id);
-        e.dataTransfer.setData("text/drag-kind", "move");
-      }}
-      className={cn(
-        "block rounded-md px-2 py-1 mx-0.5 my-0.5 text-[11px] truncate cursor-grab active:cursor-grabbing border transition-colors",
-        tone.chip,
-      )}
-      style={{ height: slotCount * SQUARE - 4 }}
-      title={`${appt.patientName} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)} · ${tone.label}`}
-    >
-      <span className="font-medium truncate">{appt.patientName}</span>
-      {appt.providerName && (
-        <span className="block text-[9px] truncate opacity-80">
-          {appt.providerName}
-        </span>
-      )}
-    </Link>
+    <Tooltip content={apptTip}>
+      <Link
+        href={`/clinic/patients/${appt.patientId}`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/appt-id", appt.id);
+          e.dataTransfer.setData("text/drag-kind", "move");
+        }}
+        className={cn(
+          "block rounded-md px-2 py-1 mx-0.5 my-0.5 text-[11px] truncate cursor-grab active:cursor-grabbing border transition-colors",
+          tone.chip,
+        )}
+        style={{ height: slotCount * SQUARE - 4 }}
+      >
+        <span className="font-medium truncate">{appt.patientName}</span>
+        {appt.providerName && (
+          <span className="block text-[9px] truncate opacity-80">
+            {appt.providerName}
+          </span>
+        )}
+      </Link>
+    </Tooltip>
   );
 }
 

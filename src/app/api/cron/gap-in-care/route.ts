@@ -24,7 +24,6 @@ export async function POST(req: Request) {
 
     const eligiblePatients = await prisma.patient.findMany({
       where: {
-        sexAtBirth: "FEMALE",
         dateOfBirth: { lte: fortyYearsAgo }
       },
       take: 100

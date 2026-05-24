@@ -2,6 +2,12 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  // Dark-mode tokens are switched at runtime by setting
+  // `data-theme="dark"` on <html> (see src/app/layout.tsx).
+  // Using a selector strategy ensures tailwind's `dark:` variants
+  // match the same source of truth our CSS vars already use, so a
+  // single toggle flips both token-driven and class-driven styles.
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {

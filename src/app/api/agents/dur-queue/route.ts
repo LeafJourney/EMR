@@ -43,7 +43,7 @@ export async function POST(req: Request) {
           where: { id: rx.id },
           data: {
             // We can attach a flag to the JSON items or notes
-            pharmacistUserId: "REQUIRED_REVIEW", 
+            notes: "Pharmacist review required: REQUIRED_REVIEW", 
             // In reality, this would be a specific status field
           }
         });
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         await prisma.dispensaryDispense.update({
           where: { id: rx.id },
           data: {
-            pharmacistUserId: "AUTO_CLEARED", 
+            notes: "Pharmacist review: AUTO_CLEARED", 
           }
         });
       }

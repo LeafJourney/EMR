@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DatePicker, toISODate } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils/cn";
+
+// Goal target dates should be in the future. Capture once per render.
+const GOALS_TODAY = toISODate(new Date());
 import {
   GOAL_METRIC_LABELS,
   calculateGoalProgress,
@@ -281,11 +285,11 @@ function NewGoalForm({
           <p className="text-[11px] uppercase tracking-wider text-text-subtle font-semibold mb-2">
             Target date (optional)
           </p>
-          <input
-            type="date"
+          <DatePicker
             value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-            className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            onChange={setTargetDate}
+            min={GOALS_TODAY}
+            placeholder="Pick a target date"
           />
         </div>
 

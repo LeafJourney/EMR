@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Snowflake, X, Info } from "lucide-react";
+import { Snowflake, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface FreezeTokenStoreProps {
   availableTokens: number;
@@ -23,33 +23,15 @@ export function FreezeTokenStore({ availableTokens, onApplyFreeze }: FreezeToken
         <span className="text-xs font-semibold tabular-nums">{availableTokens}</span>
       </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-              onClick={() => setIsOpen(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-md bg-surface shadow-2xl rounded-2xl overflow-hidden"
-            >
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                <h2 className="font-display font-semibold text-text flex items-center gap-2">
+                <DialogTitle className="font-display font-semibold text-text flex items-center gap-2">
                   <Snowflake size={18} className="text-blue-500" />
                   Streak Freezes
-                </h2>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-2 text-text-subtle hover:text-text hover:bg-surface-hover rounded-full transition-colors"
-                >
-                  <X size={16} />
-                </button>
+                </DialogTitle>
+                {/* Dialog primitive provides the absolute-positioned X — no
+                    second close button here. */}
               </div>
 
               <div className="p-6">
@@ -98,10 +80,8 @@ export function FreezeTokenStore({ availableTokens, onApplyFreeze }: FreezeToken
                   </Button>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

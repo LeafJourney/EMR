@@ -9,11 +9,13 @@ import { ROLE_HOME } from "@/lib/rbac/roles";
 import { cn } from "@/lib/utils/cn";
 import { MobileNav } from "./MobileNav";
 import { NavSections } from "./NavSections";
+import { NotificationCenter } from "@/components/ui/notification-center";
 import { PillarNav } from "./PillarNav";
 import { RailIdentityMenu } from "./RailIdentityMenu";
 import { NavPrefsProvider } from "./NavPrefsContext";
 import { NavPrefsSections } from "./NavPrefsSections";
 import { NavVisitTracker } from "./NavVisitTracker";
+import { IdleTimeoutGuard } from "@/components/auth/IdleTimeoutGuard";
 import { hasPillarIcons, type NavItem, type NavSection } from "./nav-sections";
 
 export type { NavItem, NavSection } from "./nav-sections";
@@ -52,9 +54,12 @@ export function AppShell({
   const useRail = hasPillarIcons(resolved);
   const isPatient = activeRole === "patient";
 
+  const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
   return (
     <NavPrefsProvider>
       <NavVisitTracker sections={resolved} />
+      {hasClerk && <IdleTimeoutGuard roles={user.roles} />}
       <div
         className={cn(
           "min-h-screen bg-bg flex",
@@ -76,7 +81,10 @@ export function AppShell({
                 </Link>
               }
               footer={
-                <RailIdentityMenu user={user} roleLabel={roleLabel} />
+                <div className="flex flex-col items-center gap-1 pb-1">
+                  <NotificationCenter userId={user.id} variant="rail" />
+                  <RailIdentityMenu user={user} roleLabel={roleLabel} />
+                </div>
               }
             />
           </div>
@@ -114,13 +122,20 @@ export function AppShell({
                   </div>
                   <div className="text-xs text-text-subtle truncate">{user.email}</div>
                 </div>
+                <NotificationCenter userId={user.id} variant="header" />
               </div>
               <div className="mt-2">
-                <SignOutButton redirectUrl="/sign-in">
-                  <button className="w-full text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
+                {hasClerk ? (
+                  <SignOutButton redirectUrl="/sign-in">
+                    <button className="w-full text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
+                      Sign out →
+                    </button>
+                  </SignOutButton>
+                ) : (
+                  <Link href="/sign-in" className="w-full block text-left text-xs text-text-subtle hover:text-text px-3 py-1.5 transition-colors">
                     Sign out →
-                  </button>
-                </SignOutButton>
+                  </Link>
+                )}
               </div>
               <p className="text-[9px] text-text-subtle italic leading-tight mt-3 px-2 line-clamp-2">
                 Cannabis should be considered a medicine — please use it carefully
@@ -131,11 +146,22 @@ export function AppShell({
         )}
 
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="md:hidden flex items-center justify-between px-4 h-16 border-b border-border bg-surface">
-            <Link href={homeHref} className="flex items-center gap-2">
+          {/* Mobile header — sticky, glassy, and notch-safe. The
+              `pt-[env(safe-area-inset-top)]` keeps the wordmark + avatar
+              below the Dynamic Island on iPhone 14/15/16 Pro models. */}
+          <header
+            className={cn(
+              "md:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-16 border-b border-border",
+              "bg-surface/85 backdrop-blur-xl supports-[backdrop-filter]:bg-surface/70",
+              "pt-[env(safe-area-inset-top)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]",
+            )}
+            style={{ height: "calc(4rem + env(safe-area-inset-top))" }}
+          >
+            <Link href={homeHref} className="flex items-center gap-2 min-h-[44px]">
               <Wordmark size="sm" />
             </Link>
             <div className="flex items-center gap-2">
+              <NotificationCenter userId={user.id} variant="header" />
               <MobileNav sections={resolved} />
               <Avatar firstName={user.firstName} lastName={user.lastName} size="sm" />
             </div>

@@ -45,7 +45,9 @@ export default function AboutPage() {
 
       <main id="main-content">
 
-      {/* Hero */}
+      {/* Hero — added a CTA pair (UX polish pass). Marketing pages
+          should never dead-end; visitors landing on /about from a
+          search result or PR mention had no next step. */}
       <section className="max-w-[1280px] mx-auto px-6 lg:px-12 pt-12 pb-16">
         <Eyebrow className="mb-6">Our story</Eyebrow>
         <h1 className="font-display text-4xl md:text-5xl lg:text-6xl leading-[1.05] tracking-tight text-text max-w-3xl">
@@ -58,6 +60,16 @@ export default function AboutPage() {
           They&apos;re outdated, archaic, not user friendly, and intimidating.
           We aim to create a revolutionary new EMR from scratch.
         </p>
+        <div className="mt-10 flex flex-wrap items-center gap-3">
+          <Link href="/book-demo">
+            <Button size="lg">Request a demo</Button>
+          </Link>
+          <Link href="/features">
+            <Button size="lg" variant="secondary">
+              Tour the platform
+            </Button>
+          </Link>
+        </div>
       </section>
 
       <EditorialRule className="max-w-[1280px] mx-auto px-6 lg:px-12" />
@@ -258,12 +270,13 @@ export default function AboutPage() {
               we&apos;d love to hear from you.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/sign-up">
+              {/* B2B funnel — /book-demo, not Clerk /sign-up. */}
+              <Link href="/book-demo">
                 <Button size="lg">Request a demo</Button>
               </Link>
-              <Link href="/">
+              <Link href="/contact">
                 <Button size="lg" variant="ghost">
-                  Back to home
+                  Get in touch
                 </Button>
               </Link>
             </div>

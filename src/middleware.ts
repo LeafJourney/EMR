@@ -23,6 +23,12 @@ const LEAFMART_HOSTS = [
   "leafmart.localhost",
 ];
 
+/** Hostnames that should resolve to the LeafNerd data product */
+const LEAFNERD_HOSTS = [
+  "leafnerd.leafjourney.com",
+  "leafnerd.localhost",
+];
+
 /** Paths that should NOT be rewritten (shared infra) */
 const SHARED_PATHS = [
   "/api/",
@@ -35,6 +41,11 @@ function isLeafmartHost(host: string): boolean {
   // Strip port for localhost comparison
   const hostname = host.split(":")[0];
   return LEAFMART_HOSTS.includes(hostname);
+}
+
+function isLeafnerdHost(host: string): boolean {
+  const hostname = host.split(":")[0];
+  return LEAFNERD_HOSTS.includes(hostname);
 }
 
 function isSharedPath(pathname: string): boolean {
@@ -159,6 +170,21 @@ export default clerkMiddleware(async (auth, req) => {
     url.pathname = `/leafmart${pathname === "/" ? "" : pathname}`;
     const response = NextResponse.rewrite(url);
     response.headers.set("x-leafmart-brand", "leafmart");
+    return response;
+  }
+
+  // ── LeafNerd domain routing ──────────────────────────────
+  if (isLeafnerdHost(host)) {
+    if (pathname.startsWith("/leafnerd")) {
+      const cleanPath = pathname.replace(/^\/leafnerd/, "") || "/";
+      const url = req.nextUrl.clone();
+      url.pathname = cleanPath;
+      return NextResponse.redirect(url, 308);
+    }
+    const url = req.nextUrl.clone();
+    url.pathname = `/leafnerd${pathname === "/" ? "" : pathname}`;
+    const response = NextResponse.rewrite(url);
+    response.headers.set("x-leafnerd-brand", "leafnerd");
     return response;
   }
 

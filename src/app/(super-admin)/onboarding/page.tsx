@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Eyebrow, EmptyIllustration } from "@/components/ui/ornament";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import {
   listDraftsForOrganization,
   requireImplementationAdminCompat,
@@ -28,6 +29,13 @@ export default async function OnboardingDashboardPage() {
 
   return (
     <PageShell maxWidth="max-w-[1100px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Operations" },
+          { label: "Onboarding" },
+        ]}
+      />
       <PageHeader
         eyebrow="Implementation"
         title="Practice onboarding"

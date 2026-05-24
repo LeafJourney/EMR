@@ -66,6 +66,37 @@ services:
       - key: PAYABLI_WEBHOOK_SECRET
         sync: false
 
+  # LeafNerd — Dedicated frontend service for the clinical intelligence product (Staging).
+  - type: web
+    name: emr-web-staging-leafnerd
+    env: node
+    plan: starter
+    branch: staging
+    customDomains:
+      - staging-leafnerd.leafjourney.com
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_PROVIDER
+        value: clerk
+      - key: DATABASE_URL
+        sync: false
+      - key: AGENT_MODEL_CLIENT
+        value: openrouter
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: OPENROUTER_FREE_MODEL
+        value: google/gemma-2-9b-it:free
+      - key: OPENROUTER_APP_NAME
+        value: LeafNerdStaging
+
   # Worker — processes the AgentJob queue. Pinned to main.
   - type: worker
     name: emr-agent-worker-staging

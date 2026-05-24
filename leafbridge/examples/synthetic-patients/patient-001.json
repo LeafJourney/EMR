@@ -1,0 +1,113 @@
+{
+  "resourceType": "Bundle",
+  "id": "bundle-patient-001",
+  "type": "transaction",
+  "entry": [
+    {
+      "request": { "method": "PUT", "url": "Organization/organization-001" },
+      "resource": {
+        "resourceType": "Organization",
+        "id": "organization-001",
+        "identifier": [{ "system": "http://hl7.org/fhir/sid/us-npi", "value": "9876543210" }],
+        "active": true,
+        "name": "LeafBridge Demo Pain Management Clinic"
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Practitioner/practitioner-001" },
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "practitioner-001",
+        "identifier": [{ "system": "http://hl7.org/fhir/sid/us-npi", "value": "1234567893" }],
+        "active": true,
+        "name": [{ "family": "Patel", "given": ["Asha"], "prefix": ["Dr."] }]
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Patient/patient-001" },
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-001",
+        "identifier": [{ "system": "http://leafbridge.dev/mrn", "value": "LB-000001" }],
+        "active": true,
+        "name": [{ "family": "Singh", "given": ["Riya"] }],
+        "gender": "female",
+        "birthDate": "1976-08-12"
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Encounter/encounter-001" },
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "encounter-001",
+        "status": "finished",
+        "class": { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB" },
+        "type": [{ "coding": [{ "system": "http://loinc.org", "code": "99213-9" }] }],
+        "subject": { "reference": "Patient/patient-001" },
+        "period": { "start": "2026-05-18T15:00:00-07:00", "end": "2026-05-18T15:30:00-07:00" },
+        "serviceProvider": { "reference": "Organization/organization-001" }
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Condition/condition-001" },
+      "resource": {
+        "resourceType": "Condition",
+        "id": "condition-001",
+        "clinicalStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active" }] },
+        "verificationStatus": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed" }] },
+        "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "encounter-diagnosis" }] }],
+        "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "M54.5", "display": "Low back pain" }] },
+        "subject": { "reference": "Patient/patient-001" },
+        "encounter": { "reference": "Encounter/encounter-001" },
+        "onsetDateTime": "2024-11-03"
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Observation/observation-001" },
+      "resource": {
+        "resourceType": "Observation",
+        "id": "observation-001",
+        "status": "final",
+        "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "survey" }] }],
+        "code": { "coding": [{ "system": "http://loinc.org", "code": "38208-5", "display": "Pain severity - 0-10" }] },
+        "subject": { "reference": "Patient/patient-001" },
+        "encounter": { "reference": "Encounter/encounter-001" },
+        "effectiveDateTime": "2026-05-18T15:10:00-07:00",
+        "valueQuantity": { "value": 9, "unit": "{score}", "system": "http://unitsofmeasure.org", "code": "{score}" }
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "MedicationRequest/medicationrequest-001" },
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "medicationrequest-001",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "1049630", "display": "Gabapentin 300 MG Oral Capsule" }]
+        },
+        "subject": { "reference": "Patient/patient-001" },
+        "encounter": { "reference": "Encounter/encounter-001" },
+        "authoredOn": "2026-05-18",
+        "requester": { "reference": "Practitioner/practitioner-001" }
+      }
+    },
+    {
+      "request": { "method": "PUT", "url": "Consent/consent-001" },
+      "resource": {
+        "resourceType": "Consent",
+        "id": "consent-001",
+        "status": "active",
+        "scope": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/consentscope", "code": "patient-privacy" }] },
+        "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "INFAO" }] }],
+        "patient": { "reference": "Patient/patient-001" },
+        "dateTime": "2026-05-18T14:55:00-07:00",
+        "provision": {
+          "type": "permit",
+          "period": { "start": "2026-05-18", "end": "2027-05-18" },
+          "purpose": [{ "system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "TREAT" }]
+        }
+      }
+    }
+  ]
+}

@@ -58,7 +58,7 @@ export function MobileNav({ sections, nav }: MobileNavProps) {
         aria-expanded={open}
         aria-controls="mobile-nav-drawer"
         onClick={() => setOpen(true)}
-        className="flex items-center justify-center w-10 h-10 rounded-md text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+        className="flex items-center justify-center w-11 h-11 rounded-md text-text-muted hover:text-text hover:bg-surface-muted active:scale-[0.96] transition-all"
       >
         <svg
           width="24"
@@ -95,6 +95,9 @@ export function MobileNav({ sections, nav }: MobileNavProps) {
         aria-modal={open ? "true" : undefined}
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-72 bg-surface border-r border-border flex flex-col",
+          // Safe-area-inset so the drawer header clears the notch and the
+          // bottom doesn't underlap the home indicator on iOS.
+          "pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
           "transition-transform duration-300 ease-smooth",
           open ? "translate-x-0" : "-translate-x-full"
         )}
@@ -106,7 +109,7 @@ export function MobileNav({ sections, nav }: MobileNavProps) {
             type="button"
             aria-label="Close navigation menu"
             onClick={closeDrawer}
-            className="flex items-center justify-center w-10 h-10 rounded-md text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+            className="flex items-center justify-center w-11 h-11 rounded-md text-text-muted hover:text-text hover:bg-surface-muted active:scale-[0.96] transition-all"
           >
             <svg
               width="20"

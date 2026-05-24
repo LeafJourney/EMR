@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { requireSuperAdmin } from "@/lib/auth/super-admin";
 import { bootstrapSuperAdminIfAllowlisted } from "@/lib/auth/super-admin-bootstrap";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
+import { ImpersonationBanner } from "@/components/super-admin/impersonation-banner";
 import { ROLE_LABELS } from "@/lib/rbac/roles";
 
 export const dynamic = "force-dynamic";
@@ -51,14 +52,21 @@ export default async function SuperAdminLayout({
   }
 
   return (
-    <AppShell
-      user={user}
-      activeRole="super_admin"
-      sections={SUPER_ADMIN_SECTIONS}
-      roleLabel={ROLE_LABELS.super_admin}
-      showNavPrefs={false}
-    >
-      {children}
-    </AppShell>
+    <>
+      {/* EMR-742 Phase 2 — Spans the entire viewport (sticky top). Renders
+          nothing when there is no active impersonation session. Mounted
+          above AppShell so it sits above the role rail / drawer rather
+          than being clipped by them. */}
+      <ImpersonationBanner />
+      <AppShell
+        user={user}
+        activeRole="super_admin"
+        sections={SUPER_ADMIN_SECTIONS}
+        roleLabel={ROLE_LABELS.super_admin}
+        showNavPrefs={false}
+      >
+        {children}
+      </AppShell>
+    </>
   );
 }

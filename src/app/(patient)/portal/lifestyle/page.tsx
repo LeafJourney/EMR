@@ -6,6 +6,8 @@ import { PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LifestyleEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { LIFESTYLE_DOMAINS, LIFESTYLE_TIPS } from "@/lib/domain/lifestyle";
 import {
   buildAchievements,
@@ -84,6 +86,38 @@ export default async function LifestylePage() {
           </p>
         </div>
       </Card>
+
+      {/* First-run empty state — shown until the patient has any outcome data */}
+      {patient.outcomeLogs.length === 0 && (
+        <div className="mb-8">
+          <EmptyState
+            illustration={<LifestyleEmptyIllustration />}
+            title="Welcome — your toolkit is ready"
+            description="Log how you feel just once and your plant starts growing, your streak begins, and the tips below sharpen to what actually helps you."
+            primaryAction={
+              <Link
+                href="/portal/journal"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90 transition-colors"
+              >
+                Log how you feel
+              </Link>
+            }
+            secondaryAction={
+              <Link
+                href="/portal/integrations"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+              >
+                Connect a wearable
+              </Link>
+            }
+            tips={[
+              "One check-in unlocks your first achievement",
+              "Connecting Apple Health or Fitbit fills in steps, sleep, and HR automatically",
+              "Pick a single tip below — small steps beat perfect plans",
+            ]}
+          />
+        </div>
+      )}
 
       {/* Stat row — health score + streak + achievements */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

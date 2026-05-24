@@ -33,6 +33,9 @@ export interface TriagedMessage {
   suggestedAction?: string;
   /** Whether the message needs clinician (vs admin) attention */
   needsClinician: boolean;
+  /** EMR-659 — count of attachment-like artifacts detected across the thread.
+   *  Zero means no paperclip is shown on the thread list row. */
+  attachmentCount?: number;
 }
 
 // ── Triage rules (deterministic, no LLM needed) ────────

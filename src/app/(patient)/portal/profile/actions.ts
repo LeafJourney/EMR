@@ -113,3 +113,25 @@ export async function saveProfileAction(
 
   return { ok: true };
 }
+
+export async function savePatientPortalPhoto(base64Data: string) {
+  const user = await requireRole("patient");
+  const patient = await prisma.patient.findUnique({
+    where: { userId: user.id },
+  });
+  if (!patient) throw new Error("No patient profile found.");
+
+  const intake = (patient.intakeAnswers as Record<string, any>) ?? {};
+  const updatedIntake = { ...intake, photoUrl: base64Data };
+
+  await prisma.patient.update({
+    where: { id: patient.id },
+    data: { intakeAnswers: updatedIntake as any },
+  });
+
+  revalidatePath("/portal/profile");
+  revalidatePath("/portal");
+  revalidatePath(`/clinic/patients/${patient.id}`);
+  return { ok: true };
+}
+

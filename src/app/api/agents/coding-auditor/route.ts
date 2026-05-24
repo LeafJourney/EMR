@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         await prisma.claim.update({
           where: { id: claim.id },
           data: {
-            status: "needs_review",
+            status: "scrub_blocked",
             // Assume we can append suggestions to notes
           }
         });

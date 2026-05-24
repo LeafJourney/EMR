@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { fmtMoney } from "@/lib/finance/formatting";
 import { classifyExpense } from "@/lib/finance/chart-of-accounts";
 import { CfoTabs } from "../components";
@@ -138,7 +139,7 @@ export default async function ExpensesPage() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[11px] uppercase tracking-wider text-text-subtle mb-1">Date incurred</label>
-                <Input name="occurredOn" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+                <DatePicker name="occurredOn" defaultValue={new Date().toISOString().slice(0, 10)} required />
               </div>
               <div className="md:col-span-4">
                 <label className="block text-[11px] uppercase tracking-wider text-text-subtle mb-1">Description</label>
@@ -166,7 +167,7 @@ export default async function ExpensesPage() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[11px] uppercase tracking-wider text-text-subtle mb-1">Date paid</label>
-                <Input name="paidAt" type="date" />
+                <DatePicker name="paidAt" />
               </div>
               <div className="md:col-span-1">
                 <Button type="submit" variant="primary" className="w-full">Log</Button>

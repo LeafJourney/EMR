@@ -5,9 +5,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { Printer } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { explainLabValue } from "@/lib/domain/lab-explainer";
 import { LabTooltip } from "@/components/ui/lab-tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   draftLabOutreachAction,
   updateLabOutreachAction,
@@ -41,6 +43,7 @@ export interface LabRow {
     receivedAt: string;
     results: Record<string, unknown>;
   } | null;
+  history: Array<{ receivedAt: string; results: Record<string, unknown> }>;
   outreach: {
     id: string;
     patientDraft: string;
@@ -78,6 +81,56 @@ function fmtDate(iso: string) {
 
 function patientLabel(first: string, last: string) {
   return `${first} ${last.charAt(0).toUpperCase()}.`;
+}
+
+function TrendSparkline({
+  name,
+  current,
+  history,
+}: {
+  name: string;
+  current: number;
+  history: Array<{ receivedAt: string; results: Record<string, unknown> }>;
+}) {
+  const priorVals = [...history].reverse().reduce<number[]>((acc, h) => {
+    const m = (h.results as Record<string, MarkerValue>)[name];
+    if (typeof m?.value === "number") acc.push(m.value);
+    return acc;
+  }, []);
+
+  const all = [...priorVals, current];
+  if (all.length < 2) return null;
+
+  const W = 52, H = 20, PAD = 2;
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const span = hi - lo || 1;
+
+  const pts = all.map((v, i) => {
+    const x = PAD + (i / (all.length - 1)) * (W - PAD * 2);
+    const y = PAD + (1 - (v - lo) / span) * (H - PAD * 2);
+    return { x: x.toFixed(1), y: y.toFixed(1) };
+  });
+  const pStr = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  const last = pts[pts.length - 1];
+
+  return (
+    <svg
+      width={W}
+      height={H}
+      className="inline-block align-middle text-text-subtle"
+      aria-hidden="true"
+    >
+      <polyline
+        points={pStr}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={last.x} cy={last.y} r="2" fill="currentColor" />
+    </svg>
+  );
 }
 
 export function LabsReviewView({ rows }: { rows: LabRow[] }) {
@@ -299,13 +352,31 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
               {row.prior && ` · compared against ${fmtDate(row.prior.receivedAt)}`}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-text-subtle hover:text-text text-xl leading-none px-2"
-            aria-label="Close"
-          >
-            &times;
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* ux/print-stylesheets-clinical — open a server-rendered
+                print view in a new tab instead of printing the live overlay.
+                The dedicated route uses the shared PrintDocument frame so
+                the page lands on the printer as a clean clinical document
+                (no modal chrome, no batch tray, no glass blur). */}
+            <Tooltip content="Print / Save as PDF">
+              <a
+                href={`/clinic/sign-off/labs/${row.id}/print`}
+                target="_blank"
+                rel="noopener"
+                className="text-text-subtle hover:text-text p-1.5 rounded-lg hover:bg-surface-muted transition-colors"
+                aria-label="Print / Save as PDF"
+              >
+                <Printer className="h-4 w-4" aria-hidden="true" />
+              </a>
+            </Tooltip>
+            <button
+              onClick={onClose}
+              className="text-text-subtle hover:text-text text-xl leading-none px-2"
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -320,6 +391,7 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
                     <th className="text-left px-4 py-2 font-medium">Marker</th>
                     <th className="text-right px-4 py-2 font-medium">Current</th>
                     <th className="text-right px-4 py-2 font-medium">Prior</th>
+                    <th className="text-right px-4 py-2 font-medium">Trend</th>
                     <th className="text-right px-4 py-2 font-medium">Reference</th>
                   </tr>
                 </thead>
@@ -388,6 +460,13 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
                               {delta.toFixed(Math.abs(delta) < 1 ? 1 : 0)})
                             </span>
                           )}
+                        </td>
+                        <td className="text-right px-4 py-2.5">
+                          <TrendSparkline
+                            name={name}
+                            current={c.value}
+                            history={row.history}
+                          />
                         </td>
                         <td className="text-right px-4 py-2.5 text-xs text-text-subtle tabular-nums">
                           {c.refLow !== undefined && c.refHigh !== undefined
@@ -495,6 +574,7 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
                   description="Friendly, 6th-grade tone. Sent to the patient's portal or as SMS on sign."
                   value={drafts.patientDraft}
                   onBlur={(v) => saveEdit("patientDraft", v)}
+                  preview
                 />
                 <DraftBlock
                   label="MA task"
@@ -588,11 +668,13 @@ function DraftBlock({
   description,
   value,
   onBlur,
+  preview,
 }: {
   label: string;
   description: string;
   value: string;
   onBlur: (v: string) => void;
+  preview?: boolean;
 }) {
   const [local, setLocal] = useState(value);
   return (
@@ -601,6 +683,18 @@ function DraftBlock({
         {label}
       </label>
       <p className="text-[11px] text-text-subtle mb-1.5">{description}</p>
+      {preview && local && (
+        <div className="mb-3 flex">
+          <div className="rounded-2xl rounded-tl-sm bg-surface-muted px-4 py-3 max-w-[85%]">
+            <p className="text-[10px] text-accent font-medium mb-1">
+              💬 From your care team
+            </p>
+            <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
+              {local}
+            </p>
+          </div>
+        </div>
+      )}
       <textarea
         value={local}
         onChange={(e) => setLocal(e.target.value)}

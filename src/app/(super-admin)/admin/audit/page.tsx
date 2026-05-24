@@ -17,6 +17,7 @@
 
 import { redirect } from "next/navigation";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import {
@@ -27,6 +28,8 @@ import {
   type AuditQuery,
 } from "@/lib/admin/audit-log";
 import { AuditTableIsland, type AuditRowView } from "./keyboard-island";
+import { AuditExportMenu } from "./export-menu";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Audit log" };
@@ -78,7 +81,12 @@ function urlWithCursor(q: AuditQuery, cursor: string): string {
   return `?${params.toString()}`;
 }
 
-function exportUrl(q: AuditQuery): string {
+/**
+ * Build the query-string segment (with leading "?") that mirrors the
+ * active filter set. Passed to the export-menu island so CSV and PDF
+ * downloads stay scoped to whatever the operator is looking at.
+ */
+function exportQuery(q: AuditQuery): string {
   const params = new URLSearchParams();
   if (q.actor) params.set("actor", q.actor);
   if (q.action) params.set("action", q.action);
@@ -86,7 +94,7 @@ function exportUrl(q: AuditQuery): string {
   if (q.from) params.set("from", q.from.toISOString().slice(0, 10));
   if (q.to) params.set("to", q.to.toISOString().slice(0, 10));
   const qs = params.toString();
-  return `/api/admin/audit/export${qs ? `?${qs}` : ""}`;
+  return qs ? `?${qs}` : "";
 }
 
 export default async function AuditLogPage({
@@ -114,6 +122,7 @@ export default async function AuditLogPage({
       id: r.id,
       at: r.at,
       atRelative: relativeTime(r.at),
+      detailHref: `/admin/audit/${encodeURIComponent(r.id)}`,
       actorLabel: r.actorEmail ?? r.actorUserId,
       actorHref: `/admin/console/users/${encodeURIComponent(r.actorUserId)}`,
       action: r.action,
@@ -162,18 +171,18 @@ export default async function AuditLogPage({
 
   return (
     <PageShell>
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Audit" },
+          { label: "Audit log" },
+        ]}
+      />
       <PageHeader
         eyebrow="Internal"
         title="Audit log"
         description="Every controller mutation across every practice. Filter, expand, export."
-        actions={
-          <a
-            href={exportUrl(q)}
-            className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted/40"
-          >
-            Export CSV
-          </a>
-        }
+        actions={<AuditExportMenu query={exportQuery(q)} />}
       />
 
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3">
@@ -216,28 +225,26 @@ export default async function AuditLogPage({
             className="rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
         </div>
-        <div>
+        <div className="w-44">
           <label className="block text-xs text-text-muted mb-1" htmlFor="audit-filter-from">
             From
           </label>
-          <input
+          <DatePicker
             id="audit-filter-from"
             name="from"
-            type="date"
             defaultValue={q.from ? q.from.toISOString().slice(0, 10) : ""}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            placeholder="From date"
           />
         </div>
-        <div>
+        <div className="w-44">
           <label className="block text-xs text-text-muted mb-1" htmlFor="audit-filter-to">
             To
           </label>
-          <input
+          <DatePicker
             id="audit-filter-to"
             name="to"
-            type="date"
             defaultValue={q.to ? q.to.toISOString().slice(0, 10) : ""}
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+            placeholder="To date"
           />
         </div>
         <button
@@ -291,6 +298,4 @@ export default async function AuditLogPage({
   );
 }
 
-// Tiny helper used in tests to mirror page-side cursor URL construction
-// without re-implementing it. Not part of the page render path.
-export const _internals = { encodeCursor };
+

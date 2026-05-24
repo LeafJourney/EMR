@@ -1,0 +1,19 @@
+{
+  "name": "@leafbridge/workflow-sdk",
+  "version": "0.0.1",
+  "description": "Workflow descriptors and FHIR Subscription routing-rule evaluator.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@leafbridge/specialty-dsl": "workspace:*",
+    "zod": "^3.23.0"
+  }
+}

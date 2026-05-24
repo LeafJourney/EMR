@@ -1,18 +1,14 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormState } from "react-dom";
 import { uploadDocumentAction, type UploadResult } from "./actions";
 import { Button } from "@/components/ui/button";
 import { LeafSprig } from "@/components/ui/ornament";
+import { SubmitButton } from "@/lib/ui/form-helpers";
 
 function UploadButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending} size="sm">
-      {pending ? "Uploading\u2026" : "Upload"}
-    </Button>
-  );
+  return <SubmitButton size="sm" idleLabel="Upload" pendingLabel="Uploading\u2026" />;
 }
 
 export function UploadForm({ onClose }: { onClose?: () => void }) {

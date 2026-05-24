@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
+import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 
 import { loadAllHqData } from "./loaders";
 import { HeroStrip } from "./tiles/hero-strip";
@@ -39,6 +40,12 @@ export default async function LeafjourneyHqPage() {
 
   return (
     <PageShell maxWidth="max-w-[1240px]">
+      <Breadcrumbs
+        items={[
+          { label: "HQ", href: "/admin/hq" },
+          { label: "Dashboard" },
+        ]}
+      />
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 mb-10">
         <div>
           <Eyebrow className="mb-3">Internal</Eyebrow>

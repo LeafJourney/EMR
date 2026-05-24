@@ -168,20 +168,27 @@ export function PreVisitChecklistClient() {
 }
 
 function LeafIndicator({ state }: { state: ProbeState }) {
-  // `text-success` / `text-danger` are CSS-variable utilities the design
-  // system already exposes; both clear WCAG AA against the surface bg in
-  // light and dark themes.
   const color =
     state === "pass"
       ? "text-success"
       : state === "fail"
         ? "text-[color:var(--leaf-dry,#8b5a2b)]"
         : "text-text-subtle";
-  // A withered leaf reads as "broken" — drop the opacity and skew the
-  // veins so it visibly droops vs. the upright healthy leaf.
+
+  const stateLabel =
+    state === "pass" ? "passed" : state === "fail" ? "failed" : "checking";
+
   return (
     <span
-      className={`mt-0.5 shrink-0 ${color} ${state === "fail" ? "opacity-80 rotate-12" : ""}`}
+      aria-label={stateLabel}
+      className={[
+        "mt-0.5 shrink-0 transition-transform duration-300",
+        color,
+        state === "fail" ? "opacity-80 rotate-12" : "",
+        state === "pending" ? "animate-pulse" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <LeafSprig size={14} className="text-current" />
     </span>

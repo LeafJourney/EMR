@@ -31,3 +31,14 @@ export const APSO_ORDER: NoteBlockType[] = [
   "findings",
   "followUp",
 ];
+
+export const PATIENT_DEMEANOR_OPTIONS = [
+  { emoji: "\u{1F60A}", label: "Bright", value: "bright" },
+  { emoji: "\u{1F642}", label: "Positive", value: "positive" },
+  { emoji: "\u{1F610}", label: "Neutral", value: "neutral" },
+  { emoji: "\u{1F614}", label: "Withdrawn", value: "withdrawn" },
+  { emoji: "\u{1F622}", label: "Distressed", value: "distressed" },
+] as const;
+
+export type PatientDemeanor = typeof PATIENT_DEMEANOR_OPTIONS[number]["value"];
+

@@ -42,7 +42,8 @@ export async function POST(req: Request) {
             serviceDate: new Date(),
             status: "draft",
             billedAmountCents: 6500, // $65.00 mock rate for 99490
-            cptCodes: [{ code: "99490", description: "Chronic care management services, first 20 min" }]
+            cptCodes: [{ code: "99490", description: "Chronic care management services, first 20 min" }],
+            icd10Codes: []
           }
         });
         

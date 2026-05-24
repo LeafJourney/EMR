@@ -30,9 +30,20 @@ export default function MarketplacePage({
   const brandFilter = searchParams?.brand ?? "";
 
   let products = query ? searchProducts(query) : [...PRODUCTS];
+  let categoryNotFound = false;
+  const matchedCategory = categorySlug
+    ? CATEGORIES.find((c) => c.slug === categorySlug)
+    : undefined;
   if (categorySlug) {
-    const cat = CATEGORIES.find((c) => c.slug === categorySlug);
-    if (cat) products = products.filter((p) => p.categoryIds.includes(cat.id));
+    if (matchedCategory) {
+      products = products.filter((p) => p.categoryIds.includes(matchedCategory.id));
+    } else {
+      // EMR-759 — Unknown slug (stale bookmark, post-rename, typo'd link).
+      // We surface an empty-state banner instead of silently rendering the
+      // full catalog under a URL that still claims a category filter.
+      products = [];
+      categoryNotFound = true;
+    }
   }
   if (brandFilter) {
     products = products.filter((p) => p.brand === brandFilter);
@@ -165,7 +176,7 @@ export default function MarketplacePage({
               {query
                 ? `Results for “${query}”`
                 : categorySlug
-                  ? CATEGORIES.find((c) => c.slug === categorySlug)?.name ?? "All products"
+                  ? matchedCategory?.name ?? `Category not found: “${categorySlug}”`
                   : brandFilter
                     ? brandFilter
                     : "All products"}
@@ -184,14 +195,31 @@ export default function MarketplacePage({
 
         {products.length === 0 ? (
           <div className="rounded-2xl border border-border bg-surface-raised p-12 text-center">
-            <p className="font-display text-xl text-text">No products match those filters.</p>
-            <p className="text-sm text-text-muted mt-2">
-              Try widening your search or{" "}
-              <Link href="/marketplace" className="text-accent hover:underline">
-                clear filters
-              </Link>
-              .
-            </p>
+            {categoryNotFound ? (
+              <>
+                <p className="font-display text-xl text-text">
+                  We don’t have a category called “{categorySlug}”.
+                </p>
+                <p className="text-sm text-text-muted mt-2">
+                  Your link or bookmark may be out of date.{" "}
+                  <Link href="/marketplace" className="text-accent hover:underline">
+                    Browse all products
+                  </Link>
+                  .
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-xl text-text">No products match those filters.</p>
+                <p className="text-sm text-text-muted mt-2">
+                  Try widening your search or{" "}
+                  <Link href="/marketplace" className="text-accent hover:underline">
+                    clear filters
+                  </Link>
+                  .
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <MarketplaceClient

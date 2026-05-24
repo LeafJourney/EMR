@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline — Leafjourney</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --background: 222.2 84% 4.9%;
+      --foreground: 210 40% 98%;
+      --card: 222.2 84% 6.5%;
+      --card-foreground: 210 40% 98%;
+      --popover: 222.2 84% 4.9%;
+      --popover-foreground: 210 40% 98%;
+      --primary: 142.1 70.6% 45.3%;
+      --primary-foreground: 144.9 80.7% 10%;
+      --secondary: 217.2 32.6% 17.5%;
+      --secondary-foreground: 210 40% 98%;
+      --muted: 217.2 32.6% 17.5%;
+      --muted-foreground: 215 20.2% 65.1%;
+      --accent: 142.1 70.6% 45.3%;
+      --accent-foreground: 210 40% 98%;
+      --destructive: 0 62.8% 30.6%;
+      --destructive-foreground: 210 40% 98%;
+      --border: 217.2 32.6% 17.5%;
+      --input: 217.2 32.6% 17.5%;
+      --ring: 142.1 70.6% 45.3%;
+      --radius: 0.75rem;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: hsl(var(--background));
+      color: hsl(var(--foreground));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+    }
+
+    header {
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .logo-icon {
+      font-size: 1.75rem;
+      animation: gentle-sway 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes gentle-sway {
+      0% { transform: rotate(-5deg); }
+      100% { transform: rotate(5deg); }
+    }
+
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: hsl(var(--foreground));
+    }
+
+    .badge-offline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      background-color: hsla(0, 84%, 60%, 0.1);
+      border: 1px solid hsla(0, 84%, 60%, 0.2);
+      color: #ef4444;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: hsl(var(--muted-foreground));
+      line-height: 1.5;
+    }
+
+    main {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background-color: hsl(var(--card));
+      border: 1px solid hsl(var(--border));
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .card-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: hsl(var(--foreground));
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-title-icon {
+      font-size: 1.25rem;
+    }
+
+    .visit-time {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: hsl(var(--accent));
+      margin-bottom: 0.25rem;
+    }
+
+    .visit-details {
+      font-size: 0.875rem;
+      color: hsl(var(--muted-foreground));
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .visit-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 4px;
+      background-color: hsl(var(--secondary));
+      color: hsl(var(--secondary-foreground));
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .task-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.875rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid hsla(var(--border) / 0.5);
+    }
+
+    .task-item:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .task-checkbox {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 4px;
+      border: 1px solid hsl(var(--muted-foreground));
+      margin-top: 0.125rem;
+      flex-shrink: 0;
+    }
+
+    .task-title {
+      font-weight: 500;
+      color: hsl(var(--foreground));
+    }
+
+    .task-due {
+      font-size: 0.75rem;
+      color: hsl(var(--muted-foreground));
+      margin-top: 0.125rem;
+    }
+
+    .streak-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .streak-number {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #f97316;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .streak-label {
+      font-size: 0.875rem;
+      color: hsl(var(--muted-foreground));
+      line-height: 1.4;
+    }
+
+    .btn-retry {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 2.75rem;
+      padding: 0 1.5rem;
+      border-radius: var(--radius);
+      background-color: hsl(var(--accent));
+      color: hsl(var(--primary-foreground));
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .btn-retry:hover {
+      background-color: hsla(var(--accent) / 0.9);
+    }
+
+    footer {
+      width: 100%;
+      max-width: 640px;
+      margin-top: 2rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: hsl(var(--muted-foreground));
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-container">
+      <span class="logo-icon">🌿</span>
+      <span class="logo-text">Leafjourney</span>
+    </div>
+    <span class="badge-offline">
+      Offline Mode
+    </span>
+    <h1>Connection Lost</h1>
+    <p class="subtitle">
+      You are currently offline. We are displaying your latest care plan and appointment times saved on this device.
+    </p>
+  </header>
+
+  <main>
+    <!-- Next Visit Card -->
+    <div class="card" id="card-visit" style="display: none;">
+      <div class="card-title">
+        <span class="card-title-icon">📅</span>
+        Next Appointment
+      </div>
+      <div class="visit-time" id="visit-time">—</div>
+      <div class="visit-details">
+        <span class="visit-badge" id="visit-modality">—</span>
+        <span>Please connect to the internet to start your visit.</span>
+      </div>
+    </div>
+
+    <!-- Streak Card -->
+    <div class="card" id="card-streak" style="display: none;">
+      <div class="card-title">
+        <span class="card-title-icon">🔥</span>
+        Check-in Streak
+      </div>
+      <div class="streak-container">
+        <div class="streak-number" id="streak-number">0 <span style="font-size: 1.75rem">🔥</span></div>
+        <div class="streak-label">
+          <strong>Daily Streak</strong><br>
+          Keep checking in daily to grow your garden companion.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks Card -->
+    <div class="card" id="card-tasks" style="display: none;">
+      <div class="card-title">
+        <span class="card-title-icon">🎯</span>
+        Your Next Steps
+      </div>
+      <ul class="task-list" id="task-list">
+        <!-- Rendered dynamically -->
+      </ul>
+    </div>
+
+    <!-- No Offline Data State -->
+    <div class="card" id="card-no-data">
+      <div class="card-title">
+        <span class="card-title-icon">ℹ️</span>
+        No Offline Data Found
+      </div>
+      <p class="subtitle" style="text-align: left; margin-bottom: 0;">
+        We don't have any cached information for your dashboard yet. Connect to the internet and load the dashboard once to enable offline access.
+      </p>
+    </div>
+
+    <button class="btn-retry" onclick="window.location.reload()">
+      Retry Connection
+    </button>
+  </main>
+
+  <footer>
+    <span id="sync-time">Never synced</span> · Leafjourney EMR Portal
+  </footer>
+
+  <script>
+    function formatDate(dateStr) {
+      if (!dateStr) return '—';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric"
+        });
+      } catch {
+        return dateStr;
+      }
+    }
+
+    try {
+      const raw = localStorage.getItem("pwa-dashboard-data");
+      if (raw) {
+        const data = JSON.parse(raw);
+        let hasContent = false;
+
+        if (data.syncedAt) {
+          const syncDate = new Date(data.syncedAt);
+          document.getElementById("sync-time").innerText = "Last synced " + syncDate.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit"
+          }) + " on " + syncDate.toLocaleDateString();
+        }
+
+        // Streak
+        if (data.streak && typeof data.streak.currentStreak !== 'undefined') {
+          document.getElementById("streak-number").innerHTML = data.streak.currentStreak + ' <span style="font-size: 1.75rem">🔥</span>';
+          document.getElementById("card-streak").style.display = "block";
+          hasContent = true;
+        }
+
+        // Next Visit
+        if (data.nextVisit) {
+          document.getElementById("visit-time").innerText = formatDate(data.nextVisit.scheduledFor);
+          const modality = data.nextVisit.modality;
+          const modalityLabel = modality === "video" ? "Video visit" : modality === "phone" ? "Phone visit" : "In-person visit";
+          document.getElementById("visit-modality").innerText = modalityLabel;
+          document.getElementById("card-visit").style.display = "block";
+          hasContent = true;
+        }
+
+        // Tasks
+        if (data.tasks && data.tasks.length > 0) {
+          const list = document.getElementById("task-list");
+          list.innerHTML = "";
+          data.tasks.forEach(task => {
+            const li = document.createElement("li");
+            li.className = "task-item";
+            li.innerHTML = `
+              <div class="task-checkbox"></div>
+              <div>
+                <div class="task-title">${task.title}</div>
+                ${task.dueAt ? `<div class="task-due">Due ${formatDate(task.dueAt)}</div>` : ''}
+              </div>
+            `;
+            list.appendChild(li);
+          });
+          document.getElementById("card-tasks").style.display = "block";
+          hasContent = true;
+        }
+
+        if (hasContent) {
+          document.getElementById("card-no-data").style.display = "none";
+        }
+      }
+    } catch (err) {
+      console.error("Failed to parse cached dashboard data:", err);
+    }
+  </script>
+</body>
+</html>

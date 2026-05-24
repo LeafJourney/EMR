@@ -36,8 +36,7 @@ export async function POST(req: Request) {
     const activePrescriptions = await prisma.dispensaryDispense.findMany({
       where: {
         patientId,
-        status: "completed" // Mocking active Rx
-      },
+              },
       take: 5
     });
 

@@ -7,13 +7,13 @@ import {
   ProvidersDirectoryClient,
   type ProviderRow,
 } from "./providers-directory-client";
+import { AncillaryServicesDirectory } from "./ancillary-services-directory";
 
 export const metadata = { title: "Providers" };
 
 // EMR-613 — hard cap on the directory size. The ticket targets 5,000
 // contacts; we keep an explicit cap so a single render never balloons
-// past it and log loudly when an org grows past the ceiling (mirrors the
-// pattern in `src/app/(clinician)/clinic/patients/page.tsx`).
+// past it and log loudly when an org grows past the ceiling.
 const PROVIDER_DIRECTORY_CAP = 5_000;
 
 export default async function ProvidersPage() {
@@ -59,8 +59,9 @@ export default async function ProvidersPage() {
       <PageHeader
         eyebrow="Providers"
         title="Provider directory"
-        description="View and contact providers in your organization."
+        description="View and contact providers in your organization. Type / in the search box for slash commands."
       />
+
       {rows.length === 0 ? (
         <EmptyState
           title="No providers found"
@@ -69,6 +70,11 @@ export default async function ProvidersPage() {
       ) : (
         <ProvidersDirectoryClient providers={rows} />
       )}
+
+      {/* EMR-667 — Ancillary Services directory (labs, imaging, pharmacy, dispensary) */}
+      <div className="mt-12 pt-8 border-t border-border">
+        <AncillaryServicesDirectory />
+      </div>
     </PageShell>
   );
 }

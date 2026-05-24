@@ -87,6 +87,82 @@ const painManagementNonCannabis: SpecialtyManifest = {
     prior_treatment_response: "prior_treatment_response",
     pdmp_history: "pdmp_history",
   },
+  // LeafBridge extensions (EMR-778). Optional, default-null on manifests
+  // that haven't authored them yet.
+  agents: [
+    {
+      id: "previsit_summary",
+      autonomy_tier: 2,
+      modality: null,
+      allowed_data_classes: [
+        "conditions",
+        "medications",
+        "observations",
+        "documents",
+      ],
+      allowed_tools: ["fhir.read", "rag.query"],
+      purpose_of_use: "treatment",
+      requires_human_review: true,
+      escalation: {
+        on_risk_above: "moderate",
+        route_to: "clinical_triage_queue",
+      },
+    },
+    {
+      id: "opioid_risk_review",
+      autonomy_tier: 1,
+      modality: null,
+      allowed_data_classes: [
+        "conditions",
+        "medications",
+        "observations",
+        "documents",
+      ],
+      allowed_tools: ["fhir.read", "rag.query", "pdmp.read"],
+      purpose_of_use: "treatment",
+      requires_human_review: true,
+      escalation: {
+        on_risk_above: "low",
+        route_to: "controlled_substance_monitoring_queue",
+      },
+    },
+    {
+      // Modality-gated. Hidden in any Pain Management practice that hasn't
+      // opted into cannabis-medicine. P0 bleed gate.
+      id: "cannabis_certification_drafter",
+      autonomy_tier: 2,
+      modality: "cannabis-medicine",
+      allowed_data_classes: [
+        "conditions",
+        "medications",
+        "observations",
+        "documents",
+      ],
+      allowed_tools: ["fhir.read", "rag.query"],
+      purpose_of_use: "treatment",
+      requires_human_review: true,
+    },
+  ],
+  clinical_routing_rules: [
+    {
+      name: "high_pain_score",
+      when: {
+        resource: "Observation",
+        code: "pain_score",
+        predicate: { value_greater_than: 8 },
+      },
+      then: {
+        route_to: "clinical_triage_queue",
+        priority: "high",
+        trigger_agent: "opioid_risk_review",
+      },
+    },
+  ],
+  writeback_policy: {
+    allowed_resources: ["CarePlan", "ServiceRequest", "DocumentReference"],
+    requires_approval: true,
+    max_autonomy_tier: 3,
+  },
 };
 
 export default painManagementNonCannabis;

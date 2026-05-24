@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { MoreHorizontal, Plus, Shield, User as UserIcon } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
@@ -18,6 +19,15 @@ function initials(firstName: string | null, lastName: string | null): string {
   const a = (firstName ?? "").trim().charAt(0).toUpperCase();
   const b = (lastName ?? "").trim().charAt(0).toUpperCase();
   return a + b || "?";
+}
+
+interface MemberRow {
+  id: string;
+  firstName: string;
+  lastName: string;
+  specialtyLabel: string;
+  isAdmin: boolean;
+  lastLoginAt: Date | null;
 }
 
 export default async function MembersPage({
@@ -61,7 +71,103 @@ export default async function MembersPage({
     notFound();
   }
 
-  const providers = organization.providers;
+  const rows: MemberRow[] = organization.providers.map((provider) => ({
+    id: provider.id,
+    firstName: provider.user.firstName ?? "",
+    lastName: provider.user.lastName ?? "",
+    specialtyLabel: provider.specialties[0] ?? provider.title ?? "Provider",
+    // TODO: surface the provider's actual platform role by joining
+    // Membership(role) for this user × this org. Showing "Clinician"
+    // universally is honest given today's schema doesn't stash a
+    // per-provider admin flag — better than the fake `id.endsWith("a")`
+    // heuristic the prior version used.
+    isAdmin: false,
+    lastLoginAt: provider.user.lastLoginAt,
+  }));
+
+  // Column defs are inferred against MemberRow so each `cell(row)`
+  // gets full IntelliSense.
+  const columns: ColumnDef<MemberRow>[] = [
+    {
+      key: "name",
+      label: "Name",
+      sortable: true,
+      sortFn: (a, b) =>
+        `${a.lastName}${a.firstName}`.localeCompare(
+          `${b.lastName}${b.firstName}`,
+        ),
+      cell: (row) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center font-medium">
+            {initials(row.firstName, row.lastName)}
+          </div>
+          <div>
+            <div className="font-medium text-text">
+              Dr. {row.firstName} {row.lastName}
+            </div>
+            <div className="text-text-muted text-xs">{row.specialtyLabel}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "role",
+      label: "Role",
+      sortable: true,
+      sortFn: (a, b) => Number(b.isAdmin) - Number(a.isAdmin),
+      cell: (row) => (
+        <div className="flex items-center gap-1.5 text-text-muted">
+          {row.isAdmin ? (
+            <>
+              <Shield className="w-3.5 h-3.5" /> Admin
+            </>
+          ) : (
+            <>
+              <UserIcon className="w-3.5 h-3.5" /> Clinician
+            </>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      cell: () => (
+        <Badge tone="success" className="text-[10px]">
+          Active
+        </Badge>
+      ),
+    },
+    {
+      key: "lastActive",
+      label: "Last Active",
+      sortable: true,
+      sortFn: (a, b) =>
+        (a.lastLoginAt?.getTime() ?? 0) - (b.lastLoginAt?.getTime() ?? 0),
+      cell: (row) => (
+        <span className="text-text-muted tabular-nums">
+          {row.lastLoginAt ? row.lastLoginAt.toLocaleString() : "—"}
+        </span>
+      ),
+      hideOnMobile: true,
+    },
+    {
+      key: "actions",
+      label: "",
+      align: "right",
+      width: "64px",
+      cell: () => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-text-muted"
+          aria-label="Actions"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <PageShell maxWidth="max-w-[1000px]">
@@ -77,90 +183,13 @@ export default async function MembersPage({
         </Button>
       </div>
 
-      <div className="bg-white border border-[var(--border)] rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-[var(--surface-muted)] border-b border-[var(--border)] text-text-subtle">
-              <tr>
-                <th className="px-6 py-4 font-medium uppercase tracking-wider text-xs">Name</th>
-                <th className="px-6 py-4 font-medium uppercase tracking-wider text-xs">Role</th>
-                <th className="px-6 py-4 font-medium uppercase tracking-wider text-xs">Status</th>
-                <th className="px-6 py-4 font-medium uppercase tracking-wider text-xs">Last Active</th>
-                <th className="px-6 py-4 text-right"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {providers.map((provider) => {
-                const firstName = provider.user.firstName ?? "";
-                const lastName = provider.user.lastName ?? "";
-                const specialtyLabel =
-                  provider.specialties[0] ?? provider.title ?? "Provider";
-                // TODO: surface the provider's actual platform role by
-                // joining Membership(role) for this user × this org.
-                // Showing "Clinician" universally is honest given today's
-                // schema doesn't stash a per-provider admin flag — better
-                // than the fake `id.endsWith("a")` heuristic the prior
-                // version used.
-                const isAdmin = false;
-                const lastLoginAt = provider.user.lastLoginAt
-                  ? provider.user.lastLoginAt.toLocaleString()
-                  : "—";
-                return (
-                  <tr
-                    key={provider.id}
-                    className="hover:bg-[var(--surface-muted)]/50 transition-colors"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center font-medium">
-                          {initials(firstName, lastName)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-text">
-                            Dr. {firstName} {lastName}
-                          </div>
-                          <div className="text-text-muted text-xs">
-                            {specialtyLabel}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1.5 text-text-muted">
-                        {isAdmin ? (
-                          <>
-                            <Shield className="w-3.5 h-3.5" /> Admin
-                          </>
-                        ) : (
-                          <>
-                            <UserIcon className="w-3.5 h-3.5" /> Clinician
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Badge tone="success" className="text-[10px]">
-                        Active
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 text-text-muted">{lastLoginAt}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-text-muted"
-                        aria-label="Actions"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DataTable<MemberRow>
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id}
+        ariaLabel="Team members"
+        showDensityToggle
+      />
     </PageShell>
   );
 }

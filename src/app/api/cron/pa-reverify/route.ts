@@ -39,11 +39,12 @@ export async function POST(req: Request) {
         data: {
           organizationId: pa.organizationId,
           patientId: pa.patientId,
+          payerName: pa.payerName,
           payerId: pa.payerId,
-          requestType: "renewal",
-          serviceOrDrugCode: pa.serviceOrDrugCode,
+          cptCodes: pa.cptCodes,
+          icd10Codes: pa.icd10Codes,
+          notes: "Renewal request",
           status: "draft",
-          // The clinic admin will review and submit
         }
       });
       renewalsDrafted++;

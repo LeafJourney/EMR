@@ -1,61 +1,98 @@
-// EMR-646 — Universal patient search API.
+// EMR-683 — Patient quick-search for the /telehealth "Launch Video Visit" popup.
 //
-// GET /api/patients/search?q=...&limit=...
+// GET /api/patients/search?q=<free-text>
 //
-// Scoped to the caller's organization — clinicians never see patients
-// from other practices through this surface. Super-admins should use
-// /api/admin/search for cross-tenant lookups instead.
-//
-// Auth: requireApiAuth() (any signed-in user). Authorization is enforced
-// by scoping the Prisma where clause to the actor's organizationId; a
-// caller with no org sees no results.
+// Free-text matches against name, phone, DOB (ISO substring), partial name,
+// and email — scoped to the caller's organization. Returns a small list
+// suitable for a single-popup picker (max 8 rows). Soft-deleted patients
+// are excluded. Auth: any signed-in clinician in the org.
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/auth/api-gate";
 import { prisma } from "@/lib/db/prisma";
-import {
-  PATIENT_SEARCH_DEFAULT_LIMIT,
-  PATIENT_SEARCH_MAX_LIMIT,
-  searchPatients,
-} from "@/lib/patient-search";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const LIMIT = 8;
+const MIN_Q = 2;
+
 export async function GET(req: NextRequest) {
   const gate = await requireApiAuth();
   if (gate.error) return gate.error;
-  const actor = gate.actor;
-
-  const url = new URL(req.url);
-  const q = (url.searchParams.get("q") ?? "").trim();
-  const limit = parseLimit(url.searchParams.get("limit"));
-
-  // No org → no results. We don't 403 because the caller is otherwise
-  // authenticated; we just have nothing scoped to show them.
-  if (!actor.organizationId) {
-    return NextResponse.json({ results: [] });
+  const orgId = gate.actor.organizationId;
+  if (!orgId) {
+    return NextResponse.json({ patients: [] });
   }
 
-  // Empty query short-circuit. The helper handles this too, but we
-  // skip the round-trip to keep the typeahead snappy on every keystroke.
-  if (!q) {
-    return NextResponse.json({ results: [] });
+  const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
+  if (q.length < MIN_Q) {
+    return NextResponse.json({ patients: [] });
   }
 
-  const results = await searchPatients(prisma, {
-    query: q,
-    limit,
-    scope: { organizationId: actor.organizationId },
+  // Build a tolerant set of OR predicates. Phone and DOB are stored
+  // verbatim (DOB is a DateTime), so we compare by stringified ISO
+  // substring; that's good enough for "type the year" or "type MM-DD"
+  // free-text matching without bringing in a date parser.
+  const patients = await prisma.patient.findMany({
+    where: {
+      organizationId: orgId,
+      deletedAt: null,
+      OR: [
+        { firstName: { contains: q, mode: "insensitive" } },
+        { lastName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+        { phone: { contains: q } },
+      ],
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      dateOfBirth: true,
+    },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    take: LIMIT,
   });
 
-  return NextResponse.json({ results });
-}
+  // Layered DOB match — separate query so we can union without forcing
+  // Postgres to cast every row. Skipped if q has no digits.
+  let dobMatches: typeof patients = [];
+  if (/\d/.test(q) && patients.length < LIMIT) {
+    const all = await prisma.patient.findMany({
+      where: { organizationId: orgId, deletedAt: null, dateOfBirth: { not: null } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        dateOfBirth: true,
+      },
+      take: 200,
+    });
+    const known = new Set(patients.map((p) => p.id));
+    dobMatches = all
+      .filter(
+        (p) =>
+          !known.has(p.id) &&
+          p.dateOfBirth &&
+          p.dateOfBirth.toISOString().slice(0, 10).includes(q),
+      )
+      .slice(0, LIMIT - patients.length);
+  }
 
-function parseLimit(raw: string | null): number {
-  if (!raw) return PATIENT_SEARCH_DEFAULT_LIMIT;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0) return PATIENT_SEARCH_DEFAULT_LIMIT;
-  return Math.min(n, PATIENT_SEARCH_MAX_LIMIT);
+  return NextResponse.json({
+    patients: [...patients, ...dobMatches].map((p) => ({
+      id: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      email: p.email,
+      phone: p.phone,
+      dateOfBirth: p.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+    })),
+  });
 }

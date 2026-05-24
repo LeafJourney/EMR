@@ -134,7 +134,10 @@ export default function BookDemoPage() {
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-text mb-1">{item.title}</h3>
+                    {/* h2 (not h3) — page h1 lives in the hero; the next
+                        heading after it must be h2 for axe's heading-order
+                        rule. (EMR-713 cleanup.) */}
+                    <h2 className="text-base font-medium text-text mb-1">{item.title}</h2>
                     <p className="text-text-muted text-sm">{item.body}</p>
                   </div>
                 </div>

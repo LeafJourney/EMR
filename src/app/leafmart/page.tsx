@@ -298,7 +298,10 @@ export default async function LeafmartHomePage() {
                       <ProductSilhouette shape={p.shape} bg="transparent" deep={p.deep} height={180} />
                     </div>
                   </div>
-                  <h4 className="font-display text-[20px] sm:text-[22px] font-medium tracking-tight text-[var(--ink)] mt-3 mb-1.5">{p.name}</h4>
+                  {/* h3 (not h4) — the enclosing section heading is
+                      h2; jumping h2 -> h4 trips axe's heading-order
+                      rule. (EMR-713 cleanup.) */}
+                  <h3 className="font-display text-[20px] sm:text-[22px] font-medium tracking-tight text-[var(--ink)] mt-3 mb-1.5">{p.name}</h3>
                   <p className="text-[12.5px] sm:text-[13px] text-[var(--text-soft)] leading-snug">{p.desc}</p>
                 </div>
               ))}

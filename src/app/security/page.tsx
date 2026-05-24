@@ -330,12 +330,17 @@ export default function SecurityPage() {
               out anytime.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/sign-up">
-                <Button size="lg">Create your account</Button>
+              {/* B2B sales funnel — route to /book-demo (sales intake)
+                  for clinicians evaluating compliance posture, and
+                  /contact for security disclosures. /sign-up sent
+                  enterprise evaluators into Clerk account creation,
+                  which is the wrong intent. */}
+              <Link href="/book-demo">
+                <Button size="lg">Request a demo</Button>
               </Link>
-              <Link href="/about">
+              <Link href="/contact">
                 <Button size="lg" variant="ghost">
-                  About us
+                  Contact security
                 </Button>
               </Link>
             </div>

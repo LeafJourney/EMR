@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input, FieldGroup, Textarea } from "@/components/ui/input";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
   classifyStatus,
   STATUS_STYLES,
@@ -257,89 +257,118 @@ export function InventoryView({ initialItems }: { initialItems: InventoryItem[] 
         </Card>
       )}
 
-      {/* Table */}
-      <Card tone="raised">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-text-subtle border-b border-border">
-                <th className="px-5 py-3 font-medium">Product</th>
-                <th className="px-5 py-3 font-medium">Brand</th>
-                <th className="px-5 py-3 font-medium">Type</th>
-                <th className="px-5 py-3 font-medium">SKU / UPC</th>
-                <th className="px-5 py-3 font-medium text-right">Quantity</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-12 text-center text-text-subtle text-sm"
-                  >
-                    No items match your filters.
-                  </td>
-                </tr>
-              )}
-              {filtered.map((item) => {
-                const style = STATUS_STYLES[item.status];
-                return (
-                  <tr
-                    key={item.id}
-                    className="border-b border-border/40 hover:bg-surface-muted/40 transition-colors"
-                  >
-                    <td className="px-5 py-3.5">
-                      <p className="font-medium text-text">{item.productName}</p>
-                      <p className="text-[11px] text-text-subtle">
-                        Reorder at {item.reorderPoint} {item.unit}
-                      </p>
-                    </td>
-                    <td className="px-5 py-3.5 text-text-muted">{item.brand ?? "—"}</td>
-                    <td className="px-5 py-3.5 text-text-muted">{item.productType}</td>
-                    <td className="px-5 py-3.5">
-                      <p className="text-[11px] font-mono text-text-muted">
-                        {item.sku ?? "—"}
-                      </p>
-                      <p className="text-[10px] font-mono text-text-subtle">
-                        {item.upc ?? ""}
-                      </p>
-                    </td>
-                    <td className="px-5 py-3.5 text-right tabular-nums">
-                      <span className="font-medium text-text">{item.currentQuantity}</span>{" "}
-                      <span className="text-xs text-text-subtle">{item.unit}</span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium",
-                          style.bg,
-                          style.text,
-                        )}
-                      >
-                        {style.label}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          setRestockTarget(item);
-                          setRestockQty(item.reorderQuantity);
-                        }}
-                      >
-                        Restock
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      {/* Table — adopts the DataTable primitive so sort, sticky header,
+          and density toggle come for free. */}
+      <DataTable<InventoryItem>
+        rows={filtered}
+        rowKey={(it) => it.id}
+        ariaLabel="Inventory items"
+        showDensityToggle
+        emptyState={
+          <p className="text-center text-text-subtle text-sm">
+            No items match your filters.
+          </p>
+        }
+        columns={[
+          {
+            key: "productName",
+            label: "Product",
+            sortable: true,
+            cell: (item) => (
+              <>
+                <p className="font-medium text-text">{item.productName}</p>
+                <p className="text-[11px] text-text-subtle">
+                  Reorder at {item.reorderPoint} {item.unit}
+                </p>
+              </>
+            ),
+          },
+          {
+            key: "brand",
+            label: "Brand",
+            sortable: true,
+            hideOnMobile: true,
+            cell: (item) => (
+              <span className="text-text-muted">{item.brand ?? "—"}</span>
+            ),
+          },
+          {
+            key: "productType",
+            label: "Type",
+            sortable: true,
+            hideOnMobile: true,
+            cell: (item) => (
+              <span className="text-text-muted">{item.productType}</span>
+            ),
+          },
+          {
+            key: "sku",
+            label: "SKU / UPC",
+            hideOnMobile: true,
+            cell: (item) => (
+              <>
+                <p className="text-[11px] font-mono text-text-muted">
+                  {item.sku ?? "—"}
+                </p>
+                <p className="text-[10px] font-mono text-text-subtle">
+                  {item.upc ?? ""}
+                </p>
+              </>
+            ),
+          },
+          {
+            key: "currentQuantity",
+            label: "Quantity",
+            sortable: true,
+            align: "right",
+            cell: (item) => (
+              <>
+                <span className="font-medium text-text">
+                  {item.currentQuantity}
+                </span>{" "}
+                <span className="text-xs text-text-subtle">{item.unit}</span>
+              </>
+            ),
+          },
+          {
+            key: "status",
+            label: "Status",
+            sortable: true,
+            sortFn: (a, b) => a.status.localeCompare(b.status),
+            cell: (item) => {
+              const style = STATUS_STYLES[item.status];
+              return (
+                <span
+                  className={cn(
+                    "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium",
+                    style.bg,
+                    style.text,
+                  )}
+                >
+                  {style.label}
+                </span>
+              );
+            },
+          },
+          {
+            key: "actions",
+            label: "Actions",
+            align: "right",
+            cell: (item) => (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setRestockTarget(item);
+                  setRestockQty(item.reorderQuantity);
+                }}
+              >
+                Restock
+              </Button>
+            ),
+          },
+        ] as ColumnDef<InventoryItem>[]}
+      />
 
       {/* Restock modal */}
       {restockTarget && (
