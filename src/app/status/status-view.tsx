@@ -1,321 +1,504 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Sparkline } from "@/components/ui/sparkline";
 import { cn } from "@/lib/utils/cn";
+import {
+  STATE_COPY,
+  type ComponentHealth,
+  type ComponentState,
+  type SystemHealthSnapshot,
+} from "@/lib/status/system-health";
+import type { Incident, Maintenance } from "./status-data";
 
-type Health = "operational" | "degraded" | "down";
-
-interface Service {
-  name: string;
-  description: string;
-  health: Health;
-  uptime30: string;
+interface StatusViewProps {
+  snapshot: SystemHealthSnapshot;
+  incidents: Incident[];
+  maintenance: Maintenance[];
 }
 
-interface Incident {
-  id: string;
-  date: string;
-  title: string;
-  resolved: boolean;
-  severity: "minor" | "major" | "critical";
-  summary: string;
-}
-
-interface Maintenance {
-  id: string;
-  startsAt: string;
-  endsAt: string;
-  title: string;
-  impact: string;
-}
-
-const SERVICES: Service[] = [
-  { name: "Web app", description: "Patient portal, clinician workspace, operator console", health: "operational", uptime30: "99.98%" },
-  { name: "Database", description: "PostgreSQL primary + read replicas", health: "operational", uptime30: "99.99%" },
-  { name: "AI agents", description: "Agent fleet (charge integrity, denial triage, patient Q&A)", health: "operational", uptime30: "99.95%" },
-  { name: "Payments", description: "Payabli gateway integration", health: "operational", uptime30: "99.91%" },
-  { name: "Email", description: "Transactional email (Resend)", health: "operational", uptime30: "99.93%" },
-];
-
-const INCIDENTS: Incident[] = [
+const STATE_TONE: Record<
+  ComponentState,
   {
-    id: "inc-0412",
-    date: "2026-04-12",
-    title: "Elevated latency on analytics queries",
-    resolved: true,
-    severity: "minor",
-    summary: "A long-running analytics query saturated read replicas for ~18 minutes. Affected users saw slower dashboards. Query killed and optimized.",
+    dot: string;
+    badge: "success" | "warning" | "danger" | "info";
+    bar: { bg: string; text: string; border: string };
+    sparkColor: string;
+    sparkFill: string;
+  }
+> = {
+  operational: {
+    dot: "bg-accent",
+    badge: "success",
+    bar: { bg: "bg-accent-soft", text: "text-accent", border: "border-accent/30" },
+    sparkColor: "var(--accent)",
+    sparkFill: "var(--accent-soft)",
   },
-  {
-    id: "inc-0331",
-    date: "2026-03-31",
-    title: "Payabli webhook delivery delays",
-    resolved: true,
-    severity: "minor",
-    summary: "Payabli's upstream queue backed up; webhook delivery delayed ~45m. No data loss.",
+  degraded: {
+    dot: "bg-highlight",
+    badge: "warning",
+    bar: { bg: "bg-highlight-soft", text: "text-text", border: "border-highlight/30" },
+    sparkColor: "var(--highlight)",
+    sparkFill: "var(--highlight-soft)",
   },
-  {
-    id: "inc-0318",
-    date: "2026-03-18",
-    title: "AI agent timeouts",
-    resolved: true,
-    severity: "major",
-    summary: "Model provider upstream had a partial outage. Agents fell back to queued mode; all jobs completed once service resumed.",
+  outage: {
+    dot: "bg-danger",
+    badge: "danger",
+    bar: { bg: "bg-red-50", text: "text-danger", border: "border-red-200" },
+    sparkColor: "var(--danger)",
+    sparkFill: "#fee2e2",
   },
-];
-
-const MAINTENANCE: Maintenance[] = [
-  {
-    id: "mx-1",
-    startsAt: "2026-04-20 03:00 UTC",
-    endsAt: "2026-04-20 03:30 UTC",
-    title: "Database minor version upgrade",
-    impact: "Read-only mode for ~5 minutes during cutover",
+  maintenance: {
+    dot: "bg-info",
+    badge: "info",
+    bar: { bg: "bg-blue-50", text: "text-info", border: "border-blue-200" },
+    sparkColor: "var(--info)",
+    sparkFill: "#dbeafe",
   },
-  {
-    id: "mx-2",
-    startsAt: "2026-05-02 02:00 UTC",
-    endsAt: "2026-05-02 04:00 UTC",
-    title: "Scheduled retrospective reindex",
-    impact: "No user-visible impact expected",
-  },
-];
-
-const HEALTH_TONE: Record<Health, { dot: string; label: string; tone: "success" | "warning" | "danger" }> = {
-  operational: { dot: "bg-accent", label: "Operational", tone: "success" },
-  degraded: { dot: "bg-highlight", label: "Degraded", tone: "warning" },
-  down: { dot: "bg-danger", label: "Down", tone: "danger" },
 };
 
-export function StatusView() {
-  // Deterministic placeholder — a `useState` lazy initializer would
-  // run with server time on the server and client time on the client,
-  // producing a hydration mismatch that cascades into the entire
-  // StatusView subtree being re-rendered client-side (caught by
-  // find-and-fix pass 8, EMR-715). Setting the timestamp inside
-  // `useEffect` keeps server-rendered HTML deterministic; the em-dash
-  // shows for the few ms before hydration completes.
-  const [lastUpdated, setLastUpdated] = useState<string>("—");
-  const [email, setEmail] = useState("");
-  const [subscribed, setSubscribed] = useState(false);
-  const [subscribeError, setSubscribeError] = useState<string | null>(null);
+const SEVERITY_TONE: Record<Incident["severity"], "neutral" | "warning" | "danger"> = {
+  minor: "neutral",
+  major: "warning",
+  critical: "danger",
+};
 
+function formatPct(n: number): string {
+  // Strip trailing zeros — "99.98" not "99.98000"; "100" stays "100".
+  return `${(Math.round(n * 100) / 100).toString()}%`;
+}
+
+function formatChecked(iso: string): string {
+  // Local time, server-rendered with the snapshot ISO so first paint matches
+  // hydration. We refresh this every minute on the client.
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+
+export function StatusView({ snapshot, incidents, maintenance }: StatusViewProps) {
+  const overall = snapshot.overall;
+  const overallTone = STATE_TONE[overall];
+  const overallCopy = STATE_COPY[overall];
+
+  // Client-side refresh of the "last checked" label without remounting the
+  // server-rendered snapshot. Hydration-safe: initial value is derived from
+  // the server-provided ISO.
+  const [checkedLabel, setCheckedLabel] = useState<string>(() => formatChecked(snapshot.checkedAt));
   useEffect(() => {
-    setLastUpdated(new Date().toLocaleTimeString());
+    setCheckedLabel(formatChecked(snapshot.checkedAt));
     const t = setInterval(() => {
-      setLastUpdated(new Date().toLocaleTimeString());
-    }, 60000);
+      // Approximate "moments ago" by re-formatting against the server time —
+      // the actual server snapshot still ages, the label simply re-renders.
+      setCheckedLabel(formatChecked(new Date().toISOString()));
+    }, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [snapshot.checkedAt]);
 
-  const allOk = SERVICES.every((s) => s.health === "operational");
+  const overallUptime = useMemo(() => {
+    if (snapshot.components.length === 0) return 100;
+    const avg =
+      snapshot.components.reduce((sum, c) => sum + c.uptime90, 0) /
+      snapshot.components.length;
+    return Math.round(avg * 100) / 100;
+  }, [snapshot.components]);
 
-  // Status-page email subscription. Posts through /api/contact (the
-  // same intake the marketing forms use) with role="status_subscribe"
-  // so ops can grep one place for all inbound user-supplied emails.
-  //
-  // Earlier this handler was a setTimeout fake-success — same silent-
-  // drop bug pattern PR #258 fixed in /book-demo, surfaced again by
-  // find-and-fix pass 5.
-  const handleSubscribe = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = email.trim();
-    if (!trimmed) return;
-
-    setSubscribeError(null);
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed.split("@")[0] || "Status subscriber",
-          email: trimmed,
-          subject: "Status updates subscription",
-          role: "status_subscribe",
-          message:
-            "User opted in to receive notifications when status changes on " +
-            (typeof window !== "undefined" ? window.location.origin : "") +
-            "/status.",
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("non-2xx response from /api/contact");
-      }
-      setSubscribed(true);
-      setEmail("");
-      setTimeout(() => setSubscribed(false), 3000);
-    } catch (err) {
-      setSubscribeError(
-        err instanceof Error
-          ? "We could not record your subscription. Please email status@leafjourney.com."
-          : "Subscription failed.",
-      );
-    }
-  };
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
 
   return (
-    <div className="space-y-8">
-      <div
+    <div className="space-y-10">
+      {/* HERO — overall status pill */}
+      <section
         className={cn(
-          "rounded-xl p-6 border flex items-center gap-4",
-          allOk
-            ? "bg-accent-soft border-accent/30"
-            : "bg-highlight-soft border-highlight/30"
+          "rounded-2xl border p-6 lg:p-7 flex items-center gap-5",
+          overallTone.bar.bg,
+          overallTone.bar.border,
         )}
       >
-        <div
+        <span
           className={cn(
-            "h-12 w-12 rounded-full flex items-center justify-center shrink-0 text-white text-xl",
-            allOk ? "bg-accent" : "bg-highlight"
+            "relative flex h-3.5 w-3.5 shrink-0 items-center justify-center",
           )}
+          aria-hidden="true"
         >
-          {allOk ? "✓" : "!"}
-        </div>
-        <div>
-          <h1 className="font-display text-2xl text-text">
-            {allOk ? "All systems operational" : "Degraded service"}
+          {overall === "operational" && (
+            <span
+              className={cn(
+                "absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping",
+                overallTone.dot,
+              )}
+            />
+          )}
+          <span className={cn("relative inline-flex h-3.5 w-3.5 rounded-full", overallTone.dot)} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h1 className="font-display text-2xl lg:text-3xl text-text leading-tight">
+            {overallCopy.pillLabel}
           </h1>
-          <p className="text-sm text-text-muted">
-            Last updated {lastUpdated}
+          <p className="text-sm text-text-muted mt-1">
+            Last checked {checkedLabel} ·{" "}
+            <span className="text-text-subtle">
+              {formatPct(overallUptime)} average uptime over the last 90 days
+            </span>
           </p>
         </div>
-      </div>
+        <div className="hidden md:flex items-center gap-2 shrink-0">
+          <Button variant="secondary" size="sm" onClick={() => setSubscribeOpen(true)}>
+            Subscribe to updates
+          </Button>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Services</CardTitle>
-          <CardDescription>Live status for each component</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="divide-y divide-border">
-            {SERVICES.map((s) => {
-              const t = HEALTH_TONE[s.health];
-              return (
-                <div key={s.name} className="py-3 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className={cn("h-2.5 w-2.5 rounded-full", t.dot)} />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-text">{s.name}</div>
-                      <div className="text-xs text-text-muted">{s.description}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-text-subtle">{s.uptime30} · 30d</span>
-                    <Badge tone={t.tone}>{t.label}</Badge>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Incident history</CardTitle>
-          <CardDescription>Last 30 days</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {INCIDENTS.length === 0 ? (
-            <p className="text-sm text-text-muted py-6 text-center">
-              No incidents in the last 30 days.
+      {/* COMPONENT GRID */}
+      <section>
+        <header className="mb-4 flex items-end justify-between">
+          <div>
+            <h2 className="font-display text-lg text-text">Components</h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Live status by system area · 90-day uptime
             </p>
-          ) : (
-            <div className="divide-y divide-border">
-              {INCIDENTS.map((i) => (
-                <div key={i.id} className="py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-text">{i.title}</span>
-                        <Badge
-                          tone={
-                            i.severity === "critical"
-                              ? "danger"
-                              : i.severity === "major"
-                              ? "warning"
-                              : "neutral"
-                          }
-                        >
-                          {i.severity}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-text-muted mt-1">{i.summary}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-xs text-text-subtle">{i.date}</span>
-                      <Badge tone={i.resolved ? "success" : "warning"}>
-                        {i.resolved ? "Resolved" : "Ongoing"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Scheduled maintenance</CardTitle>
-          <CardDescription>Upcoming planned work</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="divide-y divide-border">
-            {MAINTENANCE.map((m) => (
-              <div key={m.id} className="py-3">
-                <div className="text-sm font-medium text-text">{m.title}</div>
-                <div className="text-xs text-text-muted mt-0.5">{m.impact}</div>
-                <div className="text-xs text-text-subtle mt-1">
-                  {m.startsAt} — {m.endsAt}
-                </div>
-              </div>
-            ))}
           </div>
-        </CardContent>
-      </Card>
+          <span className="text-xs text-text-subtle hidden sm:inline">
+            Updated every 30s
+          </span>
+        </header>
+        <Card>
+          <CardContent className="p-0">
+            <ul className="divide-y divide-border">
+              {snapshot.components.map((c) => (
+                <ComponentRow key={c.key} component={c} />
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+        <p className="mt-3 text-[11px] text-text-subtle flex items-center gap-3 flex-wrap">
+          <Legend tone={STATE_TONE.operational} label="Operational" />
+          <Legend tone={STATE_TONE.degraded} label="Degraded" />
+          <Legend tone={STATE_TONE.outage} label="Outage" />
+          <Legend tone={STATE_TONE.maintenance} label="Maintenance" />
+        </p>
+      </section>
 
+      {/* INCIDENT HISTORY */}
+      <section>
+        <header className="mb-4">
+          <h2 className="font-display text-lg text-text">Incident history</h2>
+          <p className="text-xs text-text-muted mt-0.5">
+            Past incidents and their resolution timeline
+          </p>
+        </header>
+        <Card>
+          <CardContent className="p-0">
+            {incidents.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent text-lg mb-3">
+                  ✓
+                </div>
+                <p className="text-sm text-text">No incidents reported.</p>
+                <p className="text-xs text-text-muted mt-1">
+                  When something happens, we&apos;ll post updates here in real time.
+                </p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {incidents.map((i) => (
+                  <IncidentRow key={i.id} incident={i} />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* SCHEDULED MAINTENANCE */}
+      {maintenance.length > 0 && (
+        <section>
+          <header className="mb-4">
+            <h2 className="font-display text-lg text-text">Scheduled maintenance</h2>
+            <p className="text-xs text-text-muted mt-0.5">Upcoming planned work</p>
+          </header>
+          <Card>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-border">
+                {maintenance.map((m) => (
+                  <li key={m.id} className="px-5 py-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-text">{m.title}</div>
+                        <div className="text-xs text-text-muted mt-0.5">{m.impact}</div>
+                      </div>
+                      <span className="text-xs text-text-subtle whitespace-nowrap">
+                        {m.startsAt} → {m.endsAt}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      {/* SUBSCRIBE CTA — mobile + always-visible footer */}
       <Card tone="ambient">
         <CardHeader>
           <CardTitle>Subscribe to updates</CardTitle>
           <CardDescription>
-            Get an email whenever we open or resolve an incident
+            Get an email when we open, update, or resolve an incident.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {subscribed ? (
-            <div className="rounded-md border border-accent/30 bg-accent-soft text-accent p-3 text-sm">
-              Thanks — you'll get a confirmation email shortly.
-            </div>
-          ) : (
-            <>
-              <form onSubmit={handleSubscribe} className="flex gap-2">
-                <Input
-                  type="email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-                <Button type="submit">Subscribe</Button>
-              </form>
-              {subscribeError && (
-                <p
-                  role="alert"
-                  className="mt-2 rounded-md border border-highlight/30 bg-highlight-soft px-3 py-2 text-xs text-text"
-                >
-                  {subscribeError}
-                </p>
-              )}
-            </>
-          )}
+          <Button onClick={() => setSubscribeOpen(true)}>Subscribe to updates</Button>
+          <p className="mt-3 text-[11px] text-text-subtle">
+            Prefer RSS? An Atom feed is on our roadmap — until then, drop us
+            your email and we&apos;ll wire you in once the broadcast service ships.
+          </p>
         </CardContent>
       </Card>
+
+      <SubscribeDialog open={subscribeOpen} onOpenChange={setSubscribeOpen} />
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Component row                                                              */
+/* -------------------------------------------------------------------------- */
+
+function ComponentRow({ component }: { component: ComponentHealth }) {
+  const tone = STATE_TONE[component.state];
+  const stateLabel = STATE_COPY[component.state].label;
+
+  return (
+    <li className="px-5 py-4 grid grid-cols-[auto_1fr_auto] items-center gap-4 sm:grid-cols-[auto_1fr_auto_auto]">
+      <span
+        className={cn("h-2.5 w-2.5 rounded-full shrink-0", tone.dot)}
+        aria-hidden="true"
+      />
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-text">{component.name}</div>
+        <div className="text-xs text-text-muted truncate">{component.description}</div>
+      </div>
+      <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0">
+        <Sparkline
+          data={component.uptimeSeries}
+          width={140}
+          height={32}
+          color={tone.sparkColor}
+          fill={tone.sparkFill}
+          showDots={false}
+        />
+        <span className="text-[10px] text-text-subtle tabular-nums">
+          {formatPct(component.uptime90)} · 90d
+        </span>
+      </div>
+      <Badge tone={tone.badge}>{stateLabel}</Badge>
+    </li>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Incident row + timeline                                                    */
+/* -------------------------------------------------------------------------- */
+
+function IncidentRow({ incident }: { incident: Incident }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="px-5 py-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-left min-w-0 flex-1 group"
+          aria-expanded={open}
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-text group-hover:underline underline-offset-2">
+              {incident.title}
+            </span>
+            <Badge tone={SEVERITY_TONE[incident.severity]}>{incident.severity}</Badge>
+          </div>
+          <p className="text-xs text-text-muted mt-1">{incident.summary}</p>
+        </button>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className="text-xs text-text-subtle tabular-nums">{incident.date}</span>
+          <Badge tone={incident.resolved ? "success" : "warning"}>
+            {incident.resolved ? "Resolved" : "Ongoing"}
+          </Badge>
+        </div>
+      </div>
+      {open && (
+        <div className="mt-3 pl-3 ml-1 border-l-2 border-border space-y-3">
+          {incident.timeline.map((entry, idx) => (
+            <div key={`${incident.id}-${idx}`} className="relative">
+              <span
+                className="absolute -left-[15px] top-1.5 h-2.5 w-2.5 rounded-full bg-surface-raised border-2 border-border"
+                aria-hidden="true"
+              />
+              <div className="text-xs font-medium text-text">
+                {entry.label}
+                <span className="ml-2 text-text-subtle font-normal tabular-nums">
+                  {new Date(entry.at).toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mt-0.5">{entry.note}</p>
+            </div>
+          ))}
+          {incident.postmortemUrl && (
+            <a
+              href={incident.postmortemUrl}
+              className="inline-block text-xs text-accent hover:underline underline-offset-2"
+            >
+              Read postmortem →
+            </a>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Subscribe modal — mailto stub; real broadcast wiring is a follow-up.       */
+/* -------------------------------------------------------------------------- */
+
+function SubscribeDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [email, setEmail] = useState("");
+
+  const mailto = useMemo(() => {
+    const subject = encodeURIComponent("Subscribe to Leafjourney status updates");
+    const body = encodeURIComponent(
+      "Please subscribe me to status updates.\n\n— (sent from /status)",
+    );
+    const to = "status@leafjourney.com";
+    return `mailto:${to}?subject=${subject}&body=${body}`;
+  }, []);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Subscribe to status updates</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-text-muted">
+          We&apos;ll send you an email when an incident opens, updates, or
+          resolves. No spam, no marketing — just status.
+        </p>
+        <div className="mt-4 space-y-2">
+          <label
+            htmlFor="status-subscribe-email"
+            className="text-xs font-medium text-text-muted"
+          >
+            Email
+          </label>
+          <Input
+            id="status-subscribe-email"
+            type="email"
+            placeholder="you@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <DialogClose
+            className={cn(
+              "inline-flex items-center justify-center rounded-md font-medium",
+              "h-10 px-4 text-sm bg-transparent text-text-muted hover:bg-surface-muted hover:text-text",
+              "transition-colors focus-visible:outline-none focus-visible:ring-2",
+              "focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+            )}
+          >
+            Cancel
+          </DialogClose>
+          {/*
+            v1: the broadcast service does not exist yet. We open the
+            user's mail client with a pre-filled message to
+            status@leafjourney.com so ops can manually add them to the
+            eventual list. Follow-up: replace with a POST to a real
+            subscribe endpoint once that lands.
+          */}
+          <a
+            href={mailto}
+            aria-disabled={email.trim().length === 0}
+            onClick={(e) => {
+              if (email.trim().length === 0) {
+                e.preventDefault();
+                return;
+              }
+              // Snap the dialog closed once they click — the mail client
+              // takes over. If they cancel out of their mail client, they
+              // can reopen the dialog; no state is dropped.
+              setTimeout(() => onOpenChange(false), 50);
+            }}
+            className={cn(
+              "inline-flex items-center justify-center rounded-md font-medium",
+              "h-10 px-4 text-sm shadow-seal text-accent-ink",
+              "bg-gradient-to-b from-accent to-accent-strong",
+              "hover:from-accent/90 hover:to-accent hover:shadow-xl",
+              "transition-all focus-visible:outline-none focus-visible:ring-2",
+              "focus-visible:ring-accent/40 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+              email.trim().length === 0 && "opacity-50 cursor-not-allowed pointer-events-none",
+            )}
+          >
+            Open email
+          </a>
+        </div>
+        <p className="mt-3 text-[11px] text-text-subtle">
+          Follow-up: wire to a real subscribe endpoint (Resend audience or a
+          dedicated broadcast service) and add SMS + Slack channels.
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Legend chip                                                                */
+/* -------------------------------------------------------------------------- */
+
+function Legend({
+  tone,
+  label,
+}: {
+  tone: (typeof STATE_TONE)[keyof typeof STATE_TONE];
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn("h-2 w-2 rounded-full", tone.dot)} aria-hidden="true" />
+      {label}
+    </span>
   );
 }
