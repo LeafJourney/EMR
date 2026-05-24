@@ -1,0 +1,111 @@
+<h2>Proposed Design: Structured 2-Pane Focused Workspace</h2>
+<p class="subtitle">Designed to reduce cognitive load by separating the clinical reference context (Left) from active input (Right).</p>
+
+<div class="mockup" style="max-width: 1200px; margin: 0 auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden;">
+  <!-- Mock EMR Header -->
+  <div style="background: var(--surface-muted); padding: 12px 20px; border-b: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <span class="label" style="font-size: 10px; letter-spacing: 0.05em; color: var(--accent);">Active Patient</span>
+      <h3 style="margin: 0; font-size: 16px;">Jane Doe, 34F <span style="font-weight: normal; color: var(--text-muted); font-size: 14px;">(Life ID: CC-9821-B)</span></h3>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <span style="font-size: 12px; padding: 4px 8px; background: rgba(16, 185, 129, 0.1); color: #10B981; border-radius: 6px; font-weight: 500;">✓ Active Session</span>
+      <span style="font-size: 12px; padding: 4px 8px; background: var(--border); color: var(--text); border-radius: 6px;">Room 4</span>
+    </div>
+  </div>
+
+  <!-- The 2-Pane Layout -->
+  <div style="display: flex; min-height: 480px; position: relative;">
+    
+    <!-- LEFT PANE: Context & Reference (Read-Only) -->
+    <div style="flex: 1; min-width: 300px; max-width: 50%; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--surface);">
+      <!-- Left Pane Tabs -->
+      <div style="display: flex; background: var(--surface-muted); border-bottom: 1px solid var(--border); font-size: 13px;">
+        <div style="padding: 10px 16px; border-bottom: 2px solid var(--accent); color: var(--accent); font-weight: 600; cursor: pointer;">Patient Vitals</div>
+        <div style="padding: 10px 16px; color: var(--text-muted); cursor: pointer;">Medical History</div>
+        <div style="padding: 10px 16px; color: var(--text-muted); cursor: pointer;">Labs & Outcomes</div>
+        <div style="padding: 10px 16px; color: var(--text-muted); cursor: pointer;">Library AI</div>
+      </div>
+      
+      <!-- Left Pane Content -->
+      <div style="padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px; background: var(--surface-muted);">
+            <div class="label" style="font-size: 10px;">Sleep Quality</div>
+            <div style="font-size: 20px; font-weight: bold; color: var(--text); margin-top: 4px;">78% <span style="font-size: 12px; color: #10B981; font-weight: normal;">↑ 5%</span></div>
+          </div>
+          <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px; background: var(--surface-muted);">
+            <div class="label" style="font-size: 10px;">Pain Level (NRS)</div>
+            <div style="font-size: 20px; font-weight: bold; color: var(--text); margin-top: 4px;">4/10 <span style="font-size: 12px; color: #10B981; font-weight: normal;">↓ 2pt</span></div>
+          </div>
+        </div>
+
+        <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px;">
+          <h4 style="margin: 0 0 8px 0; font-size: 13px; color: var(--text);">Active Regimen Summary</h4>
+          <p style="font-size: 12px; margin: 0; line-height: 1.5; color: var(--text-muted);">
+            • 5mg THC + 10mg CBD edible daily (Evening)<br>
+            • 1.5mL Linalool-dominant tincture as needed (Anxiety)
+          </p>
+        </div>
+
+        <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px; background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2);">
+          <h4 style="margin: 0 0 4px 0; font-size: 13px; color: #D97706;">⚠️ Alert Note</h4>
+          <p style="font-size: 12px; margin: 0; color: #B45309;">Patient reports mild daytime somnolence when increasing the evening CBD dose.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLLAPSIBLE SPLITTER BAR -->
+    <div style="width: 8px; background: var(--surface-muted); border-left: 1px solid var(--border); border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; cursor: col-resize; position: relative;">
+      <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: var(--text-muted); position: absolute; z-index: 10;">
+        ‹
+      </div>
+    </div>
+
+    <!-- RIGHT PANE: Action & Interactive (Write-Only) -->
+    <div style="flex: 1.5; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: var(--surface);">
+      <div>
+        <span class="label" style="font-size: 10px; letter-spacing: 0.05em; color: var(--text-muted);">Encounter Entry</span>
+        <h4 style="margin: 4px 0 0 0; font-size: 16px;">Active SOAP/APSO Note</h4>
+      </div>
+
+      <!-- Mock Textarea -->
+      <div style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; flex: 1;">
+        <div style="background: var(--surface-muted); border-bottom: 1px solid var(--border); padding: 6px 12px; display: flex; gap: 12px; font-size: 12px; color: var(--text-muted);">
+          <span style="font-weight: bold; color: var(--text);">B</span>
+          <span style="font-style: italic;">I</span>
+          <span>Link Diagnosis</span>
+          <span>Insert Snippet</span>
+        </div>
+        <textarea style="flex: 1; border: 0; outline: none; padding: 12px; background: transparent; color: var(--text); font-family: inherit; font-size: 14px; resize: none;" placeholder="Start typing the encounter assessment or plan here..."></textarea>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="mock-button" style="background: var(--surface-muted); color: var(--text); border: 1px solid var(--border); padding: 8px 16px; border-radius: 8px; cursor: pointer;">Save Draft</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="mock-button" style="background: rgba(239, 68, 68, 0.1); color: #EF4444; border: 0; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Cancel</button>
+          <button class="mock-button" style="background: var(--accent); color: white; border: 0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 600;">Sign & Close Note</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="options" style="margin-top: 30px;">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Approve Design</h3>
+      <p>This layout is extremely clean and reduces cognitive load. Let's build it.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revision" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Request Revisions</h3>
+      <p>I like it, but want to make some modifications first.</p>
+    </div>
+  </div>
+</div>

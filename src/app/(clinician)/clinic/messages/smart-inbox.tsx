@@ -22,7 +22,8 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
-import { sendReply, composeMessage, isResolvedMarker, type ComposeResult } from "./actions";
+import { sendReply, composeMessage, type ComposeResult } from "./actions";
+import { isResolvedMarker } from "./resolve-marker";
 import {
   bulkMarkThreadsReadAction,
   bulkResolveThreadsAction,

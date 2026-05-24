@@ -1,0 +1,74 @@
+<h2>EMR-028: Split Window / Multi-Tab Workspace</h2>
+<p class="subtitle">Designed by Dr. Neal Patel — select the workspace split model that would offer the best clinical flow.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Dynamic Split Panes (Bloomberg Style)</h3>
+      <p>A flexible grid layout supporting up to 3 vertical or horizontal split panes.</p>
+      <div class="pros-cons" style="margin-top: 12px; font-size: 13px;">
+        <div class="pros">
+          <strong>Pros:</strong>
+          <ul>
+            <li>Simultaneous views of multiple patient profiles, notes, or prescriptions.</li>
+            <li>Resizable boundaries by dragging grid splitters.</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <strong>Cons:</strong>
+          <ul>
+            <li>Can feel cluttered on smaller screens (e.g. iPad portrait).</li>
+            <li>Higher rendering overhead.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Tabbed Workspace with Docking (VS Code Style)</h3>
+      <p>A tab bar at the top of the workspace. Tabs can be dragged and docked side-by-side or split.</p>
+      <div class="pros-cons" style="margin-top: 12px; font-size: 13px;">
+        <div class="pros">
+          <strong>Pros:</strong>
+          <ul>
+            <li>Highly organized and familiar tabs for different patient visits or research library.</li>
+            <li>Supports arbitrary number of open tabs; up to 3 active splits.</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <strong>Cons:</strong>
+          <ul>
+            <li>Managing too many tabs might require explicit closure flows.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Primary Workspace + Dual Sliders (Hybrid Style)</h3>
+      <p>A centered main workspace with collapsible, pinnable left/right side panels for quick lookup.</p>
+      <div class="pros-cons" style="margin-top: 12px; font-size: 13px;">
+        <div class="pros">
+          <strong>Pros:</strong>
+          <ul>
+            <li>Maintains focus on the primary action (e.g. typing notes or prescribing).</li>
+            <li>Quick peek at vitals, history, or dosage guidelines without context switching.</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <strong>Cons:</strong>
+          <ul>
+            <li>Less flexible if you need 3 fully interactive custom views side-by-side.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

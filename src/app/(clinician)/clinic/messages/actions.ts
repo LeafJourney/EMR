@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { RESOLVED_SENTINEL } from "./resolve-marker";
 
 // ---------- Reply to a thread ----------
 
@@ -190,12 +191,6 @@ export async function composePatientMessage(
 // real `status` column the action will switch to `prisma.messageThread
 // .update({ data: { status: "resolved" } })` and the sentinel becomes a
 // human-readable label.
-
-const RESOLVED_SENTINEL = "[[RESOLVED]]";
-
-export function isResolvedMarker(body: string): boolean {
-  return body.trim().startsWith(RESOLVED_SENTINEL);
-}
 
 const resolveSchema = z.object({ threadId: z.string().min(1) });
 
