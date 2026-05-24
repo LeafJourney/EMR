@@ -1,5 +1,7 @@
 export * from "./geo";
 export * from "./types";
+export { geocodeAddress, DEFAULT_COORDS } from "./geocode";
+export type { Coordinates } from "./geocode";
 export {
   ingestDispensaryCatalog,
   normalizeFormat,
