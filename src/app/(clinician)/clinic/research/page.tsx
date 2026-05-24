@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ResearchEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { LeafSprig } from "@/components/ui/ornament";
 import { ResearchSearchForm } from "./research-form";
+import { ChatCBPanel } from "./chat-cb-panel";
 import { formatRelative } from "@/lib/utils/format";
 import { ChatCB } from "./chat-cb";
 import { EvidenceSourcesCard } from "./evidence-sources-card";
@@ -247,6 +248,8 @@ export default async function ResearchConsolePage({
               )}
             </CardContent>
           </Card>
+
+          <ChatCBPanel />
 
           {/* Cannabis opt-out button — only meaningful when the practice
               does cannabis (EMR-668). */}

@@ -1,69 +1,172 @@
-import { NextResponse } from "next/server";
+import { requireApiAuth } from "@/lib/auth/api-gate";
+import { agentInvocationLimiter } from "@/lib/auth/rate-limit";
 import { logger } from "@/lib/observability/log";
+import {
+  isModelError,
+  resolveModelClient,
+} from "@/lib/orchestration/model-client";
+import {
+  buildChatCBSystemPrompt,
+  searchKnowledgeBase,
+  EVIDENCE_COLORS,
+  STUDY_TYPE_LABELS,
+  type CannabisConditionPair,
+} from "@/lib/domain/chatcb";
 
-// Mock RAG index for Cannabis and Cancer book
-const CANNABIS_CANCER_BOOK_EXCERPTS = [
-  "In multiple case studies, high-dose RSO (Rick Simpson Oil) has been correlated with reduced tumor size in certain basal cell carcinomas.",
-  "THC and CBD have both shown apoptotic (cell death) properties in vitro against various cancer cell lines.",
-  "Dosing protocols in the book often recommend titrating up to 60 grams of RSO over a 90-day period for severe cases.",
-  "While the book documents many successful cases, clinical trials remain limited and dosing isn't uniformly characterized across all oncology subsets."
-];
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
-export async function POST(req: Request) {
-  try {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const secret = process.env.WEBHOOK_SECRET ?? "";
-    
-    if (process.env.NODE_ENV === "production" && authHeader !== `Bearer ${secret}`) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
+/**
+ * POST /api/agents/chat-cb
+ *
+ * Conversational ChatCB endpoint. Streams an SSE response with the AI answer
+ * followed by a final `citations` event carrying structured knowledge-base
+ * matches. The client can render the text progressively and append citations
+ * once the stream completes.
+ *
+ * Request body: { question: string }
+ *
+ * Stream events:
+ *   data: {"type":"delta","text":"..."}        — partial answer text
+ *   data: {"type":"citations","items":[...]}   — CannabisConditionPair[]
+ *   data: {"type":"done"}
+ *   data: {"type":"error","message":"..."}
+ */
 
-    const { message } = await req.json();
-    
-    // Check if OpenRouter key exists
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      // Fallback response if no key
-      return NextResponse.json({
-        content: `I'm currently in offline mode. However, referring to Justin Kander's Cannabis and Cancer book: ${CANNABIS_CANCER_BOOK_EXCERPTS[0]}`,
-        sources: ["Justin Kander: Cannabis and Cancer (Offline DB)"]
-      });
-    }
-
-    const prompt = `You are ChatCB, a clinical research synthesizer.
-The user is asking: "${message}"
-
-Use the following excerpts from Justin Kander's "Cannabis and Cancer" book to help formulate your answer:
-${CANNABIS_CANCER_BOOK_EXCERPTS.join("\n")}
-
-Synthesize a helpful, clinical response. Mention the source. Keep it under 3 sentences.`;
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek/deepseek-chat",
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content?.trim() || "No response generated.";
-
-    return NextResponse.json({
-      content,
-      sources: ["Justin Kander: Cannabis and Cancer", "DeepSeek Clinical Synthesis"]
-    });
-
-  } catch (error) {
-    logger.error({ event: "chat_cb.failed", error });
-    return NextResponse.json({ error: "Failed to synthesize data." }, { status: 500 });
-  }
+interface DeltaEvent {
+  type: "delta";
+  text: string;
 }
+interface CitationsEvent {
+  type: "citations";
+  items: CannabisConditionPair[];
+}
+interface DoneEvent {
+  type: "done";
+}
+interface ErrorEvent {
+  type: "error";
+  message: string;
+}
+type StreamEvent = DeltaEvent | CitationsEvent | DoneEvent | ErrorEvent;
+
+export async function POST(request: Request) {
+  const gate = await requireApiAuth({
+    rateLimit: {
+      limiter: agentInvocationLimiter,
+      bucket: "agent.chat-cb",
+    },
+  });
+  if (gate.error) return gate.error;
+
+  let body: { question?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid_json" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const question =
+    typeof body.question === "string" && body.question.trim().length > 0
+      ? body.question.trim().slice(0, 400)
+      : null;
+
+  if (!question) {
+    return new Response(JSON.stringify({ error: "missing_question" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Search the local knowledge base to inject context and return as citations.
+  const kbMatches = searchKnowledgeBase(question).slice(0, 5);
+
+  const kbContext =
+    kbMatches.length > 0
+      ? `\n\nRelevant knowledge base entries:\n${kbMatches
+          .map(
+            (m) =>
+              `• ${m.cannabinoid} / ${m.condition} [${EVIDENCE_COLORS[m.evidenceLevel].label}] (${m.studyCount} studies): ${m.summary}`,
+          )
+          .join("\n")}`
+      : "";
+
+  const systemPrompt = buildChatCBSystemPrompt();
+  const userPrompt = `${systemPrompt}${kbContext}\n\nClinician question: ${question}`;
+
+  const encoder = new TextEncoder();
+  const abort = new AbortController();
+  request.signal.addEventListener("abort", () => abort.abort(), { once: true });
+
+  const model = resolveModelClient();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      const emit = (event: StreamEvent) => {
+        if (closed) return;
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+        );
+      };
+
+      try {
+        if (model.stream) {
+          for await (const delta of model.stream(userPrompt, {
+            maxTokens: 600,
+            temperature: 0.4,
+            signal: abort.signal,
+          })) {
+            if (abort.signal.aborted) break;
+            emit({ type: "delta", text: delta });
+          }
+        } else {
+          const full = await model.complete(userPrompt, {
+            maxTokens: 600,
+            temperature: 0.4,
+            signal: abort.signal,
+          });
+          emit({ type: "delta", text: full });
+        }
+
+        // Emit citations after the main answer so the client can append them.
+        if (kbMatches.length > 0) {
+          emit({ type: "citations", items: kbMatches });
+        }
+        emit({ type: "done" });
+      } catch (err) {
+        const msg = isModelError(err)
+          ? err.friendly
+          : err instanceof Error
+            ? err.message
+            : "AI generation failed.";
+        emit({ type: "error", message: msg });
+        logger.error({ event: "agent.chat-cb.stream_failed", err });
+      } finally {
+        closed = true;
+        abort.abort();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      }
+    },
+    cancel() {
+      abort.abort();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
