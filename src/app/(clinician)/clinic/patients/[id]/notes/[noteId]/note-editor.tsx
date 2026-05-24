@@ -21,6 +21,7 @@ import {
 } from "@/lib/domain/notes";
 import { LeafSprig } from "@/components/ui/ornament";
 import { DictateButton } from "@/components/ui/dictation";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";
 import { NOTE_BLOCK_LABELS as NB_LABELS } from "@/lib/domain/notes";
 
@@ -346,27 +347,29 @@ export function NoteEditor({
                     placeholder="Section heading"
                   />
                   <div className="relative">
-                    {/* EMR-135 + UX dictation primitive: dictate directly
-                        into the section. Browser SpeechRecognition with a
-                        medical-vocabulary post-pass — clinician can speak
-                        "fifteen milligrams twice a day" and it lands as
-                        "15 mg BID".
+                    {/* EMR-135 + UX dictation + UX markdown editor: rich
+                        markdown surface (toolbar + slash menu + preview)
+                        for narrative SOAP/APSO sections, with the dictate
+                        button anchored top-right.
 
                         CRITICAL: the Objective block (NoteBlockType
                         "findings") is human-authored only per Dr. Patel
                         and Doc 1 / Doc 3 in EMR/docs/product-feedback —
-                        suppress the mic for that block via
-                        omitForObjective. Vitals also gated downstream by
-                        the same prop. */}
-                    <textarea
+                        the MarkdownEditor still renders (the user needs
+                        to write structured text!), but we (a) pass
+                        omitForObjective so the editor stamps the
+                        data-objective-gated attribute and future AI
+                        toolbar actions are suppressed, and (b) hide the
+                        DictateButton entirely. The AI Refine buttons row
+                        below is also conditionally hidden for findings. */}
+                    <MarkdownEditor
                       value={block.body}
-                      onChange={(e) => updateBlock(i, "body", e.target.value)}
-                      rows={Math.max(3, block.body.split("\n").length + 1)}
-                      className={`w-full text-sm text-text-muted leading-relaxed bg-transparent border border-border/40 rounded-md p-3 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all resize-y ${
-                        block.type === "findings" ? "" : "pr-10"
-                      }`}
-                      placeholder="Note content..."
-                      data-objective-gated={block.type === "findings" ? "true" : undefined}
+                      onChange={(v) => updateBlock(i, "body", v)}
+                      rows={Math.max(4, block.body.split("\n").length + 1)}
+                      omitForObjective={block.type === "findings"}
+                      placeholder="Note content. Use the toolbar or type / for block commands."
+                      aria-label={`${block.heading} body`}
+                      textareaClassName={block.type === "findings" ? "" : "pr-10"}
                     />
                     {block.type !== "findings" && (
                       <DictateButton
@@ -374,36 +377,45 @@ export function NoteEditor({
                           const sep = block.body && !/\s$/.test(block.body) ? " " : "";
                           updateBlock(i, "body", `${block.body}${sep}${text.trim()}`);
                         }}
-                        className="absolute top-2 right-2"
+                        className="absolute top-12 right-2"
                       />
                     )}
                   </div>
-                  {/* AI Refine buttons */}
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <span className="text-[10px] text-text-subtle uppercase tracking-wider mr-1">
-                      AI:
-                    </span>
-                    {REFINE_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.mode}
-                        onClick={() => handleRefine(i, opt.mode)}
-                        disabled={refiningIndex !== null}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
-                          refiningIndex === i
-                            ? "bg-accent/20 text-accent animate-pulse"
-                            : "bg-surface-muted text-text-subtle hover:bg-accent/10 hover:text-accent border border-border/40"
-                        } disabled:opacity-50`}
-                      >
-                        <span className="font-mono text-[9px]">{opt.icon}</span>
-                        {opt.label}
-                      </button>
-                    ))}
-                    {refiningIndex === i && (
-                      <span className="text-[10px] text-accent ml-1 animate-pulse">
-                        Refining...
+                  {/* AI Refine buttons — gated for Objective per Dr. Patel
+                      and Doc 1 / Doc 3: the SOAP/APSO Objective ("findings")
+                      block is human-authored only, so no AI affordance is
+                      offered for it. */}
+                  {block.type !== "findings" ? (
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-text-subtle uppercase tracking-wider mr-1">
+                        AI:
                       </span>
-                    )}
-                  </div>
+                      {REFINE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.mode}
+                          onClick={() => handleRefine(i, opt.mode)}
+                          disabled={refiningIndex !== null}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
+                            refiningIndex === i
+                              ? "bg-accent/20 text-accent animate-pulse"
+                              : "bg-surface-muted text-text-subtle hover:bg-accent/10 hover:text-accent border border-border/40"
+                          } disabled:opacity-50`}
+                        >
+                          <span className="font-mono text-[9px]">{opt.icon}</span>
+                          {opt.label}
+                        </button>
+                      ))}
+                      {refiningIndex === i && (
+                        <span className="text-[10px] text-accent ml-1 animate-pulse">
+                          Refining...
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="pt-1 text-[10px] text-text-subtle italic">
+                      Human-authored only — no AI refine for Objective findings.
+                    </p>
+                  )}
                   {refineErrors[i] && (
                     <div
                       role="alert"

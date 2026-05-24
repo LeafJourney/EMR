@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea, Label } from "@/components/ui/input";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 
 const OLDCARTS_FIELDS: { key: keyof HpiState; label: string; placeholder: string }[] = [
   { key: "onset", label: "Onset", placeholder: "When did it start? (e.g., 3 weeks ago, gradual)" },
@@ -107,12 +108,16 @@ export function SubjectiveHpi() {
                 Auto-compose from fields
               </button>
             </div>
-            <Textarea
+            {/* HPI narrative is part of the Subjective section — not the
+                Objective gate. We can offer the full MarkdownEditor with
+                toolbar + slash + preview here. */}
+            <MarkdownEditor
               id="hpi-narrative"
-              rows={4}
+              rows={5}
               value={state.narrative}
-              onChange={(e) => handleField("narrative", e.target.value)}
-              placeholder="Free-text HPI. Click Auto-compose to draft from the fields above."
+              onChange={(v) => handleField("narrative", v)}
+              placeholder="Free-text HPI. Use the toolbar to format, or click Auto-compose to draft from the fields above."
+              aria-label="HPI narrative"
             />
           </div>
 

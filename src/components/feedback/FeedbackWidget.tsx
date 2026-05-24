@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 
 /**
  * Universal feedback widget — EMR-128. Floats bottom-right (`mode="fab"`)
@@ -263,13 +264,15 @@ export function FeedbackWidget({
                   </div>
                 </fieldset>
 
-                <textarea
-                  rows={4}
+                <MarkdownEditor
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={setComment}
+                  rows={4}
                   placeholder="Loved it? Confused? Frustrated? Tell us in your own words."
                   aria-label="Feedback message"
-                  className="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  minimalToolbar
+                  allowPreview={false}
+                  disableSlash
                 />
 
                 <p className="text-[11px] text-text-subtle">

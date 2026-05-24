@@ -1162,3 +1162,77 @@
     page-break-inside: avoid;
   }
 }
+
+/* MarkdownEditor preview pane — Apple-iOS aesthetic typography for the
+   rendered output of components/ui/markdown-editor.tsx. Scoped so it only
+   restyles markup that came out of renderMarkdownToHtml(). */
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  font-family: var(--font-display, inherit);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.25;
+}
+.markdown-preview h1 { font-size: 1.5rem; }
+.markdown-preview h2 { font-size: 1.25rem; }
+.markdown-preview h3 { font-size: 1.05rem; }
+.markdown-preview p {
+  margin-bottom: 0.6rem;
+  color: var(--text);
+}
+.markdown-preview p:last-child { margin-bottom: 0; }
+.markdown-preview strong { font-weight: 600; color: var(--text); }
+.markdown-preview em { font-style: italic; }
+.markdown-preview a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-preview ul,
+.markdown-preview ol {
+  margin: 0.25rem 0 0.75rem 1.5rem;
+}
+.markdown-preview ul { list-style: disc; }
+.markdown-preview ol { list-style: decimal; }
+.markdown-preview li { margin-bottom: 0.2rem; }
+.markdown-preview blockquote {
+  margin: 0.5rem 0;
+  padding: 0.25rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-muted);
+}
+.markdown-preview blockquote p { margin-bottom: 0.25rem; }
+.markdown-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--surface-muted);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.markdown-preview pre {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+.markdown-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.markdown-preview hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1rem 0;
+}

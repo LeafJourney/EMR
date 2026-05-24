@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { useToast } from "@/components/ui/toast";
 import { FileUpload, type FileUploadItem } from "@/components/ui/file-upload";
 
@@ -183,14 +184,15 @@ export function UniversalFeedbackFab() {
                 <option value="other">Other</option>
               </select>
 
-              <textarea
-                required
-                minLength={5}
-                rows={4}
+              <MarkdownEditor
                 value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                onChange={setComment}
+                rows={4}
                 placeholder="Loved it? Confused? Frustrated? Tell us in your own words."
-                className="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                aria-label="Whisper message"
+                minimalToolbar
+                allowPreview={false}
+                disableSlash
               />
 
               <div>
