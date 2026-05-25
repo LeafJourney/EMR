@@ -11,6 +11,7 @@ import { explainLabValue } from "@/lib/domain/lab-explainer";
 import { LabTooltip } from "@/components/ui/lab-tooltip";
 import { Tooltip } from "@/components/ui/tooltip";
 import { LabValue } from "@/components/ui/format";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import {
   draftLabOutreachAction,
   updateLabOutreachAction,
@@ -699,9 +700,11 @@ function DraftBlock({
             <p className="text-[10px] text-accent font-medium mb-1">
               💬 From your care team
             </p>
-            <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
-              {local}
-            </p>
+            <LinkifiedText
+              as="p"
+              className="text-sm text-text leading-relaxed whitespace-pre-wrap"
+              text={local}
+            />
           </div>
         </div>
       )}

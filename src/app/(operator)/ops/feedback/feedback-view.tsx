@@ -13,6 +13,7 @@ import {
   SortMenu,
   type ActiveChip,
 } from "@/components/ui/filter-bar";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils/cn";
 
 export type FeedbackStatus = "new" | "in_progress" | "resolved";
@@ -356,7 +357,11 @@ export function FeedbackView({ initialFeedback }: { initialFeedback: FeedbackIte
                       <summary className="text-[11px] text-text-subtle cursor-pointer">
                         Draft reply saved
                       </summary>
-                      <p className="mt-2 text-xs text-text-muted whitespace-pre-line">{f.responseDraft}</p>
+                      <LinkifiedText
+                        as="p"
+                        className="mt-2 text-xs text-text-muted whitespace-pre-line"
+                        text={f.responseDraft}
+                      />
                     </details>
                   )}
                 </CardContent>

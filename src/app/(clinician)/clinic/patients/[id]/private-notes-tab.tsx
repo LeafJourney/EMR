@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DictationTextarea } from "@/components/ui/dictation-input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { formatRelative } from "@/lib/utils/format";
 import { addPrivateNote, type PrivateNote } from "./private-notes-actions";
 
@@ -178,9 +179,11 @@ export function PrivateNotesTab({
                     <span>{formatRelative(n.createdAt)}</span>
                   </div>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-text">
-                  {n.body}
-                </p>
+                <LinkifiedText
+                  as="p"
+                  className="mt-2 whitespace-pre-wrap text-sm text-text"
+                  text={n.body}
+                />
               </li>
             ))}
           </ul>

@@ -13,6 +13,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Avatar } from "@/components/ui/avatar";
 import { AgentSignal } from "@/components/ui/agent-signal";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils/cn";
 import { formatRelative } from "@/lib/utils/format";
 import {
@@ -611,7 +612,9 @@ function HoverMedsText({ text }: { text: string }) {
             </span>
           );
         }
-        return <span key={i}>{part}</span>;
+        // Non-med text — pass through linkifier so URLs/emails/phones/refs
+        // become clickable inside message bodies.
+        return <LinkifiedText key={i} as="span" text={part} />;
       })}
     </>
   );

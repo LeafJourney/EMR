@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FieldGroup, Input, Textarea } from "@/components/ui/input";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils/cn";
 
 export type AnnouncementCategory = "Clinical" | "Ops" | "Celebrations" | "Reminders";
@@ -153,7 +154,11 @@ export function AnnouncementsView({
                   </p>
                 </div>
               </div>
-              <p className="text-sm text-text-muted whitespace-pre-line">{a.body}</p>
+              <LinkifiedText
+                as="p"
+                className="text-sm text-text-muted whitespace-pre-line"
+                text={a.body}
+              />
               <div className="flex items-center gap-2">
                 {REACTIONS.map((emoji) => (
                   <button
@@ -178,7 +183,11 @@ export function AnnouncementsView({
                         <span className="text-text-subtle">
                           · {new Date(c.createdAt).toLocaleDateString()}
                         </span>
-                        <p className="text-text-muted mt-0.5">{c.text}</p>
+                        <LinkifiedText
+                          as="p"
+                          className="text-text-muted mt-0.5"
+                          text={c.text}
+                        />
                       </li>
                     ))}
                   </ul>

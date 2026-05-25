@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import {
   Dialog,
   DialogContent,
@@ -637,13 +638,13 @@ function ThreadDetail({
                     : "bg-surface border border-border text-text rounded-bl-sm"
                 }`}
               >
-                <p
+                <LinkifiedText
+                  as="p"
                   className={`text-sm leading-relaxed whitespace-pre-wrap ${
                     isOwn ? "text-white" : "text-text"
                   }`}
-                >
-                  {msg.body}
-                </p>
+                  text={msg.body}
+                />
                 <p
                   className={`text-[10px] mt-1 ${
                     isOwn ? "text-blue-100" : "text-text-subtle"

@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { formatRelative } from "@/lib/utils/format";
 import { statusLabel } from "@/lib/pharmacy/dual-signoff";
 import {
@@ -100,9 +101,11 @@ export default async function PharmacyThreadPage({
                         {formatRelative(m.createdAt)}
                       </p>
                     </div>
-                    <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">
-                      {m.body}
-                    </p>
+                    <LinkifiedText
+                      as="p"
+                      className="text-sm text-text leading-relaxed whitespace-pre-wrap"
+                      text={m.body}
+                    />
                   </div>
                 ))
               )}
