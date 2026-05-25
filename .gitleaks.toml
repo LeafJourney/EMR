@@ -58,6 +58,7 @@ regexes = [
   '''pk_test_[A-Za-z0-9]+''',
   '''pk_live_[A-Za-z0-9]+''',
   '''pk_(test|live)_[a-zA-Z0-9_-]+''',
+  '''emr\.prefs\.v\d+\.[a-z_-]+''',
 ]
 
 commits = []

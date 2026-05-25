@@ -1539,3 +1539,61 @@ routes:
     owner: integrations
     review_due: 2026-07-31
     notes: "wave-9-sprint scaffold. In-code Bearer secret gate confirmed; auth kind (webhook|cron|required) not yet categorized."
+
+  admin/audit/export-pdf:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "super_admin role via requireApiAuth. PDF-formatted ControllerAuditLog export."
+
+  clinic/patients/roster-export:
+    methods: [GET]
+    auth: required
+    owner: clinical-safety
+    notes: "Clinician-side patient roster CSV/PDF export. Gated via requireUser, requires organizationId."
+
+  dispensary/dispenses:
+    methods: [GET, POST]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "EMR-002 dispensary integration. Auth kind not yet categorized."
+
+  dispensary/nearby:
+    methods: [GET]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "EMR-002 dispensary integration. Nearby-dispensary geo lookup."
+
+  dispensary/sku:
+    methods: [GET]
+    auth: needs_review
+    owner: integrations
+    review_due: 2026-07-31
+    notes: "EMR-002 dispensary integration. SKU lookup."
+
+  shop/checkout:
+    methods: [POST]
+    auth: needs_review
+    owner: marketplace
+    review_due: 2026-07-31
+    notes: "EMR-002 dispensary shop checkout flow."
+
+  patients/[id]/preview:
+    methods: [GET]
+    auth: required
+    owner: ux-platform
+    notes: "PR #504 HoverCard preview. requireApiAuth + org-scoped patient fetch for patient hover-card."
+
+  threads/[id]/preview:
+    methods: [GET]
+    auth: required
+    owner: ux-platform
+    notes: "PR #504 HoverCard preview. requireApiAuth + participant check for thread hover-card."
+
+  users/[id]/preview:
+    methods: [GET]
+    auth: required
+    owner: ux-platform
+    notes: "PR #504 HoverCard preview. requireApiAuth + same-org scoping for provider hover-card."
