@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
+import { PatientHoverCard } from "@/components/preview";
 
 export type SignOffRow = {
   id: string;
@@ -271,10 +272,12 @@ function SignOffDetail({ row }: { row: SignOffRow }) {
       {/* Patient header */}
       <div className="flex items-center gap-3 mb-5">
         <PatientInitials name={row.patientName} />
-        <div>
-          <p className="text-[13px] font-semibold text-text leading-snug">{row.patientName}</p>
-          <p className="text-[11px] text-text-subtle">{formatRelative(row.receivedAt)}</p>
-        </div>
+        <PatientHoverCard patientId={row.patientId}>
+          <div className="cursor-default">
+            <p className="text-[13px] font-semibold text-text leading-snug">{row.patientName}</p>
+            <p className="text-[11px] text-text-subtle">{formatRelative(row.receivedAt)}</p>
+          </div>
+        </PatientHoverCard>
       </div>
 
       {/* Kind + urgency pills */}

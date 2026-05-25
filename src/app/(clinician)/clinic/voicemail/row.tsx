@@ -17,6 +17,7 @@ import {
   markVoicemailListenedAction,
   archiveVoicemailAction,
 } from "../communications/voicemail/actions";
+import { PatientHoverCard } from "@/components/preview";
 
 export interface CallbackRowVM {
   id: string;
@@ -91,12 +92,14 @@ export function VoicemailCallbackRow({ entry }: { entry: CallbackRowVM }) {
             {entry.status === "new" && <Badge tone="info">Unread</Badge>}
             <span className="text-sm font-medium text-text truncate">
               {entry.patientId && entry.patientName ? (
-                <Link
-                  href={`/clinic/patients/${entry.patientId}`}
-                  className="hover:text-accent"
-                >
-                  {entry.patientName}
-                </Link>
+                <PatientHoverCard patientId={entry.patientId}>
+                  <Link
+                    href={`/clinic/patients/${entry.patientId}`}
+                    className="hover:text-accent"
+                  >
+                    {entry.patientName}
+                  </Link>
+                </PatientHoverCard>
               ) : (
                 entry.patientName ?? entry.fromNumber
               )}
