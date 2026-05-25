@@ -6,6 +6,11 @@
 
 import { prisma } from "../lib/db/prisma";
 import { dispatch } from "../lib/orchestration/dispatch";
+import { getDefaultAdapter } from "../lib/billing/clearinghouse/gateway";
+import { parse999, parse277CA, decide277Actions } from "../lib/billing/clearinghouse-ack";
+import { recordDeadLetter } from "../lib/billing/clearinghouse/dead-letter";
+import { derivePrimaryControlNumbers } from "../lib/agents/billing/clearinghouse-submission-agent";
+import { writeAgentAudit } from "../lib/orchestration/context";
 
 async function main() {
   console.log("[scheduler] tick");
@@ -113,6 +118,361 @@ async function main() {
   console.log(
     `[scheduler] enqueued outcome=${patients.length} stalled=${stalled.length} adherence=${adherenceEnqueued} cfo=${cfoEnqueued}`,
   );
+
+  // 6. Clearinghouse functional/payer acknowledgment polling
+  await pollClearinghouseGateway();
+}
+
+async function pollClearinghouseGateway() {
+  console.log("[scheduler] polling clearinghouse gateway");
+
+  const org = await prisma.organization.findFirst();
+  const organizationId = org?.id ?? "global-fallback";
+
+  // Wrap in Postgres advisory lock
+  await prisma.$transaction(async (tx) => {
+    const [{ locked }] = await tx.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_xact_lock(1217) as locked;
+    `;
+    if (!locked) {
+      console.log("[scheduler] clearinghouse polling is already running, skipping tick");
+      return;
+    }
+
+    const adapter = getDefaultAdapter(process.env);
+    const adapterId = adapter.name.toLowerCase();
+
+    // Fetch latest cursor from BillingMemory
+    const cursorRow = await tx.billingMemory.findFirst({
+      where: {
+        scope: `clearinghouse:${adapterId}`,
+        category: "poll_cursor",
+      },
+    });
+    const currentCursor = cursorRow?.content ?? null;
+
+    console.log(`[scheduler] current polling cursor for ${adapter.name}: ${currentCursor}`);
+
+    // Poll the adapter
+    const pollResult = await adapter.poll(currentCursor);
+    console.log(`[scheduler] polled ${pollResult.documents.length} documents`);
+
+    // Process documents
+    for (const doc of pollResult.documents) {
+      console.log(`[scheduler] processing document of type ${doc.type}`);
+
+      try {
+        if (doc.type === "999") {
+          const parsed = parse999(doc.body);
+
+          // Match 999: Parse functional group control numbers and find the matching submission
+          let submission = null;
+          if (doc.correlationId) {
+            submission = await tx.clearinghouseSubmission.findUnique({
+              where: { id: doc.correlationId },
+              include: { claim: true },
+            });
+          }
+
+          if (!submission && (parsed.gcn || parsed.icn)) {
+            // Find by control number match
+            const pendingSubmissions = await tx.clearinghouseSubmission.findMany({
+              where: { responseStatus: "pending" },
+              include: { claim: true },
+            });
+
+            for (const sub of pendingSubmissions) {
+              const expectedNumbers = derivePrimaryControlNumbers(sub.claimId, sub.retryCount);
+              if (
+                (parsed.gcn && Number(parsed.gcn) === expectedNumbers.gsControlNumber) ||
+                (parsed.icn && Number(parsed.icn) === expectedNumbers.isaControlNumber)
+              ) {
+                submission = sub;
+                break;
+              }
+            }
+          }
+
+          if (!submission) {
+            console.warn(`[scheduler] unmatched 999 document (gcn: ${parsed.gcn}, icn: ${parsed.icn}). Routing to DLQ.`);
+            await recordDeadLetter({
+              organizationId,
+              submissionId: null,
+              claimId: null,
+              gatewayName: adapter.name,
+              failureCategory: "orphan_file",
+              errorMessage: `Unmatched 999 document. gcn=${parsed.gcn}, icn=${parsed.icn}`,
+              requestPayload: null,
+              responseBody: doc.body,
+            });
+            continue;
+          }
+
+          const targetResponseStatus = parsed.status === "rejected" ? "rejected" : "accepted";
+          const targetClaimStatus = parsed.status === "rejected" ? "ch_rejected" : "submitted";
+
+          // Update ClearinghouseSubmission
+          await tx.clearinghouseSubmission.update({
+            where: { id: submission.id },
+            data: {
+              responseStatus: targetResponseStatus,
+              responseCode: parsed.status,
+              responseMessage: parsed.errors.map(e => `${e.segmentId || ""}: ${e.message}`).join("; ") || "999 parsed successfully",
+              respondedAt: new Date(),
+              ediResponse: doc.body,
+            },
+          });
+
+          // Monotonic status guard
+          const STATUS_RANKS: Record<string, number> = {
+            draft: 0,
+            scrubbing: 1,
+            scrub_blocked: 2,
+            ready: 3,
+            submitted: 4,
+            ch_rejected: 2,
+            pending: 5,
+            accepted: 6,
+            adjudicated: 7,
+            paid: 7,
+            partial: 7,
+          };
+
+          const currentRank = STATUS_RANKS[submission.claim.status] ?? -1;
+          const newRank = STATUS_RANKS[targetClaimStatus] ?? -1;
+
+          if (newRank > currentRank) {
+            await tx.claim.update({
+              where: { id: submission.claimId },
+              data: { status: targetClaimStatus },
+            });
+          }
+
+          // Trigger domain events
+          if (parsed.status === "rejected") {
+            const priorSubmissionCount = submission.retryCount;
+            const isRejectionRetryEligible = (attempts: number) => attempts < 2;
+
+            await dispatch({
+              name: "clearinghouse.rejected",
+              claimId: submission.claimId,
+              submissionId: submission.id,
+              rejectionCode: "999_REJECT",
+              rejectionMessage: parsed.errors.map(e => `${e.segmentId || ""}: ${e.message}`).join("; ") || "999 rejection",
+              retryEligible: isRejectionRetryEligible(priorSubmissionCount),
+              organizationId: submission.organizationId,
+            });
+
+            await writeAgentAudit(
+              "clearinghouseSubmission",
+              "1.0.0",
+              submission.organizationId,
+              "submission.rejected",
+              { type: "ClearinghouseSubmission", id: submission.id },
+              { claimId: submission.claimId, errors: parsed.errors },
+            );
+          } else {
+            await dispatch({
+              name: "clearinghouse.accepted",
+              claimId: submission.claimId,
+              submissionId: submission.id,
+              organizationId: submission.organizationId,
+            });
+
+            await writeAgentAudit(
+              "clearinghouseSubmission",
+              "1.0.0",
+              submission.organizationId,
+              "submission.accepted",
+              { type: "ClearinghouseSubmission", id: submission.id },
+              { claimId: submission.claimId, gcn: parsed.gcn, icn: parsed.icn },
+            );
+          }
+
+        } else if (doc.type === "277CA") {
+          const parsed = parse277CA(doc.body);
+          const actions = decide277Actions(parsed);
+
+          for (const action of actions) {
+            const claim = await tx.claim.findFirst({
+              where: {
+                OR: [
+                  { id: action.claimControlNumber },
+                  { claimNumber: action.claimControlNumber },
+                ],
+              },
+              include: { submissions: { orderBy: { submittedAt: "desc" } } },
+            });
+
+            if (!claim) {
+              console.warn(`[scheduler] 277CA contains unmatched claim control number: ${action.claimControlNumber}. Routing to DLQ.`);
+              await recordDeadLetter({
+                organizationId,
+                submissionId: null,
+                claimId: null,
+                gatewayName: adapter.name,
+                failureCategory: "orphan_file",
+                errorMessage: `277CA contains unmatched claim control number: ${action.claimControlNumber}`,
+                requestPayload: null,
+                responseBody: doc.body,
+              });
+              continue;
+            }
+
+            const latestSubmission = claim.submissions[0];
+            if (!latestSubmission) {
+              console.warn(`[scheduler] claim ${claim.id} has no submission history but received 277CA. Routing to DLQ.`);
+              await recordDeadLetter({
+                organizationId: claim.organizationId,
+                submissionId: null,
+                claimId: claim.id,
+                gatewayName: adapter.name,
+                failureCategory: "orphan_file",
+                errorMessage: `Claim ${claim.id} has no submission history but received 277CA`,
+                requestPayload: null,
+                responseBody: doc.body,
+              });
+              continue;
+            }
+
+            let targetResponseStatus: "accepted" | "rejected" = "accepted";
+            let targetClaimStatus = "accepted";
+
+            if (action.action === "resubmit" || action.action === "investigate") {
+              targetResponseStatus = "rejected";
+              targetClaimStatus = "ch_rejected";
+            }
+
+            // Update ClearinghouseSubmission
+            await tx.clearinghouseSubmission.update({
+              where: { id: latestSubmission.id },
+              data: {
+                responseStatus: targetResponseStatus,
+                responseCode: action.action,
+                responseMessage: (action as any).reason ?? "277CA status update",
+                respondedAt: new Date(),
+                ediResponse: doc.body,
+              },
+            });
+
+            // Monotonic status guard
+            const STATUS_RANKS: Record<string, number> = {
+              draft: 0,
+              scrubbing: 1,
+              scrub_blocked: 2,
+              ready: 3,
+              submitted: 4,
+              ch_rejected: 2,
+              pending: 5,
+              accepted: 6,
+              adjudicated: 7,
+              paid: 7,
+              partial: 7,
+            };
+
+            const currentRank = STATUS_RANKS[claim.status] ?? -1;
+            const newRank = STATUS_RANKS[targetClaimStatus] ?? -1;
+
+            if (newRank > currentRank) {
+              await tx.claim.update({
+                where: { id: claim.id },
+                data: { status: targetClaimStatus },
+              });
+            }
+
+            if (targetResponseStatus === "rejected") {
+              const isRejectionRetryEligible = (attempts: number) => attempts < 2;
+              await dispatch({
+                name: "clearinghouse.rejected",
+                claimId: claim.id,
+                submissionId: latestSubmission.id,
+                rejectionCode: action.action,
+                rejectionMessage: (action as any).reason ?? "277CA rejection",
+                retryEligible: isRejectionRetryEligible(latestSubmission.retryCount),
+                organizationId: claim.organizationId,
+              });
+
+              await writeAgentAudit(
+                "clearinghouseSubmission",
+                "1.0.0",
+                claim.organizationId,
+                "submission.rejected",
+                { type: "ClearinghouseSubmission", id: latestSubmission.id },
+                { claimId: claim.id, action: action.action, reason: (action as any).reason },
+              );
+            } else {
+              await dispatch({
+                name: "clearinghouse.accepted",
+                claimId: claim.id,
+                submissionId: latestSubmission.id,
+                organizationId: claim.organizationId,
+              });
+
+              await tx.financialEvent.create({
+                data: {
+                  organizationId: claim.organizationId,
+                  patientId: claim.patientId,
+                  claimId: claim.id,
+                  type: "claim_submitted",
+                  amountCents: claim.billedAmountCents,
+                  description: `Claim accepted by payer clearinghouse gateway. Billed: $${(claim.billedAmountCents / 100).toFixed(2)}.`,
+                  metadata: {
+                    submissionId: latestSubmission.id,
+                    clearinghouseName: latestSubmission.clearinghouseName,
+                    action: action.action,
+                  },
+                  createdByAgent: "clearinghouseSubmission@1.0.0",
+                },
+              });
+
+              await writeAgentAudit(
+                "clearinghouseSubmission",
+                "1.0.0",
+                claim.organizationId,
+                "submission.accepted",
+                { type: "ClearinghouseSubmission", id: latestSubmission.id },
+                { claimId: claim.id, action: action.action },
+              );
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error(`[scheduler] system failure processing document:`, err);
+        await recordDeadLetter({
+          organizationId,
+          submissionId: null,
+          claimId: null,
+          gatewayName: adapter.name,
+          failureCategory: "malformed_response",
+          errorMessage: err instanceof Error ? err.message : String(err),
+          requestPayload: null,
+          responseBody: doc.body,
+        });
+        throw err;
+      }
+    }
+
+    if (pollResult.nextCursor) {
+      if (cursorRow) {
+        await tx.billingMemory.update({
+          where: { id: cursorRow.id },
+          data: { content: pollResult.nextCursor, lastEvidenceAt: new Date() },
+        });
+      } else {
+        await tx.billingMemory.create({
+          data: {
+            organizationId,
+            scope: `clearinghouse:${adapterId}`,
+            category: "poll_cursor",
+            content: pollResult.nextCursor,
+            evidenceCount: 1,
+            confidence: 1.0,
+          },
+        });
+      }
+      console.log(`[scheduler] cursor advanced to: ${pollResult.nextCursor}`);
+    }
+  }, { timeout: 30000 });
 }
 
 main()
