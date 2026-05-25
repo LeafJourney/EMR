@@ -290,6 +290,20 @@ export const workflows: WorkflowDefinition[] = [
       },
     ],
   },
+  {
+    name: "clearinghouse-queued-submission",
+    on: ["clearinghouse.queued"],
+    steps: [
+      {
+        agent: "clearinghouseSubmission",
+        input: (e) => ({
+          claimId: (e as any).claimId,
+          organizationId: (e as any).organizationId,
+          submissionId: (e as any).submissionId,
+        }),
+      },
+    ],
+  },
   // encounter.completed → Eligibility & Benefits → eligibility.checked
   {
     name: "eligibility-check",
