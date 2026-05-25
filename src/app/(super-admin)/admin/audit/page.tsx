@@ -30,6 +30,7 @@ import {
 import { AuditTableIsland, type AuditRowView } from "./keyboard-island";
 import { AuditExportMenu } from "./export-menu";
 import { DatePicker } from "@/components/ui/date-picker";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Audit log" };
@@ -110,6 +111,10 @@ export default async function AuditLogPage({
 
   const q = parseAuditQuery(searchParams ?? {});
   const result = await runAuditQuery(prisma, q);
+  // Render timestamp drives the FreshnessIndicator. Audit rows append
+  // fast during incidents — making the staleness of this view legible is
+  // exactly the point of the chip.
+  const loadedAt = new Date().toISOString();
 
   // Map raw rows to the view shape the island expects. Deep-links go to
   // /admin/console/users/<id> for users and /practices/<id> for
@@ -182,7 +187,12 @@ export default async function AuditLogPage({
         eyebrow="Internal"
         title="Audit log"
         description="Every controller mutation across every practice. Filter, expand, export."
-        actions={<AuditExportMenu query={exportQuery(q)} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <RouterRefreshFreshness since={loadedAt} />
+            <AuditExportMenu query={exportQuery(q)} />
+          </div>
+        }
       />
 
       <form method="GET" className="mb-4 flex flex-wrap items-end gap-3">

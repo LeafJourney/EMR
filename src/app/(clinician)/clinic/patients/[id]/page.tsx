@@ -871,7 +871,10 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         />
       )}
       {tab === "timeline" && (
-        <PatientActivityTimeline events={activityEvents} />
+        <PatientActivityTimeline
+          events={activityEvents}
+          loadedAt={new Date().toISOString()}
+        />
       )}
       {tab === "correspondence" && (
         <CorrespondenceTab

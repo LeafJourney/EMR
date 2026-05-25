@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PatientListClient } from "./patient-list-client";
 import { NewPatientModal } from "@/components/clinic/NewPatientModal";
 import { RosterExportMenu } from "./roster-export-menu";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { logger } from "@/lib/observability/log";
 
 export const metadata = { title: "Patient Roster" };
@@ -139,6 +140,7 @@ export default async function PatientsPage({
         title="Patient roster"
         actions={
           <div className="flex items-center gap-3">
+            <RouterRefreshFreshness since={new Date().toISOString()} compact />
             <span className="text-sm text-text-muted tabular-nums">
               {patients.length} patient{patients.length === 1 ? "" : "s"}
             </span>

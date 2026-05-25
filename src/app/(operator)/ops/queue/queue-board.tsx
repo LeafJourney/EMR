@@ -20,6 +20,7 @@ import {
   type ContextMenuItem,
 } from "@/components/ui/context-menu";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { FreshnessIndicator } from "@/components/ui/freshness-indicator";
 
 const COLUMN_ORDER: QueueStatus[] = [
   "scheduled",
@@ -56,8 +57,24 @@ function formatTime(iso: string): string {
   });
 }
 
-export function QueueBoard({ entries }: { entries: QueueEntry[] }) {
+export function QueueBoard({
+  entries,
+  loadedAt,
+}: {
+  entries: QueueEntry[];
+  /** ISO timestamp of the server fetch — drives the FreshnessIndicator chip. */
+  loadedAt?: string;
+}) {
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+  // Click handler for the FreshnessIndicator's ↻ button. Wraps
+  // router.refresh() in a tiny pending window so the spinner has somewhere
+  // to live; the 30s background poll keeps ticking independently.
+  const manualRefresh = () => {
+    setRefreshing(true);
+    router.refresh();
+    setTimeout(() => setRefreshing(false), 400);
+  };
   // Bumping this state forces React to re-render the wait-time calculations
   // every minute without doing a full server round-trip in between refreshes.
   const [, setTick] = useState(0);
@@ -102,6 +119,15 @@ export function QueueBoard({ entries }: { entries: QueueEntry[] }) {
         eyebrow="Front desk"
         title="Today's Queue"
         description={`${inRooms} in rooms · ${waiting} waiting · ${done} completed today`}
+        actions={
+          loadedAt ? (
+            <FreshnessIndicator
+              since={loadedAt}
+              onRefresh={manualRefresh}
+              status={refreshing ? "refreshing" : "idle"}
+            />
+          ) : undefined
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">

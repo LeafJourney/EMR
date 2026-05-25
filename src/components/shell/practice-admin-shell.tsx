@@ -32,6 +32,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import type { PracticeConfiguration } from "@/lib/practice-config/types";
 
 // EMR-410 (`@/lib/modality/registry`) is in flight in this storm but not yet
@@ -150,6 +151,7 @@ export function PracticeAdminShell({
         eyebrow="Practice admin"
         title={practice.brandName ?? practice.name}
         description="Read-only view of your practice's published configuration. To request a change, contact your LeafJourney implementation team."
+        actions={<RouterRefreshFreshness since={new Date().toISOString()} />}
       />
 
       <div className="grid grid-cols-1 gap-6">

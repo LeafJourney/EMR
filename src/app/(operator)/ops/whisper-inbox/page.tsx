@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { lex } from "@/lib/lexicon";
 import {
   classifyWhisper,
@@ -77,6 +78,10 @@ function buildDemoWhispers(): ClassifiedWhisper[] {
 export default async function WhisperInboxPage() {
   await requireUser();
   const whispers = buildDemoWhispers();
+  // Render-time stamp drives the FreshnessIndicator chip below. The demo
+  // payload is deterministic for now; once persistence lands the chip
+  // becomes a real "last fetched" signal without further wiring.
+  const loadedAt = new Date().toISOString();
 
   const cSuiteCount = whispers.filter((w) => w.cSuiteRoute).length;
   const negativeCount = whispers.filter((w) => w.sentiment === "negative").length;
@@ -87,6 +92,7 @@ export default async function WhisperInboxPage() {
         eyebrow={lex("program.feedback")}
         title="Whisper inbox"
         description="Universal feedback from every page, every role. Negative whispers are routed to the C-Suite inbox with a 72-hour first-response SLA."
+        actions={<RouterRefreshFreshness since={loadedAt} />}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

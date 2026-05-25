@@ -8,10 +8,15 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { formatRelative } from "@/lib/utils/format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton, SkeletonCircle } from "@/components/ui/skeleton";
+import {
+  FreshnessIndicator,
+  useStaleRefresh,
+} from "@/components/ui/freshness-indicator";
 import {
   groupActivityByDay,
   type PatientActivityEvent,
@@ -24,6 +29,10 @@ interface PatientActivityTimelineProps {
   initialKind?: ChipKey;
   /** Render the skeleton view instead of `events`. Used during streaming SSR. */
   loading?: boolean;
+  /** ISO timestamp of when `events` were fetched. When provided, the timeline
+   *  renders a FreshnessIndicator so the clinician can see how stale the view
+   *  is and re-pull on demand. */
+  loadedAt?: string;
 }
 
 type ChipKey =
@@ -149,10 +158,30 @@ export function PatientActivityTimeline({
   events,
   initialKind = "all",
   loading = false,
+  loadedAt,
 }: PatientActivityTimelineProps) {
+  const router = useRouter();
   const [activeChip, setActiveChip] = React.useState<ChipKey>(initialKind);
   const [since, setSince] = React.useState<Date | undefined>(undefined);
   const [until, setUntil] = React.useState<Date | undefined>(undefined);
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // Pull the latest events from the server. The timeline already lives
+  // inside the chart's `force-dynamic` server tree, so router.refresh()
+  // re-runs the loader and replays `events` from the top.
+  const refresh = React.useCallback(() => {
+    setRefreshing(true);
+    router.refresh();
+    setTimeout(() => setRefreshing(false), 300);
+  }, [router]);
+
+  // Auto-pull when the clinician comes back to the tab after 5+ min away.
+  useStaleRefresh({
+    since: loadedAt ?? new Date().toISOString(),
+    thresholdMs: 5 * 60 * 1000,
+    onRefresh: refresh,
+    enabled: !!loadedAt,
+  });
 
   const counts = React.useMemo(() => {
     const out: Record<ChipKey, number> = {
@@ -270,6 +299,14 @@ export function PatientActivityTimeline({
             >
               Clear
             </button>
+          )}
+          {loadedAt && (
+            <FreshnessIndicator
+              since={loadedAt}
+              onRefresh={refresh}
+              status={refreshing ? "refreshing" : "idle"}
+              compact
+            />
           )}
         </div>
       </div>

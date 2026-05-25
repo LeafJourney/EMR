@@ -15,6 +15,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MetricTile } from "@/components/ui/metric-tile";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { CommsRecentClient } from "./comms-recent-client";
 
 export const metadata = { title: "Communications" };
@@ -31,6 +32,9 @@ export default async function CommunicationsPage() {
   }
 
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Stamp the render time so the freshness chip can show "Updated Xm ago"
+  // for the tiles below. Re-renders (via router.refresh()) reset it.
+  const loadedAt = new Date().toISOString();
 
   const [
     callsThisWeek,
@@ -103,6 +107,7 @@ export default async function CommunicationsPage() {
         eyebrow="Communications"
         title="Communications Overlay"
         description="Text, video, fax, and HIPAA-compliant calling — all in one workspace. AI transcription captures only pertinent clinical info. Personal data is discarded before documented."
+        actions={<RouterRefreshFreshness since={loadedAt} />}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">

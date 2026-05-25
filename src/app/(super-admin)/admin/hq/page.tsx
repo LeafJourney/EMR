@@ -8,6 +8,7 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 
 import { loadAllHqData } from "./loaders";
+import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { HeroStrip } from "./tiles/hero-strip";
 import { RevenueStrip } from "./tiles/revenue-strip";
 import { OnboardingFunnel } from "./tiles/onboarding-funnel";
@@ -36,6 +37,10 @@ const HQ_NAV: NavLink[] = [
 export default async function LeafjourneyHqPage() {
   const user = await requireUser();
   const snapshot = await loadAllHqData();
+  // Time the fleet snapshot was generated. The FreshnessIndicator on the
+  // page header reads this so operators know whether the KPI strip is 5s
+  // or 5 min old. router.refresh() re-runs loadAllHqData and replaces it.
+  const loadedAt = new Date().toISOString();
 
   return (
     <PageShell maxWidth="max-w-[1240px]">
@@ -55,10 +60,11 @@ export default async function LeafjourneyHqPage() {
             Fleet operations at a glance. Drill into any surface from the nav below.
           </p>
         </div>
-        <div className="flex flex-col items-start md:items-end text-xs text-text-subtle">
-          <span className="uppercase tracking-[0.18em] text-[10px] mb-1">Signed in</span>
+        <div className="flex flex-col items-start md:items-end gap-2 text-xs text-text-subtle">
+          <RouterRefreshFreshness since={loadedAt} />
+          <span className="uppercase tracking-[0.18em] text-[10px]">Signed in</span>
           <span className="text-sm text-text">{user.email}</span>
-          <span className="mt-1">Sign out from the sidebar identity menu.</span>
+          <span>Sign out from the sidebar identity menu.</span>
         </div>
       </header>
 

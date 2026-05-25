@@ -89,7 +89,7 @@ export default async function QueueBoardPage() {
 
   return (
     <PageShell maxWidth="max-w-[1480px]">
-      <QueueBoard entries={entries} />
+      <QueueBoard entries={entries} loadedAt={new Date().toISOString()} />
     </PageShell>
   );
 }
