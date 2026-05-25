@@ -18,6 +18,7 @@ import { MetricTile } from "@/components/ui/metric-tile";
 import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { CommsRecentClient } from "./comms-recent-client";
 import { ChannelsDensityFrame } from "./channels-density-frame";
+import { OverlayWorkspace } from "./overlay-workspace.client";
 
 export const metadata = { title: "Communications" };
 
@@ -110,6 +111,11 @@ export default async function CommunicationsPage() {
         description="Text, video, fax, and HIPAA-compliant calling — all in one workspace. AI transcription captures only pertinent clinical info. Personal data is discarded before documented."
         actions={<RouterRefreshFreshness since={loadedAt} />}
       />
+
+      {/* EMR-037 — End-to-end overlay workspace (messenger, telehealth,
+          phone+fax) sits above the hub tiles. The tiles + channel cards
+          and recent activity below are the original hub surface. */}
+      <OverlayWorkspace />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {/* EMR-673 — each tile is a Link to its detail surface.
