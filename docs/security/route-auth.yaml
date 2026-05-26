@@ -548,6 +548,12 @@ routes:
     owner: marketing
     notes: "Public licensing menu JSON."
 
+  platform/licensing:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "Returns modular licensing posture. Gated by session check."
+
   reports/competitive-analysis:
     methods: [GET]
     auth: required
