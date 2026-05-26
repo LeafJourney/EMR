@@ -208,7 +208,11 @@ function StatusDot({
   }
 
   return (
-    <div className="flex items-center gap-2" title={label}>
+    <div
+      className="flex items-center gap-2"
+      title={`${label}: ${count}`}
+      aria-label={`${label}: ${count}`}
+    >
       {body}
     </div>
   );
