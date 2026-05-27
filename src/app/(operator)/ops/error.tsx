@@ -19,14 +19,14 @@ export default function Error({
         </h1>
         <p className="text-sm text-text-muted mt-2 max-w-md leading-relaxed">
           We ran into an unexpected issue loading the operations dashboard. This
-          has been logged. Try refreshing, or go back to the home page.
+          has been logged. Try refreshing, or go back to ops.
         </p>
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={() => reset()} variant="secondary">
             Try again
           </Button>
-          <Button onClick={() => (window.location.href = "/")} variant="ghost">
-            Go home
+          <Button onClick={() => (window.location.href = "/ops")} variant="ghost">
+            Back to ops
           </Button>
         </div>
       </div>

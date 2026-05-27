@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { primaryRole, ROLE_HOME } from "./roles";
+import { homeForRoles, primaryRole, ROLE_HOME } from "./roles";
 
 // primaryRole picks the highest-privilege role from a user's membership set
 // and is load-bearing for post-sign-in routing — Clerk lands every user on
@@ -61,5 +61,16 @@ describe("primaryRole", () => {
     ] as const) {
       expect(ROLE_HOME[role]).toBeTruthy();
     }
+  });
+});
+
+describe("homeForRoles", () => {
+  it("routes by highest privilege rather than role array order", () => {
+    expect(homeForRoles(["patient", "practice_owner"])).toBe("/ops");
+    expect(homeForRoles(["practice_owner", "patient"])).toBe("/ops");
+  });
+
+  it("uses the primary-role fallback for empty role lists", () => {
+    expect(homeForRoles([], "/sign-in")).toBe("/portal");
   });
 });

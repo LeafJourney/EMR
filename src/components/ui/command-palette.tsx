@@ -66,7 +66,7 @@ interface CommandDef {
 }
 
 // ───────────────────────────────────────── Clinician
-const CLINICIAN_COMMANDS: CommandDef[] = [
+export const CLINICIAN_COMMANDS: CommandDef[] = [
   // Default actions (verbs) — surfaced first per the Linear pattern.
   {
     id: "c-new-patient",
@@ -93,7 +93,7 @@ const CLINICIAN_COMMANDS: CommandDef[] = [
     label: "Open queue",
     hint: "Today's patient queue",
     icon: "⋮",
-    href: "/clinic/queue",
+    href: "/clinic",
     group: "Actions",
     roles: ["clinician"],
     keywords: ["queue", "today", "list", "next"],
@@ -123,7 +123,7 @@ const CLINICIAN_COMMANDS: CommandDef[] = [
     label: "Open settings",
     hint: "Account & preferences",
     icon: "⚙",
-    href: "/clinic/settings",
+    href: "/settings/preferences",
     group: "Actions",
     roles: ["clinician"],
     keywords: ["settings", "preferences", "account", "profile"],
@@ -136,8 +136,8 @@ const CLINICIAN_COMMANDS: CommandDef[] = [
   { id: "c-go-messages", label: "Open Inbox", icon: "✉", href: "/clinic/messages", group: "Navigate", roles: ["clinician"], keywords: ["inbox", "threads", "messages"] },
   { id: "c-go-morning-brief", label: "Open morning brief", icon: "☀", href: "/clinic/morning-brief", group: "Navigate", roles: ["clinician"], keywords: ["agenda", "today", "brief"] },
   { id: "c-go-approvals", label: "Open approvals", icon: "✓", href: "/clinic/approvals", group: "Navigate", roles: ["clinician"], keywords: ["drafts", "review", "approve"] },
-  { id: "c-go-labs", label: "Review labs", icon: "⚗", href: "/clinic/labs-review", group: "Navigate", roles: ["clinician"], keywords: ["labs", "results"] },
-  { id: "c-go-refills", label: "Review refills", icon: "℞", href: "/clinic/refills", group: "Navigate", roles: ["clinician"], keywords: ["refill", "rx", "prescription"] },
+  { id: "c-go-labs", label: "Review labs", icon: "⚗", href: "/clinic/sign-off/labs", group: "Navigate", roles: ["clinician"], keywords: ["labs", "results"] },
+  { id: "c-go-refills", label: "Review refills", icon: "℞", href: "/clinic/sign-off/refills", group: "Navigate", roles: ["clinician"], keywords: ["refill", "rx", "prescription"] },
   { id: "c-go-providers", label: "Providers directory", icon: "☷", href: "/clinic/providers", group: "Navigate", roles: ["clinician"], keywords: ["directory", "colleagues"] },
   { id: "c-go-research", label: "Research feed", icon: "✦", href: "/clinic/research", group: "Navigate", roles: ["clinician"], keywords: ["pubmed", "papers"] },
   { id: "c-go-library", label: "Education library", icon: "❦", href: "/clinic/library", group: "Navigate", roles: ["clinician"], keywords: ["leaflet", "library", "handouts"] },
@@ -155,13 +155,12 @@ const CLINICIAN_COMMANDS: CommandDef[] = [
 ];
 
 // ───────────────────────────────────────── Operator
-const OPERATOR_COMMANDS: CommandDef[] = [
+export const OPERATOR_COMMANDS: CommandDef[] = [
   // Default actions
   { id: "o-new-patient", label: "New patient", hint: "Create a new chart", icon: "+", href: "/ops/patients?action=new", group: "Actions", roles: ["operator"], keywords: ["create", "add", "patient", "new"] },
-  { id: "o-compose-message", label: "Compose message", hint: "Start a new patient thread", icon: "✎", href: "/ops/messages?action=compose", group: "Actions", roles: ["operator"], keywords: ["message", "compose", "thread"] },
   { id: "o-open-queue", label: "Open queue", icon: "⋮", href: "/ops/queue", group: "Actions", roles: ["operator"], keywords: ["queue", "today", "list"] },
   { id: "o-schedule-visit", label: "Schedule visit", icon: "◷", href: "/ops/schedule?action=new", group: "Actions", roles: ["operator"], keywords: ["schedule", "appointment", "book"] },
-  { id: "o-open-settings", label: "Open settings", icon: "⚙", href: "/ops/settings", group: "Actions", roles: ["operator"], keywords: ["settings", "preferences", "account"] },
+  { id: "o-open-settings", label: "Open settings", icon: "⚙", href: "/ops/settings/ai-config", group: "Actions", roles: ["operator"], keywords: ["settings", "preferences", "account"] },
 
   // Navigation
   { id: "o-overview", label: "Overview", icon: "○", href: "/ops", group: "Navigate", roles: ["operator"], keywords: ["home", "dashboard"] },
@@ -219,7 +218,7 @@ const OPERATOR_COMMANDS: CommandDef[] = [
 ];
 
 // ───────────────────────────────────────── Patient
-const PATIENT_COMMANDS: CommandDef[] = [
+export const PATIENT_COMMANDS: CommandDef[] = [
   { id: "p-home", label: "Home", icon: "○", href: "/portal", group: "Navigate", roles: ["patient"], keywords: ["home", "dashboard"] },
   { id: "p-log-dose", label: "Log Dose", icon: "+", href: "/portal/log-dose", group: "Navigate", roles: ["patient"], keywords: ["dose", "log", "intake"] },
   { id: "p-health", label: "My Records", icon: "❒", href: "/portal/records", group: "Navigate", roles: ["patient"], keywords: ["records", "health", "results"] },
@@ -236,6 +235,8 @@ const ALL_COMMANDS: CommandDef[] = [
   ...OPERATOR_COMMANDS,
   ...PATIENT_COMMANDS,
 ];
+
+export const AUTHENTICATED_COMMANDS: CommandDef[] = ALL_COMMANDS;
 
 // ───────────────────────────────────────── Ranker
 //

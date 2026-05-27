@@ -7,8 +7,8 @@ import { useReportError } from "@/components/error-pages/use-report-error";
 
 /**
  * Clinician route-group error boundary. Catches anything thrown inside
- * /clinic/* that isn't handled by a more specific boundary. "Go home"
- * routes to the clinician's Today screen.
+ * /clinic/* that isn't handled by a more specific boundary. The
+ * secondary recovery action routes to the clinician's Today screen.
  */
 export default function ClinicianError({
   error,

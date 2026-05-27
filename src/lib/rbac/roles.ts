@@ -90,3 +90,7 @@ export function primaryRole(roles: Role[]): Role {
   for (const r of order) if (roles.includes(r)) return r;
   return "patient";
 }
+
+export function homeForRoles(roles: Role[], fallback = "/"): string {
+  return ROLE_HOME[primaryRole(roles)] ?? fallback;
+}

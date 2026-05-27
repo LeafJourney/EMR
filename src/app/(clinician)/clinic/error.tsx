@@ -19,14 +19,14 @@ export default function Error({
         </h1>
         <p className="text-sm text-text-muted mt-2 max-w-md leading-relaxed">
           We ran into an unexpected issue loading the clinic view. This has been
-          logged. Try refreshing, or go back to the home page.
+          logged. Try refreshing, or go back to Today.
         </p>
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={() => reset()} variant="secondary">
             Try again
           </Button>
-          <Button onClick={() => (window.location.href = "/")} variant="ghost">
-            Go home
+          <Button onClick={() => (window.location.href = "/clinic")} variant="ghost">
+            Go to Today
           </Button>
         </div>
       </div>

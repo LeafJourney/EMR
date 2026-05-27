@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
-import { ROLE_HOME } from "@/lib/rbac/roles";
+import { homeForRoles } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ChatCBInterface } from "@/components/ask-cindy/ChatCBInterface";
@@ -116,8 +116,7 @@ export default async function PatientLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   if (!user.roles.includes("patient")) {
-    const primary = user.roles[0];
-    redirect(ROLE_HOME[primary] ?? "/");
+    redirect(homeForRoles(user.roles));
   }
 
   return (

@@ -7,8 +7,8 @@ import { useReportError } from "@/components/error-pages/use-report-error";
 
 /**
  * Patient route-group error boundary. Catches anything thrown inside
- * /portal/* that isn't handled by a more specific boundary. "Go home"
- * routes back to the patient portal dashboard.
+ * /portal/* that isn't handled by a more specific boundary. The
+ * secondary recovery action routes back to the patient portal dashboard.
  */
 export default function PatientError({
   error,

@@ -7,8 +7,8 @@ import { useReportError } from "@/components/error-pages/use-report-error";
 
 /**
  * Operator route-group error boundary. Catches anything thrown inside
- * /ops/* that isn't handled by a more specific boundary. "Go home"
- * routes back to the operator queue.
+ * /ops/* that isn't handled by a more specific boundary. The
+ * secondary recovery action routes back to the operator queue.
  */
 export default function OperatorError({
   error,
