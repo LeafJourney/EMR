@@ -4,6 +4,7 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { AmbientOrb } from "@/components/ui/hero-art";
 import { OwnerDashboard } from "@/components/operator/owner-dashboard";
 import { loadOwnerKpis } from "@/lib/domain/owner-kpis";
+import { agentRegistry } from "@/lib/agents";
 
 export const metadata = { title: "Practice overview" };
 
@@ -14,6 +15,7 @@ export default async function OpsOverviewPage() {
   const orgId = user.organizationId!;
 
   const snapshot = await loadOwnerKpis(orgId);
+  const hasPracticeManagerAgent = "practiceManager" in agentRegistry;
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -33,7 +35,7 @@ export default async function OpsOverviewPage() {
       </section>
 
       {/* The dashboard */}
-      <OwnerDashboard snapshot={snapshot} />
+      <OwnerDashboard snapshot={snapshot} hasPracticeManagerAgent={hasPracticeManagerAgent} />
     </PageShell>
   );
 }

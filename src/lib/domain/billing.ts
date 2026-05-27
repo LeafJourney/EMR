@@ -1,23 +1,11 @@
 import { prisma } from "@/lib/db/prisma";
+import { formatMoney, formatMoneyCompact } from "@/lib/utils/format";
 
 // ---------------------------------------------------------------------------
 // Billing domain — computed balances, summaries, helpers
 // ---------------------------------------------------------------------------
 
-export function formatMoney(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
-
-export function formatMoneyCompact(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+export { formatMoney, formatMoneyCompact };
 
 export interface PatientFinancialSummary {
   // Balance summary

@@ -34,7 +34,7 @@ import { prisma } from "@/lib/db/prisma";
 describe("getCurrentUserFromClerk dev mode", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.NODE_ENV = "development";
+    (process.env as any).NODE_ENV = "development";
   });
 
   it("should default to clinician@demo.health when no override cookie is set", async () => {
