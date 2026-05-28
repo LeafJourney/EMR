@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import { KpiCard, type KpiSeverity, type KpiTrend } from "./kpi-card";
 import { OwnerDashboardDensityFrame } from "./owner-dashboard-density-frame";
@@ -6,9 +8,8 @@ import {
   denialSeverity,
   arSeverity,
   type OwnerKpiSnapshot,
-} from "@/lib/domain/owner-kpis";
-import { formatMoneyCompact, formatMoney } from "@/lib/domain/billing";
-import { agentRegistry } from "@/lib/agents";
+} from "@/lib/domain/owner-kpi-helpers";
+import { formatMoneyCompact, formatMoney } from "@/lib/utils/format";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrendArea } from "@/components/charts";
@@ -23,9 +24,10 @@ import { TrendArea } from "@/components/charts";
 
 export interface OwnerDashboardProps {
   snapshot: OwnerKpiSnapshot;
+  hasPracticeManagerAgent?: boolean;
 }
 
-export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
+export function OwnerDashboard({ snapshot, hasPracticeManagerAgent = true }: OwnerDashboardProps) {
   // ---------- 1. Revenue this week ----------
   const revenueTrend = computeTrend(
     snapshot.revenueThisWeekCents,
@@ -89,7 +91,6 @@ export function OwnerDashboard({ snapshot }: OwnerDashboardProps) {
   // classes are discovered automatically as soon as they record jobs.
   // No tile-side wiring is needed for the new Practice Manager Agent
   // beyond surfacing its presence via the sub-label below.
-  const hasPracticeManagerAgent = "practiceManager" in agentRegistry;
   const baseAgentSubtext = `${snapshot.agents.running} processing, ${snapshot.agents.completedToday} completed today`;
   const agentsCard = {
     eyebrow: "Agent fleet",

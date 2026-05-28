@@ -54,8 +54,20 @@ export const getCurrentUserFromClerk = cache(async (): Promise<AuthedUser | null
 
   if (!clerkUserId) {
     if (process.env.NODE_ENV !== "production") {
-      const devClinician = await prisma.user.findFirst({
-        where: { email: "clinician@demo.health" },
+      let email = "clinician@demo.health";
+      try {
+        const { cookies } = await import("next/headers");
+        const cookieStore = cookies();
+        const overrideEmail = cookieStore.get("dev_user_email")?.value;
+        if (overrideEmail) {
+          email = overrideEmail;
+        }
+      } catch (err) {
+        // ignore cookies error in static/build context
+      }
+
+      const devUser = await prisma.user.findFirst({
+        where: { email },
         include: {
           memberships: {
             include: { organization: true },
@@ -63,15 +75,15 @@ export const getCurrentUserFromClerk = cache(async (): Promise<AuthedUser | null
           },
         },
       });
-      if (devClinician) {
+      if (devUser) {
         return {
-          id: devClinician.id,
-          email: devClinician.email,
-          firstName: devClinician.firstName,
-          lastName: devClinician.lastName,
-          roles: devClinician.memberships.map((m) => m.role),
-          organizationId: devClinician.memberships[0]?.organizationId ?? null,
-          organizationName: devClinician.memberships[0]?.organization?.name ?? null,
+          id: devUser.id,
+          email: devUser.email,
+          firstName: devUser.firstName,
+          lastName: devUser.lastName,
+          roles: devUser.memberships.map((m) => m.role),
+          organizationId: devUser.memberships[0]?.organizationId ?? null,
+          organizationName: devUser.memberships[0]?.organization?.name ?? null,
         };
       }
     }

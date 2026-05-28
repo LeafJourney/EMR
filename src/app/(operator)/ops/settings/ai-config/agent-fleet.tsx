@@ -49,12 +49,18 @@ const CATEGORY_EMOJI: Record<AgentCategory, string> = {
   pharmacology: "💊",
 };
 
-export function AgentFleetPanel() {
-  const [fleet, setFleet] = useState<FleetState>(() =>
-    Object.fromEntries(
-      AGENT_CATALOG.map((a) => [a.id, { enabled: true, modelId: null }]),
-    ),
-  );
+import { saveAiConfigAction } from "./actions";
+
+export function AgentFleetPanel({ initialAiConfig }: { initialAiConfig: any }) {
+  const [fleet, setFleet] = useState<FleetState>(() => {
+    const savedFleet = initialAiConfig?.fleet ?? {};
+    return Object.fromEntries(
+      AGENT_CATALOG.map((a) => {
+        const saved = savedFleet[a.id] ?? { enabled: true, modelId: null };
+        return [a.id, saved];
+      }),
+    );
+  });
   const [tierFilter, setTierFilter] = useState<"all" | ModelTier>("all");
   const [categoryFilter, setCategoryFilter] = useState<"all" | AgentCategory>("all");
   const [saved, setSaved] = useState(false);
@@ -119,10 +125,19 @@ export function AgentFleetPanel() {
     setSaved(false);
   }
 
-  function handleSave() {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  }
+  const handleSave = async () => {
+    try {
+      await saveAiConfigAction({
+        fleet,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save fleet configuration");
+    }
+  };
+
 
   const defaultModel = findModel(DEFAULT_MODEL_ID);
 

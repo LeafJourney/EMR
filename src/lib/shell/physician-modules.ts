@@ -27,6 +27,10 @@
 
 import type { PracticeConfiguration } from "@/lib/practice-config/types";
 import type { SpecialtyManifest } from "@/lib/specialty-templates/manifest-schema";
+import {
+  PHYSICIAN_SHELL_TEMPLATES,
+  deriveSpecialtyPhysicianTemplate,
+} from "@/lib/onboarding/known-shell-templates";
 
 // ---------------------------------------------------------------------------
 // Modality meta — minimal local shape so the resolver can run without a
@@ -403,7 +407,10 @@ export function resolvePhysicianModules(
   config: Pick<
     PracticeConfiguration,
     "selectedSpecialty" | "careModel" | "enabledModalities" | "disabledModalities"
-  >,
+  > & {
+    physicianShellTemplateId?: string | null;
+    workflowTemplateIds?: string[];
+  },
   manifest: SpecialtyManifest | null,
   options: ResolvePhysicianModulesOptions = {},
 ): PhysicianModuleResolution {
@@ -440,7 +447,19 @@ export function resolvePhysicianModules(
   const modalitySatisfied = (m: PhysicianModule): boolean =>
     m.requiresModality === null || activeSet.has(m.requiresModality);
 
-  const missionControlCards = manifest.default_mission_control_cards
+  let cardsSource = manifest.default_mission_control_cards;
+  const templateId = config.physicianShellTemplateId;
+  if (templateId) {
+    let tpl = PHYSICIAN_SHELL_TEMPLATES.find((t) => t.id === templateId) ?? null;
+    if (!tpl && templateId === `${manifest.slug}-physician-shell`) {
+      tpl = deriveSpecialtyPhysicianTemplate(manifest.slug, manifest.name, manifest.default_mission_control_cards);
+    }
+    if (tpl) {
+      cardsSource = tpl.cards;
+    }
+  }
+
+  const missionControlCards = cardsSource
     .map((s) => buildModule(s, "mission-control-card"))
     .filter(modalitySatisfied);
 
@@ -452,7 +471,11 @@ export function resolvePhysicianModules(
     .map((s) => buildModule(s, "chart-section"))
     .filter(modalitySatisfied);
 
-  const intakeForms = manifest.default_workflows
+  const workflowsSource = Array.isArray(config.workflowTemplateIds) && config.workflowTemplateIds.length > 0
+    ? config.workflowTemplateIds
+    : manifest.default_workflows;
+
+  const intakeForms = workflowsSource
     .map((s) => buildModule(s, "intake-form"))
     .filter(modalitySatisfied);
 

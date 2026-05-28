@@ -88,7 +88,7 @@ export function createAgentContext(args: CreateContextArgs): {
         throw new Error(`Agent ${args.agentName}@${args.agentVersion} not permitted to ${action}`);
       }
     },
-    model: resolveModelClient(),
+    model: resolveModelClient(args.organizationId, args.agentName),
     tools,
     stepResults: new Map<string, StepResult>(),
   };
@@ -131,6 +131,7 @@ export async function writeAgentAudit(
 export function createLightContext(opts: {
   jobId?: string;
   organizationId?: string | null;
+  agentName?: string;
 }): AgentContext {
   const noop = () => {};
   const noopSource = () => {};
@@ -145,7 +146,7 @@ export function createLightContext(opts: {
   ] as AllowedAction[]);
 
   const tools = buildToolRegistry({
-    agentName: "server-action",
+    agentName: opts.agentName ?? "server-action",
     agentVersion: "1.0.0",
     organizationId: opts.organizationId ?? null,
     allowed,
@@ -159,7 +160,7 @@ export function createLightContext(opts: {
     log() {},
     async emit() {},
     assertCan() {},
-    model: resolveModelClient(),
+    model: resolveModelClient(opts.organizationId, opts.agentName),
     tools,
     stepResults: new Map(),
   };

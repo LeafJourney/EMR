@@ -12,7 +12,7 @@ const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "fleet", label: "Agent fleet", hint: "Per-agent model overrides, enable / disable, fleet cost." },
 ];
 
-export function AiConfigTabs() {
+export function AiConfigTabs({ initialAiConfig }: { initialAiConfig: any }) {
   const [tab, setTab] = useState<Tab>("default");
   const active = TABS.find((t) => t.key === tab)!;
 
@@ -29,11 +29,12 @@ export function AiConfigTabs() {
       {/* Each panel renders its own state-heavy component; mark as lazy so
           we don't double-fetch on every console open. */}
       <Panel value="default" lazy>
-        <ModelConfigPanel />
+        <ModelConfigPanel initialAiConfig={initialAiConfig} />
       </Panel>
       <Panel value="fleet" lazy>
-        <AgentFleetPanel />
+        <AgentFleetPanel initialAiConfig={initialAiConfig} />
       </Panel>
     </Tabs>
   );
 }
+

@@ -8,10 +8,9 @@ import {
 import {
   buildChatCBSystemPrompt,
   searchKnowledgeBase,
-  EVIDENCE_COLORS,
-  STUDY_TYPE_LABELS,
-  type CannabisConditionPair,
+  type Citation,
 } from "@/lib/domain/chatcb";
+import { fetchPubMedCitations } from "@/lib/agents/research/pubmed-citation-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,15 +19,15 @@ export const maxDuration = 60;
  * POST /api/agents/chat-cb
  *
  * Conversational ChatCB endpoint. Streams an SSE response with the AI answer
- * followed by a final `citations` event carrying structured knowledge-base
- * matches. The client can render the text progressively and append citations
- * once the stream completes.
+ * followed by a final `citations` event carrying structured knowledge-base and
+ * PubMed matches. If a standard JSON request (carrying `message`) is sent, it
+ * returns a static JSON payload containing the complete answer and sources array.
  *
- * Request body: { question: string }
+ * Request body: { question: string } or { message: string }
  *
  * Stream events:
  *   data: {"type":"delta","text":"..."}        — partial answer text
- *   data: {"type":"citations","items":[...]}   — CannabisConditionPair[]
+ *   data: {"type":"citations","items":[...]}   — Citation[]
  *   data: {"type":"done"}
  *   data: {"type":"error","message":"..."}
  */
@@ -39,7 +38,7 @@ interface DeltaEvent {
 }
 interface CitationsEvent {
   type: "citations";
-  items: CannabisConditionPair[];
+  items: Citation[];
 }
 interface DoneEvent {
   type: "done";
@@ -59,7 +58,7 @@ export async function POST(request: Request) {
   });
   if (gate.error) return gate.error;
 
-  let body: { question?: unknown };
+  let body: { question?: unknown; message?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -69,9 +68,10 @@ export async function POST(request: Request) {
     });
   }
 
+  const rawQuestion = body.question ?? body.message;
   const question =
-    typeof body.question === "string" && body.question.trim().length > 0
-      ? body.question.trim().slice(0, 400)
+    typeof rawQuestion === "string" && rawQuestion.trim().length > 0
+      ? rawQuestion.trim().slice(0, 400)
       : null;
 
   if (!question) {
@@ -81,27 +81,95 @@ export async function POST(request: Request) {
     });
   }
 
-  // Search the local knowledge base to inject context and return as citations.
+  const isSSE = body.question !== undefined;
+
+  // Search the local knowledge base + fetch live PubMed citations in parallel
   const kbMatches = searchKnowledgeBase(question).slice(0, 5);
+  const pubmedResult = await fetchPubMedCitations(question, { maxResults: 5 }).catch(
+    (err) => {
+      logger.error({ event: "agent.chat-cb.pubmed_failed", question, err });
+      return { query: question, totalResults: 0, citations: [] as Citation[], searchTime: 0 };
+    }
+  );
+
+  const kbCitations: Citation[] = kbMatches.map((m, i) => ({
+    id: `kb-${i}`,
+    title: `${m.cannabinoid} and ${m.condition}`,
+    authors: "Cannabis Knowledge Base",
+    journal: "Leafjourney Research Index",
+    year: 2025,
+    evidenceLevel: m.evidenceLevel,
+    studyType: "review" as const,
+    summary: m.summary,
+  }));
+
+  const citations: Citation[] = [
+    ...pubmedResult.citations,
+    ...kbCitations,
+  ].slice(0, 8);
 
   const kbContext =
     kbMatches.length > 0
-      ? `\n\nRelevant knowledge base entries:\n${kbMatches
+      ? "\n\nRelevant knowledge base entries:\n" +
+        kbMatches
           .map(
             (m) =>
-              `• ${m.cannabinoid} / ${m.condition} [${EVIDENCE_COLORS[m.evidenceLevel].label}] (${m.studyCount} studies): ${m.summary}`,
+              `- ${m.cannabinoid} for ${m.condition} (${m.evidenceLevel}, ${m.studyCount} studies): ${m.summary}`
           )
-          .join("\n")}`
+          .join("\n")
+      : "";
+
+  const pubmedContext =
+    pubmedResult.citations.length > 0
+      ? "\n\nLive PubMed results (cite by PMID when relevant):\n" +
+        pubmedResult.citations
+          .map(
+            (c) =>
+              `- [PMID ${c.pmid}] ${c.title} — ${c.journal} ${c.year} (${c.evidenceLevel}): ${c.summary}`
+          )
+          .join("\n")
       : "";
 
   const systemPrompt = buildChatCBSystemPrompt();
-  const userPrompt = `${systemPrompt}${kbContext}\n\nClinician question: ${question}`;
+  const userPrompt = `${systemPrompt}${kbContext}${pubmedContext}\n\nClinician question: ${question}`;
+
+  const model = resolveModelClient();
+
+  // If the request doesn't want SSE, return a unified JSON payload
+  if (!isSSE) {
+    try {
+      const answer = await model.complete(userPrompt, {
+        maxTokens: 600,
+        temperature: 0.4,
+      });
+
+      const sources = citations.map((c) => (c.pmid ? `PMID ${c.pmid}` : c.title));
+
+      return new Response(
+        JSON.stringify({
+          content: answer,
+          sources,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    } catch (err) {
+      const msg = isModelError(err)
+        ? err.friendly
+        : err instanceof Error
+          ? err.message
+          : "AI generation failed.";
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
 
   const encoder = new TextEncoder();
   const abort = new AbortController();
   request.signal.addEventListener("abort", () => abort.abort(), { once: true });
-
-  const model = resolveModelClient();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -132,9 +200,9 @@ export async function POST(request: Request) {
           emit({ type: "delta", text: full });
         }
 
-        // Emit citations after the main answer so the client can append them.
-        if (kbMatches.length > 0) {
-          emit({ type: "citations", items: kbMatches });
+        // Emit merged citations after the main answer so the client can append them.
+        if (citations.length > 0) {
+          emit({ type: "citations", items: citations });
         }
         emit({ type: "done" });
       } catch (err) {

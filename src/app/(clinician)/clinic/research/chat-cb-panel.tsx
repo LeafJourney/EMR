@@ -13,13 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   EVIDENCE_COLORS,
-  type CannabisConditionPair,
+  STUDY_TYPE_LABELS,
+  type Citation,
 } from "@/lib/domain/chatcb";
 
 interface Message {
   role: "user" | "assistant";
   text: string;
-  citations?: CannabisConditionPair[];
+  citations?: Citation[];
   loading?: boolean;
 }
 
@@ -62,7 +63,7 @@ export function ChatCBPanel() {
       const decoder = new TextDecoder();
       let buffer = "";
       let accText = "";
-      let citations: CannabisConditionPair[] | undefined;
+      let citations: Citation[] | undefined;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -81,7 +82,7 @@ export function ChatCBPanel() {
             const event = JSON.parse(payload) as {
               type: string;
               text?: string;
-              items?: CannabisConditionPair[];
+              items?: Citation[];
               message?: string;
             };
 
@@ -187,40 +188,73 @@ export function ChatCBPanel() {
                       )}
                     </div>
                     {msg.citations && msg.citations.length > 0 && (
-                      <div className="space-y-1 ml-1">
+                      <div className="space-y-2 ml-1">
                         <p className="text-[10px] text-text-subtle uppercase tracking-wide font-medium">
                           Evidence
                         </p>
                         {msg.citations.map((c, ci) => {
                           const ev = EVIDENCE_COLORS[c.evidenceLevel];
+                          const isPubmed = c.id.startsWith("pubmed-");
                           return (
                             <div
                               key={ci}
-                              className={`rounded-lg px-2.5 py-1.5 ${ev.bg}`}
+                              className={`rounded-lg px-2.5 py-2 border border-border/10 transition-all ${ev.bg}`}
                             >
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span
-                                  className={`text-[10px] font-bold ${ev.text}`}
-                                >
-                                  {ev.emoji}
-                                </span>
-                                <span className="text-xs font-medium text-text">
-                                  {c.cannabinoid}
-                                </span>
-                                <span className="text-[10px] text-text-muted">
-                                  ·
-                                </span>
-                                <span className="text-[10px] text-text-muted">
-                                  {c.condition}
-                                </span>
-                                <Badge
-                                  tone="neutral"
-                                  className="ml-auto text-[10px] py-0 h-4"
-                                >
-                                  {c.studyCount} studies
-                                </Badge>
-                              </div>
-                              <p className="text-[10px] text-text-muted mt-1 leading-relaxed line-clamp-2">
+                              {isPubmed ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <p className="text-xs font-semibold text-text leading-tight">
+                                      {c.title}
+                                    </p>
+                                    {c.pmid && (
+                                      <a
+                                        href={`https://pubmed.ncbi.nlm.nih.gov/${c.pmid}/`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[9px] font-mono text-accent hover:underline shrink-0 flex items-center gap-0.5"
+                                      >
+                                        PMID {c.pmid} ↗
+                                      </a>
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-text-subtle">
+                                    {c.authors} · <span className="italic">{c.journal}</span> ({c.year})
+                                  </p>
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <Badge
+                                      tone="neutral"
+                                      className="text-[8px] py-0 px-1.5 h-3.5"
+                                    >
+                                      {STUDY_TYPE_LABELS[c.studyType]}
+                                    </Badge>
+                                    <Badge
+                                      className={`text-[8px] py-0 px-1.5 h-3.5 border-0 ${ev.bg} ${ev.text}`}
+                                    >
+                                      {ev.emoji} {ev.label}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={`text-[10px] font-bold ${ev.text}`}
+                                    >
+                                      {ev.emoji}
+                                    </span>
+                                    <span className="text-xs font-medium text-text">
+                                      {c.title}
+                                    </span>
+                                    <Badge
+                                      tone="neutral"
+                                      className="ml-auto text-[9px] py-0 h-4"
+                                    >
+                                      Internal DB
+                                    </Badge>
+                                  </div>
+                                </div>
+                              )}
+                              <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
                                 {c.summary}
                               </p>
                             </div>

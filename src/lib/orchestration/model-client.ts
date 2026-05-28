@@ -1,4 +1,6 @@
+import { prisma } from "@/lib/db/prisma";
 import type { ModelCallOptions, ModelClient } from "./types";
+
 
 /**
  * A structured model error. Carries a stable `code` so the UI can render a
@@ -163,21 +165,29 @@ export class OpenRouterModelClient implements ModelClient {
   private readonly apiKey: string;
   private readonly siteUrl: string | undefined;
   private readonly appName: string;
+  private readonly defaultMaxTokens: number | undefined;
+  private readonly defaultTemperature: number | undefined;
 
-  constructor() {
-    const apiKey = process.env.OPENROUTER_API_KEY;
+  constructor(options?: {
+    apiKey?: string;
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+  }) {
+    const apiKey = options?.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouterModelClient");
     }
     this.apiKey = apiKey;
-    // Default to Gemini Flash — 37x cheaper than Claude Sonnet, still very capable.
-    // Override with OPENROUTER_MODEL env var for premium models when needed.
-    this.model = process.env.OPENROUTER_MODEL ?? "google/gemini-2.0-flash-001";
+    this.model = options?.model || process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
     this.freeModel =
       process.env.OPENROUTER_FREE_MODEL ?? FREE_MODEL_CANDIDATES[0];
     this.siteUrl = process.env.OPENROUTER_SITE_URL;
     this.appName = process.env.OPENROUTER_APP_NAME ?? "Leafjourney";
+    this.defaultMaxTokens = options?.maxTokens;
+    this.defaultTemperature = options?.temperature;
   }
+
 
   async complete(
     prompt: string,
@@ -255,7 +265,8 @@ export class OpenRouterModelClient implements ModelClient {
     };
     if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
 
-    const requestedMaxTokens = options?.maxTokens ?? 1024;
+    const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
+    const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
     let response: Response;
     try {
@@ -267,9 +278,10 @@ export class OpenRouterModelClient implements ModelClient {
           model,
           messages: [{ role: "user", content: prompt }],
           max_tokens: requestedMaxTokens,
-          temperature: options?.temperature ?? 0.3,
+          temperature: requestedTemperature,
         }),
       });
+
     } catch (err) {
       throw new ModelError({
         code: "network",
@@ -324,7 +336,8 @@ export class OpenRouterModelClient implements ModelClient {
     };
     if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
 
-    const requestedMaxTokens = options?.maxTokens ?? 1024;
+    const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
+    const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
     let response: Response;
     try {
@@ -336,10 +349,11 @@ export class OpenRouterModelClient implements ModelClient {
           model,
           messages: [{ role: "user", content: prompt }],
           max_tokens: requestedMaxTokens,
-          temperature: options?.temperature ?? 0.3,
+          temperature: requestedTemperature,
           stream: true,
         }),
       });
+
     } catch (err) {
       throw new ModelError({
         code: "network",
@@ -535,12 +549,109 @@ function classifyOpenRouterError(
   });
 }
 
-/**
- * Resolve the active model client based on environment. Defaults to the
- * deterministic stub so the harness is always runnable, even without keys.
- */
-export function resolveModelClient(): ModelClient {
-  const kind = (process.env.AGENT_MODEL_CLIENT ?? "stub").toLowerCase();
-  if (kind === "openrouter") return new OpenRouterModelClient();
-  return new StubModelClient();
+export class ConfigurableModelClient implements ModelClient {
+  private resolvedClientPromise: Promise<ModelClient> | null = null;
+  private resolvedClient: ModelClient | null = null;
+
+  constructor(
+    private readonly organizationId: string | null,
+    private readonly agentName?: string
+  ) {}
+
+  private async getClient(): Promise<ModelClient> {
+    if (this.resolvedClient) return this.resolvedClient;
+    if (this.resolvedClientPromise) return this.resolvedClientPromise;
+
+    this.resolvedClientPromise = (async () => {
+      let dbConfig: any = null;
+      if (this.organizationId) {
+        try {
+          dbConfig = await prisma.practiceConfiguration.findFirst({
+            where: { organizationId: this.organizationId },
+            orderBy: { version: "desc" },
+          });
+        } catch (e) {
+          console.error("Failed to load practice configuration in ConfigurableModelClient:", e);
+        }
+      }
+
+      let aiConfig: any = null;
+      if (dbConfig?.regulatoryFlags && typeof dbConfig.regulatoryFlags === "object") {
+        const flags = dbConfig.regulatoryFlags as Record<string, any>;
+        if (flags.aiConfig) {
+          aiConfig = flags.aiConfig;
+        }
+      }
+
+      const defaultModel = aiConfig?.defaultModel;
+      const fleetOverrides = aiConfig?.fleet;
+
+      let provider = defaultModel?.provider || process.env.AGENT_MODEL_CLIENT || "stub";
+      let modelId = defaultModel?.modelId;
+      let apiKey = defaultModel?.apiKey;
+      let maxTokens = defaultModel?.maxTokens;
+      let temperature = defaultModel?.temperature;
+
+      // Apply fleet overrides if matching agentName
+      if (this.agentName && fleetOverrides && fleetOverrides[this.agentName]) {
+        const override = fleetOverrides[this.agentName];
+        if (override.enabled === false) {
+          return new StubModelClient();
+        }
+        if (override.modelId) {
+          modelId = override.modelId;
+          try {
+            const { findModel } = await import("@/lib/domain/byok");
+            const found = findModel(modelId);
+            if (found) {
+              provider = found.provider;
+            }
+          } catch (e) {
+            console.error("Failed to dynamically import @/lib/domain/byok or find model:", e);
+          }
+        }
+      }
+
+      if (provider.toLowerCase() === "openrouter") {
+        const finalApiKey = apiKey || process.env.OPENROUTER_API_KEY;
+        if (!finalApiKey) {
+          console.warn("OpenRouter API key missing in ConfigurableModelClient. Falling back to StubModelClient.");
+          return new StubModelClient();
+        }
+        return new OpenRouterModelClient({
+          apiKey: finalApiKey,
+          model: modelId,
+          maxTokens: maxTokens ? Number(maxTokens) : undefined,
+          temperature: temperature ? Number(temperature) : undefined,
+        });
+      }
+
+      return new StubModelClient();
+    })();
+
+    this.resolvedClient = await this.resolvedClientPromise;
+    return this.resolvedClient;
+  }
+
+  async complete(prompt: string, options?: ModelCallOptions): Promise<string> {
+    const client = await this.getClient();
+    return client.complete(prompt, options);
+  }
+
+  async *stream(prompt: string, options?: ModelCallOptions): AsyncIterable<string> {
+    const client = await this.getClient();
+    if (client.stream) {
+      yield* client.stream(prompt, options);
+    } else {
+      yield await client.complete(prompt, options);
+    }
+  }
 }
+
+/**
+ * Resolve the active model client based on environment or database config.
+ */
+export function resolveModelClient(organizationId?: string | null, agentName?: string): ModelClient {
+  return new ConfigurableModelClient(organizationId ?? null, agentName);
+}
+

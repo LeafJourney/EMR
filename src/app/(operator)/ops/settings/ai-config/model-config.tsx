@@ -16,10 +16,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { saveAiConfigAction } from "./actions";
 
-export function ModelConfigPanel() {
-  const [config, setConfig] = useState<ModelConfig>(getDefaultConfig);
-  const [apiKey, setApiKey] = useState("");
+export function ModelConfigPanel({ initialAiConfig }: { initialAiConfig: any }) {
+  const [config, setConfig] = useState<ModelConfig>(() => {
+    if (initialAiConfig?.defaultModel) {
+      return {
+        provider: initialAiConfig.defaultModel.provider,
+        modelId: initialAiConfig.defaultModel.modelId,
+        displayName: "",
+        apiKeySet: !!initialAiConfig.defaultModel.apiKey,
+        isDefault: false,
+        maxTokens: initialAiConfig.defaultModel.maxTokens ?? 1024,
+        temperature: initialAiConfig.defaultModel.temperature ?? 0.3,
+      };
+    }
+    return getDefaultConfig();
+  });
+  const [apiKey, setApiKey] = useState(() => (initialAiConfig?.defaultModel?.apiKey ? "••••••••" : ""));
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [saved, setSaved] = useState(false);
 
@@ -82,10 +96,26 @@ export function ModelConfigPanel() {
     }, 1500);
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const handleSave = async () => {
+    try {
+      await saveAiConfigAction({
+        defaultModel: {
+          provider: config.provider,
+          modelId: config.modelId,
+          apiKey: apiKey,
+          maxTokens: config.maxTokens,
+          temperature: config.temperature,
+        },
+      });
+      setSaved(true);
+      setConfig((prev) => ({ ...prev, apiKeySet: !!apiKey }));
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to save AI configuration");
+    }
   };
+
 
   return (
     <div className="space-y-6">

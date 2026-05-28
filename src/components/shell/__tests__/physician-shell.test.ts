@@ -399,6 +399,26 @@ describe("resolvePhysicianModules", () => {
       expect(m.componentPath).not.toMatch(/modules\/cannabis\//);
     }
   });
+
+  it("uses custom physicianShellTemplateId cards and custom workflowTemplateIds", () => {
+    const config = {
+      selectedSpecialty: "internal-medicine",
+      careModel: "longitudinal",
+      enabledModalities: ["medications", "labs", "imaging"],
+      disabledModalities: [],
+      physicianShellTemplateId: "physician-shell-clinic-day",
+      workflowTemplateIds: ["lab-review", "medication-reconciliation"],
+    };
+    const manifest = getSpecialtyTemplate("internal-medicine");
+    const result = resolvePhysicianModules(config, manifest);
+    assertOk(result);
+
+    const cardSlugs = result.missionControlCards.map((c) => c.slug);
+    expect(cardSlugs).toEqual(["todays-schedule", "open-charts", "messages-inbox", "refill-requests"]);
+
+    const workflowSlugs = result.intakeForms.map((w) => w.slug);
+    expect(workflowSlugs).toEqual(["lab-review", "medication-reconciliation"]);
+  });
 });
 
 describe("computeActiveModalities", () => {

@@ -56,6 +56,8 @@ export interface PhysicianShellProps {
     | "careModel"
     | "enabledModalities"
     | "disabledModalities"
+    | "physicianShellTemplateId"
+    | "workflowTemplateIds"
   >;
 
   /**

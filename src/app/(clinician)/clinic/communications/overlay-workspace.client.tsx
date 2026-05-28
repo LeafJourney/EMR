@@ -46,6 +46,14 @@ import {
   type SessionKeyPair,
   type RedactedTranscriptLine,
 } from "@/lib/communications/overlay";
+import { PATIENT_CHECKLIST } from "@/lib/domain/telehealth";
+import { DailyVideoFrame, type ConnectionState } from "@/components/telehealth/DailyVideoFrame";
+import {
+  startOverlayTelehealthVisit,
+  endOverlayTelehealthVisit,
+  fetchOverlayDefaultPatient,
+  type OverlayTelehealthVisitResult,
+} from "./actions";
 
 // ---------------------------------------------------------------------------
 // Shared building blocks
@@ -356,49 +364,320 @@ function VideoTile({
 }
 
 function TelehealthVideo() {
+  const [phase, setPhase] = React.useState<"pre_visit" | "in_progress" | "ended">("pre_visit");
+  const [checkedItems, setCheckedItems] = React.useState<Set<string>>(new Set());
   const [muted, setMuted] = React.useState(false);
   const [cameraOff, setCameraOff] = React.useState(false);
   const [speakerOff, setSpeakerOff] = React.useState(false);
   const [sharing, setSharing] = React.useState(false);
-  const [callSeconds, setCallSeconds] = React.useState(642);
+  const [scribeActive, setScribeActive] = React.useState(false);
+  const [startingVisit, setStartingVisit] = React.useState(false);
+  const [visitData, setVisitData] = React.useState<OverlayTelehealthVisitResult | null>(null);
+  const [connection, setConnection] = React.useState<ConnectionState>("loading");
+  const [participantCount, setParticipantCount] = React.useState(1);
+  const [linkCopied, setLinkCopied] = React.useState(false);
+  const [defaultPatient, setDefaultPatient] = React.useState<{ id: string; firstName: string; lastName: string; presentingConcerns: string | null } | null>(null);
+  const [callSeconds, setCallSeconds] = React.useState(0);
+
+  // Load default patient details on mount for pre-visit checklist preview
+  React.useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const patient = await fetchOverlayDefaultPatient();
+        if (active && patient) {
+          setDefaultPatient(patient);
+        }
+      } catch (err) {
+        console.error("Failed to load overlay patient:", err);
+      }
+    }
+    load();
+    return () => { active = false; };
+  }, []);
+
+  // Timer
+  React.useEffect(() => {
+    if (phase === "pre_visit") {
+      setCallSeconds(0);
+    }
+  }, [phase]);
 
   React.useEffect(() => {
-    const id = window.setInterval(() => setCallSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+    if (phase === "in_progress" && connection === "joined") {
+      const id = window.setInterval(() => setCallSeconds((s) => s + 1), 1000);
+      return () => window.clearInterval(id);
+    }
+  }, [phase, connection]);
 
   const mm = String(Math.floor(callSeconds / 60)).padStart(2, "0");
   const ss = String(callSeconds % 60).padStart(2, "0");
 
+  const toggleCheck = React.useCallback((id: string) => {
+    setCheckedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const requiredComplete = PATIENT_CHECKLIST
+    .filter((c) => c.required)
+    .every((c) => checkedItems.has(c.id));
+
+  const startVisit = React.useCallback(async () => {
+    setStartingVisit(true);
+    try {
+      const result = await startOverlayTelehealthVisit();
+      setVisitData(result);
+      setPhase("in_progress");
+    } catch (err) {
+      console.error("Failed to start overlay telehealth:", err);
+      alert("Failed to start visit: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setStartingVisit(false);
+    }
+  }, []);
+
+  const endVisit = React.useCallback(async () => {
+    setPhase("ended");
+    if (visitData?.room.name) {
+      try {
+        await endOverlayTelehealthVisit(visitData.room.name);
+      } catch (err) {
+        console.error("Failed to end overlay telehealth room:", err);
+      }
+    }
+  }, [visitData]);
+
+  const copyPatientLink = React.useCallback(() => {
+    if (!visitData?.patientJoinUrl) return;
+    navigator.clipboard.writeText(visitData.patientJoinUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  }, [visitData]);
+
+  if (phase === "pre_visit") {
+    return (
+      <GlassPanel className="flex flex-col">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/40 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-info/10 text-info">
+              <Video className="h-4 w-4" aria-hidden />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-text">Beam Telehealth · Setup workspace</p>
+              <p className="text-[11px] text-text-subtle">
+                Daily.co dynamic rooms · waiting-room verified · HIPAA compliant
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+          {/* System Readiness Checklist */}
+          <div>
+            <h4 className="text-sm font-medium text-text mb-3">System Readiness</h4>
+            <ul className="space-y-2">
+              {PATIENT_CHECKLIST.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleCheck(item.id)}
+                    className={cn(
+                      "w-full text-left flex items-start gap-2.5 p-2.5 rounded-xl border transition-all duration-200",
+                      checkedItems.has(item.id)
+                        ? "bg-accent/5 border-accent/20"
+                        : "bg-surface border-border hover:bg-surface-muted",
+                    )}
+                  >
+                    <div className={cn(
+                      "mt-0.5 flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                      checkedItems.has(item.id) ? "border-accent bg-accent text-white" : "border-border-strong text-transparent"
+                    )}>
+                      <span className="text-[10px]">✓</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-semibold text-text">
+                          {item.label}
+                        </span>
+                        {item.required && (
+                          <Badge tone="warning" className="text-[8px] px-1 py-0 h-3.5">
+                            Req
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-text-muted mt-0.5">
+                        {item.description}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Patient Info Preview */}
+          <div className="flex flex-col justify-between rounded-xl bg-surface-muted/30 border border-white/20 p-4">
+            <div>
+              <h4 className="text-xs uppercase tracking-wider text-text-subtle mb-3">Upcoming patient</h4>
+              {defaultPatient ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-text">
+                      {defaultPatient.firstName} {defaultPatient.lastName}
+                    </p>
+                    <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                      <span className="font-medium text-text-subtle">Presenting concern:</span>{" "}
+                      {defaultPatient.presentingConcerns || "General follow-up."}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs text-text-muted italic">
+                  Loading database patient details...
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <Button
+                onClick={startVisit}
+                disabled={!requiredComplete || startingVisit}
+                size="sm"
+                className="w-full"
+              >
+                {startingVisit ? "Creating video room..." : "Start video visit"}
+              </Button>
+              {!requiredComplete && (
+                <p className="text-[10px] text-text-muted text-center mt-1.5">
+                  Complete required system checks to enable visit.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </GlassPanel>
+    );
+  }
+
+  if (phase === "ended") {
+    return (
+      <GlassPanel className="flex flex-col items-center justify-center p-8 text-center min-h-[300px]">
+        <div className="w-12 h-12 rounded-full bg-accent/10 mb-4 flex items-center justify-center text-accent">
+          ✓
+        </div>
+        <h3 className="font-display text-lg text-text mb-1">
+          Visit complete
+        </h3>
+        <p className="text-sm text-text-muted mb-1">
+          The telehealth session has ended.
+        </p>
+        <p className="text-xs text-text-subtle mb-6">
+          Duration: {mm}:{ss}
+        </p>
+        <Button onClick={() => setPhase("pre_visit")} size="sm">
+          Reset setup
+        </Button>
+      </GlassPanel>
+    );
+  }
+
   return (
     <GlassPanel className="flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/40 px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/40 px-6 py-3">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-info/10 text-info">
             <Video className="h-4 w-4" aria-hidden />
           </span>
           <div>
-            <p className="text-sm font-medium text-text">Beam Telehealth · Visit room</p>
+            <p className="text-sm font-medium text-text">Beam Telehealth · Active room</p>
             <p className="text-[11px] text-text-subtle">
-              Daily.co transport · waiting-room verified · no cloud recording
+              Daily.co Live Session · waiting-room verified
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge tone="success" className="gap-1.5">
-            <LiveDot /> Live · {mm}:{ss}
-          </Badge>
-          {sharing && (
-            <Badge tone="info" className="gap-1.5">
-              <ScreenShare className="h-3 w-3" aria-hidden /> Sharing screen
-            </Badge>
+          {scribeActive && (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-accent/15 border border-accent/20 text-[10px] font-semibold text-accent animate-pulse">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              Scribe Active
+            </div>
           )}
+          <Badge tone={connection === "joined" ? "danger" : "info"} className="gap-1.5 text-xs py-0.5">
+            {connection === "joined" ? (
+              <>
+                <LiveDot tone="danger" /> LIVE · {mm}:{ss}
+              </>
+            ) : (
+              connection === "loading" ? "Loading..." : "Connecting..."
+            )}
+          </Badge>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 px-6 py-5 md:grid-cols-2">
-        <VideoTile label="Patient · Maya R." role="patient" muted={false} />
-        <VideoTile label="You · Dr. Patel" role="provider" muted={muted} cameraOff={cameraOff} />
+      <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
+        {/* Main video area */}
+        <div className="lg:col-span-2 relative aspect-video w-full overflow-hidden rounded-xl bg-black border border-white/20">
+          {visitData ? (
+            <DailyVideoFrame
+              roomUrl={visitData.room.url}
+              token={visitData.providerToken.token}
+              userName={visitData.providerName}
+              muted={muted}
+              cameraOff={cameraOff}
+              screenSharing={sharing}
+              onConnectionStateChange={setConnection}
+              onParticipantCountChange={setParticipantCount}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+              <p className="text-white/60 text-xs">Preparing video session...</p>
+            </div>
+          )}
+        </div>
+
+        {/* Chart quick-view */}
+        <div className="rounded-xl bg-surface-muted/30 border border-white/20 p-4 space-y-4 text-xs">
+          <div>
+            <h4 className="text-[10px] text-text-subtle uppercase tracking-wider mb-1 font-semibold">Counterparty</h4>
+            <p className="text-sm font-semibold text-text">
+              {visitData?.patient.firstName} {visitData?.patient.lastName}
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-[10px] text-text-subtle uppercase tracking-wider mb-1 font-semibold">Presenting Concern</h4>
+            <p className="text-text-muted leading-relaxed">
+              {visitData?.patient.presentingConcerns || "No concern logged."}
+            </p>
+          </div>
+
+          {visitData?.patient.medications && visitData.patient.medications.length > 0 && (
+            <div>
+              <h4 className="text-[10px] text-text-subtle uppercase tracking-wider mb-1 font-semibold">Active Medications</h4>
+              <ul className="space-y-1">
+                {visitData.patient.medications.map((med, index) => (
+                  <li key={index} className="flex items-center gap-1.5 text-text-muted">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                    <span>{med.name}</span>
+                    {med.dosage && <span className="text-[10px] text-text-subtle">({med.dosage})</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {visitData && (
+            <div className="pt-2.5 border-t border-white/10">
+              <Button onClick={copyPatientLink} variant="secondary" size="sm" className="w-full h-7 text-[10px]">
+                {linkCopied ? "Copied!" : "Copy patient link"}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/40 bg-surface/40 px-6 py-3 backdrop-blur-sm">
@@ -406,13 +685,13 @@ function TelehealthVideo() {
           <ControlBtn
             active={!muted}
             onClick={() => setMuted((m) => !m)}
-            label={muted ? "Unmute" : "Mute"}
+            label={muted ? "Unmute mic" : "Mute mic"}
             icon={muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
           />
           <ControlBtn
             active={!speakerOff}
             onClick={() => setSpeakerOff((s) => !s)}
-            label={speakerOff ? "Sound on" : "Sound off"}
+            label={speakerOff ? "Unmute speaker" : "Mute speaker"}
             icon={speakerOff ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           />
           <ControlBtn
@@ -428,8 +707,22 @@ function TelehealthVideo() {
             icon={<ScreenShare className="h-4 w-4" />}
             tone="info"
           />
+          <ControlBtn
+            active={scribeActive}
+            onClick={() => setScribeActive((a) => !a)}
+            label={scribeActive ? "Pause AI Scribe" : "Start AI Scribe"}
+            icon={
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn(scribeActive && "animate-pulse")}>
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" x2="12" y1="19" y2="22" />
+                <path d="M8 22h8" />
+              </svg>
+            }
+            tone="info"
+          />
         </div>
-        <Button variant="danger" size="sm" leadingIcon={<PhoneOff className="h-4 w-4" aria-hidden />}>
+        <Button onClick={endVisit} variant="danger" size="sm" leadingIcon={<PhoneOff className="h-4 w-4" aria-hidden />}>
           End visit
         </Button>
       </div>
