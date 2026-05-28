@@ -44,6 +44,11 @@ const createOrgSchema = z.object({
     .trim()
     .email("Must be a valid email")
     .max(320),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Phone number is required")
+    .regex(/^\(\d{3}\) \d{3}-\d{4}$/, "Phone number must be in the format (555) 123-4567"),
   npi: npiSchema,
   street: z.string().trim().min(1, "Street is required").max(200),
   city: z.string().trim().min(1, "City is required").max(100),
@@ -183,6 +188,7 @@ export async function POST(req: Request) {
       brandName: input.brandName,
       primaryContactName: input.primaryContactName,
       primaryContactEmail: input.primaryContactEmail,
+      phone: input.phone,
       npi: input.npi,
       street: input.street,
       city: input.city,

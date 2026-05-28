@@ -32,6 +32,7 @@ export function CreateOrgInlineForm({ onCreated }: { onCreated: (orgId: string) 
       brandName: "New Inline Org",
       primaryContactName: "Admin",
       primaryContactEmail: "admin@example.com",
+      phone: "(555) 123-4567",
       street: "123 Main St",
       city: "San Francisco",
       state: "CA",
@@ -74,6 +75,17 @@ const COMMON_US_TIME_ZONES = [
 
 const DEFAULT_TZ = "America/Los_Angeles";
 
+function formatPhoneNumber(value: string): string {
+  if (!value) return value;
+  const phoneNumber = value.replace(/[^\d]/g, "");
+  const len = phoneNumber.length;
+  if (len < 4) return phoneNumber;
+  if (len < 7) {
+    return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
+  }
+  return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`;
+}
+
 // --- Zod schemas (mirror server-side route validation) -----------------
 
 const npiOptional = z
@@ -93,6 +105,11 @@ const orgFormSchema = z.object({
     .trim()
     .min(1, "Required")
     .email("Must be a valid email"),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Required")
+    .regex(/^\(\d{3}\) \d{3}-\d{4}$/, "Must be formatted as (555) 123-4567"),
   npi: npiOptional,
   street: z.string().trim().min(1, "Required"),
   city: z.string().trim().min(1, "Required"),
@@ -133,6 +150,7 @@ const EMPTY_ORG: OrgFormValues = {
   brandName: "",
   primaryContactName: "",
   primaryContactEmail: "",
+  phone: "",
   npi: "",
   street: "",
   city: "",
@@ -629,6 +647,22 @@ function CreateNewTab({ patch }: { patch: WizardStepProps["patch"] }) {
               value={orgValues.primaryContactEmail}
               onChange={(e) =>
                 setOrgField("primaryContactEmail", e.target.value)
+              }
+            />
+          </FieldGroup>
+          <FieldGroup
+            label="Primary contact phone"
+            htmlFor="org-phone"
+            error={orgErrors.phone}
+          >
+            <Input
+              id="org-phone"
+              type="tel"
+              aria-required="true"
+              placeholder="(555) 123-4567"
+              value={orgValues.phone}
+              onChange={(e) =>
+                setOrgField("phone", formatPhoneNumber(e.target.value))
               }
             />
           </FieldGroup>

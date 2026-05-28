@@ -141,6 +141,7 @@ model Organization {
   brandName           String?
   primaryContactName  String?
   primaryContactEmail String?
+  phone               String?
   npi                 String? // 10-digit org NPI (free-form here; validated in API)
   street              String?
   city                String?

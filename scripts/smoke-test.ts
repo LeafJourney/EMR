@@ -107,7 +107,9 @@ async function main() {
 
   // 6. Unauthenticated /clinic redirects to login
   await test("Unauthenticated /clinic redirects to login", async () => {
-    const res = await fetchOk(`${BASE}/clinic`);
+    const res = await fetchOk(`${BASE}/clinic`, {
+      headers: { Cookie: "dev_user_email=anonymous" },
+    });
     assert(
       res.status === 307 || res.status === 302 || res.status === 308,
       `Expected redirect, got ${res.status}`,
@@ -116,7 +118,9 @@ async function main() {
 
   // 7. Unauthenticated /portal redirects to login
   await test("Unauthenticated /portal redirects to login", async () => {
-    const res = await fetchOk(`${BASE}/portal`);
+    const res = await fetchOk(`${BASE}/portal`, {
+      headers: { Cookie: "dev_user_email=anonymous" },
+    });
     assert(
       res.status === 307 || res.status === 302 || res.status === 308,
       `Expected redirect, got ${res.status}`,

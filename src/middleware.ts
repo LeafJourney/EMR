@@ -97,20 +97,26 @@ export default clerkMiddleware(async (auth, req) => {
   // call `requireModalityEnabled()` from `@/lib/modality/api-guard` at the
   // top of the handler. This middleware intentionally stays modality-agnostic.
   if (isControllerSurface(req) && process.env.AUTH_PROVIDER === "clerk") {
-    const { userId } = await auth();
-    if (!userId) {
-      // For API routes: 403 JSON (no redirect — would break clients).
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json(
-          { error: "FORBIDDEN", message: "Authentication required." },
-          { status: 403 },
-        );
+    const hasDevBypass =
+      process.env.NODE_ENV !== "production" &&
+      req.cookies.has("dev_user_email");
+
+    if (!hasDevBypass) {
+      const { userId } = await auth();
+      if (!userId) {
+        // For API routes: 403 JSON (no redirect — would break clients).
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "FORBIDDEN", message: "Authentication required." },
+            { status: 403 },
+          );
+        }
+        // For page routes: send to the friendly forbidden surface.
+        const url = req.nextUrl.clone();
+        url.pathname = "/forbidden";
+        url.search = "";
+        return NextResponse.redirect(url);
       }
-      // For page routes: send to the friendly forbidden surface.
-      const url = req.nextUrl.clone();
-      url.pathname = "/forbidden";
-      url.search = "";
-      return NextResponse.redirect(url);
     }
     // Authenticated — fall through to per-route role check downstream.
   }

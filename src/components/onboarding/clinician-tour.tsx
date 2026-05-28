@@ -122,15 +122,20 @@ function findTarget(step: TourStep): HTMLElement | null {
 function readStored(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    const val = window.localStorage.getItem(STORAGE_KEY);
+    return val === "null" ? null : val;
   } catch {
     return null;
   }
 }
 
-function writeStored(value: "completed" | "skipped") {
+function writeStored(value: "completed" | "skipped" | null) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, value);
+    if (value === null) {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, value);
+    }
   } catch {
     /* private mode — non-fatal. */
   }

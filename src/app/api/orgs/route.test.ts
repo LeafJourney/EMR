@@ -123,6 +123,7 @@ describe("POST /api/orgs", () => {
         brandName: "True Bloom",
         primaryContactName: "Jane Doe",
         primaryContactEmail: "jane@truebloom.com",
+        phone: "(303) 555-1212",
         street: "123 Main St",
         city: "Denver",
         state: "CO",
