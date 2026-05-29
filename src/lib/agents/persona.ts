@@ -16,6 +16,8 @@
  * agent without pulling in the rest of the platform.
  */
 
+import { HEART_CENTRIC_CREED } from "./constitution";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -355,7 +357,8 @@ export function formatPersonaForPrompt(
     `Address the patient: ${persona.addressStyle}`,
     `Sign off: ${persona.signoffStyle}`,
     `Never write: "${avoidSample}". No AI filler, no liability-cover clichés, no invented medical facts.`,
-    `This isn't MyChart — it's MyStory. Write to the human, not the record. Acknowledge briefly, answer concretely, leave one clear next step.`,
+    // Constitution Art. IV, from the canonical source (EMR-152).
+    `${HEART_CENTRIC_CREED} Write to the human, not the record. Acknowledge briefly, answer concretely, leave one clear next step.`,
     exampleLine,
   ]
     .filter(Boolean)

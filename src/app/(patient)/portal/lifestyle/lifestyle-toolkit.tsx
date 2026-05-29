@@ -14,9 +14,10 @@
 // "Your growth" preview below — leaves, stems, and flowers. The growth math
 // lives in `@/lib/domain/lifestyle-growth` so it's unit-tested independently.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { confettiEmitter } from "@/components/portal/confetti-canvas";
 import type { LifestyleDomain, LifestyleTip } from "@/lib/domain/lifestyle";
 import {
   computeLifestyleGrowth,
@@ -28,6 +29,9 @@ import {
 
 const STORAGE_KEY = "lj-lifestyle-checked";
 const EVENTS_STORAGE_KEY = "lj-lifestyle-check-events";
+// EMR-072/176 — once the plant blooms we celebrate exactly once, then
+// remember it so re-renders / revisits don't re-fire the confetti.
+const BLOOM_CELEBRATED_KEY = "lj-lifestyle-bloom-celebrated";
 const EVENT_RETENTION_DAYS = FLOWER_STREAK_DAYS + 7;
 
 const DIFFICULTY_TONE: Record<
@@ -161,6 +165,36 @@ export function LifestyleToolkit({ domains, tips }: ToolkitProps) {
       }),
     [events, domains],
   );
+
+  // EMR-072/176 — fire the (already-mounted) confetti bus the first time the
+  // patient's plant comes into bloom. Guarded by localStorage so it only
+  // celebrates the milestone once, not on every visit.
+  const bloomCelebrated = useRef(false);
+  useEffect(() => {
+    if (!growth.hasFlowers || bloomCelebrated.current) return;
+    let alreadyCelebrated = false;
+    try {
+      alreadyCelebrated =
+        window.localStorage.getItem(BLOOM_CELEBRATED_KEY) === "1";
+    } catch {
+      /* ignore */
+    }
+    if (alreadyCelebrated) {
+      bloomCelebrated.current = true;
+      return;
+    }
+    bloomCelebrated.current = true;
+    try {
+      window.localStorage.setItem(BLOOM_CELEBRATED_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    confettiEmitter.emit({
+      id: "lifestyle-bloom",
+      type: "streak_milestone",
+      message: "Your plant is in bloom! 🌸",
+    });
+  }, [growth.hasFlowers]);
 
   function toggle(key: string, domainId: string) {
     setChecked((prev) => {

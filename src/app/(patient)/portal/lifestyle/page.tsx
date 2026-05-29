@@ -15,6 +15,7 @@ import {
   DEMO_WEARABLE_SUMMARY,
 } from "@/lib/domain/achievements";
 import { computePlantHealth } from "@/lib/domain/plant-health";
+import { WearableRings } from "@/components/gamification/wearable-rings";
 import { MindfulnessCheckIn } from "@/components/portal/mindfulness-check-in";
 import { LifestyleToolkit } from "./lifestyle-toolkit";
 import { LifestyleTrends, type LifestyleTrendPoint } from "./lifestyle-trends";
@@ -192,12 +193,7 @@ export default async function LifestylePage() {
                 {DEMO_WEARABLE_SUMMARY.emoji}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <WearableMetric label="Steps" value={DEMO_WEARABLE_SUMMARY.steps.toLocaleString()} />
-              <WearableMetric label="Sleep" value={`${DEMO_WEARABLE_SUMMARY.sleepHours}h`} />
-              <WearableMetric label="Resting HR" value={`${DEMO_WEARABLE_SUMMARY.restingHeartRate} bpm`} />
-              <WearableMetric label="Mindful" value={`${DEMO_WEARABLE_SUMMARY.mindfulMinutes} min`} />
-            </div>
+            <WearableRings summary={DEMO_WEARABLE_SUMMARY} />
             <p className="mt-4 text-xs text-text-subtle">
               Manage devices in <a href="/portal/integrations" className="text-accent hover:underline">Integrations</a>.
             </p>
@@ -333,15 +329,6 @@ function StatCard({
         <p className="text-xs text-text-subtle mt-1">{hint}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function WearableMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] uppercase tracking-[0.14em] text-text-subtle">{label}</p>
-      <p className="font-display text-lg text-text tabular-nums">{value}</p>
-    </div>
   );
 }
 

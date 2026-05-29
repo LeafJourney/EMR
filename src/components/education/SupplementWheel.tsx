@@ -10,7 +10,16 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, ShoppingCart, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  ExternalLink,
+  ShieldAlert,
+  ShoppingCart,
+  Sparkles,
+  Star,
+  StarHalf,
+} from "lucide-react";
 
 import {
   Card,
@@ -20,11 +29,34 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Eyebrow, LeafSprig } from "@/components/ui/ornament";
 import {
+  starBreakdown,
   symptomOverlap,
+  type ResearchArticle,
   type SupplementCompoundView,
 } from "@/lib/domain/supplement-wheel";
+
+/** 1–5 star strength-of-evidence indicator (EMR-151). */
+function Stars({ rating }: { rating: number }) {
+  const { full, half, empty } = starBreakdown(rating);
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-amber-500"
+      aria-label={`${rating} out of 5 evidence rating`}
+      title={`${rating}/5 evidence rating`}
+    >
+      {Array.from({ length: full }).map((_, i) => (
+        <Star key={`f${i}`} className="h-3.5 w-3.5 fill-current" aria-hidden />
+      ))}
+      {half === 1 && <StarHalf className="h-3.5 w-3.5 fill-current" aria-hidden />}
+      {Array.from({ length: empty }).map((_, i) => (
+        <Star key={`e${i}`} className="h-3.5 w-3.5 text-amber-500/25" aria-hidden />
+      ))}
+    </span>
+  );
+}
 
 interface Props {
   compounds: SupplementCompoundView[];
@@ -36,6 +68,19 @@ interface Props {
 
 export function SupplementWheel({ compounds, context = "patient" }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // EMR-151 — external journal links open behind a "discuss with your
+  // provider" disclaimer. We stash the pending article until the patient
+  // acknowledges, then open it in a new tab.
+  const [pendingArticle, setPendingArticle] = useState<ResearchArticle | null>(
+    null,
+  );
+
+  const confirmOpenArticle = () => {
+    if (pendingArticle && typeof window !== "undefined") {
+      window.open(pendingArticle.url, "_blank", "noopener,noreferrer");
+    }
+    setPendingArticle(null);
+  };
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -139,13 +184,24 @@ export function SupplementWheel({ compounds, context = "patient" }: Props) {
                 </p>
               </div>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <ul className="space-y-2">
                 {selectedRows.map((c) => (
-                  <Badge key={c.id} tone="accent">
-                    {c.name}
-                  </Badge>
+                  <li
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface/60 px-3 py-2"
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        aria-hidden
+                        style={{ backgroundColor: c.color }}
+                      />
+                      <span className="text-sm text-text truncate">{c.name}</span>
+                    </span>
+                    <Stars rating={c.rating} />
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </CardContent>
         </Card>
@@ -260,6 +316,55 @@ export function SupplementWheel({ compounds, context = "patient" }: Props) {
               </Card>
             )}
 
+            {selectedRows.some((c) => c.articles.length > 0) && (
+              <Card tone="raised">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-accent" aria-hidden />
+                    Research &amp; evidence
+                  </CardTitle>
+                  <CardDescription>
+                    Peer-reviewed reading for the supplements in your stack.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedRows
+                    .filter((c) => c.articles.length > 0)
+                    .map((c) => (
+                      <div key={c.id}>
+                        <p className="text-xs font-medium text-text mb-1.5 flex items-center gap-2">
+                          {c.name}
+                          <Stars rating={c.rating} />
+                        </p>
+                        <ul className="space-y-1">
+                          {c.articles.map((article) => (
+                            <li key={article.url}>
+                              <button
+                                type="button"
+                                onClick={() => setPendingArticle(article)}
+                                className="group inline-flex items-start gap-1.5 text-left text-xs text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+                              >
+                                <ExternalLink
+                                  className="h-3 w-3 mt-0.5 shrink-0"
+                                  aria-hidden
+                                />
+                                <span>
+                                  {article.title}
+                                  <span className="text-text-subtle">
+                                    {" "}
+                                    · {article.source}
+                                  </span>
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                </CardContent>
+              </Card>
+            )}
+
             {context !== "clinical" && (
               <Link
                 href={`/leafmart/shop?supplements=${selectedRows
@@ -290,6 +395,53 @@ export function SupplementWheel({ compounds, context = "patient" }: Props) {
           </>
         )}
       </div>
+
+      {/* EMR-151 — provider-consult disclaimer before leaving for an
+          external research source. */}
+      <Dialog
+        open={pendingArticle !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingArticle(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-[color:var(--warning)]" aria-hidden />
+              Before you start
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-text-muted leading-relaxed">
+            Please discuss any new supplement with your provider before
+            starting — especially if you take prescription medications, are
+            pregnant, or are managing a chronic condition. You&rsquo;re about
+            to open external research that we don&rsquo;t control.
+          </p>
+          {pendingArticle && (
+            <p className="mt-3 text-xs text-text-subtle">
+              Opening: <span className="text-text">{pendingArticle.title}</span>{" "}
+              · {pendingArticle.source}
+            </p>
+          )}
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setPendingArticle(null)}
+              className="px-4 py-2 rounded-md border border-border bg-surface text-sm font-medium text-text hover:bg-surface-muted transition-colors"
+            >
+              Stay here
+            </button>
+            <button
+              type="button"
+              onClick={confirmOpenArticle}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-accent text-accent-ink text-sm font-medium hover:bg-accent/90 transition-colors"
+            >
+              Continue to research
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
