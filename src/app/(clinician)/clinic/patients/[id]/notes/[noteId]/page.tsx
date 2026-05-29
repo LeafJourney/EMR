@@ -41,8 +41,8 @@ export default async function NoteDetailPage({ params }: PageProps) {
 
   // Parse blocks — they are stored as JSON. Strip the internal `_guardrails`
   // metadata block planted by the scribe agent: it carries hallucination /
-  // redaction metadata for the finalize-time snapshot, not display content,
-  // and rendering it as a regular block exposes internals to the clinician.
+  // redaction metadata, not display content, and rendering it as a regular
+  // block exposes internals to the clinician.
   const rawBlocks: unknown[] = Array.isArray(note.blocks) ? note.blocks : [];
   const blocks = rawBlocks.filter(
     (b): b is { heading: string; body: string } =>
@@ -51,6 +51,35 @@ export default async function NoteDetailPage({ params }: PageProps) {
       typeof (b as { heading?: unknown }).heading === "string" &&
       (b as { heading: string }).heading !== "_guardrails",
   );
+
+  // EMR-131: lift the per-sentence hallucination flags out of the
+  // `_guardrails` block so the editor can show them inline. These are the
+  // sentences the conservative grounding scan (note-guardrails.ts) could
+  // not trace to the transcript or chart context — the clinician reviews
+  // and confirms or edits them before signing. The block itself stays
+  // hidden; only the structured flags cross to the client.
+  const guardrailsBlock = rawBlocks.find(
+    (b): b is { heading: string; metadata?: { guardrails?: unknown } } =>
+      !!b &&
+      typeof b === "object" &&
+      (b as { heading?: unknown }).heading === "_guardrails",
+  );
+  const rawGuardrails = guardrailsBlock?.metadata?.guardrails as
+    | { flaggedSpans?: unknown; hallucinationConfidence?: unknown }
+    | undefined;
+  const hallucinationFlags = Array.isArray(rawGuardrails?.flaggedSpans)
+    ? (rawGuardrails!.flaggedSpans as unknown[]).filter(
+        (f): f is { block: string; span: string; reason: string } =>
+          !!f &&
+          typeof f === "object" &&
+          typeof (f as { span?: unknown }).span === "string" &&
+          typeof (f as { reason?: unknown }).reason === "string",
+      )
+    : [];
+  const hallucinationConfidence =
+    typeof rawGuardrails?.hallucinationConfidence === "number"
+      ? rawGuardrails.hallucinationConfidence
+      : null;
 
   // Parse coding suggestion. `icd10` is a JSON column — runtime-validate
   // that it's actually an array before handing it to the client, otherwise
@@ -96,6 +125,8 @@ export default async function NoteDetailPage({ params }: PageProps) {
         status={note.status}
         aiDrafted={note.aiDrafted}
         aiConfidence={note.aiConfidence}
+        hallucinationFlags={hallucinationFlags}
+        hallucinationConfidence={hallucinationConfidence}
         codingSuggestion={codingSuggestion}
         initialDemeanor={
           note.encounter.briefingContext &&

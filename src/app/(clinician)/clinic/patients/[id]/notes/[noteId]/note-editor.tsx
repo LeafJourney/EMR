@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,11 @@ import {
   type NoteBlockType,
 } from "@/lib/domain/notes";
 import { LeafSprig } from "@/components/ui/ornament";
-import { DictateButton } from "@/components/ui/dictation";
+import { DictateButton, useDictation } from "@/components/ui/dictation";
+import {
+  applyMedicalFixups,
+  splitIntoApsoSections,
+} from "@/lib/clinical/voice-dictation";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";
 import { NOTE_BLOCK_LABELS as NB_LABELS } from "@/lib/domain/notes";
@@ -31,6 +35,14 @@ interface NoteBlock {
   body: string;
 }
 
+// EMR-131: a sentence the grounding scan could not trace to the transcript
+// or chart context. `block` is the NoteBlockType the sentence came from.
+interface HallucinationFlag {
+  block: string;
+  span: string;
+  reason: string;
+}
+
 interface NoteEditorProps {
   noteId: string;
   patientId: string;
@@ -39,6 +51,10 @@ interface NoteEditorProps {
   status: string;
   aiDrafted: boolean;
   aiConfidence: number | null;
+  /** EMR-131: ungrounded sentences flagged by the AI-draft grounding scan. */
+  hallucinationFlags?: HallucinationFlag[];
+  /** 0–1 grounding confidence hint; lower = more sentences were flagged. */
+  hallucinationConfidence?: number | null;
   codingSuggestion: {
     icd10: { code: string; label: string; confidence: number }[];
     emLevel: string | null;
@@ -85,6 +101,8 @@ export function NoteEditor({
   status,
   aiDrafted,
   aiConfidence,
+  hallucinationFlags = [],
+  hallucinationConfidence,
   codingSuggestion,
   initialDemeanor,
 }: NoteEditorProps) {
@@ -125,6 +143,9 @@ export function NoteEditor({
   const [currentStatus, setCurrentStatus] = useState(status);
   const [demeanor, setDemeanor] = useState<PatientDemeanor | null>(initialDemeanor ?? null);
   const [demeanorPending, setDemeanorPending] = useState(false);
+  // EMR-131: clinician can acknowledge the grounding review once they've
+  // checked each flagged sentence, collapsing the banner out of the way.
+  const [groundingReviewed, setGroundingReviewed] = useState(false);
 
   function handleDemeanor(value: PatientDemeanor) {
     if (demeanorPending) return;
@@ -143,12 +164,70 @@ export function NoteEditor({
 
   const isEditable = currentStatus === "draft" || currentStatus === "needs_review";
 
+  // EMR-135 — "Dictate full note": one continuous dictation stream that the
+  // clinician narrates with spoken section cues ("Subjective… Assessment…
+  // Plan…"). We accumulate the running transcript, normalize medical
+  // vocabulary, and split it into APSO sections so it can be routed into the
+  // matching blocks on an explicit Apply (never silently). Objective stays
+  // human-authored per the Dr. Patel directive, so we surface any
+  // objective-cued speech for manual entry rather than writing it.
+  const [apsoTranscript, setApsoTranscript] = useState("");
+  const handleApsoFinal = useCallback((text: string) => {
+    setApsoTranscript((prev) => `${prev}${prev && !/\s$/.test(prev) ? " " : ""}${text}`);
+  }, []);
+  const apsoDictation = useDictation({ onFinal: handleApsoFinal });
+  const sectioned = useMemo(
+    () => splitIntoApsoSections(applyMedicalFixups(apsoTranscript)),
+    [apsoTranscript],
+  );
+
   function updateBlock(index: number, field: "heading" | "body", value: string) {
     setBlocks((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  }
+
+  // Append routed text to the first block of a given APSO type, additively
+  // (existing content is preserved). Returns whether a target block existed.
+  function appendToBlockType(type: NoteBlockType, text: string): boolean {
+    const clean = text.trim();
+    if (!clean) return false;
+    let applied = false;
+    setBlocks((prev) => {
+      const idx = prev.findIndex((b) => b.type === type);
+      if (idx === -1) return prev;
+      applied = true;
+      const next = [...prev];
+      const body = next[idx].body ?? "";
+      const sep = body.trim() ? "\n\n" : "";
+      next[idx] = { ...next[idx], body: `${body}${sep}${clean}` };
+      return next;
+    });
+    return applied;
+  }
+
+  // Route the dictated sections into their blocks. Subjective absorbs any
+  // pre-cue ("unfiled") preamble. Objective is intentionally left for the
+  // clinician to type from the preview.
+  function applyApsoDictation() {
+    if (apsoDictation.status === "listening") apsoDictation.stop();
+    const subjective = [sectioned.unfiled, sectioned.subjective]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    appendToBlockType("summary", subjective);
+    appendToBlockType("assessment", sectioned.assessment);
+    appendToBlockType("plan", sectioned.plan);
+    setApsoTranscript("");
+    setSaveMessage("Dictation routed into the note");
+    setTimeout(() => setSaveMessage(null), 2000);
+  }
+
+  function clearApsoDictation() {
+    if (apsoDictation.status === "listening") apsoDictation.stop();
+    setApsoTranscript("");
   }
 
   // EMR-174 — applying a template overwrites the current blocks. Picker
@@ -269,6 +348,63 @@ export function NoteEditor({
         </Card>
       )}
 
+      {/* Grounding review — EMR-131: the AI-draft grounding scan flagged
+          these sentences as not clearly traceable to the transcript or
+          chart context. They are shown inline (never auto-removed) so the
+          clinician verifies or edits each one before signing. */}
+      {isEditable && hallucinationFlags.length > 0 && !groundingReviewed && (
+        <Card className="border-l-4 border-l-[color:var(--highlight)] bg-highlight-soft/40">
+          <CardContent className="py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span aria-hidden="true" className="text-base leading-none mt-0.5">
+                  ⚠
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-text">
+                    Verify {hallucinationFlags.length}{" "}
+                    {hallucinationFlags.length === 1 ? "sentence" : "sentences"}{" "}
+                    before signing
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                    These lines in the AI draft could not be traced to the visit
+                    transcript or chart{typeof hallucinationConfidence === "number"
+                      ? ` (grounding ${Math.round(hallucinationConfidence * 100)}%)`
+                      : ""}
+                    . Confirm or edit each one — nothing was removed for you.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGroundingReviewed(true)}
+                className="shrink-0 text-[11px] text-text-subtle hover:text-text transition-colors underline-offset-2 hover:underline"
+              >
+                Mark reviewed
+              </button>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {hallucinationFlags.map((flag, i) => (
+                <li
+                  key={i}
+                  className="rounded-md border border-[color:var(--highlight)]/25 bg-surface/60 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge tone="warning" className="text-[10px]">
+                      {NOTE_BLOCK_LABELS[flag.block as NoteBlockType] ?? flag.block}
+                    </Badge>
+                    <span className="text-[10px] text-text-subtle">{flag.reason}</span>
+                  </div>
+                  <p className="text-xs text-text leading-relaxed">
+                    &ldquo;{flag.span}&rdquo;
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status + AI badges + template picker (EMR-174) */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
@@ -330,6 +466,88 @@ export function NoteEditor({
             </span>
           )}
         </div>
+      )}
+
+      {/* Dictate full note — EMR-135: one stream, auto-routed to APSO
+          sections via spoken cues. Per-section mics (below) remain for
+          targeted dictation. */}
+      {isEditable && apsoDictation.status !== "unsupported" && (
+        <Card tone="ambient">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={apsoDictation.toggle}
+                  disabled={apsoDictation.status === "denied"}
+                  aria-pressed={apsoDictation.status === "listening"}
+                  className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    apsoDictation.status === "listening"
+                      ? "bg-danger/15 text-danger animate-pulse"
+                      : "bg-surface-muted text-text-subtle hover:bg-accent/10 hover:text-accent border border-border/40"
+                  } disabled:opacity-50`}
+                >
+                  <span aria-hidden="true">🎙</span>
+                  {apsoDictation.status === "listening"
+                    ? "Stop dictating"
+                    : "Dictate full note"}
+                </button>
+                <span className="text-[11px] text-text-subtle">
+                  {apsoDictation.status === "denied"
+                    ? "Microphone permission denied"
+                    : "Say “Subjective…”, “Assessment…”, “Plan…” to route as you speak"}
+                </span>
+              </div>
+              {apsoTranscript.trim() && (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={clearApsoDictation}>
+                    Clear
+                  </Button>
+                  <Button size="sm" variant="primary" onClick={applyApsoDictation}>
+                    Apply to note
+                  </Button>
+                </div>
+              )}
+            </div>
+            {apsoTranscript.trim() && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(
+                  [
+                    // Subjective absorbs any pre-cue preamble, matching Apply.
+                    [
+                      "Subjective",
+                      [sectioned.unfiled, sectioned.subjective].filter(Boolean).join(" "),
+                    ],
+                    ["Assessment", sectioned.assessment],
+                    ["Plan", sectioned.plan],
+                  ] as const
+                ).map(([label, text]) =>
+                  text.trim() ? (
+                    <div
+                      key={label}
+                      className="rounded-md border border-border/50 bg-surface/60 px-3 py-2"
+                    >
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-accent font-medium mb-1">
+                        {label}
+                      </p>
+                      <p className="text-xs text-text-muted leading-relaxed">{text}</p>
+                    </div>
+                  ) : null,
+                )}
+                {sectioned.objective.trim() && (
+                  <div className="rounded-md border border-border/50 bg-surface/60 px-3 py-2 sm:col-span-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle font-medium mb-1">
+                      Objective — enter manually
+                    </p>
+                    <p className="text-xs text-text-muted leading-relaxed">
+                      {sectioned.objective}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Note blocks */}

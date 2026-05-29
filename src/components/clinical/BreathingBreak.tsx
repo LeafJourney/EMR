@@ -1,10 +1,18 @@
 "use client";
 
 // EMR-129 — Provider Breathing Break Popup
-// 30-min activity timer surfaces a gentle pop-up suggesting a 60-second
-// breathing exercise. Animated inhale / exhale guide. Snooze / dismiss.
-// Tracks break frequency in localStorage so a clinician can see how often
-// they actually take the prompt.
+// After ~30 minutes of *active charting* a gentle pop-up suggests a
+// 60-second breathing exercise. Animated inhale / exhale guide. Snooze /
+// dismiss. Tracks break frequency in localStorage so a clinician can see
+// how often they actually take the prompt.
+//
+// The timer measures cumulative *worked* time, not idle time: we only
+// accrue minutes while the provider is interacting with the EMR, and we
+// stop accruing once they go idle or background the tab. A clinician who
+// charts steadily for half an hour gets the nudge; one who steps away
+// does not (their clock simply pauses). This is the opposite of an
+// idle-timeout — the earlier implementation reset the clock on every
+// keystroke and so only ever fired when the provider was already away.
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -16,13 +24,20 @@ import { cn } from "@/lib/utils/cn";
 const ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
 const SNOOZE_MS = 5 * 60 * 1000;
 const EXERCISE_MS = 60 * 1000;
+// How often we poll to roll worked-time forward.
+const TICK_MS = 15 * 1000;
+// If there has been no interaction within this window when a tick fires,
+// the provider is considered idle and that interval does not count as work.
+const IDLE_GAP_MS = 60 * 1000;
 const INHALE_MS = 4000;
 const HOLD_MS = 2000;
 const EXHALE_MS = 6000;
 const CYCLE_MS = INHALE_MS + HOLD_MS + EXHALE_MS;
 
 const STATS_KEY = "lj-breathing-break-stats";
-const ACTIVITY_KEY = "lj-breathing-break-last-activity";
+// Persisted cumulative worked-time (ms) since the last break, so progress
+// survives a full page reload rather than restarting from zero.
+const WORKED_KEY = "lj-breathing-break-worked-ms";
 
 type Phase = "inhale" | "hold" | "exhale";
 
@@ -95,32 +110,47 @@ export function BreathingBreak({
   const [running, setRunning] = React.useState(false);
   const [elapsed, setElapsed] = React.useState(0);
   const [stats, setStats] = React.useState<BreakStats>(emptyStats);
+  // Timestamp of the most recent interaction — used to decide whether the
+  // provider was active during the interval we're about to count.
   const lastActivityRef = React.useRef<number>(Date.now());
+  // Timestamp of the previous tick, so each tick knows how much wall time
+  // to attribute (and we can ignore an oversized gap from a throttled
+  // background tab).
+  const lastTickRef = React.useRef<number>(Date.now());
+  // Cumulative worked time (ms) since the last break / snooze / dismiss.
+  const workedMsRef = React.useRef<number>(0);
   const snoozedUntilRef = React.useRef<number>(0);
 
-  // Restore last activity + stats so the popup honors the break window
-  // across page navigations.
+  const persistWorked = React.useCallback((value: number) => {
+    try {
+      window.localStorage.setItem(WORKED_KEY, String(Math.round(value)));
+    } catch {
+      /* ignore quota */
+    }
+  }, []);
+
+  // Restore stats + accrued worked-time so progress honors the break
+  // window across full page reloads. We deliberately do NOT count the
+  // reload gap as work: reset the activity/tick clocks to "now".
   React.useEffect(() => {
     setStats(readStats());
     try {
-      const raw = window.localStorage.getItem(ACTIVITY_KEY);
-      if (raw) lastActivityRef.current = Number(raw) || Date.now();
+      const raw = window.localStorage.getItem(WORKED_KEY);
+      const parsed = raw == null ? 0 : Number(raw);
+      workedMsRef.current = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
     } catch {
-      /* ignore */
+      workedMsRef.current = 0;
     }
+    const now = Date.now();
+    lastActivityRef.current = now;
+    lastTickRef.current = now;
   }, []);
 
   const recordActivity = React.useCallback(() => {
-    const now = Date.now();
-    lastActivityRef.current = now;
-    try {
-      window.localStorage.setItem(ACTIVITY_KEY, String(now));
-    } catch {
-      /* ignore */
-    }
+    lastActivityRef.current = Date.now();
   }, []);
 
-  // Reset timer on user interaction.
+  // Track interaction so we know when the provider is actively charting.
   React.useEffect(() => {
     const handler = () => recordActivity();
     window.addEventListener("pointerdown", handler);
@@ -131,18 +161,28 @@ export function BreathingBreak({
     };
   }, [recordActivity]);
 
-  // Poll every 30s to see if it is time to surface the popup.
+  // Roll worked-time forward on each tick, but only for intervals during
+  // which the provider was actually active. Surface the popup once the
+  // accrued work time crosses the window.
   React.useEffect(() => {
     const id = window.setInterval(() => {
-      if (open || running) return;
       const now = Date.now();
-      if (now < snoozedUntilRef.current) return;
-      if (now - lastActivityRef.current >= intervalMs) {
+      const sinceTick = now - lastTickRef.current;
+      lastTickRef.current = now;
+      // Pause the clock while the exercise/prompt is up or during a snooze.
+      if (open || running || now < snoozedUntilRef.current) return;
+      // Only accrue if there was interaction recently. Cap the credited
+      // span so a throttled/backgrounded tab can't bank a huge jump.
+      const wasActive = now - lastActivityRef.current <= IDLE_GAP_MS;
+      if (!wasActive) return;
+      workedMsRef.current += Math.min(sinceTick, TICK_MS * 1.5);
+      persistWorked(workedMsRef.current);
+      if (workedMsRef.current >= intervalMs) {
         setOpen(true);
       }
-    }, 30_000);
+    }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [intervalMs, open, running]);
+  }, [intervalMs, open, running, persistWorked]);
 
   // Drive the breathing animation while the exercise is active.
   React.useEffect(() => {
@@ -165,6 +205,13 @@ export function BreathingBreak({
     setElapsed(0);
   }
 
+  // Clear the worked-time clock so the next nudge is a fresh ~30 min away.
+  function resetWorkClock() {
+    workedMsRef.current = 0;
+    lastTickRef.current = Date.now();
+    persistWorked(0);
+  }
+
   function finish() {
     const next: BreakStats = {
       ...stats,
@@ -175,7 +222,7 @@ export function BreathingBreak({
     writeStats(next);
     setRunning(false);
     setOpen(false);
-    recordActivity();
+    resetWorkClock();
     onComplete?.(next);
   }
 
@@ -185,6 +232,7 @@ export function BreathingBreak({
     setStats(next);
     writeStats(next);
     setOpen(false);
+    resetWorkClock();
   }
 
   function dismiss() {
@@ -192,7 +240,7 @@ export function BreathingBreak({
     setStats(next);
     writeStats(next);
     setOpen(false);
-    recordActivity();
+    resetWorkClock();
   }
 
   if (!open && !running) return null;
