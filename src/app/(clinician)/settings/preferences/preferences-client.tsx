@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/card";
 import { KeyboardHelpModal } from "@/components/ui/keyboard-help-modal";
 import { AvatarUpload } from "@/components/ui/avatar-upload";
+import { OBJECTIVE_DICTATION_PREF_KEY } from "@/lib/clinical/dictation-routing";
 import { cn } from "@/lib/utils/cn";
 
 // ----------------------------------------------------------------------
@@ -106,6 +107,7 @@ type SectionId =
   | "profile"
   | "appearance"
   | "defaults"
+  | "documentation"
   | "notifications"
   | "keyboard"
   | "privacy";
@@ -127,6 +129,11 @@ const NAV: NavItem[] = [
     id: "defaults",
     label: "Defaults",
     description: "Landing route and filters",
+  },
+  {
+    id: "documentation",
+    label: "Documentation",
+    description: "Dictation and note authoring",
   },
   {
     id: "notifications",
@@ -179,6 +186,7 @@ export function PreferencesClient() {
   const [bell, setBellState] = useState(true);
   const [digest, setDigestState] = useState(false);
   const [kbdEnabled, setKbdEnabledState] = useState(true);
+  const [dictateObjective, setDictateObjectiveState] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
@@ -197,6 +205,7 @@ export function PreferencesClient() {
     setBellState(readLocalBool(nsKey("notif.bell"), true));
     setDigestState(readLocalBool(nsKey("notif.digest"), false));
     setKbdEnabledState(readLocalBool(nsKey("kbd.enabled"), true));
+    setDictateObjectiveState(readLocalBool(OBJECTIVE_DICTATION_PREF_KEY, false));
   }, []);
 
   // Apply runtime side-effects (data-attributes on <html>) whenever the
@@ -307,6 +316,12 @@ export function PreferencesClient() {
     () => setBool("kbd.enabled", setKbdEnabledState, "Keyboard shortcuts"),
     [setBool],
   );
+  // nsKey("dictate.objective") === OBJECTIVE_DICTATION_PREF_KEY — the note
+  // editor reads the same key, so this toggle governs in-visit dictation too.
+  const setDictateObjective = useMemo(
+    () => setBool("dictate.objective", setDictateObjectiveState, "Objective dictation"),
+    [setBool],
+  );
 
   const handleExport = useCallback(() => {
     toast({
@@ -341,6 +356,13 @@ export function PreferencesClient() {
               onLanding={setLanding}
               msgFilter={msgFilter}
               onMsgFilter={setMsgFilter}
+            />
+          )}
+
+          {active === "documentation" && (
+            <DocumentationSection
+              dictateObjective={dictateObjective}
+              onDictateObjective={setDictateObjective}
             />
           )}
 
@@ -791,6 +813,39 @@ function DefaultsSection({
           </code>{" "}
           from <code className="font-mono text-[11px]">localStorage</code>.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DocumentationSection({
+  dictateObjective,
+  onDictateObjective,
+}: {
+  dictateObjective: boolean;
+  onDictateObjective: (b: boolean) => void;
+}) {
+  return (
+    <Card tone="raised">
+      <CardHeader>
+        <CardTitle>Documentation</CardTitle>
+        <CardDescription>
+          How voice dictation behaves in the note editor. Saved to this browser.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="divide-y divide-border/60">
+          <Row
+            title="Dictate the Objective section"
+            description="Off by default — many practices have staff document vitals/Objective. Turn on to dictate Objective yourself (e.g. reading vitals aloud). AI generation for Objective stays disabled either way."
+          >
+            <Toggle
+              ariaLabel="Dictate the Objective section"
+              checked={dictateObjective}
+              onChange={onDictateObjective}
+            />
+          </Row>
+        </div>
       </CardContent>
     </Card>
   );

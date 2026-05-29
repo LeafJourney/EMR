@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,12 @@ import {
 } from "@/lib/domain/notes";
 import { LeafSprig } from "@/components/ui/ornament";
 import { DictateButton } from "@/components/ui/dictation";
+import { SoapDictation } from "@/components/clinical/SoapDictation";
+import {
+  ensureSoapBlocks,
+  mergeDictatedBody,
+  OBJECTIVE_DICTATION_PREF_KEY,
+} from "@/lib/clinical/dictation-routing";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";
 import { NOTE_BLOCK_LABELS as NB_LABELS } from "@/lib/domain/notes";
@@ -142,6 +148,62 @@ export function NoteEditor({
   }
 
   const isEditable = currentStatus === "draft" || currentStatus === "needs_review";
+
+  // Whole-visit dictation (SOAP routing). The Objective opt-in is a
+  // per-physician setting (default off — staff document vitals), stored in the
+  // same `emr.prefs.v1.*` localStorage namespace the Preferences page uses.
+  const [objectiveDictation, setObjectiveDictation] = useState(false);
+  useEffect(() => {
+    try {
+      setObjectiveDictation(
+        window.localStorage.getItem(OBJECTIVE_DICTATION_PREF_KEY) === "1",
+      );
+    } catch {
+      /* private mode — keep default off */
+    }
+  }, []);
+  const objectiveDictationRef = useRef(objectiveDictation);
+  useEffect(() => {
+    objectiveDictationRef.current = objectiveDictation;
+  }, [objectiveDictation]);
+  // Snapshot of each block's body when dictation starts, so streaming updates
+  // append to a stable base instead of compounding on every chunk.
+  const dictationBaseRef = useRef<Partial<Record<NoteBlockType, string>>>({});
+
+  function handleObjectiveToggle(next: boolean) {
+    setObjectiveDictation(next);
+    try {
+      window.localStorage.setItem(OBJECTIVE_DICTATION_PREF_KEY, next ? "1" : "0");
+    } catch {
+      /* private mode — toggle still applies for this session */
+    }
+  }
+
+  function handleDictationStart() {
+    setBlocks((prev) => {
+      const ensured = ensureSoapBlocks(prev, objectiveDictationRef.current) as NoteBlock[];
+      const base: Partial<Record<NoteBlockType, string>> = {};
+      for (const b of ensured) if (b.type) base[b.type] = b.body;
+      dictationBaseRef.current = base;
+      return ensured;
+    });
+  }
+
+  function handleDictationSections(
+    byType: Partial<Record<NoteBlockType, string>>,
+  ) {
+    setBlocks((prev) =>
+      prev.map((b) => {
+        if (b.type && byType[b.type] !== undefined) {
+          return {
+            ...b,
+            body: mergeDictatedBody(dictationBaseRef.current[b.type] ?? "", byType[b.type]!),
+          };
+        }
+        return b;
+      }),
+    );
+  }
 
   function updateBlock(index: number, field: "heading" | "body", value: string) {
     setBlocks((prev) => {
@@ -298,6 +360,17 @@ export function NoteEditor({
         />
       </div>
 
+      {/* Whole-visit dictation → SOAP. Speak the visit with section cues and
+          each block fills itself. Objective is a per-physician setting. */}
+      {isEditable && (
+        <SoapDictation
+          includeObjective={objectiveDictation}
+          onToggleObjective={handleObjectiveToggle}
+          onStart={handleDictationStart}
+          onSections={handleDictationSections}
+        />
+      )}
+
       {/* Emotional vitals — EMR-134: emoji demeanor scale persisted to encounter */}
       {isEditable && (
         <div className="flex items-center gap-3 flex-wrap">
@@ -369,9 +442,11 @@ export function NoteEditor({
                       omitForObjective={block.type === "findings"}
                       placeholder="Note content. Use the toolbar or type / for block commands."
                       aria-label={`${block.heading} body`}
-                      textareaClassName={block.type === "findings" ? "" : "pr-10"}
+                      textareaClassName={
+                        block.type !== "findings" || objectiveDictation ? "pr-10" : ""
+                      }
                     />
-                    {block.type !== "findings" && (
+                    {(block.type !== "findings" || objectiveDictation) && (
                       <DictateButton
                         onText={(text) => {
                           const sep = block.body && !/\s$/.test(block.body) ? " " : "";
