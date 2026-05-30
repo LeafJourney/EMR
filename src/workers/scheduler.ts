@@ -6,20 +6,25 @@
 
 import { prisma } from "../lib/db/prisma";
 import { dispatch } from "../lib/orchestration/dispatch";
-import { sendDueAppointmentReminders } from "../lib/scheduling/send-reminders";
+import { sendDueVisitReminders } from "../lib/scheduling/send-reminders";
 import { getDefaultAdapter } from "../lib/billing/clearinghouse/gateway";
 import { parse999, parse277CA, decide277Actions } from "../lib/billing/clearinghouse-ack";
 import { recordDeadLetter } from "../lib/billing/clearinghouse/dead-letter";
 import { derivePrimaryControlNumbers } from "../lib/agents/billing/clearinghouse-submission-agent";
 import { writeAgentAudit } from "../lib/orchestration/context";
 
+function resolvePrevisitPortalUrl(env: NodeJS.ProcessEnv): string | null {
+  return env.PREVISIT_PORTAL_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.APP_URL ?? null;
+}
+
 async function main() {
   console.log("[scheduler] tick");
+  const now = new Date();
 
   // 1. Outcome tracker refresh for every active patient that's been active
   //    in the last 30 days but has no check-in logged in the last 5 days.
-  const cutoffActive = new Date(Date.now() - 30 * 86400000);
-  const cutoffCheckin = new Date(Date.now() - 5 * 86400000);
+  const cutoffActive = new Date(now.getTime() - 30 * 86400000);
+  const cutoffCheckin = new Date(now.getTime() - 5 * 86400000);
 
   const patients = await prisma.patient.findMany({
     where: {
@@ -35,12 +40,12 @@ async function main() {
       name: "encounter.completed",
       encounterId: `virtual:${p.id}`,
       patientId: p.id,
-      completedAt: new Date(),
+      completedAt: now,
     });
   }
 
   // 2. Intake stalled nudge for prospects with incomplete intake > 48h.
-  const cutoffStalled = new Date(Date.now() - 48 * 3600000);
+  const cutoffStalled = new Date(now.getTime() - 48 * 3600000);
   const stalled = await prisma.patient.findMany({
     where: {
       status: "prospect",
@@ -62,8 +67,8 @@ async function main() {
   //    The scheduler runs every 15 minutes; gating on hour+minute keeps
   //    this fleet-wide scan to a single execution per day.
   let adherenceEnqueued = 0;
-  const utcHour = new Date().getUTCHours();
-  const utcMinute = new Date().getUTCMinutes();
+  const utcHour = now.getUTCHours();
+  const utcMinute = now.getUTCMinutes();
   if (utcHour === 9 && utcMinute < 15) {
     const withActiveRegimen = await prisma.patient.findMany({
       where: {
@@ -88,7 +93,7 @@ async function main() {
   //    KPI dashboard, and CFO narrative briefing.
   let cfoEnqueued = 0;
   const isMondayMorning =
-    new Date().getUTCDay() === 1 && utcHour === 6 && utcMinute < 15;
+    now.getUTCDay() === 1 && utcHour === 6 && utcMinute < 15;
   if (isMondayMorning) {
     const orgs = await prisma.organization.findMany({ select: { id: true } });
     for (const o of orgs) {
@@ -103,7 +108,7 @@ async function main() {
 
   // 5. CFO monthly briefing — 1st of month, 07:00 UTC.
   const isFirstOfMonth =
-    new Date().getUTCDate() === 1 && utcHour === 7 && utcMinute < 15;
+    now.getUTCDate() === 1 && utcHour === 7 && utcMinute < 15;
   if (isFirstOfMonth) {
     const orgs = await prisma.organization.findMany({ select: { id: true } });
     for (const o of orgs) {
@@ -116,16 +121,22 @@ async function main() {
     cfoEnqueued += orgs.length;
   }
 
-  // 6. SMS appointment reminders — 7 days, 2 days, 1 day before the
-  //    appointment start. The scheduler runs every 15 minutes; the helper
-  //    scans every upcoming appointment within a 7d+1h window and sends
-  //    the SMS whose target window covers `now`. Idempotency is enforced
-  //    inside the helper via AuditLog.
-  const reminderResult = await sendDueAppointmentReminders({ now: new Date() });
+  // 6. Visit SMS reminders. Appointment reminders always run; pre-visit
+  //    completion nudges only run when a bare HTTPS portal origin is configured.
+  const reminderResult = await sendDueVisitReminders({
+    now,
+    portalUrl: resolvePrevisitPortalUrl(process.env),
+  });
+  const previsitSent = reminderResult.previsit?.sent ?? 0;
+  const previsitSkipped = reminderResult.previsit?.skipped ?? 0;
+  const previsitQuarantine = reminderResult.previsitSkippedReason
+    ? ` quarantine=${reminderResult.previsitSkippedReason}`
+    : "";
 
   console.log(
     `[scheduler] enqueued outcome=${patients.length} stalled=${stalled.length} adherence=${adherenceEnqueued} cfo=${cfoEnqueued} ` +
-      `sms=${reminderResult.sent} (skipped=${reminderResult.skipped})`,
+      `sms=${reminderResult.appointment.sent} (skipped=${reminderResult.appointment.skipped}) ` +
+      `previsit=${previsitSent} (skipped=${previsitSkipped}${previsitQuarantine})`,
   );
 
   // 6. Clearinghouse functional/payer acknowledgment polling
