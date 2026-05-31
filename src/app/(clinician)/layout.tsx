@@ -5,7 +5,7 @@ import { SplitWorkspace } from "@/components/shell/SplitWorkspace";
 import { ContextPane } from "@/components/shell/ContextPane";
 import { homeForRoles } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
-import { BreathingBreak } from "@/components/ui/breathing-break";
+import { BreathingBreak } from "@/components/clinical/BreathingBreak";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ConsciousnessOverlay } from "@/components/ui/consciousness-overlay";

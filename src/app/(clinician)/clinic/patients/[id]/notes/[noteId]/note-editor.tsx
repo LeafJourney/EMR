@@ -37,6 +37,14 @@ interface NoteBlock {
   body: string;
 }
 
+// EMR-131: a sentence the grounding scan could not trace to the transcript
+// or chart context. `block` is the NoteBlockType the sentence came from.
+interface HallucinationFlag {
+  block: string;
+  span: string;
+  reason: string;
+}
+
 interface NoteEditorProps {
   noteId: string;
   patientId: string;
@@ -45,6 +53,10 @@ interface NoteEditorProps {
   status: string;
   aiDrafted: boolean;
   aiConfidence: number | null;
+  /** EMR-131: ungrounded sentences flagged by the AI-draft grounding scan. */
+  hallucinationFlags?: HallucinationFlag[];
+  /** 0–1 grounding confidence hint; lower = more sentences were flagged. */
+  hallucinationConfidence?: number | null;
   codingSuggestion: {
     icd10: { code: string; label: string; confidence: number }[];
     emLevel: string | null;
@@ -91,6 +103,8 @@ export function NoteEditor({
   status,
   aiDrafted,
   aiConfidence,
+  hallucinationFlags = [],
+  hallucinationConfidence,
   codingSuggestion,
   initialDemeanor,
 }: NoteEditorProps) {
@@ -131,6 +145,9 @@ export function NoteEditor({
   const [currentStatus, setCurrentStatus] = useState(status);
   const [demeanor, setDemeanor] = useState<PatientDemeanor | null>(initialDemeanor ?? null);
   const [demeanorPending, setDemeanorPending] = useState(false);
+  // EMR-131: clinician can acknowledge the grounding review once they've
+  // checked each flagged sentence, collapsing the banner out of the way.
+  const [groundingReviewed, setGroundingReviewed] = useState(false);
 
   function handleDemeanor(value: PatientDemeanor) {
     if (demeanorPending) return;
@@ -327,6 +344,63 @@ export function NoteEditor({
               your talking points. Use the AI refine buttons to adjust
               tone, expand, or add dosing detail. Sign when ready.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Grounding review — EMR-131: the AI-draft grounding scan flagged
+          these sentences as not clearly traceable to the transcript or
+          chart context. They are shown inline (never auto-removed) so the
+          clinician verifies or edits each one before signing. */}
+      {isEditable && hallucinationFlags.length > 0 && !groundingReviewed && (
+        <Card className="border-l-4 border-l-[color:var(--highlight)] bg-highlight-soft/40">
+          <CardContent className="py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span aria-hidden="true" className="text-base leading-none mt-0.5">
+                  ⚠
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-text">
+                    Verify {hallucinationFlags.length}{" "}
+                    {hallucinationFlags.length === 1 ? "sentence" : "sentences"}{" "}
+                    before signing
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                    These lines in the AI draft could not be traced to the visit
+                    transcript or chart{typeof hallucinationConfidence === "number"
+                      ? ` (grounding ${Math.round(hallucinationConfidence * 100)}%)`
+                      : ""}
+                    . Confirm or edit each one — nothing was removed for you.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGroundingReviewed(true)}
+                className="shrink-0 text-[11px] text-text-subtle hover:text-text transition-colors underline-offset-2 hover:underline"
+              >
+                Mark reviewed
+              </button>
+            </div>
+            <ul className="mt-3 space-y-2">
+              {hallucinationFlags.map((flag, i) => (
+                <li
+                  key={i}
+                  className="rounded-md border border-[color:var(--highlight)]/25 bg-surface/60 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge tone="warning" className="text-[10px]">
+                      {NOTE_BLOCK_LABELS[flag.block as NoteBlockType] ?? flag.block}
+                    </Badge>
+                    <span className="text-[10px] text-text-subtle">{flag.reason}</span>
+                  </div>
+                  <p className="text-xs text-text leading-relaxed">
+                    &ldquo;{flag.span}&rdquo;
+                  </p>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}
