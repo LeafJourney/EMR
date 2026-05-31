@@ -179,21 +179,32 @@ export function evaluatePrevisitReadiness(
 // Prisma loader (thin DB read -> snapshot)
 // ---------------------------------------------------------------------------
 
-const VISIT_TYPE_BY_MODALITY: Record<string, IntakeGateInput["visitType"]> = {
-  // Default mapping; the appointment table tracks modality, not visit type,
-  // so we treat every booked appointment as a new_patient gate unless a richer
-  // visit-type signal is wired in later (Codex handoff).
-};
+/**
+ * Derive visit type from the patient's history (EMR-913). We don't store
+ * visitType on Appointment, so we infer the gate-relevant distinction —
+ * new patient vs established — from whether the patient has ever completed an
+ * encounter. This drives the requirements that only block new patients
+ * (id/age verification, cannabis history).
+ *
+ * Bias to `new_patient` when uncertain: that asks for MORE up front, which is
+ * the safe direction for a clinical gate. `renewal`/`group`/`urgent` need
+ * explicit booking signals and are out of scope for derivation today.
+ */
+export function deriveVisitType(
+  completedEncounterCount: number,
+): IntakeGateInput["visitType"] {
+  return completedEncounterCount > 0 ? "follow_up" : "new_patient";
+}
 
 /**
  * Load a PrevisitSnapshot for an appointment from the database. This is the
  * only DB-touching function here; everything above is pure. Returns null when
  * the appointment (or its patient) can't be found.
  *
- * NOTE (Codex handoff): visitType/treatmentPhase are not modeled on Appointment
- * today, so they default to new_patient/intake. When the visit-state spine adds
- * those fields, populate them here — the gate + readiness logic already handles
- * every visit type.
+ * `visitType` is derived from encounter history (see `deriveVisitType`).
+ * `treatmentPhase` still defaults to `intake`: it only feeds the *non-blocking*
+ * outcome-log advisory, and real phase tracking belongs with the cadence /
+ * treatment-state work (cadence-engine TreatmentPhase) — deferred follow-on.
  */
 export async function loadPrevisitSnapshot(
   appointmentId: string,
@@ -224,8 +235,14 @@ export async function loadPrevisitSnapshot(
     where: { patientId: p.id, loggedAt: { gt: lastVisitBefore(appt.startAt) } },
   });
 
+  // New patient vs established — derived from whether they've ever completed a
+  // visit (EMR-913). Drives the new-patient-only blocking requirements.
+  const completedEncounterCount = await prisma.encounter.count({
+    where: { patientId: p.id, status: "complete" },
+  });
+
   const snapshot: PrevisitSnapshot = {
-    visitType: VISIT_TYPE_BY_MODALITY[appt.modality] ?? "new_patient",
+    visitType: deriveVisitType(completedEncounterCount),
     treatmentPhase: "intake",
     isVirtual: appt.modality === "video" || appt.modality === "phone",
     patient: {

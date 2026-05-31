@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveVisitType,
   evaluatePrevisitReadiness,
   mapSnapshotToGateInput,
   type PrevisitSnapshot,
@@ -34,6 +35,17 @@ function fullSnapshot(overrides: Partial<PrevisitSnapshot> = {}): PrevisitSnapsh
     ...overrides,
   };
 }
+
+describe("deriveVisitType", () => {
+  it("treats a patient with no completed encounters as new_patient", () => {
+    expect(deriveVisitType(0)).toBe("new_patient");
+  });
+
+  it("treats a patient with at least one completed encounter as follow_up", () => {
+    expect(deriveVisitType(1)).toBe("follow_up");
+    expect(deriveVisitType(7)).toBe("follow_up");
+  });
+});
 
 describe("mapSnapshotToGateInput", () => {
   it("derives visit consent date from a matching signed consent", () => {
