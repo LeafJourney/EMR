@@ -68,6 +68,8 @@ describe("VisitCompletionPanel", () => {
     expect(str).toContain("Click in to confirm");
     expect(str).toContain("Confirm this card");
     expect(str).toContain("Open details");
+    expect(str).toContain("aria-label=\"Open Suggested Orders details\"");
+    expect(str).toContain("tabindex=\"0\"");
     expect(str).toContain("What release will do");
     expect(str).toContain("Creates a back-office task with reviewed order suggestions.");
     expect(str).toContain("Does not place clinical orders automatically.");

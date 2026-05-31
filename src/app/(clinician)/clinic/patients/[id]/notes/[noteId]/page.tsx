@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, Printer } from "lucide-react";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
@@ -167,10 +168,20 @@ export default async function NoteDetailPage({ params }: PageProps) {
               target="_blank"
               rel="noopener"
             >
-              <Button variant="ghost">Print note</Button>
+              <Button
+                variant="ghost"
+                leadingIcon={<Printer className="h-4 w-4" />}
+              >
+                Print note
+              </Button>
             </Link>
             <Link href={`/clinic/patients/${params.id}?tab=notes`}>
-              <Button variant="secondary">Back to chart</Button>
+              <Button
+                variant="secondary"
+                leadingIcon={<ArrowLeft className="h-4 w-4" />}
+              >
+                Back to chart
+              </Button>
             </Link>
           </div>
         }

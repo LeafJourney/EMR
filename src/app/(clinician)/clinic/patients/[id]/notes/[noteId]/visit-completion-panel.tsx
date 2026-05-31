@@ -172,6 +172,16 @@ function isResolvedStatus(status: VisitCompletionCardSelectionStatus): boolean {
   return ["confirmed", "edited", "removed", "deferred"].includes(status);
 }
 
+function shouldOpenDetailsFromCardActivation(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return true;
+  }
+
+  return !target.closest(
+    'button, a, input, textarea, select, summary, [role="button"], [role="link"]',
+  );
+}
+
 export function VisitCompletionPanel({
   bundle,
   releasedPayload,
@@ -586,10 +596,35 @@ function SuggestedActionCard({
   const needsReview = card.items.some((item) => item.tone !== "neutral");
   const needsConfirmation = !isResolvedStatus(cardState.status);
 
+  function handleCardClick(event: React.MouseEvent<HTMLElement>) {
+    if (!shouldOpenDetailsFromCardActivation(event.target)) {
+      return;
+    }
+
+    onOpenDetails();
+  }
+
+  function handleCardKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpenDetails();
+    }
+  }
+
   return (
     <article
+      role="group"
+      tabIndex={0}
+      aria-label={`Open ${card.title} details`}
+      title={`Open ${card.title} details`}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
       className={cn(
-        "flex min-h-[300px] flex-col overflow-hidden rounded-lg border bg-surface transition",
+        "flex min-h-[300px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
         isActive && "border-accent/45 shadow-sm ring-1 ring-accent/15",
         cardState.status === "removed"
           ? "border-danger/30 bg-red-50/30"
