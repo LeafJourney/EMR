@@ -1,4 +1,3 @@
-// SAFE: dead-export-allowed reason="EMR-915 lobby session primitive; /kiosk/lobby route consumer is a later slice"
 // EMR-915 — scoped "lobby" session for the kiosk→phone hand-off.
 //
 // Minted only after a patient clears the hand-off challenge (valid handoff
@@ -21,6 +20,7 @@
 import { cookies } from "next/headers";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
+import { getLobbyReadinessView, type LobbyWorkflow } from "./lobby-scope";
 
 export const KIOSK_LOBBY_COOKIE = "kiosk_lobby_session";
 export const KIOSK_LOBBY_COOKIE_PATH = "/kiosk/lobby";
@@ -128,4 +128,27 @@ export async function pruneExpiredKioskLobbySessions(now: Date = new Date()): Pr
     where: { expiresAt: { lt: now } },
   });
   return result.count;
+}
+
+/**
+ * Scoped guard for a lobby completion surface. Resolves the lobby identity AND
+ * checks that `workflow` is currently in-scope (i.e. it's an outstanding task
+ * for this patient's visit, per the canonical readiness). Returns null when the
+ * session is missing/expired OR when the workflow is out of scope — the caller
+ * (a server component) turns null into a 404/expired screen so the lobby can
+ * NEVER reach a surface that wasn't prepared for this patient.
+ *
+ * Defined here (not in lobby-scope) so the route layer has one import for "who
+ * is this + may they be here." Re-derives everything server-side; never trusts
+ * a client-supplied patientId or workflow claim.
+ */
+export async function getLobbyScopeFor(
+  workflow: LobbyWorkflow,
+  now: Date = new Date(),
+): Promise<KioskLobbyIdentity | null> {
+  const identity = await getCurrentKioskLobby(now);
+  if (!identity) return null;
+  const view = await getLobbyReadinessView(identity.patientId, identity.organizationId, now);
+  if (!view.allowed.includes(workflow)) return null;
+  return identity;
 }

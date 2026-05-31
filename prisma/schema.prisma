@@ -5031,6 +5031,30 @@ model KioskHandoffToken {
 }
 
 // --------------------------------------------------------------
+// EMR-915 — staged pre-visit submissions captured by a lobby session.
+// A lobby session (kiosk→phone hand-off) NEVER overwrites the chart: intake /
+// consent completed on the patient's phone land here as a pending review-queue
+// row for staff/clinician to accept into the chart. `payload` holds the
+// submitted data (PHI); `kind` is the workflow ("intake" | "consent").
+// patientId/organizationId are scope keys (no FK; mirrors the other lobby tables).
+// --------------------------------------------------------------
+
+model KioskLobbySubmission {
+  id             String    @id @default(cuid())
+  patientId      String
+  organizationId String
+  kind           String // "intake" | "consent"
+  payload        Json
+  status         String    @default("pending") // pending | accepted | rejected
+  reviewedByUserId String?
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId, status])
+  @@index([patientId, kind])
+}
+
+// --------------------------------------------------------------
 // EMR-107 — ChatCB AI Coach
 // --------------------------------------------------------------
 
