@@ -46,7 +46,7 @@ jobs:
     name: Deploy to Staging
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: Staging
     steps:
       - name: Trigger Render Staging Deploy
@@ -64,10 +64,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Poll /api/health until commit == github.sha. This replaces the
-          # old "sleep 180" which raced the Render build and made every
-          # deploy a coin flip. Hard cap at ~12 minutes to avoid hung jobs.
-          MAX_ATTEMPTS=72   # 72 * 10s = 12 minutes
+          # Poll /api/health until commit == github.sha. Cap at 20 minutes —
+          # Render Starter builds regularly exceed 12 min on cold cache or
+          # when migrations run, which caused false staging failures (#552).
+          MAX_ATTEMPTS=120  # 120 * 10s = 20 minutes
           INTERVAL=10
           ATTEMPT=0
           LAST_COMMIT=""
@@ -118,7 +118,7 @@ jobs:
     name: Deploy to Production
     needs: test_staging
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Trigger Render Production Deploy
         uses: fjogeleit/http-request-action@v1
@@ -135,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          MAX_ATTEMPTS=72   # 72 * 10s = 12 minutes
+          MAX_ATTEMPTS=120  # 120 * 10s = 20 minutes
           INTERVAL=10
           ATTEMPT=0
           LAST_COMMIT=""
