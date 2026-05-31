@@ -520,8 +520,10 @@ function Wheel({
         ? `Deselect ${c.name}, ${c.type}, currently selected`
         : `Select ${c.name}, ${c.type}, currently unselected`;
 
-      const segColor =
-        c.type === "cannabinoid" ? CANNABINOID_LEGEND : TERPENE_LEGEND;
+      // EMR-201: each slice paints with its own compound color so the wheel
+      // reads as a vibrant spectrum, not two flat bands. The category hue is
+      // only used for the legend swatches below.
+      const segColor = c.color;
 
       return (
         <g
@@ -565,13 +567,15 @@ function Wheel({
             textAnchor="middle"
             dominantBaseline="central"
             fill="#fff"
-            fontSize={c.name.length > 8 ? 14 : 17}
+            // EMR-201: larger, bolder labels so compound names read clearly
+            // even on the inner terpene ring.
+            fontSize={c.name.length > 8 ? 17 : 21}
             fontWeight={800}
             transform={`rotate(${rot} ${lx} ${ly})`}
             style={{
               pointerEvents: "none",
               letterSpacing: 0.5,
-              textShadow: "0 1px 4px rgba(0,0,0,0.55)",
+              textShadow: "0 1px 5px rgba(0,0,0,0.65), 0 0 2px rgba(0,0,0,0.4)",
             }}
           >
             {c.name}
@@ -583,10 +587,12 @@ function Wheel({
   // EMR-369: bumped the lg max width to fill the available column rather
   // than floating in dead space. The viewBox is fixed (440), so the SVG
   // simply scales up — labels grow proportionally.
+  // EMR-201: bumped again so the wheel is the unmistakable centerpiece of
+  // the surface and the larger labels have room to breathe.
   const widthClass =
     size === "lg"
-      ? "w-full max-w-[640px] min-w-[340px]"
-      : "w-full max-w-[400px] min-w-[280px]";
+      ? "w-full max-w-[760px] min-w-[360px]"
+      : "w-full max-w-[460px] min-w-[300px]";
 
   return (
     <div className={cn("relative mx-auto", widthClass)}>
@@ -740,22 +746,29 @@ function Wheel({
         </g>
       </svg>
 
-      <div className="mt-5 flex items-center justify-center gap-6 text-xs font-medium text-text-muted">
+      {/* EMR-201: slices are now per-compound colors, so the legend marks
+          ring position (outer/inner) with vibrant gradient pills rather than
+          a single flat hue — each compound owns its own color on the wheel. */}
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-semibold text-text-muted">
         <span className="inline-flex items-center gap-2">
           <span
-            className="h-3 w-5 rounded-full"
-            style={{ background: CANNABINOID_LEGEND }}
+            className="h-3 w-7 rounded-full shadow-sm"
+            style={{
+              background: `linear-gradient(90deg, ${CANNABINOID_LEGEND}, #5FDBAA, #85FFE3)`,
+            }}
             aria-hidden
           />
-          Cannabinoids
+          Outer ring · Cannabinoids
         </span>
         <span className="inline-flex items-center gap-2">
           <span
-            className="h-3 w-5 rounded-full"
-            style={{ background: TERPENE_LEGEND }}
+            className="h-3 w-7 rounded-full shadow-sm"
+            style={{
+              background: `linear-gradient(90deg, ${TERPENE_LEGEND}, #FFD877, #FFF8A1)`,
+            }}
             aria-hidden
           />
-          Terpenes
+          Inner ring · Terpenes
         </span>
       </div>
     </div>

@@ -7,6 +7,7 @@ import type {
   DailyEventObjectNonFatalError,
 } from "@daily-co/daily-js";
 import { cn } from "@/lib/utils/cn";
+import { LiveCaptions } from "./LiveCaptions";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -28,6 +29,8 @@ export interface DailyVideoFrameProps {
   onConnectionStateChange?: (state: ConnectionState) => void;
   onParticipantCountChange?: (count: number) => void;
   onError?: (message: string) => void;
+  /** EMR-122: show the in-app live caption / language overlay. Default on. */
+  captions?: boolean;
 }
 
 // ─── Daily SDK loader ───────────────────────────────────
@@ -52,6 +55,7 @@ export function DailyVideoFrame({
   onConnectionStateChange,
   onParticipantCountChange,
   onError,
+  captions = true,
 }: DailyVideoFrameProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const callRef = useRef<DailyCall | null>(null);
@@ -222,6 +226,8 @@ export function DailyVideoFrame({
           Waiting for the other participant to join…
         </div>
       )}
+
+      {state === "joined" && captions && <LiveCaptions />}
     </div>
   );
 }
