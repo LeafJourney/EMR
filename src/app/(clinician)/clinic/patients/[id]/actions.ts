@@ -175,9 +175,10 @@ export async function saveAllergy(patientId: string, drugName: string, reaction:
     allergies.push(newAllergy);
   }
 
+  // Editing the allergy list is itself a screening event (EMR-913).
   await prisma.patient.update({
     where: { id: patientId },
-    data: { allergies },
+    data: { allergies, allergiesScreenedAt: new Date() },
   });
 
   revalidatePath(`/clinic/patients/${patientId}`);
@@ -195,7 +196,31 @@ export async function removeAllergen(patientId: string, allergyStr: string) {
 
   await prisma.patient.update({
     where: { id: patientId },
-    data: { allergies },
+    data: { allergies, allergiesScreenedAt: new Date() },
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+  return { ok: true };
+}
+
+/**
+ * EMR-913 — record that allergies were affirmatively reviewed without changing
+ * the list. This is the "no known drug allergies" / "reviewed, nothing to add"
+ * path: it stamps `allergiesScreenedAt` so the pre-visit gate counts the patient
+ * as screened even when the allergy array is (correctly) empty — the exact case
+ * the old `allergies.length > 0` proxy got wrong.
+ */
+export async function markAllergiesReviewed(patientId: string) {
+  const user = await requireUser();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+    select: { id: true },
+  });
+  if (!patient) throw new Error("Patient not found");
+
+  await prisma.patient.update({
+    where: { id: patientId },
+    data: { allergiesScreenedAt: new Date() },
   });
 
   revalidatePath(`/clinic/patients/${patientId}`);

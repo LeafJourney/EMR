@@ -312,6 +312,11 @@ model Patient {
   // Clinical safety fields (EMR-113)
   allergies              String[]            @default([]) // e.g. ["Penicillin", "Sulfa", "Latex"]
   contraindications      String[]            @default([]) // e.g. ["MAOIs", "Blood thinners"]
+  // EMR-913 — explicit "allergies reviewed at" timestamp. Set on any allergy
+  // edit AND by an affirmative "reviewed / no known allergies" action, so an
+  // NKDA review counts as screened. Replaces the brittle `allergies.length > 0`
+  // proxy the pre-visit gate used to infer screening.
+  allergiesScreenedAt    DateTime?
   qualificationStatus    QualificationStatus @default(unknown)
   qualificationExpiresAt DateTime?
   // EMR-786 — Chart privacy. When chartRestricted=true the chart is
