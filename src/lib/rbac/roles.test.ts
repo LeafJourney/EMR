@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { homeForRoles, landingRole, primaryRole, ROLE_HOME } from "./roles";
+import { canAccessPath, homeForRoles, landingRole, primaryRole, ROLE_HOME } from "./roles";
 
 // primaryRole picks the highest-privilege role from a user's membership set
 // and is load-bearing for post-sign-in routing — Clerk lands every user on
@@ -113,5 +113,40 @@ describe("homeForRoles", () => {
 
   it("uses the patient home for empty role lists", () => {
     expect(homeForRoles([], "/sign-in")).toBe("/portal");
+  });
+
+  it("lands a kiosk-only login on the kiosk surface", () => {
+    expect(homeForRoles(["kiosk"])).toBe("/kiosk");
+  });
+
+  it("never lands a combined account on the kiosk — operational roles win", () => {
+    // A device account that somehow also carries a clinical role must not be
+    // dumped onto the kiosk; the daily-driver surface takes precedence.
+    expect(homeForRoles(["kiosk", "clinician"])).toBe("/clinic");
+    expect(homeForRoles(["kiosk", "front_office"])).toBe("/clinic");
+  });
+});
+
+// The kiosk is a hard-confined surface: the kiosk role reaches /kiosk and
+// nothing else, and no other role can reach /kiosk. This two-way fence is the
+// whole security story for a shared, unattended front-desk login, so lock it
+// down here.
+describe("canAccessPath — kiosk confinement", () => {
+  it("lets the kiosk role into /kiosk", () => {
+    expect(canAccessPath("kiosk", "/kiosk")).toBe(true);
+    expect(canAccessPath("kiosk", "/kiosk/anything")).toBe(true);
+  });
+
+  it("keeps the kiosk role out of every PHI surface", () => {
+    expect(canAccessPath("kiosk", "/portal")).toBe(false);
+    expect(canAccessPath("kiosk", "/clinic")).toBe(false);
+    expect(canAccessPath("kiosk", "/ops")).toBe(false);
+  });
+
+  it("keeps every other role out of /kiosk", () => {
+    expect(canAccessPath("patient", "/kiosk")).toBe(false);
+    expect(canAccessPath("clinician", "/kiosk")).toBe(false);
+    expect(canAccessPath("front_office", "/kiosk")).toBe(false);
+    expect(canAccessPath("super_admin", "/kiosk")).toBe(false);
   });
 });

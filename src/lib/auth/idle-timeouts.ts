@@ -37,6 +37,10 @@ export const IDLE_LIMITS_MS: Record<Role, number> = {
   implementation_admin: 10 * MINUTE,
   super_admin: 10 * MINUTE,
   leafnerd: 30 * MINUTE,
+  // Shared front-desk device in a public waiting room — the tightest idle
+  // budget so a walk-in can never leave the kiosk parked on a half-finished
+  // lookup. The surface holds no PHI, but a short reset keeps it clean.
+  kiosk: 3 * MINUTE,
 };
 
 /** Absolute cap on session age — applies regardless of activity. */

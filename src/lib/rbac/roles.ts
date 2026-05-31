@@ -14,6 +14,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   super_admin: "Super Admin",
   system: "System",
   leafnerd: "LeafNerd",
+  kiosk: "Check-In Kiosk",
 };
 
 /** Which landing path each role should hit after login. */
@@ -34,6 +35,9 @@ export const ROLE_HOME: Record<Role, string> = {
   super_admin: "/admin/hq",
   system: "/ops/mission-control",
   leafnerd: "/leafnerd",
+  // Front-desk kiosk lands straight on its self-service surface and never
+  // leaves it.
+  kiosk: "/kiosk",
 };
 
 /**
@@ -63,6 +67,10 @@ const ROUTE_GUARDS: Array<{ prefix: string; roles: Role[] }> = [
   // EMR-428: onboarding controller — Super Admin / Implementation Admin only.
   { prefix: "/onboarding/wizard", roles: ["super_admin", "implementation_admin"] },
   { prefix: "/templates", roles: ["super_admin", "implementation_admin"] },
+  // Clinic check-in kiosk — the kiosk role and nothing else. (And the kiosk
+  // role is absent from every other guard above, so a kiosk login is
+  // hard-confined to this one surface.)
+  { prefix: "/kiosk", roles: ["kiosk"] },
 ];
 
 /** Does this role have any permission to access this path prefix? */
@@ -89,6 +97,7 @@ export function primaryRole(roles: Role[]): Role {
     "back_office",
     "front_office",
     "leafnerd",
+    "kiosk",
     "patient",
   ];
   for (const r of order) if (roles.includes(r)) return r;
@@ -129,6 +138,7 @@ export function landingRole(roles: Role[]): Role {
     "super_admin",
     "implementation_admin",
     "leafnerd",
+    "kiosk",
     "patient",
   ];
   for (const r of order) if (roles.includes(r)) return r;

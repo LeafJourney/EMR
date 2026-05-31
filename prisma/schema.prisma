@@ -48,6 +48,12 @@ enum Role {
   super_admin
   system
   leafnerd
+  // Clinic front-desk kiosk. A shared, per-organization sign-in that runs
+  // ONLY the self-service /kiosk surface: walk-in patients look themselves
+  // up by name + DOB and check in. Holds zero PHI-read permissions
+  // (see permissions.ts) and is scoped to its org via the Membership row,
+  // so a kiosk login can never reach a chart or any clinician surface.
+  kiosk
 }
 
 model Organization {

@@ -172,6 +172,14 @@ const PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   super_admin: new Set<Permission>(),
   system: new Set<Permission>(),
   leafnerd: new Set<Permission>(),
+
+  // Front-desk check-in kiosk. Deliberately ZERO PHI grants: the kiosk
+  // never reads a chart, demographics, billing, or notes. Its only powers
+  // are name/DOB self-lookup and check-in, enforced by `requireRole("kiosk")`
+  // in the kiosk server actions — not by this matrix. Keeping the set empty
+  // means that if a kiosk login ever reaches a `requirePermission()` call by
+  // mistake, it is denied by default.
+  kiosk: new Set<Permission>(),
 };
 
 /* ── Errors ─────────────────────────────────────────────────────── */

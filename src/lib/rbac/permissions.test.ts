@@ -141,3 +141,28 @@ describe("canViewSection / canEditSection", () => {
     expect(canEditSection(user("clinician"), "demographics")).toBe(true);
   });
 });
+
+// The check-in kiosk is a shared, unattended front-desk login. It must hold
+// NO PHI grants at all — its only powers (name lookup + check-in) are gated by
+// requireRole("kiosk") in the kiosk actions, never by this matrix. If a kiosk
+// permission ever becomes non-empty, that is a PHI-exposure regression.
+describe("kiosk — zero PHI grants", () => {
+  it("cannot read demographics, notes, billing, or sensitive diagnoses", () => {
+    const k = user("kiosk");
+    expect(hasPermission(k, "patient.demographics.read")).toBe(false);
+    expect(hasPermission(k, "notes.read")).toBe(false);
+    expect(hasPermission(k, "billing.read")).toBe(false);
+    expect(hasPermission(k, "sensitive_diagnoses.read")).toBe(false);
+  });
+
+  it("cannot view any chart section", () => {
+    expect(canViewSection(user("kiosk"), "demographics")).toBe(false);
+    expect(canViewSection(user("kiosk"), "notes")).toBe(false);
+  });
+
+  it("throws ForbiddenError on any requirePermission check", () => {
+    expect(() => requirePermission(user("kiosk"), "patient.demographics.read")).toThrow(
+      ForbiddenError,
+    );
+  });
+});
