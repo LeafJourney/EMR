@@ -66,4 +66,22 @@ describe("resolveLobbyTasks", () => {
       expect(LOBBY_WORKFLOWS).toContain(t.workflow);
     }
   });
+
+  it("marks tasks as not-submitted by default", () => {
+    const tasks = resolveLobbyTasks(["presenting_concerns", "consent"]);
+    expect(tasks.map((t) => t.submitted)).toEqual([false, false]);
+  });
+
+  it("flags only the workflows with a staged submission, but keeps them in scope", () => {
+    const tasks = resolveLobbyTasks(
+      ["presenting_concerns", "consent"],
+      new Set(["intake" as const]),
+    );
+    // intake submitted, consent not — and BOTH remain outstanding tasks (the
+    // chart isn't written until staff accept, so scope is unchanged).
+    expect(tasks.map((t) => [t.workflow, t.submitted])).toEqual([
+      ["intake", true],
+      ["consent", false],
+    ]);
+  });
 });

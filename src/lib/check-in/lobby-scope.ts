@@ -61,6 +61,15 @@ export interface LobbyTask {
    * the URL — they re-derive the patient from the path-scoped cookie.
    */
   href: string;
+  /**
+   * True once the patient has staged a (still-pending) submission for this
+   * workflow. The task stays IN SCOPE — they can re-open it to edit — but it's
+   * rendered as "submitted, pending review" so the lobby has a terminal state the
+   * patient reaches by their own action, instead of a perpetual to-do. A staged
+   * submission satisfies NOTHING in the clinical readiness gate; this flag is
+   * display state only and never widens `allowed`.
+   */
+  submitted: boolean;
 }
 
 const TASK_LABELS: Record<LobbyWorkflow, string> = {
@@ -72,8 +81,14 @@ const TASK_LABELS: Record<LobbyWorkflow, string> = {
  * Resolve the patient's outstanding lobby tasks from readiness. `missingIds`
  * are the blocking requirement ids from PrevisitReadiness; we keep only the
  * ones a phone workflow can resolve, de-duplicated, in workflow order.
+ * `submittedWorkflows` are those with a staged-but-pending submission, flagged
+ * for display — they remain outstanding tasks (the chart isn't written until
+ * staff accept) but render as already submitted.
  */
-export function resolveLobbyTasks(missingIds: readonly string[]): LobbyTask[] {
+export function resolveLobbyTasks(
+  missingIds: readonly string[],
+  submittedWorkflows: ReadonlySet<LobbyWorkflow> = new Set(),
+): LobbyTask[] {
   const outstanding = new Set<LobbyWorkflow>();
   for (const id of missingIds) {
     const wf = workflowForRequirement(id);
@@ -83,6 +98,7 @@ export function resolveLobbyTasks(missingIds: readonly string[]): LobbyTask[] {
     workflow: wf,
     label: TASK_LABELS[wf],
     href: `/kiosk/lobby/${wf}`,
+    submitted: submittedWorkflows.has(wf),
   }));
 }
 
@@ -91,7 +107,12 @@ export interface LobbyReadinessView {
   tasks: LobbyTask[];
   /** Workflows still outstanding (the lobby's effective allow-scope). */
   allowed: LobbyWorkflow[];
-  /** True when nothing the phone can resolve is outstanding. */
+  /**
+   * True when there's nothing left for the patient to DO here: either no
+   * phone-resolvable task is outstanding, or every outstanding task has already
+   * been submitted and is awaiting staff review. The terminal "you're all set"
+   * state — reachable by the patient's own action, not only after staff accept.
+   */
   allDone: boolean;
 }
 
@@ -156,9 +177,39 @@ export async function getLobbyReadinessView(
     missingIds = [...LOBBY_WORKFLOWS];
   }
 
-  const tasks = resolveLobbyTasks(missingIds);
+  const submittedWorkflows = await loadSubmittedWorkflows(patientId, organizationId);
+  const tasks = resolveLobbyTasks(missingIds, submittedWorkflows);
+
+  // Scope is the outstanding tasks — UNCHANGED by submission state, so a patient
+  // can re-open a submitted workflow to correct an answer (getLobbyScopeFor keys
+  // off this, never the `submitted` display flag).
   const allowed = tasks.map((t) => t.workflow);
-  return { readiness, tasks, allowed, allDone: tasks.length === 0 };
+
+  // Terminal once there's nothing left to do: no outstanding task, OR every
+  // outstanding task is already submitted and waiting on staff review.
+  const allDone = tasks.length === 0 || tasks.every((t) => t.submitted);
+
+  return { readiness, tasks, allowed, allDone };
+}
+
+/**
+ * Which lobby workflows the patient has already staged a still-pending
+ * submission for. Used only to render "submitted, pending review" — staged data
+ * never satisfies the clinical readiness gate.
+ */
+async function loadSubmittedWorkflows(
+  patientId: string,
+  organizationId: string,
+): Promise<Set<LobbyWorkflow>> {
+  const rows = await prisma.kioskLobbySubmission.findMany({
+    where: { patientId, organizationId, status: "pending" },
+    select: { kind: true },
+  });
+  const submitted = new Set<LobbyWorkflow>();
+  for (const r of rows) {
+    if (isLobbyWorkflow(r.kind)) submitted.add(r.kind);
+  }
+  return submitted;
 }
 
 function emptyReadiness(): PrevisitReadiness {
