@@ -233,10 +233,10 @@ export async function loadPrevisitSnapshot(
       addressLine1: p.addressLine1,
       state: p.state,
       ageVerifiedAt: p.ageVerifiedAt,
-      // allergiesScreenedAt isn't a column; treat a populated allergies/contra
-      // array as "screened". Codex can replace with a real screened-at column.
-      allergiesScreenedAt:
-        p.allergies.length > 0 || p.contraindications.length > 0 ? p.updatedAt : null,
+      // EMR-913 — real screened-at column. Set on any allergy edit and by the
+      // explicit "reviewed / no known allergies" action, so an NKDA review
+      // counts as screened (the old `allergies.length > 0` proxy did not).
+      allergiesScreenedAt: p.allergiesScreenedAt,
       cannabisHistory: p.cannabisHistory,
       presentingConcerns: p.presentingConcerns,
       intakeAnswers: p.intakeAnswers,
