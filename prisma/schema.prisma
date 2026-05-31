@@ -4988,6 +4988,29 @@ model SmsOtpCode {
 }
 
 // --------------------------------------------------------------
+// EMR-915 — scoped "lobby" session for the kiosk→phone hand-off.
+// A patient who passed the kiosk hand-off (handoff token + SMS OTP) gets a
+// short-lived, NON-Clerk session that authorizes ONLY their own pre-visit
+// completion surfaces — never chart / records / messages. Mirrors VendorSession:
+// opaque token in an HTTPOnly cookie, SHA-256 hash stored here, path-scoped to
+// /kiosk/lobby. No FK relation (throwaway rows; patientId is a scope key).
+// --------------------------------------------------------------
+
+model KioskLobbySession {
+  id               String   @id @default(cuid())
+  patientId        String
+  organizationId   String
+  sessionTokenHash String   @unique
+  expiresAt        DateTime
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime @default(now())
+
+  @@index([patientId])
+  @@index([expiresAt])
+}
+
+// --------------------------------------------------------------
 // EMR-107 — ChatCB AI Coach
 // --------------------------------------------------------------
 
