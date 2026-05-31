@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils/cn";
 
 // EMR-667 — Ancillary Services directory.
 // Static card grid for external referral destinations: labs, imaging centres,
@@ -143,13 +144,24 @@ function SearchIcon() {
   );
 }
 
+const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as ServiceCategory[];
+
 export function AncillaryServicesDirectory() {
   const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState<ServiceCategory | null>(null);
+
+  const categoryCounts = useMemo(() => {
+    const counts = {} as Record<ServiceCategory, number>;
+    SERVICES.forEach((s) => { counts[s.category] = (counts[s.category] ?? 0) + 1; });
+    return counts;
+  }, []);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return SERVICES;
-    return SERVICES.filter((s) => matchesQuery(s, search));
-  }, [search]);
+    let list = SERVICES;
+    if (activeCategory) list = list.filter((s) => s.category === activeCategory);
+    if (search.trim()) list = list.filter((s) => matchesQuery(s, search));
+    return list;
+  }, [search, activeCategory]);
 
   return (
     <section id="ancillary" className="space-y-5">
@@ -160,6 +172,39 @@ export function AncillaryServicesDirectory() {
         <p className="text-sm text-text-muted mt-0.5">
           Labs, imaging, pharmacy, and dispensary referral contacts.
         </p>
+      </div>
+
+      {/* Category filter pills */}
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by service category">
+        <button
+          onClick={() => setActiveCategory(null)}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+            activeCategory === null
+              ? "bg-accent text-accent-ink border-accent"
+              : "bg-surface border-border text-text-muted hover:bg-surface-muted",
+          )}
+          aria-pressed={activeCategory === null}
+        >
+          All
+          <span className="opacity-60 tabular-nums">{SERVICES.length}</span>
+        </button>
+        {ALL_CATEGORIES.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+              activeCategory === cat
+                ? "bg-accent text-accent-ink border-accent"
+                : "bg-surface border-border text-text-muted hover:bg-surface-muted",
+            )}
+            aria-pressed={activeCategory === cat}
+          >
+            {CATEGORY_LABELS[cat]}
+            <span className="opacity-60 tabular-nums">{categoryCounts[cat] ?? 0}</span>
+          </button>
+        ))}
       </div>
 
       <div className="relative max-w-md">
