@@ -18,6 +18,7 @@ import { prisma } from "@/lib/db/prisma";
 import {
   evaluateIntakeGate,
   type IntakeGateInput,
+  type GateRequirementId,
 } from "./intake-gate";
 
 // ---------------------------------------------------------------------------
@@ -175,6 +176,30 @@ export function evaluatePrevisitReadiness(
   };
 }
 
+/**
+ * A missing blocking requirement with its display label + deep link, for UI
+ * surfaces (the portal "get ready" banner, the clinician dashboard). Labels are
+ * static UI strings — not PHI — but this richer view is intentionally kept OFF
+ * the PHI-free `PrevisitReadiness` summary so labels never ride into nudge
+ * routing or audit metadata. The href is the gate's own `resolveHref`, so the
+ * "where do I fix this" mapping lives in ONE place (EMR-914).
+ */
+export interface MissingRequirement {
+  id: GateRequirementId;
+  label: string;
+  href?: string;
+}
+
+export function missingBlockingRequirements(
+  snapshot: PrevisitSnapshot,
+  now: Date,
+): MissingRequirement[] {
+  const gate = evaluateIntakeGate(mapSnapshotToGateInput(snapshot), now);
+  return gate.requirements
+    .filter((r) => r.blocking && !r.satisfied)
+    .map((r) => ({ id: r.id, label: r.label, href: r.resolveHref }));
+}
+
 // ---------------------------------------------------------------------------
 // Prisma loader (thin DB read -> snapshot)
 // ---------------------------------------------------------------------------
@@ -282,6 +307,8 @@ function lastVisitBefore(startAt: Date): Date {
 
 export interface AppointmentReadiness {
   readiness: PrevisitReadiness;
+  /** Missing blocking requirements with labels + deep links, for UI surfaces. */
+  missingRequirements: MissingRequirement[];
   patientId: string;
   organizationId: string;
 }
@@ -309,7 +336,48 @@ export async function getAppointmentReadiness(
   if (!loaded) return null;
   return {
     readiness: evaluatePrevisitReadiness(loaded.snapshot, now),
+    missingRequirements: missingBlockingRequirements(loaded.snapshot, now),
     patientId: loaded.patientId,
     organizationId: loaded.organizationId,
+  };
+}
+
+export interface UpcomingVisitReadiness {
+  appointmentId: string;
+  startAt: Date;
+  readiness: PrevisitReadiness;
+  missingRequirements: MissingRequirement[];
+}
+
+/**
+ * Readiness for a PATIENT's next upcoming appointment (the portal "get ready"
+ * banner's entry point). Resolves the soonest still-open appointment, then reads
+ * the canonical readiness for it. Returns null when the patient has no upcoming
+ * appointment. Mirrors the nudge engine's appointment scope (requested/confirmed,
+ * in the future) so the banner and the SMS/email nudges agree on "next visit".
+ */
+export async function getNextAppointmentReadinessForPatient(
+  patientId: string,
+  now: Date,
+): Promise<UpcomingVisitReadiness | null> {
+  const appt = await prisma.appointment.findFirst({
+    where: {
+      patientId,
+      status: { in: ["requested", "confirmed"] },
+      startAt: { gt: now },
+    },
+    orderBy: { startAt: "asc" },
+    select: { id: true, startAt: true },
+  });
+  if (!appt) return null;
+
+  const r = await getAppointmentReadiness(appt.id, now);
+  if (!r) return null;
+
+  return {
+    appointmentId: appt.id,
+    startAt: appt.startAt,
+    readiness: r.readiness,
+    missingRequirements: r.missingRequirements,
   };
 }

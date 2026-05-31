@@ -4,6 +4,7 @@ import {
   deriveVisitType,
   evaluatePrevisitReadiness,
   mapSnapshotToGateInput,
+  missingBlockingRequirements,
   type PrevisitSnapshot,
 } from "./previsit-readiness";
 
@@ -87,6 +88,37 @@ describe("mapSnapshotToGateInput", () => {
   it("passes self-pay attestation through", () => {
     const input = mapSnapshotToGateInput(fullSnapshot({ selfPayAttested: true, coverages: [] }));
     expect(input.insurance.selfPayAttested).toBe(true);
+  });
+});
+
+describe("missingBlockingRequirements", () => {
+  it("is empty for a fully-ready snapshot", () => {
+    expect(missingBlockingRequirements(fullSnapshot(), NOW)).toEqual([]);
+  });
+
+  it("returns id + label + the gate's resolveHref for each missing blocking item", () => {
+    const missing = missingBlockingRequirements(
+      fullSnapshot({
+        patient: { ...fullSnapshot().patient, presentingConcerns: null, ageVerifiedAt: null },
+      }),
+      NOW,
+    );
+    const byId = Object.fromEntries(missing.map((m) => [m.id, m]));
+    expect(byId.presenting_concerns).toMatchObject({
+      label: "Reason for this visit",
+      href: "/patient/intake/concerns",
+    });
+    expect(byId.id_age_verification).toMatchObject({ href: "/patient/verify" });
+  });
+
+  it("excludes non-blocking (advisory) items even when unsatisfied", () => {
+    // A titration follow-up with no outcome log => advisory outcome_log is
+    // unsatisfied but NOT blocking, so it must not appear here.
+    const missing = missingBlockingRequirements(
+      fullSnapshot({ visitType: "follow_up", treatmentPhase: "titration", outcomeLogsSinceLastVisit: 0 }),
+      NOW,
+    );
+    expect(missing.some((m) => m.id === "outcome_log_since_last_visit")).toBe(false);
   });
 });
 
