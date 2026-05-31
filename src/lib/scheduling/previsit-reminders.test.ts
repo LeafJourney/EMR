@@ -4,14 +4,18 @@ const hoisted = vi.hoisted(() => {
   const prisma = {
     appointment: { findMany: vi.fn() },
     auditLog: { findMany: vi.fn(), create: vi.fn() },
+    communicationPreference: { findUnique: vi.fn() },
+    notification: { create: vi.fn() },
   };
-  return { prisma };
+  const sendEmail = vi.fn();
+  return { prisma, sendEmail };
 });
 
 vi.mock("@/lib/db/prisma", () => ({ prisma: hoisted.prisma }));
 vi.mock("./previsit-readiness", () => ({
   getAppointmentReadiness: vi.fn(),
 }));
+vi.mock("@/lib/email/resend", () => ({ sendEmail: hoisted.sendEmail }));
 
 import {
   sendDueVisitReminders,
@@ -22,7 +26,7 @@ import {
 import { getAppointmentReadiness } from "./previsit-readiness";
 import { getMockSmsAdapter } from "@/lib/sms/adapter";
 
-const { prisma } = hoisted;
+const { prisma, sendEmail } = hoisted;
 const day = 24 * 60 * 60_000;
 const NOW = new Date("2026-06-01T12:00:00.000Z");
 const PORTAL = "https://portal.leafjourney.com";
@@ -60,6 +64,9 @@ beforeEach(() => {
   delete process.env.TWILIO_FROM_NUMBER;
   prisma.auditLog.findMany.mockResolvedValue([]);
   prisma.auditLog.create.mockResolvedValue({});
+  prisma.communicationPreference.findUnique.mockResolvedValue(null);
+  prisma.notification.create.mockResolvedValue({ id: "note_1" });
+  sendEmail.mockResolvedValue({ ok: true, id: "email_1" });
 });
 
 describe("pickPrevisitMilestone", () => {
@@ -160,6 +167,93 @@ describe("sendDuePrevisitCompletionReminders", () => {
     // "123" fails normalizePhone -> treated as no deliverable channel.
     expect(res.sent).toBe(0);
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendDuePrevisitCompletionReminders — multi-channel (EMR-914)", () => {
+  const multiChannelPatient = {
+    id: "pat_1",
+    firstName: "Maya",
+    phone: "+15551234567",
+    email: "maya@example.com",
+    userId: "user_1",
+    organizationId: "org_1",
+  };
+
+  it("fans out to SMS + email + in-app, auditing each channel once", async () => {
+    prisma.appointment.findMany.mockResolvedValue([makeAppt({ patient: multiChannelPatient })]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(3);
+    expect(getMockSmsAdapter().getSent()).toHaveLength(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.create).toHaveBeenCalledTimes(1);
+
+    // The in-app Notification is PHI-free and points at the bare portal origin.
+    const note = prisma.notification.create.mock.calls[0][0].data;
+    expect(note).toMatchObject({ userId: "user_1", type: "previsit_reminder", href: PORTAL });
+    expect(JSON.stringify(note)).not.toMatch(/1985|Maya|consent|insurance/i);
+
+    // The email is PHI-free too.
+    const email = sendEmail.mock.calls[0][0];
+    expect(email.to).toEqual(["maya@example.com"]);
+    expect(JSON.stringify({ s: email.subject, t: email.text, h: email.html })).not.toMatch(
+      /Maya|1985|consent|insurance/i,
+    );
+
+    // One audit per channel, with distinct channel tags.
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(3);
+    const channels = prisma.auditLog.create.mock.calls.map((c) => c[0].data.metadata.channel);
+    expect(new Set(channels)).toEqual(new Set(["sms", "email", "inapp"]));
+  });
+
+  it("is idempotent PER channel — a sent SMS doesn't block email/in-app", async () => {
+    prisma.appointment.findMany.mockResolvedValue([makeAppt({ patient: multiChannelPatient })]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+    prisma.auditLog.findMany.mockResolvedValue([{ metadata: { milestone: "7day", channel: "sms" } }]);
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(2); // email + in-app
+    expect(getMockSmsAdapter().getSent()).toHaveLength(0); // SMS already sent
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.create).toHaveBeenCalledTimes(1);
+    expect(res.details.find((d) => d.channel === "sms")?.result).toBe("skipped:already-sent");
+  });
+
+  it("treats an unconfigured email transport as a skip, not a failure or audit", async () => {
+    prisma.appointment.findMany.mockResolvedValue([
+      makeAppt({ patient: { ...multiChannelPatient, userId: null } }), // sms + email only
+    ]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+    sendEmail.mockResolvedValue({ ok: false, reason: "no-api-key" });
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(1); // SMS only
+    expect(res.details.find((d) => d.channel === "email")?.result).toBe(
+      "skipped:channel-unconfigured",
+    );
+    // Only the SMS send is audited.
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(prisma.auditLog.create.mock.calls[0][0].data.metadata.channel).toBe("sms");
+  });
+
+  it("honors an explicit per-category SMS opt-out while still emailing", async () => {
+    prisma.appointment.findMany.mockResolvedValue([makeAppt({ patient: multiChannelPatient })]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+    prisma.communicationPreference.findUnique.mockResolvedValue({
+      emailFrequency: "instant",
+      preferences: { previsit: { sms: false } },
+    });
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(getMockSmsAdapter().getSent()).toHaveLength(0);
+    const channels = new Set(res.details.filter((d) => d.result === "sent").map((d) => d.channel));
+    expect(channels).toEqual(new Set(["email", "inapp"]));
   });
 });
 
