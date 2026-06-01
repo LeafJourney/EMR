@@ -168,6 +168,12 @@ model Organization {
   supplies     Supply[]
   suppliers    Supplier[]
   supplyOrders SupplyOrder[]
+
+  // EMR-916 — Per-org pre-visit portal URL override.
+  // When set, pre-visit nudges for patients in this org link here instead of
+  // the global PREVISIT_PORTAL_URL env. Must be a bare HTTPS origin (no path/
+  // query/hash) — validated by normalizePrevisitPortalOrigin before use.
+  previsitPortalUrl String?
 }
 
 // EMR-420 — A Practice is a single clinical location/group under an

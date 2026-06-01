@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const hoisted = vi.hoisted(() => {
   const prisma = {
     appointment: { findMany: vi.fn() },
+    organization: { findMany: vi.fn() },
     auditLog: { findMany: vi.fn(), create: vi.fn() },
     communicationPreference: { findUnique: vi.fn() },
     notification: { create: vi.fn() },
@@ -67,6 +68,8 @@ beforeEach(() => {
   prisma.communicationPreference.findUnique.mockResolvedValue(null);
   prisma.notification.create.mockResolvedValue({ id: "note_1" });
   sendEmail.mockResolvedValue({ ok: true, id: "email_1" });
+  // Default: no org-level portal URL override.
+  prisma.organization.findMany.mockResolvedValue([]);
 });
 
 describe("pickPrevisitMilestone", () => {
@@ -257,6 +260,66 @@ describe("sendDuePrevisitCompletionReminders — multi-channel (EMR-914)", () =>
   });
 });
 
+describe("sendDuePrevisitCompletionReminders — per-org portal URL (EMR-916)", () => {
+  const ORG_PORTAL = "https://org1.portal.example.com";
+
+  it("uses the org's custom previsitPortalUrl when set, ignoring the global fallback", async () => {
+    prisma.appointment.findMany.mockResolvedValue([makeAppt()]);
+    prisma.organization.findMany.mockResolvedValue([
+      { id: "org_1", previsitPortalUrl: ORG_PORTAL },
+    ]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(1);
+    const sms = getMockSmsAdapter().getSent();
+    expect(sms[0].body).toContain(ORG_PORTAL);
+    expect(sms[0].body).not.toContain(PORTAL);
+  });
+
+  it("falls back to the global env URL when the org has no previsitPortalUrl", async () => {
+    prisma.appointment.findMany.mockResolvedValue([makeAppt()]);
+    prisma.organization.findMany.mockResolvedValue([
+      { id: "org_1", previsitPortalUrl: null },
+    ]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(1);
+    expect(getMockSmsAdapter().getSent()[0].body).toContain(PORTAL);
+  });
+
+  it("quarantines appointments for an org with an invalid custom URL; other orgs still send", async () => {
+    const apptOrg1 = makeAppt({
+      id: "appt_valid",
+      patient: { id: "pat_1", phone: "+15551234567", email: null, userId: null, organizationId: "org_1" },
+    });
+    const apptOrg2 = makeAppt({
+      id: "appt_invalid",
+      patient: { id: "pat_2", phone: "+15557654321", email: null, userId: null, organizationId: "org_2" },
+    });
+    prisma.appointment.findMany.mockResolvedValue([apptOrg1, apptOrg2]);
+    prisma.organization.findMany.mockResolvedValue([
+      { id: "org_1", previsitPortalUrl: null },               // falls back to global
+      { id: "org_2", previsitPortalUrl: "http://insecure.org" }, // invalid: HTTP not HTTPS
+    ]);
+    vi.mocked(getAppointmentReadiness).mockResolvedValue(incomplete as any);
+
+    const res = await sendDuePrevisitCompletionReminders({ now: NOW, portalUrl: PORTAL });
+
+    expect(res.sent).toBe(1);
+    expect(res.details.find((d) => d.appointmentId === "appt_valid")?.result).toBe("sent");
+    expect(res.details.find((d) => d.appointmentId === "appt_invalid")?.result).toBe(
+      "skipped:portal-url-invalid",
+    );
+    // The quarantined org's appointment never reaches readiness check.
+    const readinessCalls = vi.mocked(getAppointmentReadiness).mock.calls.map((c) => c[0]);
+    expect(readinessCalls).not.toContain("appt_invalid");
+  });
+});
+
 describe("sendDueVisitReminders", () => {
   it("runs appointment reminders and pre-visit completion reminders in one scheduler tick", async () => {
     prisma.appointment.findMany
@@ -267,23 +330,27 @@ describe("sendDueVisitReminders", () => {
     const res = await sendDueVisitReminders({ now: NOW, portalUrl: PORTAL });
 
     expect(res.appointment.sent).toBe(1);
-    expect(res.previsit?.sent).toBe(1);
+    expect(res.previsit.sent).toBe(1);
     expect(getMockSmsAdapter().getSent()).toHaveLength(2);
   });
 
-  it("quarantines pre-visit nudges when no portal origin is configured", async () => {
-    prisma.appointment.findMany.mockResolvedValueOnce([dueAppointmentReminder()]);
+  it("quarantines per-appointment when no portal origin is configured (no org override, no env)", async () => {
+    prisma.appointment.findMany
+      .mockResolvedValueOnce([dueAppointmentReminder()])
+      .mockResolvedValueOnce([makeAppt()]);
 
     const res = await sendDueVisitReminders({ now: NOW });
 
     expect(res.appointment.sent).toBe(1);
-    expect(res.previsit).toBeNull();
-    expect(res.previsitSkippedReason).toBe("portal-url-missing");
+    expect(res.previsit.sent).toBe(0);
+    expect(res.previsit.details[0].result).toBe("skipped:portal-url-missing");
     expect(getAppointmentReadiness).not.toHaveBeenCalled();
   });
 
-  it("quarantines pre-visit nudges when the portal origin is not a bare HTTPS origin", async () => {
-    prisma.appointment.findMany.mockResolvedValueOnce([dueAppointmentReminder()]);
+  it("quarantines per-appointment when the portal origin is not a bare HTTPS origin", async () => {
+    prisma.appointment.findMany
+      .mockResolvedValueOnce([dueAppointmentReminder()])
+      .mockResolvedValueOnce([makeAppt()]);
 
     const res = await sendDueVisitReminders({
       now: NOW,
@@ -291,8 +358,8 @@ describe("sendDueVisitReminders", () => {
     });
 
     expect(res.appointment.sent).toBe(1);
-    expect(res.previsit).toBeNull();
-    expect(res.previsitSkippedReason).toBe("portal-url-invalid");
+    expect(res.previsit.sent).toBe(0);
+    expect(res.previsit.details[0].result).toBe("skipped:portal-url-invalid");
     expect(getAppointmentReadiness).not.toHaveBeenCalled();
   });
 });
