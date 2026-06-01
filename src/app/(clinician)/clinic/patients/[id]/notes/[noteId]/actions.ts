@@ -26,6 +26,7 @@ import { z } from "zod";
 import { freezeNoteSnapshot } from "@/lib/agents/guardrails/note-guardrails";
 import { ensureConsentDisclaimerBlock } from "@/lib/clinical/ai-consent-disclaimer";
 import { logger } from "@/lib/observability/log";
+import { recordFeedback } from "@/lib/agents/memory/agent-feedback";
 import {
   PATIENT_DEMEANOR_OPTIONS,
   type PatientDemeanor,
@@ -842,8 +843,67 @@ export async function releaseVisitCompletion(
     throw err;
   }
 
+  await recordVisitCompletionFeedback({
+    payload,
+    noteId,
+    organizationId: user.organizationId!,
+    reviewerId: user.id,
+  });
+
   revalidatePath(`/clinic/patients/${encounter.patientId}`);
   return { ok: true };
+}
+
+async function recordVisitCompletionFeedback({
+  payload,
+  noteId,
+  organizationId,
+  reviewerId,
+}: {
+  payload: VisitCompletionReleasePayload;
+  noteId: string;
+  organizationId: string;
+  reviewerId: string;
+}): Promise<void> {
+  if (payload.feedbackSignals.length === 0) {
+    return;
+  }
+
+  const sections = [
+    ...payload.includedSections,
+    ...payload.heldOutSections,
+    ...payload.unresolvedSections,
+  ];
+
+  const settled = await Promise.allSettled(
+    payload.feedbackSignals.map((signal) => {
+      const section = sections.find((candidate) => candidate.cardId === signal.cardId);
+
+      return recordFeedback({
+        agentName: "visitCompletion",
+        agentVersion: "1.0.0",
+        organizationId,
+        noteId,
+        action: signal.feedbackAction,
+        reviewerId,
+        reviewerNote: section
+          ? `${section.title}: ${signal.meaning}`
+          : signal.meaning,
+        editDelta:
+          signal.feedbackAction === "approved_with_edits"
+            ? section?.editNote ?? section?.confirmationNote ?? null
+            : null,
+      });
+    }),
+  );
+
+  if (settled.some((result) => result.status === "rejected")) {
+    logger.warn({
+      event: "visit_completion.feedback.persist_failed",
+      noteId,
+      failedCount: settled.filter((result) => result.status === "rejected").length,
+    });
+  }
 }
 
 function isUniqueConstraintError(err: unknown): boolean {

@@ -13,7 +13,7 @@ const hoisted = vi.hoisted(() => {
     message: { create: vi.fn() },
     $transaction: vi.fn(async (cb) => cb(mockPrisma)),
   };
-  return { mockPrisma, requireUserMock: vi.fn() };
+  return { mockPrisma, requireUserMock: vi.fn(), recordFeedbackMock: vi.fn() };
 });
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -27,6 +27,9 @@ vi.mock("@/lib/orchestration/model-client", () => ({
 }));
 vi.mock("@/lib/observability/log", () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+}));
+vi.mock("@/lib/agents/memory/agent-feedback", () => ({
+  recordFeedback: hoisted.recordFeedbackMock,
 }));
 
 // Mock assertChartAccess to allow testing chart restriction gates
@@ -48,7 +51,7 @@ vi.mock("@/lib/rbac/permissions", async (importOriginal) => {
 import { releaseVisitCompletion } from "./actions";
 import type { VisitCompletionReleasePayload } from "@/lib/domain/visit-completion-selection";
 
-const { mockPrisma, requireUserMock } = hoisted;
+const { mockPrisma, requireUserMock, recordFeedbackMock } = hoisted;
 
 function clinician(over: Record<string, unknown> = {}) {
   return {
@@ -181,6 +184,7 @@ beforeEach(() => {
   mockPrisma.messageThread.create.mockResolvedValue({ id: "thread_1" });
   mockPrisma.message.create.mockResolvedValue({ id: "msg_1" });
   mockPrisma.auditLog.create.mockResolvedValue({ id: "audit_1" });
+  recordFeedbackMock.mockResolvedValue({ id: "feedback_1" });
 });
 
 describe("releaseVisitCompletion server action", () => {
@@ -349,5 +353,71 @@ describe("releaseVisitCompletion server action", () => {
     expect(mockPrisma.task.create).not.toHaveBeenCalled();
     expect(mockPrisma.message.create).not.toHaveBeenCalled();
     expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("records visit-completion feedback signals after a successful release", async () => {
+    const payload = validPayload({
+      feedbackSignals: [
+        {
+          cardId: "orders",
+          feedbackAction: "approved",
+          meaning: "Physician kept the suggested orders.",
+        },
+        {
+          cardId: "patient_message",
+          feedbackAction: "approved_with_edits",
+          meaning: "Physician edited the patient communication.",
+        },
+        {
+          cardId: "practice_readiness",
+          feedbackAction: "dismissed",
+          meaning: "Physician deferred practice readiness.",
+        },
+      ],
+    });
+
+    const result = await releaseVisitCompletion("note_1", payload);
+
+    expect(result).toEqual({ ok: true });
+    expect(recordFeedbackMock).toHaveBeenCalledTimes(3);
+    expect(recordFeedbackMock).toHaveBeenCalledWith({
+      agentName: "visitCompletion",
+      agentVersion: "1.0.0",
+      organizationId: "org_1",
+      noteId: "note_1",
+      action: "approved",
+      reviewerId: "user_1",
+      reviewerNote: "Suggested Orders: Physician kept the suggested orders.",
+      editDelta: null,
+    });
+    expect(recordFeedbackMock).toHaveBeenCalledWith({
+      agentName: "visitCompletion",
+      agentVersion: "1.0.0",
+      organizationId: "org_1",
+      noteId: "note_1",
+      action: "approved_with_edits",
+      reviewerId: "user_1",
+      reviewerNote: "Patient Communication: Physician edited the patient communication.",
+      editDelta: "Drafted patient email",
+    });
+  });
+
+  it("does not fail the care-plan release if feedback persistence fails", async () => {
+    recordFeedbackMock.mockRejectedValue(new Error("feedback store unavailable"));
+
+    const payload = validPayload({
+      feedbackSignals: [
+        {
+          cardId: "orders",
+          feedbackAction: "approved",
+          meaning: "Physician kept the suggested orders.",
+        },
+      ],
+    });
+
+    const result = await releaseVisitCompletion("note_1", payload);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.visitCompletion.create).toHaveBeenCalled();
   });
 });
