@@ -67,6 +67,7 @@ interface NoteEditorProps {
     rationale: string | null;
   } | null;
   initialDemeanor?: PatientDemeanor | null;
+  releasedPayload?: any;
 }
 
 const REFINE_OPTIONS: { mode: RefineMode; label: string; icon: string }[] = [
@@ -113,6 +114,7 @@ export function NoteEditor({
   hallucinationConfidence,
   codingSuggestion,
   initialDemeanor,
+  releasedPayload,
 }: NoteEditorProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -716,7 +718,13 @@ export function NoteEditor({
         </Card>
       )}
 
-      {visitCompletionBundle && <VisitCompletionPanel bundle={visitCompletionBundle} />}
+      {visitCompletionBundle && (
+        <VisitCompletionPanel
+          bundle={visitCompletionBundle}
+          releasedPayload={releasedPayload}
+          noteId={noteId}
+        />
+      )}
     </div>
   );
 }

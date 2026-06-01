@@ -26,11 +26,13 @@ import { z } from "zod";
 import { freezeNoteSnapshot } from "@/lib/agents/guardrails/note-guardrails";
 import { ensureConsentDisclaimerBlock } from "@/lib/clinical/ai-consent-disclaimer";
 import { logger } from "@/lib/observability/log";
+import { recordFeedback } from "@/lib/agents/memory/agent-feedback";
 import {
   PATIENT_DEMEANOR_OPTIONS,
   type PatientDemeanor,
 } from "@/lib/domain/notes";
 import { advanceVisitState } from "@/lib/domain/visit-state";
+import type { VisitCompletionReleasePayload } from "@/lib/domain/visit-completion-selection";
 
 const blockSchema = z.object({
   heading: z.string(),
@@ -680,4 +682,236 @@ Return ONLY the refined text — no JSON, no markdown, no explanation. Just the 
       code: "unknown",
     };
   }
+}
+
+export async function releaseVisitCompletion(
+  noteId: string,
+  payload: VisitCompletionReleasePayload,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireUser();
+
+  if (!hasPermission(user, "notes.edit")) {
+    return { ok: false, error: "Forbidden: read-only access to notes" };
+  }
+
+  const note = await prisma.note.findUnique({
+    where: { id: noteId },
+    include: { encounter: true },
+  });
+  if (!note) return { ok: false, error: "Note not found" };
+
+  if (note.status !== "finalized") {
+    return { ok: false, error: "This note is not finalized and cannot be completed." };
+  }
+
+  // Verify org access
+  const encounter = await prisma.encounter.findFirst({
+    where: {
+      id: note.encounterId,
+      organizationId: user.organizationId!,
+    },
+  });
+  if (!encounter) return { ok: false, error: "Unauthorized" };
+
+  // Chart privacy gate
+  try {
+    await assertChartAccess(user, encounter.patientId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "Forbidden: chart is restricted" };
+    }
+    throw err;
+  }
+
+  if (!payload.canRelease) {
+    return { ok: false, error: "Release is blocked; unresolved sections remain." };
+  }
+
+  // Idempotency: verify no existing release
+  const existing = await prisma.visitCompletion.findUnique({
+    where: { noteId },
+  });
+  if (existing) {
+    return { ok: false, error: "Visit completion has already been released." };
+  }
+
+  try {
+    // Run the release inside a transaction to ensure all side-effects and DB entries land atomically.
+    // The VisitCompletion unique noteId insert is intentionally first, so a concurrent release
+    // attempt fails before tasks, messages, or audit rows are created.
+    await prisma.$transaction(async (tx) => {
+      // 1. Create the VisitCompletion record
+      await tx.visitCompletion.create({
+        data: {
+          noteId,
+          organizationId: user.organizationId!,
+          patientId: encounter.patientId,
+          releasedById: user.id,
+          payload: payload as any,
+        },
+      });
+
+      // 2. Suggested Orders: Create a Task for the back-office order queue
+      const ordersSection = payload.includedSections.find((s) => s.cardId === "orders");
+      if (ordersSection && ordersSection.labels.length > 0) {
+        await tx.task.create({
+          data: {
+            organizationId: user.organizationId!,
+            patientId: encounter.patientId,
+            title: `Orders: ${ordersSection.labels.join(", ")}`,
+            description: `Suggested orders released by physician.\n\nNote: ${
+              ordersSection.editNote || ordersSection.confirmationNote || "Approved"
+            }`,
+            status: "open",
+            assigneeRole: "back_office",
+          },
+        });
+      }
+
+      // 3. Follow-Up Plan: Create a Task for front-office scheduling
+      const followUpSection = payload.includedSections.find((s) => s.cardId === "follow_up");
+      if (followUpSection && followUpSection.labels.length > 0) {
+        await tx.task.create({
+          data: {
+            organizationId: user.organizationId!,
+            patientId: encounter.patientId,
+            title: `Follow-Up: ${followUpSection.labels.join(", ")}`,
+            description: `Follow-up plan released by physician.\n\nNote: ${
+              followUpSection.editNote || followUpSection.confirmationNote || "Approved"
+            }`,
+            status: "open",
+            assigneeRole: "front_office",
+          },
+        });
+      }
+
+      // 4. Patient Communication: Create a draft Message to the patient
+      const commsSection = payload.includedSections.find((s) => s.cardId === "patient_message");
+      if (commsSection && commsSection.labels.length > 0) {
+        const thread = await tx.messageThread.findFirst({
+          where: { patientId: encounter.patientId },
+          orderBy: { lastMessageAt: "desc" },
+        });
+        const threadId =
+          thread?.id ??
+          (
+            await tx.messageThread.create({
+              data: {
+                patientId: encounter.patientId,
+                subject: "Care Plan & Next Steps",
+                lastMessageAt: new Date(),
+              },
+            })
+          ).id;
+
+        await tx.message.create({
+          data: {
+            threadId,
+            senderUserId: user.id,
+            status: "draft",
+            body:
+              commsSection.editNote ||
+              commsSection.confirmationNote ||
+              commsSection.labels.join("\n"),
+            aiDrafted: true,
+            sentAt: null,
+          },
+        });
+      }
+
+      // 5. Create audit log entry (minimize PHI)
+      await tx.auditLog.create({
+        data: {
+          organizationId: user.organizationId!,
+          actorUserId: user.id,
+          action: "visit_completion.released",
+          subjectType: "VisitCompletion",
+          subjectId: noteId,
+          metadata: {
+            totalCards: payload.summary.totalCards,
+            includedCards: payload.summary.includedCards,
+            heldOutCards: payload.summary.heldOutCards,
+            version: payload.version,
+          } as any,
+        },
+      });
+    });
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return { ok: false, error: "Visit completion has already been released." };
+    }
+    throw err;
+  }
+
+  await recordVisitCompletionFeedback({
+    payload,
+    noteId,
+    organizationId: user.organizationId!,
+    reviewerId: user.id,
+  });
+
+  revalidatePath(`/clinic/patients/${encounter.patientId}`);
+  return { ok: true };
+}
+
+async function recordVisitCompletionFeedback({
+  payload,
+  noteId,
+  organizationId,
+  reviewerId,
+}: {
+  payload: VisitCompletionReleasePayload;
+  noteId: string;
+  organizationId: string;
+  reviewerId: string;
+}): Promise<void> {
+  if (payload.feedbackSignals.length === 0) {
+    return;
+  }
+
+  const sections = [
+    ...payload.includedSections,
+    ...payload.heldOutSections,
+    ...payload.unresolvedSections,
+  ];
+
+  const settled = await Promise.allSettled(
+    payload.feedbackSignals.map((signal) => {
+      const section = sections.find((candidate) => candidate.cardId === signal.cardId);
+
+      return recordFeedback({
+        agentName: "visitCompletion",
+        agentVersion: "1.0.0",
+        organizationId,
+        noteId,
+        action: signal.feedbackAction,
+        reviewerId,
+        reviewerNote: section
+          ? `${section.title}: ${signal.meaning}`
+          : signal.meaning,
+        editDelta:
+          signal.feedbackAction === "approved_with_edits"
+            ? section?.editNote ?? section?.confirmationNote ?? null
+            : null,
+      });
+    }),
+  );
+
+  if (settled.some((result) => result.status === "rejected")) {
+    logger.warn({
+      event: "visit_completion.feedback.persist_failed",
+      noteId,
+      failedCount: settled.filter((result) => result.status === "rejected").length,
+    });
+  }
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  const code = typeof err === "object" && err !== null && "code" in err ? (err as any).code : null;
+  const message =
+    typeof err === "object" && err !== null && "message" in err
+      ? String((err as any).message)
+      : "";
+
+  return code === "P2002" || message.includes("Unique constraint");
 }

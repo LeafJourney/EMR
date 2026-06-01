@@ -21,6 +21,7 @@ async function syncClerkUsers() {
     { email: "patient@demo.health", password: "Longbeach2026!" },
     { email: "james.chen@demo.health", password: "Longbeach2026!" },
     { email: "sarah.thompson@demo.health", password: "Longbeach2026!" },
+    { email: "kiosk@demo.health", password: "Longbeach2026!" },
   ];
 
   console.log("Syncing seeded users to Clerk...");
