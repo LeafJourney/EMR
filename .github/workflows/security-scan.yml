@@ -27,9 +27,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+      - name: Install Gitleaks
+        run: |
+          curl -sSLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run Gitleaks
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Git scan commits in pull request against the base branch
+            gitleaks detect --log-opts="origin/${{ github.base_ref }}..HEAD" --config=.gitleaks.toml --verbose --redact
+          else
+            # Full scan on push to main
+            gitleaks detect --config=.gitleaks.toml --verbose --redact
+          fi
