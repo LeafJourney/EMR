@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow } from "@/components/ui/ornament";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  ScheduleClient,
+  type SerializedAppointment,
+  type SerializedProvider,
+} from "./ScheduleClient";
+import type { RangeKey } from "./RangeFilter";
 
 export const metadata = { title: "Schedule" };
 
@@ -26,19 +28,10 @@ function addDays(d: Date, days: number): Date {
   return n;
 }
 
-function formatTime(d: Date): string {
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatDayLabel(d: Date): string {
-  return d.toLocaleDateString("en-US", { weekday: "short" });
-}
-
-function formatDayNumber(d: Date): string {
-  return d.getDate().toString();
+function startOfDay(d: Date): Date {
+  const n = new Date(d);
+  n.setHours(0, 0, 0, 0);
+  return n;
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -49,42 +42,156 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
-const MODALITY_LABEL: Record<string, string> = {
-  in_person: "In-person",
-  video: "Video",
-  phone: "Phone",
+/** Parse `YYYY-MM-DD` into a LOCAL Date at midnight, else null. */
+function parseISODate(s: string | undefined): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  if (
+    d.getFullYear() !== Number(m[1]) ||
+    d.getMonth() !== Number(m[2]) - 1 ||
+    d.getDate() !== Number(m[3])
+  ) {
+    return null;
+  }
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// EMR-930 — resolve the query window from searchParams.
+//
+// Supported:
+//   ?range=today|week|next-week|prev-week   (preset, computed from "now")
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD          (explicit custom span, inclusive)
+//   (none)                                  → current week (preserves default)
+//
+// Returns a [start, end) window plus the active key for the filter control.
+// ---------------------------------------------------------------------------
+
+type ResolvedRange = {
+  start: Date;
+  end: Date; // exclusive
+  activeRange: RangeKey;
+  activeFrom: string | null;
+  activeTo: string | null;
 };
 
-const MODALITY_TONE: Record<string, "accent" | "info" | "neutral"> = {
-  in_person: "accent",
-  video: "info",
-  phone: "neutral",
-};
+function resolveRange(
+  rangeParam: string | undefined,
+  fromParam: string | undefined,
+  toParam: string | undefined,
+  now: Date,
+): ResolvedRange {
+  // Explicit custom span takes precedence.
+  const from = parseISODate(fromParam);
+  const to = parseISODate(toParam);
+  if (from && to) {
+    const [a, b] = from.getTime() <= to.getTime() ? [from, to] : [to, from];
+    return {
+      start: a,
+      end: addDays(b, 1), // make `to` inclusive
+      activeRange: "custom",
+      activeFrom: isoOf(a),
+      activeTo: isoOf(b),
+    };
+  }
 
-const STATUS_TONE: Record<string, "success" | "warning" | "danger" | "neutral" | "accent"> = {
-  confirmed: "success",
-  requested: "warning",
-  completed: "neutral",
-  cancelled: "danger",
-  no_show: "danger",
-};
+  const thisWeekStart = startOfWeek(now);
+  switch (rangeParam) {
+    case "today": {
+      const start = startOfDay(now);
+      return {
+        start,
+        end: addDays(start, 1),
+        activeRange: "today",
+        activeFrom: null,
+        activeTo: null,
+      };
+    }
+    case "next-week": {
+      const start = addDays(thisWeekStart, 7);
+      return {
+        start,
+        end: addDays(start, 7),
+        activeRange: "next-week",
+        activeFrom: null,
+        activeTo: null,
+      };
+    }
+    case "prev-week": {
+      const start = addDays(thisWeekStart, -7);
+      return {
+        start,
+        end: addDays(start, 7),
+        activeRange: "prev-week",
+        activeFrom: null,
+        activeTo: null,
+      };
+    }
+    case "week":
+    default:
+      return {
+        start: thisWeekStart,
+        end: addDays(thisWeekStart, 7),
+        activeRange: "week",
+        activeFrom: null,
+        activeTo: null,
+      };
+  }
+}
+
+function isoOf(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function rangeSpanLabel(start: Date, end: Date): string {
+  // end is exclusive; show the inclusive last day.
+  const lastDay = addDays(end, -1);
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  if (isSameDay(start, lastDay)) {
+    return start.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  return `${start.toLocaleDateString("en-US", opts)} – ${lastDay.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`;
+}
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-export default async function SchedulePage() {
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
   const organizationId = user.organizationId!;
 
-  const weekStart = startOfWeek(new Date());
-  const weekEnd = addDays(weekStart, 7);
+  const sp = (await searchParams) ?? {};
+  const one = (v: string | string[] | undefined) =>
+    Array.isArray(v) ? v[0] : v;
+
+  const now = new Date();
+  const { start, end, activeRange, activeFrom, activeTo } = resolveRange(
+    one(sp.range),
+    one(sp.from),
+    one(sp.to),
+    now,
+  );
 
   const [appointments, providers] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         patient: { organizationId },
-        startAt: { gte: weekStart, lt: weekEnd },
+        startAt: { gte: start, lt: end },
       },
       include: {
         patient: { select: { firstName: true, lastName: true, id: true } },
@@ -104,181 +211,102 @@ export default async function SchedulePage() {
     }),
   ]);
 
-  // Group by day
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = addDays(weekStart, i);
+  // Day buckets that span the resolved window (1+ days).
+  const dayCount = Math.max(
+    1,
+    Math.round((end.getTime() - start.getTime()) / 86_400_000),
+  );
+  const dayBuckets = Array.from({ length: dayCount }, (_, i) => {
+    const d = addDays(start, i);
     return {
-      date: d,
-      appointments: appointments.filter((a) => isSameDay(a.startAt, d)),
+      iso: d.toISOString(),
+      isToday: isSameDay(d, now),
+      appointments: appointments
+        .filter((a) => isSameDay(a.startAt, d))
+        .map(serializeAppointment),
     };
   });
 
-  // Stats
+  const serializedAppointments: SerializedAppointment[] =
+    appointments.map(serializeAppointment);
+
+  const serializedProviders: SerializedProvider[] = providers.map((p) => ({
+    id: p.id,
+    title: p.title ?? null,
+    user: { firstName: p.user.firstName, lastName: p.user.lastName },
+  }));
+
+  // Stats (reflect the chosen window).
   const totalThisWeek = appointments.length;
-  const confirmedCount = appointments.filter((a) => a.status === "confirmed").length;
-  const requestedCount = appointments.filter((a) => a.status === "requested").length;
-  const completedCount = appointments.filter((a) => a.status === "completed").length;
-  const today = new Date();
-  const todayCount = appointments.filter((a) => isSameDay(a.startAt, today)).length;
+  const confirmedCount = appointments.filter(
+    (a) => a.status === "confirmed",
+  ).length;
+  const requestedCount = appointments.filter(
+    (a) => a.status === "requested",
+  ).length;
+  const completedCount = appointments.filter(
+    (a) => a.status === "completed",
+  ).length;
+  const todayCount = appointments.filter((a) => isSameDay(a.startAt, now)).length;
+
+  const spanLabel = rangeSpanLabel(start, end);
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
       <PageHeader
         eyebrow="Practice management"
         title="Schedule"
-        description={`Week of ${weekStart.toLocaleDateString("en-US", { month: "long", day: "numeric" })} — ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`}
+        description={spanLabel}
       />
 
       {/* Stats strip */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <StatCard label="This week" value={totalThisWeek} />
+        <StatCard label="In range" value={totalThisWeek} />
         <StatCard label="Today" value={todayCount} tone="accent" />
         <StatCard label="Confirmed" value={confirmedCount} tone="success" />
         <StatCard label="Requested" value={requestedCount} tone="warning" />
         <StatCard label="Completed" value={completedCount} tone="neutral" />
       </div>
 
-      {/* Week view */}
-      <div className="mb-4">
-        <Eyebrow>Week view</Eyebrow>
-      </div>
-
-      {totalThisWeek === 0 ? (
-        <EmptyState
-          title="No appointments this week"
-          description="New appointments will appear here as patients book or providers schedule."
-        />
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
-          {days.map((day) => {
-            const isToday = isSameDay(day.date, today);
-            return (
-              <div
-                key={day.date.toISOString()}
-                className={`bg-surface-raised rounded-xl border ${
-                  isToday ? "border-accent/50 shadow-md" : "border-border"
-                } overflow-hidden flex flex-col`}
-              >
-                {/* Day header */}
-                <div
-                  className={`px-4 py-3 border-b ${
-                    isToday
-                      ? "bg-accent/10 border-accent/20"
-                      : "bg-surface-muted/40 border-border"
-                  }`}
-                >
-                  <div className="flex items-baseline justify-between">
-                    <p
-                      className={`text-[11px] font-medium uppercase tracking-wider ${
-                        isToday ? "text-accent" : "text-text-subtle"
-                      }`}
-                    >
-                      {formatDayLabel(day.date)}
-                      {isToday && " · Today"}
-                    </p>
-                    <p
-                      className={`font-display text-lg ${
-                        isToday ? "text-accent" : "text-text"
-                      }`}
-                    >
-                      {formatDayNumber(day.date)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Appointments */}
-                <div className="p-2 space-y-1.5 flex-1 min-h-[240px]">
-                  {day.appointments.length === 0 ? (
-                    <p className="text-[11px] text-text-subtle text-center py-4 italic">
-                      No visits
-                    </p>
-                  ) : (
-                    day.appointments.map((appt) => (
-                      <div
-                        key={appt.id}
-                        className="rounded-lg border border-border/60 bg-surface p-2.5 hover:border-accent/40 transition-colors"
-                      >
-                        <div className="flex items-start gap-2">
-                          <Avatar
-                            firstName={appt.patient.firstName}
-                            lastName={appt.patient.lastName}
-                            size="sm"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-text truncate">
-                              {appt.patient.firstName} {appt.patient.lastName}
-                            </p>
-                            <p className="text-[10px] text-text-subtle tabular-nums">
-                              {formatTime(appt.startAt)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 mt-2 flex-wrap">
-                          <Badge
-                            tone={MODALITY_TONE[appt.modality] ?? "neutral"}
-                            className="text-[9px]"
-                          >
-                            {MODALITY_LABEL[appt.modality] ?? appt.modality}
-                          </Badge>
-                          <Badge
-                            tone={STATUS_TONE[appt.status] ?? "neutral"}
-                            className="text-[9px]"
-                          >
-                            {appt.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Provider legend */}
-      {providers.length > 0 && (
-        <div className="mt-10">
-          <Eyebrow className="mb-3">Providers this week</Eyebrow>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {providers.map((provider) => {
-              const providerAppts = appointments.filter(
-                (a) => a.providerId === provider.id,
-              );
-              return (
-                <Card key={provider.id} tone="raised">
-                  <CardContent className="pt-5 pb-5">
-                    <div className="flex items-center gap-3">
-                      <Avatar
-                        firstName={provider.user.firstName}
-                        lastName={provider.user.lastName}
-                        size="md"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-text truncate">
-                          {provider.user.firstName} {provider.user.lastName}
-                        </p>
-                        <p className="text-xs text-text-muted truncate">
-                          {provider.title ?? "Provider"}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-display text-xl text-accent tabular-nums">
-                          {providerAppts.length}
-                        </p>
-                        <p className="text-[10px] text-text-subtle">visits</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <ScheduleClient
+        rangeLabel={spanLabel}
+        activeRange={activeRange}
+        activeFrom={activeFrom}
+        activeTo={activeTo}
+        days={dayBuckets}
+        appointments={serializedAppointments}
+        providers={serializedProviders}
+      />
     </PageShell>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Serialization — Date → ISO string before crossing to the client component.
+// ---------------------------------------------------------------------------
+
+type ApptRow = {
+  id: string;
+  startAt: Date;
+  status: string;
+  modality: string;
+  providerId: string | null;
+  patient: { id: string; firstName: string; lastName: string };
+};
+
+function serializeAppointment(a: ApptRow): SerializedAppointment {
+  return {
+    id: a.id,
+    startAt: a.startAt.toISOString(),
+    status: a.status,
+    modality: a.modality,
+    providerId: a.providerId,
+    patient: {
+      id: a.patient.id,
+      firstName: a.patient.firstName,
+      lastName: a.patient.lastName,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
