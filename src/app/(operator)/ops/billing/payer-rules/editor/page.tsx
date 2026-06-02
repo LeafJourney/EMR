@@ -270,8 +270,8 @@ function RuleForm({ rule, isNew = false }: { rule: PayerRule; isNew?: boolean })
         </Field>
       </fieldset>
 
-      <Field label="Reason for change" hint="Required for audit. Why are you editing this rule today?">
-        <Textarea name="reason" rows={2} maxLength={500} />
+      <Field label="Reason for change" required hint="Required for audit. Why are you editing this rule today?">
+        <Textarea name="reason" rows={2} maxLength={500} minLength={1} required />
       </Field>
 
       <div className="flex gap-3">

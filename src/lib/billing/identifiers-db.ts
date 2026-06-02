@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db/prisma";
 import {
   isValidEin,
   isValidNpi,
+  isValidTaxonomy,
   normalizeEin,
   resolveBillingIdentifiers,
   type ResolvedBillingIdentifiers,
@@ -57,8 +58,11 @@ export interface IdentifierHealth {
   billingNpiOk: boolean;
   taxIdOk: boolean;
   billingAddressOk: boolean;
-  /** Providers in the org missing a valid NPI on file. */
+  /** Providers in the org missing a valid NPI on file (hard blocker). */
   providersMissingNpi: Array<{ id: string; firstName: string; lastName: string }>;
+  /** Providers with a valid NPI but no/invalid taxonomy code. Advisory —
+   *  the 837P PRV segment is dropped, which some payers reject. */
+  providersMissingTaxonomy: Array<{ id: string; firstName: string; lastName: string }>;
 }
 
 /** Snapshot the org's identifier readiness — what's missing or invalid.
@@ -80,8 +84,15 @@ export async function snapshotIdentifierHealth(organizationId: string): Promise<
     select: {
       id: true,
       npi: true,
+      taxonomyCode: true,
       user: { select: { firstName: true, lastName: true } },
     },
+  });
+
+  const name = (p: (typeof providers)[number]) => ({
+    id: p.id,
+    firstName: p.user?.firstName ?? "",
+    lastName: p.user?.lastName ?? "",
   });
 
   return {
@@ -93,13 +104,12 @@ export async function snapshotIdentifierHealth(organizationId: string): Promise<
       !!org.billingAddress &&
       typeof org.billingAddress === "object" &&
       typeof (org.billingAddress as Record<string, unknown>).line1 === "string",
-    providersMissingNpi: providers
-      .filter((p) => !isValidNpi(p.npi))
-      .map((p) => ({
-        id: p.id,
-        firstName: p.user?.firstName ?? "",
-        lastName: p.user?.lastName ?? "",
-      })),
+    providersMissingNpi: providers.filter((p) => !isValidNpi(p.npi)).map(name),
+    // A provider needs a valid NPI before its missing taxonomy is worth
+    // flagging — otherwise the NPI gap is the headline issue.
+    providersMissingTaxonomy: providers
+      .filter((p) => isValidNpi(p.npi) && !isValidTaxonomy(p.taxonomyCode))
+      .map(name),
   };
 }
 

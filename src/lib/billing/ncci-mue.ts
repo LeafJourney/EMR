@@ -385,6 +385,41 @@ export async function checkMueLimit(args: {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Bulk reference snapshot (consumed by the scrub engine — EMR-222)
+// ---------------------------------------------------------------------------
+
+export interface NcciMueReferenceData {
+  /** Active PTP edits for the loaded quarter (deleted edits filtered out). */
+  ncci: Array<{ column1Code: string; column2Code: string; modifierIndicator: number }>;
+  /** HCPCS → per-day MUE unit cap for the loaded quarter. */
+  mue: Record<string, number>;
+  /** Quarter the rows came from, or null when nothing is loaded yet. */
+  quarter: string | null;
+}
+
+/** Snapshot the whole loaded quarter for the scrub engine. Uses the same
+ *  in-process cache as the per-pair resolvers, so the scrub doesn't re-query
+ *  the DB for every claim. PTP edits past their deletion date are dropped. */
+export async function loadNcciMueReference(): Promise<NcciMueReferenceData> {
+  const c = await ensureCache();
+  const now = Date.now();
+  const ncci: NcciMueReferenceData["ncci"] = [];
+  for (const list of c.byColumn1.values()) {
+    for (const e of list) {
+      if (e.deletionDate && e.deletionDate.getTime() < now) continue;
+      ncci.push({
+        column1Code: e.column1Code,
+        column2Code: e.column2Code,
+        modifierIndicator: e.modifierIndicator,
+      });
+    }
+  }
+  const mue: Record<string, number> = {};
+  for (const [code, m] of c.mueByCode) mue[code] = m.mueValue;
+  return { ncci, mue, quarter: c.quarter };
+}
+
 /** Convenience for the admin dashboard. */
 export async function getLoadStatus(): Promise<{
   ncci: { quarter: string; rowCount: number; loadedAt: Date } | null;

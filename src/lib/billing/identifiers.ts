@@ -38,6 +38,14 @@ export function isValidNpi(npi: string | null | undefined): boolean {
   return computedCheck === checkDigit;
 }
 
+/** Healthcare Provider Taxonomy Code — 10 alphanumeric chars (NUCC code set,
+ *  e.g. "207RI0008X"). Used in the 837P PRV segment. Validation is structural
+ *  (length + charset); we don't ship the full NUCC dictionary. */
+export function isValidTaxonomy(code: string | null | undefined): boolean {
+  if (!code) return false;
+  return /^[0-9A-Z]{10}$/.test(code.trim().toUpperCase());
+}
+
 /** EIN format: NN-NNNNNNN (9 digits with hyphen at position 2). */
 export function isValidEin(ein: string | null | undefined): boolean {
   if (!ein) return false;

@@ -5,6 +5,7 @@ import {
   encryptTaxId,
   isValidEin,
   isValidNpi,
+  isValidTaxonomy,
   normalizeEin,
   normalizeNpi,
   parseBillingAddress,
@@ -37,6 +38,21 @@ describe("isValidNpi (CMS Luhn)", () => {
     expect(isValidNpi("")).toBe(false);
     expect(isValidNpi("123-456-789-3")).toBe(true); // strip non-digits
     expect(isValidNpi("12345")).toBe(false); // wrong length
+  });
+});
+
+describe("isValidTaxonomy", () => {
+  it("accepts a 10-char NUCC taxonomy code", () => {
+    expect(isValidTaxonomy("207RI0008X")).toBe(true);
+    expect(isValidTaxonomy("2084P0800X")).toBe(true);
+    expect(isValidTaxonomy("207ri0008x")).toBe(true); // case-insensitive
+  });
+  it("rejects wrong length / charset / null", () => {
+    expect(isValidTaxonomy(null)).toBe(false);
+    expect(isValidTaxonomy("")).toBe(false);
+    expect(isValidTaxonomy("207RI0008")).toBe(false); // 9 chars
+    expect(isValidTaxonomy("207RI0008XX")).toBe(false); // 11 chars
+    expect(isValidTaxonomy("207-I0008X")).toBe(false); // hyphen
   });
 });
 

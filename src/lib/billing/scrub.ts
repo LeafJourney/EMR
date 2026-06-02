@@ -12,6 +12,7 @@
  */
 
 import { resolvePayerRule } from "@/lib/billing/payer-rules";
+import { loadNcciMueReference, type NcciMueReferenceData } from "@/lib/billing/ncci-mue";
 
 export type ScrubSeverity = "error" | "warning" | "info";
 
@@ -58,15 +59,23 @@ export interface ScrubInput {
 }
 
 // ---------------------------------------------------------------------------
-// NCCI (procedure-to-procedure) edit pairs — minimal starter set
+// NCCI (procedure-to-procedure) edit pairs — in-code starter set
 // ---------------------------------------------------------------------------
 // CMS publishes quarterly NCCI tables; keeping a production-grade copy of
 // tens of thousands of pairs in code is impractical. This starter set
 // captures the highest-volume pairs for cannabis care (E/M + counseling
-// bundling) so the scrub catches the most common errors today. EMR-222
-// tracks the full table migration into the DB.
+// bundling) so the scrub catches the most common errors even before the
+// full CMS quarterly table is loaded.
+//
+// EMR-222: the full table lives in the `NcciEdit` / `MueLimit` tables
+// (loaded from the CMS quarterly CSVs via `ncci-mue.ts`). `scrubClaim`
+// accepts an injectable `ScrubReferenceData` so callers can run against the
+// starter set (sync, zero-dependency) or against the merged starter + full
+// CMS table (`scrubClaimWithReferenceData`, async, DB-backed). The starter
+// set always wins on a pair it defines so the payer-specific semantics
+// below (UnitedHealthcare mod-25, unbundleable phlebotomy) are preserved.
 
-interface NcciPair {
+export interface NcciPair {
   /** The code that gets denied when billed with `comprehensiveCode` without a modifier. */
   componentCode: string;
   comprehensiveCode: string;
@@ -103,6 +112,74 @@ const MUE_LIMITS: Record<string, number> = {
 };
 
 // ---------------------------------------------------------------------------
+// Scrub reference data (EMR-222)
+// ---------------------------------------------------------------------------
+// The coding-edit rules (NCCI bundling + MUE unit caps) run against an
+// injectable reference set. By default that's the in-code starter; the
+// async path layers the full CMS quarterly table on top.
+
+export interface ScrubReferenceData {
+  ncciPairs: NcciPair[];
+  mueLimits: Record<string, number>;
+  /** CMS quarter the DB rows came from, e.g. "2026Q2"; null for starter-only. */
+  quarter: string | null;
+}
+
+/** The starter-only reference used by the synchronous `scrubClaim`. */
+export const DEFAULT_SCRUB_REFERENCE: ScrubReferenceData = {
+  ncciPairs: NCCI_PAIRS,
+  mueLimits: MUE_LIMITS,
+  quarter: null,
+};
+
+/** Map a CMS PTP DB edit into the scrub engine's `NcciPair` shape.
+ *  CMS convention: column-1 is the comprehensive (payable) code and
+ *  column-2 is the component (bundled) code. `modifierIndicator`:
+ *    0 → not unbundleable, 1 → a modifier (59/XU/…) may unbundle,
+ *    9 → not applicable / deleted edit (skipped). */
+function mapDbNcciToPairs(
+  edits: NcciMueReferenceData["ncci"],
+): NcciPair[] {
+  return edits
+    .filter((e) => e.modifierIndicator !== 9)
+    .map((e) => ({
+      componentCode: e.column2Code,
+      comprehensiveCode: e.column1Code,
+      allowedModifier: e.modifierIndicator === 1 ? ("59" as const) : null,
+      description:
+        e.modifierIndicator === 1
+          ? `CMS NCCI PTP edit: ${e.column2Code} bundles into ${e.column1Code}; a distinct-service modifier (59/XU) may unbundle when clinically separate.`
+          : `CMS NCCI PTP edit: ${e.column2Code} bundles into ${e.column1Code} and cannot be unbundled.`,
+    }));
+}
+
+/** Merge the in-code starter set with the full CMS quarterly table.
+ *  Starter NCCI pairs win on the (component, comprehensive) key so their
+ *  payer-specific semantics survive; the DB MUE values are authoritative
+ *  (they're the official CMS per-day caps) and override the starter. */
+export function mergeScrubReferenceData(
+  db: NcciMueReferenceData,
+  starter: ScrubReferenceData = DEFAULT_SCRUB_REFERENCE,
+): ScrubReferenceData {
+  const seen = new Set(
+    starter.ncciPairs.map((p) => `${p.componentCode}|${p.comprehensiveCode}`),
+  );
+  const ncciPairs = [...starter.ncciPairs];
+  for (const p of mapDbNcciToPairs(db.ncci)) {
+    const key = `${p.componentCode}|${p.comprehensiveCode}`;
+    if (!seen.has(key)) {
+      ncciPairs.push(p);
+      seen.add(key);
+    }
+  }
+  return {
+    ncciPairs,
+    mueLimits: { ...starter.mueLimits, ...db.mue },
+    quarter: db.quarter,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cannabis-friendly E&M codes for sanity checks
 // ---------------------------------------------------------------------------
 
@@ -121,8 +198,12 @@ const COUNSELING_CODES = new Set(["99401", "99402", "99403", "99404", "99406", "
 // Main entry point
 // ---------------------------------------------------------------------------
 
-export function scrubClaim(input: ScrubInput): ScrubIssue[] {
+export function scrubClaim(
+  input: ScrubInput,
+  reference: ScrubReferenceData = DEFAULT_SCRUB_REFERENCE,
+): ScrubIssue[] {
   const issues: ScrubIssue[] = [];
+  const quarterTag = reference.quarter ? ` (CMS ${reference.quarter})` : "";
 
   // ── Rule: must have at least one CPT ──────────────────────────
   if (!input.cptCodes || input.cptCodes.length === 0) {
@@ -286,7 +367,7 @@ export function scrubClaim(input: ScrubInput): ScrubIssue[] {
 
   // ── Rule: NCCI procedure-to-procedure edit pairs ─────────────
   const cptCodeSet = new Set(input.cptCodes.map((c) => c.code));
-  for (const pair of NCCI_PAIRS) {
+  for (const pair of reference.ncciPairs) {
     if (!cptCodeSet.has(pair.componentCode) || !cptCodeSet.has(pair.comprehensiveCode)) continue;
     const comprehensiveLine = input.cptCodes.find((c) => c.code === pair.comprehensiveCode);
     let hasAllowedModifier =
@@ -306,7 +387,7 @@ export function scrubClaim(input: ScrubInput): ScrubIssue[] {
       issues.push({
         ruleCode: "NCCI_BUNDLED_PAIR",
         severity: pair.allowedModifier && input.payerName !== "UnitedHealthcare" ? "warning" : "error",
-        message: `NCCI bundling: ${pair.componentCode} billed with ${pair.comprehensiveCode}. ${pair.description}`,
+        message: `NCCI bundling: ${pair.componentCode} billed with ${pair.comprehensiveCode}. ${pair.description}${quarterTag}`,
         suggestion: pair.allowedModifier && input.payerName !== "UnitedHealthcare"
           ? `Attach modifier ${pair.allowedModifier} to ${pair.comprehensiveCode} if the service is truly separately identifiable, or drop the line.`
           : "Drop the component line — it is incidental to the comprehensive service.",
@@ -318,12 +399,12 @@ export function scrubClaim(input: ScrubInput): ScrubIssue[] {
 
   // ── Rule: MUE (Medically Unlikely Edits) per-day unit caps ───
   for (const cpt of input.cptCodes) {
-    const limit = MUE_LIMITS[cpt.code];
+    const limit = reference.mueLimits[cpt.code];
     if (limit != null && (cpt.units ?? 1) > limit) {
       issues.push({
         ruleCode: "MUE_EXCEEDED",
         severity: "error",
-        message: `${cpt.code} billed ${cpt.units} units; MUE per-day limit is ${limit}.`,
+        message: `${cpt.code} billed ${cpt.units} units; MUE per-day limit is ${limit}.${quarterTag}`,
         suggestion:
           "Either reduce units, split onto separate dates of service, or append modifier 76/77/91 if the higher count is clinically justified.",
         relatedCode: cpt.code,
@@ -382,6 +463,36 @@ export function scrubClaim(input: ScrubInput): ScrubIssue[] {
   }
 
   return issues;
+}
+
+/**
+ * DB-backed scrub (EMR-222). Loads the full CMS quarterly NCCI/MUE table,
+ * merges it over the in-code starter set, and runs the same deterministic
+ * rules. Resilient by design: if the reference table hasn't been loaded yet
+ * (or the lookup fails) it falls back to the starter set so a claim is never
+ * blocked from scrubbing — it just sees fewer coding edits.
+ *
+ * `loader` is injectable for tests; production uses the cached DB loader.
+ */
+export async function scrubClaimWithReferenceData(
+  input: ScrubInput,
+  loader: () => Promise<NcciMueReferenceData> = loadNcciMueReference,
+): Promise<ScrubIssue[]> {
+  const reference = await buildScrubReferenceData(loader);
+  return scrubClaim(input, reference);
+}
+
+/** Build the merged starter + CMS-quarterly reference set. Falls back to the
+ *  starter set when the DB table is unavailable. */
+export async function buildScrubReferenceData(
+  loader: () => Promise<NcciMueReferenceData> = loadNcciMueReference,
+): Promise<ScrubReferenceData> {
+  try {
+    const db = await loader();
+    return mergeScrubReferenceData(db);
+  } catch {
+    return DEFAULT_SCRUB_REFERENCE;
+  }
 }
 
 // ---------------------------------------------------------------------------

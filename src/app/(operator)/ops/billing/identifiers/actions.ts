@@ -8,12 +8,14 @@ import {
   encryptTaxId,
   isValidEin,
   isValidNpi,
+  isValidTaxonomy,
   normalizeNpi,
 } from "@/lib/billing/identifiers";
 
 // EMR-220 — server actions for the billing-identifiers admin page.
 // Validation is server-side (NPI Luhn + EIN format) so a tampered form
-// can't sneak past client checks.
+// can't sneak past client checks. Every mutation writes an AuditLog row
+// recording WHICH identifier fields changed — never the plaintext tax ID.
 
 const orgFormSchema = z.object({
   billingNpi: z.string().trim(),
@@ -42,8 +44,15 @@ export async function saveOrgIdentifiersAction(formData: FormData): Promise<Save
   }
 
   const update: Record<string, unknown> = {};
-  if (v.billingNpi) update.billingNpi = normalizeNpi(v.billingNpi);
-  if (v.taxId) update.taxId = encryptTaxId(v.taxId);
+  const changedFields: string[] = [];
+  if (v.billingNpi) {
+    update.billingNpi = normalizeNpi(v.billingNpi);
+    changedFields.push("billingNpi");
+  }
+  if (v.taxId) {
+    update.taxId = encryptTaxId(v.taxId);
+    changedFields.push("taxId");
+  }
   if (v.line1 && v.city && v.state && v.postalCode) {
     update.billingAddress = {
       line1: v.line1,
@@ -51,13 +60,30 @@ export async function saveOrgIdentifiersAction(formData: FormData): Promise<Save
       state: v.state.toUpperCase(),
       postalCode: v.postalCode.replace(/\D/g, ""),
     };
+    changedFields.push("billingAddress");
   }
 
-  if (Object.keys(update).length === 0) return { ok: true };
+  if (Object.keys(update).length === 0) {
+    return { ok: false, error: "No changes to save." };
+  }
 
   await prisma.organization.update({
     where: { id: user.organizationId },
     data: update,
+  });
+
+  // Audit trail — record which identifier fields changed. The encrypted tax
+  // ID is sensitive (effectively a credential), so we log only that it was
+  // rotated, never the value.
+  await prisma.auditLog.create({
+    data: {
+      organizationId: user.organizationId,
+      actorUserId: user.id,
+      action: "billing.identifiers.org_updated",
+      subjectType: "Organization",
+      subjectId: user.organizationId,
+      metadata: { changedFields },
+    },
   });
 
   revalidatePath("/ops/billing/identifiers");
@@ -80,7 +106,7 @@ export async function saveProviderIdentifierAction(formData: FormData): Promise<
   if (parsed.data.npi && !isValidNpi(parsed.data.npi)) {
     return { ok: false, error: `NPI "${parsed.data.npi}" failed CMS Luhn checksum` };
   }
-  if (parsed.data.taxonomyCode && !/^[0-9A-Z]{10}$/i.test(parsed.data.taxonomyCode)) {
+  if (parsed.data.taxonomyCode && !isValidTaxonomy(parsed.data.taxonomyCode)) {
     return { ok: false, error: `Taxonomy "${parsed.data.taxonomyCode}" must be 10 alphanumeric characters` };
   }
 
@@ -93,7 +119,21 @@ export async function saveProviderIdentifierAction(formData: FormData): Promise<
     where: { id: provider.id },
     data: {
       npi: parsed.data.npi ? normalizeNpi(parsed.data.npi) : null,
-      taxonomyCode: parsed.data.taxonomyCode || null,
+      taxonomyCode: parsed.data.taxonomyCode ? parsed.data.taxonomyCode.toUpperCase() : null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: user.organizationId,
+      actorUserId: user.id,
+      action: "billing.identifiers.provider_updated",
+      subjectType: "Provider",
+      subjectId: provider.id,
+      metadata: {
+        npiSet: !!parsed.data.npi,
+        taxonomySet: !!parsed.data.taxonomyCode,
+      },
     },
   });
 

@@ -42,7 +42,9 @@ const payerRuleFormSchema = z.object({
   cannabisPolicyCitation: z.string().max(500).nullable().optional(),
   supportsElectronicSubmission: z.coerce.boolean(),
   attachmentChannels: z.string().max(200).default(""),
-  reason: z.string().max(500).optional(),
+  // Required for the audit log — the editor labels this "Required for audit"
+  // and the PayerRuleAuditLog row is only meaningful with a stated reason.
+  reason: z.string().trim().min(1, "A reason for the change is required for the audit log").max(500),
 });
 
 export type SaveResult = { ok: true } | { ok: false; error: string };

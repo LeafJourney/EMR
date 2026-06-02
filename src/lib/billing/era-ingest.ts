@@ -234,16 +234,13 @@ async function resolveClaim(
     });
     if (byNumber) return byNumber;
   }
-  if (payerClaimId) {
-    // Fallback: some payers echo only their own id when they reject our
-    // claim control number. Best-effort match against any claim that
-    // already had this payer claim id assigned.
-    const existing = await tx.adjudicationResult.findFirst({
-      where: { claim: { organizationId } },
-      select: { claimId: true },
-    });
-    if (existing) return { id: existing.claimId };
-  }
+  // NOTE: when the 835 echoes only the payer's own claim id (CLP07) and not
+  // our control number, there is no reliable key to match on — the schema
+  // doesn't persist the payer claim id. We intentionally DO NOT fall back to
+  // an arbitrary adjudication row (the prior behavior), which posted the
+  // payment to a random claim. Leave it unmatched so it surfaces in
+  // `claimsUnmatched` for manual posting instead of corrupting a ledger.
+  void payerClaimId;
   return null;
 }
 

@@ -52,6 +52,15 @@ export interface ClaimContext {
   /** Provider.user.{firstName, lastName}, loaded separately so we don't
    *  require eager joins everywhere. */
   renderingName: { firstName: string; lastName: string } | null;
+  /** Active PatientCoverage for the claim's payer. Supplies the subscriber
+   *  member ID (NM1*IL ... MI) that the payer matches against enrollment —
+   *  without it we fall back to the patient id, which payers reject. */
+  coverage?: {
+    memberId: string;
+    /** "self" | "spouse" | "child" | "other" — when not "self" the patient
+     *  differs from the subscriber (Loop 2000C); V1 still files as self. */
+    relationshipToSubscriber?: string | null;
+  } | null;
   /** Submission control numbers — caller provides so we can re-use them on
    *  retries without burning new sequence numbers. */
   controlNumbers: {
@@ -63,6 +72,12 @@ export interface ClaimContext {
   secondary?: {
     primaryAdjudication: AdjudicationResult;
     primarySubmission: Pick<ClearinghouseSubmission, "id" | "ediResponse">;
+    /** The primary payer's name/id from the original claim — emitted in
+     *  Loop 2330B. Falls back to a placeholder only when unknown. */
+    primaryPayerName?: string | null;
+    primaryPayerId?: string | null;
+    /** Claim-level CAS adjustments from the primary 835 (Loop 2320). */
+    primaryClaimCas?: ClaimAdjustment[];
   } | null;
 }
 
@@ -91,11 +106,16 @@ export function buildClaimEdi(ctx: ClaimContext): {
   });
 
   const subscriber: Subscriber = {
-    memberId: ctx.patient.id, // production reads from Coverage; placeholder for V1
+    // Prefer the payer-issued member ID from Coverage; fall back to the
+    // patient id only when no coverage row is on file (degraded path).
+    memberId: ctx.coverage?.memberId?.trim() || ctx.patient.id,
     firstName: ctx.patient.firstName,
     lastName: ctx.patient.lastName,
     middleName: null,
     dateOfBirth: ctx.patient.dateOfBirth ?? new Date(0),
+    // Patient has no sex/gender field in the schema today, so the subscriber
+    // gender is sent as "U" (unknown). Payers tolerate "U"; tighten this once
+    // a demographic field exists.
     gender: "U",
     address: {
       line1: ctx.patient.addressLine1 ?? "UNKNOWN",
@@ -193,12 +213,15 @@ export function buildClaimEdi(ctx: ClaimContext): {
     serviceLines,
     secondary: ctx.secondary
       ? {
-          primaryPayer: { name: "PRIMARY PAYER", payerId: "PRIMARY" }, // V1 placeholder
+          primaryPayer: {
+            name: ctx.secondary.primaryPayerName?.trim() || "PRIMARY PAYER",
+            payerId: ctx.secondary.primaryPayerId?.trim() || "PRIMARY",
+          },
           primarySubscriber: subscriber,
           primaryAllowedCents: ctx.secondary.primaryAdjudication.totalAllowedCents,
           primaryPaidCents: ctx.secondary.primaryAdjudication.totalPaidCents,
           primaryEraDate: ctx.secondary.primaryAdjudication.eraDate,
-          primaryCas: [],
+          primaryCas: ctx.secondary.primaryClaimCas ?? [],
           primaryClaimControlNumber: ctx.secondary.primaryAdjudication.checkNumber ?? "",
         }
       : null,
