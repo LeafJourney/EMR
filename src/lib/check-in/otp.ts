@@ -196,8 +196,18 @@ export async function issueOtpCode(opts: {
 }
 
 /**
- * Verify an attempt against the latest active code. Atomically increments the
- * attempt counter, and consumes the code on success. Returns the pure reason.
+ * Verify an attempt against the latest active code. The attempt counter is the
+ * ONLY brute-force bound on the 6-digit code (issuance rate-limiting caps how
+ * many codes are minted, not how many guesses are made), so it MUST be spent
+ * atomically: a read-then-write increment lets N concurrent guesses all observe
+ * the same pre-increment `attempts` and sail past `maxAttempts` together.
+ *
+ * We spend the budget with a single conditional `updateMany` guarded on
+ * `attempts < maxAttempts` (the same atomic-claim pattern as the hand-off token
+ * consume). Only a request that wins a slot may compare the hash; the compare
+ * therefore happens at most `maxAttempts` times across all concurrent callers.
+ * Consume-on-success is likewise a conditional update so two correct guesses
+ * can't both consume.
  */
 export async function verifyOtpCode(opts: {
   patientId: string;
@@ -229,36 +239,69 @@ export async function verifyOtpCode(opts: {
     orderBy: { createdAt: "desc" },
   });
 
-  const decision = evaluateOtpVerification(
-    record
-      ? {
-          codeHash: record.codeHash,
-          salt: record.salt,
-          expiresAt: record.expiresAt,
-          attempts: record.attempts,
-          maxAttempts: record.maxAttempts,
-          consumedAt: record.consumedAt,
-        }
-      : null,
-    opts.attemptCode,
-    now,
-  );
-
-  if (record) {
-    if (decision.ok) {
-      await prisma.smsOtpCode.update({
-        where: { id: record.id },
-        data: { attempts: { increment: 1 }, consumedAt: now },
-      });
-    } else if (decision.reason === "mismatch" || decision.reason === "too_many_attempts") {
-      // Count the failed attempt so brute-force burns the budget.
-      await prisma.smsOtpCode.update({
-        where: { id: record.id },
-        data: { attempts: { increment: 1 } },
-      });
-    }
+  // Decisions that must NOT spend an attempt (no record / expired / already
+  // consumed) are settled purely up front — exactly the prior behaviour.
+  if (!record) {
+    return finishVerify(opts, now, { ok: false, reason: "no_active_code" });
+  }
+  const snapshot = {
+    codeHash: record.codeHash,
+    salt: record.salt,
+    expiresAt: record.expiresAt,
+    attempts: record.attempts,
+    maxAttempts: record.maxAttempts,
+    consumedAt: record.consumedAt,
+  };
+  const pre = evaluateOtpVerification(snapshot, opts.attemptCode, now);
+  if (
+    pre.reason === "no_active_code" ||
+    pre.reason === "expired" ||
+    pre.reason === "already_consumed"
+  ) {
+    return finishVerify(opts, now, pre);
   }
 
+  // A real guess (ok / mismatch / lockout). Atomically claim one attempt slot:
+  // increments ONLY while the code is unconsumed, unexpired, and under budget.
+  // `maxAttempts` is immutable post-issuance, so the snapshot value is a safe
+  // literal bound. count === 0 ⇒ we lost the race / the budget is spent.
+  const claim = await prisma.smsOtpCode.updateMany({
+    where: {
+      id: record.id,
+      consumedAt: null,
+      expiresAt: { gt: now },
+      attempts: { lt: record.maxAttempts },
+    },
+    data: { attempts: { increment: 1 } },
+  });
+  if (claim.count === 0) {
+    return finishVerify(opts, now, { ok: false, reason: "too_many_attempts" });
+  }
+
+  // We hold a counted attempt. Compare the hash off the snapshot (the codeHash
+  // is immutable for the life of the code).
+  if (!hashesEqual(hashOtp(opts.attemptCode, snapshot.salt), snapshot.codeHash)) {
+    return finishVerify(opts, now, { ok: false, reason: "mismatch" });
+  }
+
+  // Correct code: consume atomically so a concurrent correct guess can't also
+  // win. Losing this race means someone else already consumed it.
+  const consumed = await prisma.smsOtpCode.updateMany({
+    where: { id: record.id, consumedAt: null },
+    data: { consumedAt: now },
+  });
+  if (consumed.count === 0) {
+    return finishVerify(opts, now, { ok: false, reason: "already_consumed" });
+  }
+  return finishVerify(opts, now, { ok: true, reason: "ok" });
+}
+
+/** Emit the PHI-free audit row for a verify outcome and return it. */
+async function finishVerify(
+  opts: { patientId: string; organizationId: string; purpose: OtpPurpose },
+  _now: Date,
+  decision: { ok: boolean; reason: OtpVerifyReason },
+): Promise<{ ok: boolean; reason: OtpVerifyReason }> {
   await audit(
     opts.organizationId,
     opts.patientId,
@@ -266,7 +309,6 @@ export async function verifyOtpCode(opts: {
     opts.purpose,
     decision.ok ? undefined : decision.reason,
   );
-
   return decision;
 }
 

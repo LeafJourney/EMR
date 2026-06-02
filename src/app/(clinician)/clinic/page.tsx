@@ -32,6 +32,7 @@ import {
   URGENCY_TAG_CONFIG,
 } from "@/lib/domain/queue-urgency";
 import { QueueRailClient, type QueueRailCard } from "./queue-rail-client";
+import { UpcomingVisitsMissingInfo } from "./upcoming-visits-missing-info";
 
 // EMR-205: guard the mission-control fan-out so a single hung query
 // can never wedge the Suspense boundary and strand clinicians on the
@@ -1120,6 +1121,9 @@ export default async function ClinicHomePage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Upcoming visits still missing intake (EMR-914) */}
+          <UpcomingVisitsMissingInfo organizationId={organizationId} />
 
           {/* Research shortcut */}
           {showQuickResearch && (

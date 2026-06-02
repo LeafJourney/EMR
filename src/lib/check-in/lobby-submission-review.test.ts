@@ -4,7 +4,30 @@ import {
   parseIntakePayload,
   parseConsentPayload,
   patientUpdateFromIntake,
+  intakeHasContent,
 } from "./lobby-submission-review";
+
+describe("intakeHasContent", () => {
+  it("is false for a wholly-empty intake", () => {
+    expect(
+      intakeHasContent({
+        presentingConcerns: null,
+        treatmentGoals: null,
+        cannabisHistory: { priorUse: false, formats: [], reportedBenefits: [] },
+      }),
+    ).toBe(false);
+  });
+  it("is false when text fields are only whitespace", () => {
+    expect(intakeHasContent({ presentingConcerns: "   ", treatmentGoals: "\t" })).toBe(false);
+  });
+  it("is true when any substantive field is present", () => {
+    expect(intakeHasContent({ presentingConcerns: "back pain" })).toBe(true);
+    expect(intakeHasContent({ treatmentGoals: "sleep" })).toBe(true);
+    expect(intakeHasContent({ cannabisHistory: { priorUse: true } })).toBe(true);
+    expect(intakeHasContent({ cannabisHistory: { formats: ["tincture"] } })).toBe(true);
+    expect(intakeHasContent({ cannabisHistory: { reportedBenefits: ["calm"] } })).toBe(true);
+  });
+});
 
 describe("parseIntakePayload", () => {
   it("accepts a well-formed staged intake payload", () => {

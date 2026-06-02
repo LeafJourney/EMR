@@ -13,6 +13,7 @@ import { requireRole } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
 import { ModularDashboard } from "@/components/patient/ModularDashboard";
+import { PrevisitReadinessBanner } from "../previsit-readiness-banner";
 
 export const metadata = { title: "Dashboard" };
 
@@ -103,6 +104,8 @@ export default async function PatientDashboardPage() {
           Drag widgets to rearrange. Your layout is saved to this device.
         </p>
       </div>
+
+      <PrevisitReadinessBanner patientId={patient.id} />
 
       <ModularDashboard
         data={{

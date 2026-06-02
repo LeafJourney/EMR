@@ -47,6 +47,26 @@ export function parseConsentPayload(payload: unknown): ConsentPayload | null {
   return r.success ? r.data : null;
 }
 
+/**
+ * Does a staged intake carry any substantive content? An intake where every
+ * field is blank satisfies no readiness requirement yet still lands in the staff
+ * queue as a meaningless review item — and tells the patient they "completed" a
+ * task that did nothing. The lobby action rejects an empty intake before staging
+ * using this predicate. Mirrors the consent flow, which already gates on
+ * completeness.
+ */
+export function intakeHasContent(p: IntakePayload): boolean {
+  if (p.presentingConcerns?.trim()) return true;
+  if (p.treatmentGoals?.trim()) return true;
+  const h = p.cannabisHistory;
+  if (h) {
+    if (h.priorUse) return true;
+    if ((h.formats?.length ?? 0) > 0) return true;
+    if ((h.reportedBenefits?.length ?? 0) > 0) return true;
+  }
+  return false;
+}
+
 /** The Patient fields an accepted intake submission writes (chart-bound shape). */
 export function patientUpdateFromIntake(p: IntakePayload): {
   presentingConcerns?: string;

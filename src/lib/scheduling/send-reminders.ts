@@ -11,10 +11,18 @@ import {
 } from "@/lib/sms/templates";
 import {
   renderPrevisitReminder,
+  renderPrevisitEmail,
+  renderPrevisitInApp,
   type PrevisitMilestone,
 } from "@/lib/sms/previsit-templates";
+import { sendEmail } from "@/lib/email/resend";
 import { logger } from "@/lib/observability/log";
 import { getAppointmentReadiness } from "./previsit-readiness";
+import {
+  resolvePrevisitChannels,
+  readPrevisitCategoryToggles,
+  type PrevisitChannel,
+} from "./previsit-channels";
 
 export interface SendDueRemindersInput {
   /** Current time, injected for testability. */
@@ -247,11 +255,14 @@ export type PrevisitReminderResult =
   | "skipped:complete"
   | "skipped:already-sent"
   | "skipped:no-channel"
+  | "skipped:channel-unconfigured"
   | "failed";
 
 export interface PrevisitReminderOutcome {
   appointmentId: string;
   milestone: PrevisitMilestone | null;
+  /** Which channel this outcome is for. Null for whole-appointment skips. */
+  channel?: PrevisitChannel | null;
   result: PrevisitReminderResult;
   error?: string;
 }
@@ -289,7 +300,9 @@ export async function sendDuePrevisitCompletionReminders(
       startAt: { gt: now, lte: windowEnd },
     },
     include: {
-      patient: { select: { id: true, phone: true, organizationId: true } },
+      patient: {
+        select: { id: true, phone: true, email: true, userId: true, organizationId: true },
+      },
     },
   });
 
@@ -313,63 +326,158 @@ export async function sendDuePrevisitCompletionReminders(
       continue;
     }
 
+    // Which channels may we use? Opt-out model keyed on CommunicationPreference
+    // (loaded only when the patient has a portal account); a normalizable phone
+    // gates SMS, an address gates email, a portal user gates in-app.
     const phone = normalizePhone(appt.patient.phone);
-    if (!phone) {
-      details.push({ appointmentId: appt.id, milestone, result: "skipped:no-channel" });
-      skipped += 1;
-      continue;
-    }
-
-    if (await alreadySentPrevisit(appt.id, milestone)) {
-      details.push({ appointmentId: appt.id, milestone, result: "skipped:already-sent" });
-      skipped += 1;
-      continue;
-    }
-
-    const body = renderPrevisitReminder(milestone, { portalUrl: input.portalUrl });
-    const adapter = getSmsAdapter();
-    const res = await adapter.send({
-      to: phone,
-      body,
-      // Context is for delivery/idempotency only — opaque ids, no PHI.
-      context: { appointmentId: appt.id, milestone, kind: "previsit_completion" },
+    const prefRow = appt.patient.userId
+      ? await prisma.communicationPreference.findUnique({
+          where: { userId: appt.patient.userId },
+          select: { emailFrequency: true, preferences: true },
+        })
+      : null;
+    const channels = resolvePrevisitChannels({
+      hasPhone: phone != null,
+      hasEmail: Boolean(appt.patient.email),
+      hasPortalUser: Boolean(appt.patient.userId),
+      prefs: prefRow
+        ? {
+            emailFrequency: prefRow.emailFrequency,
+            category: readPrevisitCategoryToggles(prefRow.preferences),
+          }
+        : null,
     });
 
-    if (!res.ok) {
-      details.push({ appointmentId: appt.id, milestone, result: "failed", error: res.error });
-      logger.warn({
-        event: "scheduler.previsit.reminder.failed",
-        appointmentId: appt.id,
+    if (channels.length === 0) {
+      details.push({ appointmentId: appt.id, milestone, channel: null, result: "skipped:no-channel" });
+      skipped += 1;
+      continue;
+    }
+
+    for (const channel of channels) {
+      // Channel-aware idempotency: each (appointment, milestone, channel) fires
+      // at most once, so SMS + email + in-app each send once per milestone.
+      if (await alreadySentPrevisit(appt.id, milestone, channel)) {
+        details.push({ appointmentId: appt.id, milestone, channel, result: "skipped:already-sent" });
+        skipped += 1;
+        continue;
+      }
+
+      const send = await sendPrevisitChannel({
+        channel,
         milestone,
-        error: res.error,
+        portalUrl: input.portalUrl,
+        phone,
+        email: appt.patient.email,
+        userId: appt.patient.userId,
       });
-      continue;
-    }
 
-    await prisma.auditLog.create({
-      data: {
-        organizationId: appt.patient.organizationId,
-        actorAgent: "scheduler:previsitCompletionReminder@1.0.0",
-        action: PREVISIT_COMPLETION_REMINDER_ACTION,
-        subjectType: "Appointment",
-        subjectId: appt.id,
-        // PHI-free metadata: milestone, channel, and a count of outstanding
-        // required items. Never the requirement labels or any patient field.
-        metadata: {
+      if (send.outcome === "unconfigured") {
+        details.push({ appointmentId: appt.id, milestone, channel, result: "skipped:channel-unconfigured" });
+        skipped += 1;
+        continue;
+      }
+      if (send.outcome === "failed") {
+        details.push({ appointmentId: appt.id, milestone, channel, result: "failed", error: send.error });
+        logger.warn({
+          event: "scheduler.previsit.reminder.failed",
+          appointmentId: appt.id,
           milestone,
-          channel: "sms",
-          messageId: res.messageId,
-          adapter: res.adapter,
-          outstandingCount: readiness.readiness.outstandingRequiredCount,
-        } as any,
-      },
-    });
+          channel,
+          error: send.error,
+        });
+        continue;
+      }
 
-    details.push({ appointmentId: appt.id, milestone, result: "sent" });
-    sent += 1;
+      await prisma.auditLog.create({
+        data: {
+          organizationId: appt.patient.organizationId,
+          actorAgent: "scheduler:previsitCompletionReminder@1.0.0",
+          action: PREVISIT_COMPLETION_REMINDER_ACTION,
+          subjectType: "Appointment",
+          subjectId: appt.id,
+          // PHI-free metadata: milestone, channel, opaque delivery id, and a
+          // count of outstanding required items. Never the labels or any field.
+          metadata: {
+            milestone,
+            channel,
+            outstandingCount: readiness.readiness.outstandingRequiredCount,
+            ...send.meta,
+          } as any,
+        },
+      });
+
+      details.push({ appointmentId: appt.id, milestone, channel, result: "sent" });
+      sent += 1;
+    }
   }
 
   return { sent, skipped, details };
+}
+
+type ChannelSendResult =
+  | { outcome: "sent"; meta: Record<string, unknown> }
+  | { outcome: "failed"; error?: string }
+  | { outcome: "unconfigured" };
+
+/**
+ * Deliver one pre-visit nudge on one channel. PHI-free copy throughout; returns
+ * "unconfigured" when a channel's transport isn't set up (e.g. no Resend key) so
+ * the caller records a skip rather than a failure and never audits a non-send.
+ */
+async function sendPrevisitChannel(args: {
+  channel: PrevisitChannel;
+  milestone: PrevisitMilestone;
+  portalUrl: string;
+  phone: string | null;
+  email: string | null;
+  userId: string | null;
+}): Promise<ChannelSendResult> {
+  const { channel, milestone, portalUrl } = args;
+
+  if (channel === "sms") {
+    if (!args.phone) return { outcome: "unconfigured" };
+    const body = renderPrevisitReminder(milestone, { portalUrl });
+    const res = await getSmsAdapter().send({
+      to: args.phone,
+      body,
+      // Context is for delivery/idempotency only — opaque ids, no PHI.
+      context: { milestone, channel, kind: "previsit_completion" },
+    });
+    if (!res.ok) return { outcome: "failed", error: res.error };
+    return { outcome: "sent", meta: { messageId: res.messageId, adapter: res.adapter } };
+  }
+
+  if (channel === "email") {
+    if (!args.email) return { outcome: "unconfigured" };
+    const content = renderPrevisitEmail(milestone, { portalUrl });
+    const res = await sendEmail({
+      to: [args.email],
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+    });
+    if (res.ok) return { outcome: "sent", meta: { messageId: res.id } };
+    // A missing API key is a config gap, not a delivery failure — skip quietly.
+    if (res.reason === "no-api-key") return { outcome: "unconfigured" };
+    return { outcome: "failed", error: res.message };
+  }
+
+  // in-app — write a portal Notification (only patients with a portal account).
+  if (!args.userId) return { outcome: "unconfigured" };
+  const content = renderPrevisitInApp(milestone, { portalUrl });
+  const note = await prisma.notification.create({
+    data: {
+      userId: args.userId,
+      type: "previsit_reminder",
+      priority: "normal",
+      title: content.title,
+      body: content.body,
+      href: content.href,
+    },
+    select: { id: true },
+  });
+  return { outcome: "sent", meta: { notificationId: note.id } };
 }
 
 export async function sendDueVisitReminders(
@@ -423,6 +531,7 @@ function normalizePrevisitPortalOrigin(
 async function alreadySentPrevisit(
   appointmentId: string,
   milestone: PrevisitMilestone,
+  channel: PrevisitChannel,
 ): Promise<boolean> {
   const rows = await prisma.auditLog.findMany({
     where: {
@@ -431,10 +540,15 @@ async function alreadySentPrevisit(
       subjectId: appointmentId,
     },
     select: { metadata: true },
-    take: 10,
+    take: 20,
   });
   return rows.some((r) => {
-    const meta = r.metadata as { milestone?: string } | null;
-    return meta?.milestone === milestone;
+    const meta = r.metadata as { milestone?: string; channel?: string } | null;
+    if (meta?.milestone !== milestone) return false;
+    // Channel-aware. Legacy rows predate the channel field and were all SMS, so
+    // treat a channel-less row as having satisfied the SMS channel — avoids a
+    // one-time re-send of SMS nudges already delivered before this change.
+    if (meta.channel === channel) return true;
+    return channel === "sms" && meta.channel === undefined;
   });
 }

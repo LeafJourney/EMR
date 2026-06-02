@@ -11,6 +11,7 @@ import {
 } from "@/lib/check-in/kiosk-handoff";
 import { issueOtpCode, verifyOtpCode } from "@/lib/check-in/otp";
 import { DEFAULT_TEMPLATES } from "@/lib/domain/consent-forms";
+import { intakeHasContent } from "@/lib/check-in/lobby-submission-review";
 import {
   createKioskLobbySession,
   setKioskLobbyCookie,
@@ -216,29 +217,42 @@ export async function lobbySubmitIntake(
     reportedBenefits: splitList(parsed.data.reportedBenefits),
   };
 
+  const intakePayload = {
+    presentingConcerns: parsed.data.presentingConcerns || null,
+    treatmentGoals: parsed.data.treatmentGoals || null,
+    cannabisHistory,
+  };
+
+  // Reject a wholly-empty intake before staging: it satisfies no readiness
+  // requirement and would only add a noise row to the staff queue while telling
+  // the patient they finished a task that did nothing (EMR-915 review).
+  if (!intakeHasContent(intakePayload)) {
+    return { ok: false, error: "Please tell us a little about why you're here before submitting." };
+  }
+
   // Idempotent: a re-submit supersedes the prior un-reviewed intake rather than
   // piling up pending rows for staff (EMR-915 review — single pending per kind).
-  await prisma.kioskLobbySubmission.deleteMany({
-    where: {
-      patientId: identity.patientId,
-      organizationId: identity.organizationId,
-      kind: "intake",
-      status: "pending",
-    },
-  });
-  await prisma.kioskLobbySubmission.create({
-    data: {
-      patientId: identity.patientId,
-      organizationId: identity.organizationId,
-      kind: "intake",
-      status: "pending",
-      payload: {
-        presentingConcerns: parsed.data.presentingConcerns || null,
-        treatmentGoals: parsed.data.treatmentGoals || null,
-        cannabisHistory,
+  // Supersede + create run in one transaction so a failed create can't leave the
+  // patient with neither their old nor their new submission.
+  await prisma.$transaction([
+    prisma.kioskLobbySubmission.deleteMany({
+      where: {
+        patientId: identity.patientId,
+        organizationId: identity.organizationId,
+        kind: "intake",
+        status: "pending",
       },
-    },
-  });
+    }),
+    prisma.kioskLobbySubmission.create({
+      data: {
+        patientId: identity.patientId,
+        organizationId: identity.organizationId,
+        kind: "intake",
+        status: "pending",
+        payload: intakePayload,
+      },
+    }),
+  ]);
 
   await auditLobby(identity.organizationId, identity.patientId, "kiosk.lobby.submission.staged", {
     kind: "intake",
@@ -280,30 +294,34 @@ export async function lobbySubmitConsent(
 
   // Idempotent per template: a re-sign of the SAME form supersedes its prior
   // un-reviewed submission; different forms each keep their own pending row.
-  await prisma.kioskLobbySubmission.deleteMany({
-    where: {
-      patientId: identity.patientId,
-      organizationId: identity.organizationId,
-      kind: "consent",
-      status: "pending",
-      payload: { path: ["templateId"], equals: template.id },
-    },
-  });
-  await prisma.kioskLobbySubmission.create({
-    data: {
-      patientId: identity.patientId,
-      organizationId: identity.organizationId,
-      kind: "consent",
-      status: "pending",
-      payload: {
-        templateId: template.id,
-        templateName: template.name,
-        version: template.version,
-        responses: parsed.data.responses,
-        signatureData: parsed.data.signatureData ?? null,
+  // Supersede + create run in one transaction so a failed create can't drop the
+  // patient's prior signed consent without recording the new one.
+  await prisma.$transaction([
+    prisma.kioskLobbySubmission.deleteMany({
+      where: {
+        patientId: identity.patientId,
+        organizationId: identity.organizationId,
+        kind: "consent",
+        status: "pending",
+        payload: { path: ["templateId"], equals: template.id },
       },
-    },
-  });
+    }),
+    prisma.kioskLobbySubmission.create({
+      data: {
+        patientId: identity.patientId,
+        organizationId: identity.organizationId,
+        kind: "consent",
+        status: "pending",
+        payload: {
+          templateId: template.id,
+          templateName: template.name,
+          version: template.version,
+          responses: parsed.data.responses,
+          signatureData: parsed.data.signatureData ?? null,
+        },
+      },
+    }),
+  ]);
 
   await auditLobby(identity.organizationId, identity.patientId, "kiosk.lobby.submission.staged", {
     kind: "consent",
