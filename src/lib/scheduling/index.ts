@@ -15,6 +15,7 @@
  */
 export * from "./cadence-engine";
 export * from "./no-show-model";
+export * from "./self-serve";
 export * from "./slot-recommender";
 export * from "./intake-gate";
 export * from "./provider-prefs";
