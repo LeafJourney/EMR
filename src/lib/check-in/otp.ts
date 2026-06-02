@@ -17,7 +17,7 @@
 // unit-tested; the DB/SMS orchestration is a thin binding (untested by unit
 // tests, same convention as loadPrevisitSnapshot).
 
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { getSmsAdapter, normalizePhone } from "@/lib/sms/adapter";
 
@@ -38,8 +38,15 @@ export function generateOtpCode(length: number = CODE_LENGTH): string {
   return String(randomInt(0, max)).padStart(length, "0");
 }
 
-export function hashOtp(code: string): string {
-  return createHash("sha256").update(code.trim()).digest("hex");
+/**
+ * Hash an OTP for storage/comparison. A per-code random `salt` defeats offline
+ * rainbow tables of the 6-digit space if the table is ever exposed. `salt` is
+ * optional for backward-compat: legacy rows stored before salting (salt=null)
+ * still verify via the plain digest.
+ */
+export function hashOtp(code: string, salt?: string | null): string {
+  const material = salt ? `${salt}:${code.trim()}` : code.trim();
+  return createHash("sha256").update(material).digest("hex");
 }
 
 /** Constant-time hash comparison; rejects empty/length-mismatched inputs. */
@@ -56,14 +63,33 @@ export type OtpVerifyReason =
   | "expired"
   | "already_consumed"
   | "too_many_attempts"
+  | "locked_out"
   | "mismatch";
 
 export interface OtpRecordState {
   codeHash: string;
+  /** Per-code random salt; null for legacy unsalted rows. */
+  salt: string | null;
   expiresAt: Date;
   attempts: number;
   maxAttempts: number;
   consumedAt: Date | null;
+}
+
+/** Failed-attempt ceiling per (patient, purpose) ACROSS codes, within the window. */
+const CROSS_CODE_MAX_FAILED = 10;
+const CROSS_CODE_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Pure: is the (patient, purpose) locked out from the aggregate of failed
+ * attempts across all recent codes? Stops the "request many codes, one guess
+ * each" vector that a per-code limit alone doesn't bound.
+ */
+export function isCrossCodeLocked(
+  recentFailedAttempts: number,
+  max: number = CROSS_CODE_MAX_FAILED,
+): boolean {
+  return recentFailedAttempts >= max;
 }
 
 /**
@@ -85,7 +111,7 @@ export function evaluateOtpVerification(
   if (record.attempts >= record.maxAttempts) {
     return { ok: false, reason: "too_many_attempts" };
   }
-  if (!hashesEqual(hashOtp(attemptCode), record.codeHash)) {
+  if (!hashesEqual(hashOtp(attemptCode, record.salt), record.codeHash)) {
     return { ok: false, reason: "mismatch" };
   }
   return { ok: true, reason: "ok" };
@@ -142,12 +168,14 @@ export async function issueOtpCode(opts: {
   });
 
   const code = generateOtpCode();
+  const salt = randomBytes(16).toString("hex");
   const expiresAt = new Date(now.getTime() + (opts.ttlMs ?? DEFAULT_TTL_MS));
   await prisma.smsOtpCode.create({
     data: {
       patientId: opts.patientId,
       purpose: opts.purpose,
-      codeHash: hashOtp(code),
+      codeHash: hashOtp(code, salt),
+      salt,
       expiresAt,
       maxAttempts: DEFAULT_MAX_ATTEMPTS,
     },
@@ -190,6 +218,22 @@ export async function verifyOtpCode(opts: {
 }): Promise<{ ok: boolean; reason: OtpVerifyReason }> {
   const now = opts.now ?? new Date();
 
+  // Cross-code lockout: aggregate failed attempts across ALL recent codes for
+  // this (patient, purpose). Bounds the "request many codes, one guess each"
+  // vector that the per-code attempt cap can't see.
+  const recentFailed = await prisma.smsOtpCode.aggregate({
+    where: {
+      patientId: opts.patientId,
+      purpose: opts.purpose,
+      createdAt: { gt: new Date(now.getTime() - CROSS_CODE_WINDOW_MS) },
+    },
+    _sum: { attempts: true },
+  });
+  if (isCrossCodeLocked(recentFailed._sum.attempts ?? 0)) {
+    await audit(opts.organizationId, opts.patientId, "otp.verified_failed", opts.purpose, "locked_out");
+    return { ok: false, reason: "locked_out" };
+  }
+
   const record = await prisma.smsOtpCode.findFirst({
     where: { patientId: opts.patientId, purpose: opts.purpose, consumedAt: null },
     orderBy: { createdAt: "desc" },
@@ -202,6 +246,7 @@ export async function verifyOtpCode(opts: {
   }
   const snapshot = {
     codeHash: record.codeHash,
+    salt: record.salt,
     expiresAt: record.expiresAt,
     attempts: record.attempts,
     maxAttempts: record.maxAttempts,
@@ -235,7 +280,7 @@ export async function verifyOtpCode(opts: {
 
   // We hold a counted attempt. Compare the hash off the snapshot (the codeHash
   // is immutable for the life of the code).
-  if (!hashesEqual(hashOtp(opts.attemptCode), snapshot.codeHash)) {
+  if (!hashesEqual(hashOtp(opts.attemptCode, snapshot.salt), snapshot.codeHash)) {
     return finishVerify(opts, now, { ok: false, reason: "mismatch" });
   }
 

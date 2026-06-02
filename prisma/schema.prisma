@@ -72,6 +72,7 @@ model Organization {
   payToAddress   Json? // optional override for 2010AB pay-to address when different from billingAddress
 
   memberships              Membership[]
+  visitCompletions         VisitCompletion[]
   patients                 Patient[]
   providers                Provider[]
   encounters               Encounter[]
@@ -215,6 +216,7 @@ model User {
   lastLoginAt  DateTime?
 
   memberships               Membership[]
+  releasedVisitCompletions  VisitCompletion[]           @relation("VisitCompletionReleaseUser")
   patientProfile            Patient?                    @relation("PatientUser")
   providerProfile           Provider?                   @relation("ProviderUser")
   sentMessages              Message[]                   @relation("MessageSender")
@@ -340,6 +342,7 @@ model Patient {
   updatedAt              DateTime            @updatedAt
 
   user                     User?                     @relation("PatientUser", fields: [userId], references: [id])
+  visitCompletions         VisitCompletion[]
   organization             Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   chartSummary             ChartSummary?
   encounters               Encounter[]
@@ -630,6 +633,7 @@ model Note {
 
   encounter        Encounter         @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   codingSuggestion CodingSuggestion?
+  visitCompletion  VisitCompletion?
 
   @@index([encounterId, status])
   // Clinic dashboard "recently finalized notes" activity feed
@@ -647,6 +651,25 @@ model CodingSuggestion {
   generatedAt DateTime @default(now())
 
   note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+}
+
+model VisitCompletion {
+  id              String   @id @default(cuid())
+  noteId          String   @unique
+  organizationId  String
+  patientId       String
+  releasedById    String
+  releasedAt      DateTime @default(now())
+  payload         Json
+
+  note            Note         @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  releasedBy      User         @relation("VisitCompletionReleaseUser", fields: [releasedById], references: [id])
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([organizationId])
+  @@index([patientId])
 }
 
 // --------------------------------------------------------------
@@ -4982,7 +5005,8 @@ model SmsOtpCode {
   id          String    @id @default(cuid())
   patientId   String
   purpose     String // e.g. "kiosk_lobby_handoff"
-  codeHash    String // SHA-256 of the numeric code
+  codeHash    String // SHA-256 of (salt + code)
+  salt        String? // per-code random salt (null = legacy unsalted row)
   expiresAt   DateTime
   attempts    Int       @default(0)
   maxAttempts Int       @default(5)

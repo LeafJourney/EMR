@@ -1466,6 +1466,21 @@ async function main() {
     },
   });
 
+  // Kiosk
+  const kioskUser = await prisma.user.upsert({
+    where: { email: "kiosk@demo.health" },
+    update: { passwordHash },
+    create: {
+      email: "kiosk@demo.health",
+      passwordHash,
+      firstName: "Front",
+      lastName: "Desk",
+      memberships: {
+        create: { organizationId: org.id, role: Role.kiosk },
+      },
+    },
+  });
+
   // ------------------------------------------------------------------
   // Patient 1 — Maya Reyes (active, richest record)
   // ------------------------------------------------------------------
@@ -4450,6 +4465,7 @@ async function main() {
   console.log("  Patient 1: patient@demo.health (Maya)   / Longbeach2026!");
   console.log("  Patient 2: james.chen@demo.health       / Longbeach2026!");
   console.log("  Patient 3: sarah.thompson@demo.health   / Longbeach2026!");
+  console.log("  Kiosk:     kiosk@demo.health            / Longbeach2026!");
 }
 
 async function seedEducationCompounds() {

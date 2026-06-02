@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, Printer } from "lucide-react";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
@@ -36,6 +37,7 @@ export default async function NoteDetailPage({ params }: PageProps) {
         },
       },
       codingSuggestion: true,
+      visitCompletion: true,
     },
   });
 
@@ -149,7 +151,9 @@ export default async function NoteDetailPage({ params }: PageProps) {
           hasFutureAppointment: Boolean(futureAppointment),
         })
       : null;
-
+  const releasedPayload = note.visitCompletion
+    ? (note.visitCompletion.payload as any)
+    : null;
   return (
     <PageShell maxWidth="max-w-[900px]">
       <PageHeader
@@ -164,10 +168,20 @@ export default async function NoteDetailPage({ params }: PageProps) {
               target="_blank"
               rel="noopener"
             >
-              <Button variant="ghost">Print note</Button>
+              <Button
+                variant="ghost"
+                leadingIcon={<Printer className="h-4 w-4" />}
+              >
+                Print note
+              </Button>
             </Link>
             <Link href={`/clinic/patients/${params.id}?tab=notes`}>
-              <Button variant="secondary">Back to chart</Button>
+              <Button
+                variant="secondary"
+                leadingIcon={<ArrowLeft className="h-4 w-4" />}
+              >
+                Back to chart
+              </Button>
             </Link>
           </div>
         }
@@ -194,6 +208,7 @@ export default async function NoteDetailPage({ params }: PageProps) {
               ? ((note.encounter.briefingContext as Record<string, unknown>).patientDemeanor as any)
               : null
           }
+          releasedPayload={releasedPayload}
         />
       ) : canDocObjective ? (
         <StaffObjectiveEditor
@@ -210,7 +225,11 @@ export default async function NoteDetailPage({ params }: PageProps) {
       )}
 
       {!canEditNotes && visitCompletionBundle && (
-        <VisitCompletionPanel bundle={visitCompletionBundle} />
+        <VisitCompletionPanel
+          bundle={visitCompletionBundle}
+          releasedPayload={releasedPayload}
+          noteId={note.id}
+        />
       )}
 
       {/* ux/comments-mentions-collab — inline collaboration on chart notes */}
