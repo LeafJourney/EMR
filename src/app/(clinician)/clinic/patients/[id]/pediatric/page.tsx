@@ -28,6 +28,11 @@ import { MetricTile } from "@/components/ui/metric-tile";
 import { Eyebrow } from "@/components/ui/ornament";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  immunizationsDue,
+  nextWellChild,
+} from "@/lib/clinical/pediatric-growth";
+import { BmiForAgeCard } from "./bmi-card";
 
 interface PageProps {
   params: { id: string };
@@ -55,6 +60,20 @@ export default async function PediatricModulePage({ params }: PageProps) {
 
   const ageBand = ageMonths !== null ? bandForAge(ageMonths) : null;
   const milestones = ageBand ? MILESTONES[ageBand] : [];
+  const ageYears = ageMonths !== null ? ageMonths / 12 : null;
+  const nextVisitMonths = ageMonths !== null ? nextWellChild(ageMonths) : null;
+
+  // No immunization registry is wired into this view, so reconcile against
+  // the full age-applicable ACIP primary series; once the registry feeds in
+  // completed CVX doses, those drop off automatically.
+  const dueVaccines = ageMonths !== null ? immunizationsDue(ageMonths, []) : [];
+  const overdueFirst = [...dueVaccines]
+    .sort(
+      (a, b) =>
+        (a.status === "overdue" ? 0 : 1) - (b.status === "overdue" ? 0 : 1) ||
+        a.dose.earliestMonths - b.dose.earliestMonths,
+    )
+    .slice(0, 8);
 
   return (
     <PageShell maxWidth="max-w-[1080px]">
@@ -99,16 +118,16 @@ export default async function PediatricModulePage({ params }: PageProps) {
           hint={patient.dateOfBirth ? `DOB ${formatDob(patient.dateOfBirth)}` : "Capture DOB"}
         />
         <MetricTile
-          label="Growth charts"
-          value="CDC 2-20"
+          label="Next well-child"
+          value={nextVisitMonths !== null ? formatAge(nextVisitMonths) : "—"}
           accent="forest"
-          hint="Plot height, weight, BMI"
+          hint="AAP Bright Futures schedule"
         />
         <MetricTile
           label="Immunizations"
-          value="ACIP"
-          accent="amber"
-          hint="Reconcile against schedule"
+          value={dueVaccines.length}
+          accent={dueVaccines.length > 0 ? "amber" : "none"}
+          hint="ACIP items to reconcile"
         />
         <MetricTile
           label="Consent"
@@ -117,6 +136,12 @@ export default async function PediatricModulePage({ params }: PageProps) {
           hint="Minor — guardian must co-sign"
         />
       </div>
+
+      {ageYears !== null && (
+        <div className="mb-8">
+          <BmiForAgeCard ageYears={ageYears} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         <Card tone="raised">
@@ -159,7 +184,8 @@ export default async function PediatricModulePage({ params }: PageProps) {
           <CardHeader>
             <CardTitle className="text-base">Immunizations due</CardTitle>
             <CardDescription>
-              Compare patient's immunization registry against CDC ACIP schedule.
+              ACIP primary series for this age. Items already recorded in the
+              immunization registry drop off once it is connected.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -168,20 +194,27 @@ export default async function PediatricModulePage({ params }: PageProps) {
                 title="No DOB on file"
                 description="Add date of birth to compute the ACIP schedule."
               />
+            ) : overdueFirst.length === 0 ? (
+              <EmptyState
+                title="No age-due doses"
+                description="No ACIP primary-series doses are age-applicable right now."
+              />
             ) : (
-              dueImmunizations(ageMonths).map((vac) => (
+              overdueFirst.map((gap) => (
                 <div
-                  key={vac.code}
+                  key={`${gap.dose.cvx}-${gap.dose.doseNumber}`}
                   className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-surface-muted"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm text-text">{vac.label}</p>
+                    <p className="text-sm text-text">{gap.dose.label}</p>
                     <p className="text-[11px] text-text-subtle">
-                      Recommended at {vac.window}
+                      {gap.status === "overdue"
+                        ? "Past the catch-up window"
+                        : `Due — ${gap.monthsUntilOverdue} mo until overdue`}
                     </p>
                   </div>
-                  <Badge tone={vac.priority === "due" ? "warning" : "neutral"}>
-                    {vac.priority === "due" ? "Due now" : "Upcoming"}
+                  <Badge tone={gap.status === "overdue" ? "danger" : "warning"}>
+                    {gap.status === "overdue" ? "Overdue" : "Due now"}
                   </Badge>
                 </div>
               ))
@@ -334,40 +367,3 @@ const MILESTONES: Record<AgeBand, Milestone[]> = {
   ],
 };
 
-interface DueVaccine {
-  code: string;
-  label: string;
-  /** Recommended age window in months */
-  ageMonths: number;
-  window: string;
-  priority: "due" | "upcoming";
-}
-
-const ACIP_SCHEDULE: Array<Omit<DueVaccine, "priority">> = [
-  { code: "hepb1", label: "Hepatitis B #1", ageMonths: 0, window: "birth" },
-  { code: "hepb2", label: "Hepatitis B #2", ageMonths: 1, window: "1-2 mo" },
-  { code: "dtap1", label: "DTaP #1", ageMonths: 2, window: "2 mo" },
-  { code: "ipv1", label: "IPV #1", ageMonths: 2, window: "2 mo" },
-  { code: "hib1", label: "Hib #1", ageMonths: 2, window: "2 mo" },
-  { code: "pcv1", label: "PCV13 #1", ageMonths: 2, window: "2 mo" },
-  { code: "rota1", label: "Rotavirus #1", ageMonths: 2, window: "2 mo" },
-  { code: "dtap2", label: "DTaP #2", ageMonths: 4, window: "4 mo" },
-  { code: "dtap3", label: "DTaP #3", ageMonths: 6, window: "6 mo" },
-  { code: "mmr1", label: "MMR #1", ageMonths: 12, window: "12-15 mo" },
-  { code: "vari1", label: "Varicella #1", ageMonths: 12, window: "12-15 mo" },
-  { code: "hepa1", label: "Hepatitis A #1", ageMonths: 12, window: "12-23 mo" },
-  { code: "dtap5", label: "DTaP #5", ageMonths: 48, window: "4-6 yr" },
-  { code: "mmr2", label: "MMR #2", ageMonths: 48, window: "4-6 yr" },
-  { code: "tdap", label: "Tdap booster", ageMonths: 132, window: "11-12 yr" },
-  { code: "hpv1", label: "HPV #1", ageMonths: 132, window: "11-12 yr" },
-  { code: "menacwy1", label: "MenACWY #1", ageMonths: 132, window: "11-12 yr" },
-];
-
-function dueImmunizations(ageMonths: number): DueVaccine[] {
-  return ACIP_SCHEDULE.filter((v) => v.ageMonths <= ageMonths + 3)
-    .map((v) => ({
-      ...v,
-      priority: v.ageMonths <= ageMonths ? ("due" as const) : ("upcoming" as const),
-    }))
-    .slice(-6);
-}

@@ -1,4 +1,3 @@
-// SAFE: dead-export-allowed reason="Unintegrated scaffold (track-9)"
 /**
  * EMR-081 — Merge OCR-extracted fields into an existing chart.
  *

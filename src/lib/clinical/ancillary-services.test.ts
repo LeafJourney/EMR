@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ageDays,
+  ALL_DISCIPLINES,
   daysSinceMovement,
+  disciplineFromParam,
   filterQueue,
   isOpen,
   isStale,
+  queueSummary,
   rollupByDiscipline,
   sortQueue,
   STALE_THRESHOLD_DAYS,
@@ -148,6 +151,50 @@ describe("rollupByDiscipline", () => {
     const out = rollupByDiscipline([], NOW);
     expect(out.length).toBe(5);
     expect(out.every((x) => x.caseload === 0)).toBe(true);
+  });
+});
+
+describe("disciplineFromParam", () => {
+  it("accepts each known discipline", () => {
+    for (const d of ALL_DISCIPLINES) {
+      expect(disciplineFromParam(d)).toBe(d);
+    }
+  });
+
+  it("returns undefined for unknown / missing values", () => {
+    expect(disciplineFromParam(undefined)).toBeUndefined();
+    expect(disciplineFromParam("cardiology")).toBeUndefined();
+    expect(disciplineFromParam("")).toBeUndefined();
+  });
+
+  it("uses the first value when given a repeated query param", () => {
+    expect(disciplineFromParam(["ot", "pt"])).toBe("ot");
+    expect(disciplineFromParam(["bogus", "pt"])).toBeUndefined();
+  });
+});
+
+describe("queueSummary", () => {
+  it("counts open caseload, pending intake, and stale across the set", () => {
+    const items = [
+      r({ id: "1", status: "pending", orderedAt: daysAgoIso(2) }),
+      r({ id: "2", status: "in_progress", lastActivityAt: daysAgoIso(30) }),
+      r({ id: "3", status: "completed" }),
+      r({ id: "4", status: "scheduled", lastActivityAt: daysAgoIso(1) }),
+    ];
+    const s = queueSummary(items, NOW);
+    expect(s.activeCaseload).toBe(3); // pending + in_progress + scheduled
+    expect(s.open).toBe(3);
+    expect(s.pendingIntake).toBe(1);
+    expect(s.stale).toBe(1); // only the 30-day in_progress
+  });
+
+  it("is all-zero for an empty queue", () => {
+    expect(queueSummary([], NOW)).toEqual({
+      activeCaseload: 0,
+      pendingIntake: 0,
+      open: 0,
+      stale: 0,
+    });
   });
 });
 

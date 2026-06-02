@@ -26,6 +26,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MetricTile } from "@/components/ui/metric-tile";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  evaluatePolicy,
+  type ReviewPolicy,
+} from "@/lib/clinical/record-release-workflow";
+import {
+  RECORD_CATEGORY_LABELS,
+  type RecordCategory,
+} from "@/lib/domain/record-release";
 
 export const metadata = { title: "Record release" };
 
@@ -170,11 +178,18 @@ export default async function RecordReleasePage() {
         title="Release of information"
         description="Outbound chart packets to other providers, facilities, patients, attorneys, and insurers. Direct Trust transmission whenever the recipient supports it; fax + secure portal as fallback."
         actions={
-          <Link href="/clinic/records/release/new">
-            <Button variant="primary" size="sm">
-              New release
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/clinic/records/ocr">
+              <Button variant="secondary" size="sm">
+                Scan inbound record
+              </Button>
+            </Link>
+            <Link href="/clinic/records/release/new">
+              <Button variant="primary" size="sm">
+                New release
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -204,6 +219,8 @@ export default async function RecordReleasePage() {
           hint="Confirmed receipt"
         />
       </div>
+
+      <RoiPolicyCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
         <Card tone="raised">
@@ -264,6 +281,64 @@ export default async function RecordReleasePage() {
       </Card>
     </PageShell>
   );
+}
+
+/**
+ * Reference card for the practice's release-of-information policy. Driven
+ * by `evaluatePolicy` over every record category so the displayed posture
+ * always matches the rules the provider-review screen enforces.
+ */
+function RoiPolicyCard() {
+  const allCategories = Object.keys(RECORD_CATEGORY_LABELS) as RecordCategory[];
+  const decision = evaluatePolicy({ categories: allCategories });
+
+  return (
+    <Card tone="raised" className="mb-8">
+      <CardHeader>
+        <CardTitle className="text-base">Release-of-information policy</CardTitle>
+        <CardDescription>
+          Which record categories release automatically once the patient
+          authorization is on file, and which require provider sign-off before
+          the packet goes out.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        {decision.categories.map((c) => (
+          <div
+            key={c.category}
+            className="flex items-center justify-between gap-2 rounded-lg border border-border/70 px-3 py-2"
+          >
+            <span className="text-sm text-text truncate">{c.label}</span>
+            <Badge tone={policyTone(c.policy)} className="shrink-0">
+              {policyLabel(c.policy)}
+            </Badge>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function policyLabel(policy: ReviewPolicy): string {
+  switch (policy) {
+    case "auto_release":
+      return "Auto-release";
+    case "needs_provider_review":
+      return "Provider review";
+    case "forbidden":
+      return "Withheld";
+  }
+}
+
+function policyTone(policy: ReviewPolicy): "success" | "warning" | "danger" {
+  switch (policy) {
+    case "auto_release":
+      return "success";
+    case "needs_provider_review":
+      return "warning";
+    case "forbidden":
+      return "danger";
+  }
 }
 
 function ReleaseRow({

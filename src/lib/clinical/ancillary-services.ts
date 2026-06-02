@@ -1,4 +1,3 @@
-// SAFE: dead-export-allowed reason="Unintegrated scaffold (track-9)"
 /**
  * EMR-062 — Ancillary services queue logic
  *
@@ -37,6 +36,30 @@ export const DISCIPLINE_LABEL: Record<AncillaryDiscipline, string> = {
   case_mgmt: "Case management",
   home_health: "Home health",
 };
+
+/** Canonical render order for discipline cards / tabs. */
+export const ALL_DISCIPLINES: AncillaryDiscipline[] = [
+  "ot",
+  "pt",
+  "speech",
+  "case_mgmt",
+  "home_health",
+];
+
+const DISCIPLINE_SET = new Set<string>(ALL_DISCIPLINES);
+
+/**
+ * Parse a `?discipline=` query-string value into a canonical discipline,
+ * or `undefined` when it's absent / not a recognized discipline. Keeps the
+ * page from trusting raw URL input.
+ */
+export function disciplineFromParam(
+  raw: string | string[] | undefined,
+): AncillaryDiscipline | undefined {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value && DISCIPLINE_SET.has(value)) return value as AncillaryDiscipline;
+  return undefined;
+}
 
 export interface AncillaryReferral {
   id: string;
@@ -174,6 +197,38 @@ export function rollupByDiscipline(
     if (isStale(r, now)) bucket.staleCount += 1;
   }
   return Object.values(out);
+}
+
+export interface QueueSummary {
+  /** Open referrals across every discipline. */
+  activeCaseload: number;
+  /** Open referrals still awaiting their first eval / auth. */
+  pendingIntake: number;
+  /** Open referrals in the current (already-filtered) view. */
+  open: number;
+  /** Open referrals with no movement past the stale threshold. */
+  stale: number;
+}
+
+/**
+ * Top-of-page metric rollup for a (possibly already-filtered) set of
+ * referrals. Keeps the four hero tiles honest — every number is derived
+ * from the same rules the queue rows use.
+ */
+export function queueSummary(
+  referrals: AncillaryReferral[],
+  now: Date = new Date(),
+): QueueSummary {
+  let activeCaseload = 0;
+  let pendingIntake = 0;
+  let stale = 0;
+  for (const r of referrals) {
+    if (!isOpen(r)) continue;
+    activeCaseload += 1;
+    if (r.status === "pending") pendingIntake += 1;
+    if (isStale(r, now)) stale += 1;
+  }
+  return { activeCaseload, pendingIntake, open: activeCaseload, stale };
 }
 
 // ---------------------------------------------------------------------------

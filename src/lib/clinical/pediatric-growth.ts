@@ -1,4 +1,3 @@
-// SAFE: dead-export-allowed reason="Unintegrated scaffold (track-9)"
 /**
  * EMR-083 — Pediatric growth-chart helpers
  *
@@ -107,6 +106,14 @@ export function cdcBmiCategory(
   if (bmiValue < c.overweightMax) return "overweight";
   return "obese";
 }
+
+/** Clinician-facing labels for each BMI-for-age category. */
+export const BMI_CATEGORY_LABELS: Record<BmiCategory, string> = {
+  underweight: "Underweight (<5th %ile)",
+  healthy: "Healthy weight (5th–85th)",
+  overweight: "Overweight (85th–95th)",
+  obese: "Obese (≥95th %ile)",
+};
 
 // ---------------------------------------------------------------------------
 // AAP well-child schedule (Bright Futures, abbreviated)

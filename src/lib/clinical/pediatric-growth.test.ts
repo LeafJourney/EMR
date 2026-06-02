@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bmi,
+  BMI_CATEGORY_LABELS,
   cdcBmiCategory,
   immunizationsDue,
   nextWellChild,
@@ -58,6 +59,12 @@ describe("cdcBmiCategory", () => {
     // mid: ~25.8. A BMI of 25.2 should be overweight (over healthyMax interp).
     const v = 25.2;
     expect(cdcBmiCategory(v, 15, "male")).toBe("overweight");
+  });
+
+  it("has a clinician-facing label for every category", () => {
+    for (const cat of ["underweight", "healthy", "overweight", "obese"] as const) {
+      expect(BMI_CATEGORY_LABELS[cat]).toBeTruthy();
+    }
   });
 });
 
