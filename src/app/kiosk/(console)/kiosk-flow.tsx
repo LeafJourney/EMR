@@ -7,24 +7,27 @@ import {
   getKioskCheckInContext,
   kioskCheckIn,
   issueKioskHandoff,
+  kioskVerifyDob,
   type KioskPatientHit,
   type KioskCheckInContext,
 } from "./actions";
 
-// Front-desk kiosk flow. Four steps, all client-driven over the three kiosk
+// Front-desk kiosk flow. Five steps, all client-driven over the kiosk
 // server actions:
-//   search  → patient types their name, picks themselves from a short list
-//   confirm → "is this you?" with full name + DOB (shown only after selection)
-//   done    → check-in result + a launcher listing what's available in their
-//             patient portal
+//   search     → patient types their name, picks themselves from a short list
+//   dob-verify → patient verifies their DOB to unlock full name
+//   confirm    → "is this you?" with full name (no DOB shown)
+//   done       → check-in result + a launcher listing what's available in their
+//                patient portal
 //
 // PII hygiene: the result LIST shows first name + last initial only, so a
-// bystander glancing at the screen can't read a roster. Full name + DOB appear
-// only on the confirmation card, after the patient has chosen their own row.
+// bystander glancing at the screen can't read a roster. Full name appears
+// only on the confirmation card, after DOB is successfully verified on the server.
 
 type Step =
   | { kind: "search" }
-  | { kind: "confirm"; hit: KioskPatientHit }
+  | { kind: "dob-verify"; hit: KioskPatientHit }
+  | { kind: "confirm"; context: KioskCheckInContext }
   | { kind: "handoff"; firstName: string; qrUrl: string; lobbyUrl: string }
   | { kind: "done"; context: KioskCheckInContext | null; alreadyCheckedIn: boolean };
 
@@ -57,12 +60,21 @@ export function KioskFlow() {
   const [step, setStep] = useState<Step>({ kind: "search" });
 
   if (step.kind === "search") {
-    return <SearchStep onSelect={(hit) => setStep({ kind: "confirm", hit })} />;
+    return <SearchStep onSelect={(hit) => setStep({ kind: "dob-verify", hit })} />;
+  }
+  if (step.kind === "dob-verify") {
+    return (
+      <DobVerifyStep
+        hit={step.hit}
+        onBack={() => setStep({ kind: "search" })}
+        onVerified={(context) => setStep({ kind: "confirm", context })}
+      />
+    );
   }
   if (step.kind === "confirm") {
     return (
       <ConfirmStep
-        hit={step.hit}
+        context={step.context}
         onBack={() => setStep({ kind: "search" })}
         onDone={(context, alreadyCheckedIn) =>
           setStep({ kind: "done", context, alreadyCheckedIn })
@@ -146,7 +158,7 @@ function SearchStep({ onSelect }: { onSelect: (hit: KioskPatientHit) => void }) 
                 className="w-full flex items-center justify-between gap-3 px-5 py-4 rounded-xl border border-border/60 bg-surface hover:border-accent hover:bg-accent/5 transition-all text-left"
               >
                 <span className="text-lg font-medium text-text">
-                  {hit.firstName} {hit.lastName.charAt(0)}.
+                  {hit.firstName} {hit.lastNameInitial}.
                 </span>
                 <span aria-hidden="true" className="text-text-subtle text-xl">
                   ›
@@ -167,12 +179,12 @@ function SearchStep({ onSelect }: { onSelect: (hit: KioskPatientHit) => void }) 
 }
 
 function ConfirmStep({
-  hit,
+  context,
   onBack,
   onDone,
   onHandoff,
 }: {
-  hit: KioskPatientHit;
+  context: KioskCheckInContext;
   onBack: () => void;
   onDone: (context: KioskCheckInContext | null, alreadyCheckedIn: boolean) => void;
   onHandoff: (firstName: string, qrUrl: string, lobbyUrl: string) => void;
@@ -184,29 +196,28 @@ function ConfirmStep({
   function handleConfirm() {
     setError(null);
     startTransition(async () => {
-      const result = await kioskCheckIn(hit.id);
+      const result = await kioskCheckIn(context.patientId);
       if (!result.ok) {
         setError(result.error ?? "Something went wrong. Please see the front desk.");
         return;
       }
-      const context = await getKioskCheckInContext(hit.id);
-      onDone(context, Boolean(result.alreadyCheckedIn));
+      const freshContext = await getKioskCheckInContext(context.patientId);
+      onDone(freshContext, Boolean(result.alreadyCheckedIn));
     });
   }
 
   function handlePhoneHandoff() {
     setError(null);
     startHandoff(async () => {
-      const result = await issueKioskHandoff(hit.id);
+      const result = await issueKioskHandoff(context.patientId);
       if (!result.ok || !result.qrUrl || !result.lobbyUrl) {
         setError(result.error ?? "Couldn't start the phone hand-off. Please continue here.");
         return;
       }
-      onHandoff(hit.firstName, result.qrUrl, result.lobbyUrl);
+      onHandoff(context.firstName, result.qrUrl, result.lobbyUrl);
     });
   }
 
-  const dob = formatDob(hit.dob);
   const busy = isPending || handoffPending;
 
   return (
@@ -214,9 +225,8 @@ function ConfirmStep({
       <div className="rounded-2xl border border-border bg-surface px-6 py-8">
         <p className="text-sm text-text-subtle mb-2">Is this you?</p>
         <p className="font-display text-3xl text-text tracking-tight">
-          {hit.firstName} {hit.lastName}
+          {context.firstName} {context.lastName}
         </p>
-        {dob && <p className="text-text-muted mt-1">Date of birth · {dob}</p>}
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}
@@ -358,5 +368,67 @@ function DoneStep({
         Done
       </Button>
     </div>
+  );
+}
+
+interface DobVerifyStepProps {
+  hit: KioskPatientHit;
+  onBack: () => void;
+  onVerified: (context: KioskCheckInContext) => void;
+}
+
+function DobVerifyStep({ hit, onBack, onVerified }: DobVerifyStepProps) {
+  const [dob, setDob] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!dob) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await kioskVerifyDob(hit.id, dob);
+      if (!res.ok || !res.context) {
+        setError(res.error ?? "Verification failed.");
+        return;
+      }
+      onVerified(res.context);
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="rounded-2xl border border-border bg-surface px-6 py-8">
+        <p className="text-sm text-text-subtle mb-2">Verify your identity</p>
+        <p className="font-display text-3xl text-text tracking-tight">
+          {hit.firstName} {hit.lastNameInitial}.
+        </p>
+      </div>
+
+      <div className="space-y-2 text-left">
+        <label htmlFor="dob-input" className="text-[13px] font-medium text-text">
+          Please enter your date of birth to continue:
+        </label>
+        <input
+          id="dob-input"
+          type="date"
+          required
+          value={dob}
+          onChange={(e) => setDob(e.target.value)}
+          className="w-full text-center text-xl px-5 py-4 rounded-xl border border-border bg-surface focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 transition-all"
+        />
+      </div>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      <div className="flex flex-col gap-3">
+        <Button size="lg" variant="primary" type="submit" disabled={isPending || !dob}>
+          {isPending ? "Verifying…" : "Continue"}
+        </Button>
+        <Button size="lg" variant="ghost" type="button" onClick={onBack} disabled={isPending}>
+          No, that&rsquo;s not me
+        </Button>
+      </div>
+    </form>
   );
 }

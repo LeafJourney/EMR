@@ -1,12 +1,21 @@
 "use server";
 
 import type { Prisma } from "@prisma/client";
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 import { computeQueueTransition } from "@/lib/domain/visit-state";
 import { logger } from "@/lib/observability/log";
 import { appOrigin, issueHandoffToken } from "@/lib/check-in/kiosk-handoff";
+
+/** Constant-time string equality; rejects empty / length-mismatched inputs. */
+function timingSafeStrEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length === 0 || ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 // Server actions for the front-desk check-in kiosk.
 //
@@ -31,9 +40,7 @@ const CANDIDATE_LIMIT = 1000;
 export interface KioskPatientHit {
   id: string;
   firstName: string;
-  lastName: string;
-  /** ISO yyyy-mm-dd, or null. Used only to disambiguate same-name patients. */
-  dob: string | null;
+  lastNameInitial: string;
 }
 
 /**
@@ -70,8 +77,7 @@ export async function kioskSearchPatients(query: string): Promise<KioskPatientHi
   return matched.slice(0, MAX_RESULTS).map((p) => ({
     id: p.id,
     firstName: p.firstName,
-    lastName: p.lastName,
-    dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
+    lastNameInitial: p.lastName.charAt(0).toUpperCase(),
   }));
 }
 
@@ -132,6 +138,7 @@ export interface KioskAppointment {
 export interface KioskCheckInContext {
   patientId: string;
   firstName: string;
+  lastName: string;
   appointment: KioskAppointment | null;
 }
 
@@ -157,7 +164,7 @@ export async function getKioskCheckInContext(
 
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, organizationId: orgId, deletedAt: null },
-    select: { id: true, firstName: true },
+    select: { id: true, firstName: true, lastName: true },
   });
   if (!patient) return null;
 
@@ -166,6 +173,7 @@ export async function getKioskCheckInContext(
   return {
     patientId: patient.id,
     firstName: patient.firstName,
+    lastName: patient.lastName,
     appointment: enc
       ? {
           encounterId: enc.id,
@@ -175,6 +183,59 @@ export async function getKioskCheckInContext(
           alreadyCheckedIn: enc.status !== "scheduled",
         }
       : null,
+  };
+}
+
+export interface KioskVerifyDobResult {
+  ok: boolean;
+  error?: string;
+  context?: KioskCheckInContext;
+}
+
+/**
+ * Verify a patient's date of birth in constant-time on the kiosk itself.
+ * If valid, returns the context containing their full name and appointment
+ * details so the confirm step can render safely.
+ */
+export async function kioskVerifyDob(
+  patientId: string,
+  dob: string,
+): Promise<KioskVerifyDobResult> {
+  const user = await requireRole("kiosk");
+  const orgId = user.organizationId;
+  if (!orgId) return { ok: false, error: "This kiosk isn't linked to a clinic yet." };
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, organizationId: orgId, deletedAt: null },
+    select: { id: true, firstName: true, lastName: true, dateOfBirth: true },
+  });
+  if (!patient || !patient.dateOfBirth) {
+    return { ok: false, error: "We couldn't verify your details. Please see the front desk." };
+  }
+
+  const expectedDob = patient.dateOfBirth.toISOString().slice(0, 10);
+  if (!timingSafeStrEqual(dob.trim(), expectedDob)) {
+    return { ok: false, error: "That date of birth didn't match. Please try again." };
+  }
+
+  const enc = await loadTodayEncounter(orgId, patient.id);
+
+  return {
+    ok: true,
+    context: {
+      patientId: patient.id,
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      appointment: enc
+        ? {
+            encounterId: enc.id,
+            time: enc.scheduledFor ? enc.scheduledFor.toISOString() : null,
+            providerName: providerDisplayName(enc.provider),
+            status: enc.status,
+            alreadyCheckedIn: enc.status !== "scheduled",
+          }
+        : null,
+    },
   };
 }
 
