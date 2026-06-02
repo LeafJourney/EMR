@@ -8,7 +8,9 @@ export interface LabResult {
   name: string;
   value: number;
   unit: string;
-  referenceRange: { low: number; high: number };
+  // Optional: real lab feeds may omit a reference range for a marker, in
+  // which case the UI renders a dash rather than a fabricated "0 – 0" range.
+  referenceRange?: { low: number; high: number };
   criticalRange?: { low: number; high: number };
   status: LabStatus;
   collectedAt: string;
@@ -46,6 +48,95 @@ export const STATUS_COLORS: Record<LabStatus, { bg: string; text: string; label:
   critical_low: { bg: "bg-red-50", text: "text-red-700", label: "Critical Low" },
   critical_high: { bg: "bg-red-50", text: "text-red-700", label: "Critical High" },
 };
+
+// ── Real LabResult → view-model mapping (EMR-806) ───────
+//
+// Pure helpers (no Prisma) so the patient portal's lab loader can be unit
+// tested without a database. The DB query lives in `lab-results-loader.ts`.
+
+interface RawMarker {
+  value: number;
+  unit: string;
+  refLow?: number;
+  refHigh?: number;
+  abnormal: boolean;
+}
+
+export interface LabResultRow {
+  id: string;
+  panelName: string;
+  receivedAt: Date;
+  results: unknown;
+  signedAt: Date | null;
+}
+
+/**
+ * Parse the `LabResult.results` JSON, whose documented shape is
+ * `{ markerName: { value, unit, refLow?, refHigh?, abnormal } }`. Markers that
+ * are malformed (missing a numeric value) are dropped rather than rendered as
+ * bogus rows.
+ */
+function parseMarkers(raw: unknown): Array<[string, RawMarker]> {
+  if (!raw || typeof raw !== "object") return [];
+  const out: Array<[string, RawMarker]> = [];
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const m = value as Record<string, unknown>;
+    if (typeof m.value !== "number") continue;
+    out.push([
+      name,
+      {
+        value: m.value,
+        unit: typeof m.unit === "string" ? m.unit : "",
+        refLow: typeof m.refLow === "number" ? m.refLow : undefined,
+        refHigh: typeof m.refHigh === "number" ? m.refHigh : undefined,
+        abnormal: m.abnormal === true,
+      },
+    ]);
+  }
+  return out;
+}
+
+/** Map one real `LabResult` row into the portal's `LabPanel` view model. */
+export function mapLabResultRow(row: LabResultRow): LabPanel {
+  const iso = row.receivedAt.toISOString();
+  const results: LabResult[] = parseMarkers(row.results).map(([name, m]) => {
+    const referenceRange =
+      m.refLow != null && m.refHigh != null
+        ? { low: m.refLow, high: m.refHigh }
+        : undefined;
+    // Prefer a precise classification when we have a reference range; fall
+    // back to the row's denormalized `abnormal` flag (direction unknown, so
+    // surface it as out-of-range rather than inventing critical bounds).
+    const status: LabStatus = referenceRange
+      ? classifyLabValue(m.value, referenceRange)
+      : m.abnormal
+        ? "high"
+        : "normal";
+    return {
+      id: `${row.id}:${name}`,
+      name,
+      value: m.value,
+      unit: m.unit,
+      referenceRange,
+      status,
+      collectedAt: iso,
+      resultedAt: iso,
+    };
+  });
+
+  return {
+    id: row.id,
+    name: row.panelName,
+    orderedAt: iso,
+    collectedAt: iso,
+    resultedAt: iso,
+    // A received-but-unsigned result is real but still awaiting clinician
+    // sign-off — surface that honestly rather than claiming "complete".
+    status: row.signedAt ? "complete" : "partial",
+    results,
+  };
+}
 
 // ── Demo lab panels ────────────────────────────────────
 

@@ -324,7 +324,9 @@ function LabRow({
         {result.value} <span className="text-xs text-text-subtle">{result.unit}</span>
       </td>
       <td className="px-6 py-3 text-text-subtle tabular-nums">
-        {result.referenceRange.low} – {result.referenceRange.high}
+        {result.referenceRange
+          ? `${result.referenceRange.low} – ${result.referenceRange.high}`
+          : "—"}
       </td>
       <td className="px-6 py-3">
         <Badge

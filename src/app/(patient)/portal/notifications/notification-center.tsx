@@ -16,124 +16,6 @@ import {
   getDefaultPreferences,
 } from "@/lib/domain/notifications";
 
-// ── Demo notifications ──────────────────────────────────
-
-const DEMO_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n-1",
-    userId: "u-1",
-    type: "appointment_reminder",
-    priority: "normal",
-    title: "Upcoming appointment tomorrow",
-    body: "You have a telehealth visit with Dr. Rivera tomorrow at 2:00 PM. Make sure your camera and microphone are working.",
-    href: "/portal/schedule",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-  },
-  {
-    id: "n-2",
-    userId: "u-1",
-    type: "message_received",
-    priority: "normal",
-    title: "New message from Dr. Rivera",
-    body: "Your provider has responded to your question about adjusting your evening dose. Check your messages to read the full response.",
-    href: "/portal/messages",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    id: "n-3",
-    userId: "u-1",
-    type: "lab_results",
-    priority: "normal",
-    title: "Lab results are ready",
-    body: "Your blood work results from April 10th are now available. Your care team has reviewed them.",
-    href: "/portal/records",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  },
-  {
-    id: "n-4",
-    userId: "u-1",
-    type: "prescription_ready",
-    priority: "normal",
-    title: "Prescription ready for pickup",
-    body: "Your CBD tincture (30mL, 25mg/mL) is ready at Green Leaf Dispensary. Remember to bring your medical card.",
-    href: "/portal/medications",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: "n-5",
-    userId: "u-1",
-    type: "care_plan_update",
-    priority: "normal",
-    title: "Care plan updated",
-    body: "Dr. Rivera has made adjustments to your treatment plan based on your latest assessment. Review the changes in your care plan.",
-    href: "/portal/care-plan",
-    read: true,
-    readAt: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-  },
-  {
-    id: "n-6",
-    userId: "u-1",
-    type: "assessment_due",
-    priority: "normal",
-    title: "Weekly symptom check-in due",
-    body: "It's time for your weekly symptom assessment. This helps your care team track your progress and adjust your treatment.",
-    href: "/portal/assessments",
-    read: true,
-    readAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-  },
-  {
-    id: "n-7",
-    userId: "u-1",
-    type: "dosing_reminder",
-    priority: "low",
-    title: "Evening dose reminder",
-    body: "Time for your evening CBD dose (10mg sublingual). Remember to hold under your tongue for 60 seconds.",
-    read: true,
-    readAt: new Date(Date.now() - 1000 * 60 * 60 * 36).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-  },
-  {
-    id: "n-8",
-    userId: "u-1",
-    type: "billing_statement",
-    priority: "normal",
-    title: "New billing statement available",
-    body: "Your statement for March 2026 is ready. Your insurance covered $145.00 of the total charges. View the full breakdown.",
-    href: "/portal/billing",
-    read: true,
-    readAt: new Date(Date.now() - 1000 * 60 * 60 * 100).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 120).toISOString(),
-  },
-  {
-    id: "n-9",
-    userId: "u-1",
-    type: "system",
-    priority: "low",
-    title: "Portal maintenance scheduled",
-    body: "The patient portal will be briefly unavailable on Saturday, April 18th from 2:00-4:00 AM for scheduled maintenance.",
-    read: true,
-    readAt: new Date(Date.now() - 1000 * 60 * 60 * 140).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 168).toISOString(),
-  },
-  {
-    id: "n-10",
-    userId: "u-1",
-    type: "agent_approval",
-    priority: "urgent",
-    title: "Nurse Nora needs your input",
-    body: "Nora has a follow-up question about the side effects you reported. Please respond so your provider can review your case.",
-    href: "/portal/messages",
-    read: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-  },
-];
-
 // ── Helpers ────────────────────────────────────────────
 
 function timeAgo(dateStr: string): string {
@@ -182,7 +64,10 @@ const FILTER_TABS: { label: string; value: FilterValue }[] = [
 // ── Main component ────────────────────────────────────
 
 export function NotificationCenter() {
-  const [notifications, setNotifications] = useState<Notification[]>(DEMO_NOTIFICATIONS);
+  // EMR-806: no fabricated demo notifications. There is no real per-patient
+  // notification feed wired yet, so start empty and render the honest
+  // "all caught up" empty state rather than the same demo list for everyone.
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterValue>("all");
   const [preferences, setPreferences] = useState<NotificationPreference[]>(
     getDefaultPreferences()

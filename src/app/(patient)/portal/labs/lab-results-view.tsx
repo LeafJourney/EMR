@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  generateDemoLabPanels,
   STATUS_COLORS,
   type LabPanel,
   type LabResult,
@@ -14,10 +13,9 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils/cn";
 import { LabTooltip } from "@/components/ui/lab-tooltip";
-
-const panels = generateDemoLabPanels();
 
 function panelStatusBadgeTone(status: LabPanel["status"]) {
   if (status === "complete") return "success" as const;
@@ -37,9 +35,9 @@ function formatDate(iso: string): string {
   });
 }
 
-export function LabResultsView() {
+export function LabResultsView({ panels }: { panels: LabPanel[] }) {
   const [expandedPanels, setExpandedPanels] = useState<Set<string>>(
-    new Set([panels[0]?.id])
+    () => new Set(panels[0] ? [panels[0].id] : [])
   );
   const [selectedResult, setSelectedResult] = useState<LabResult | null>(null);
 
@@ -50,6 +48,15 @@ export function LabResultsView() {
       else next.add(id);
       return next;
     });
+  }
+
+  if (panels.length === 0) {
+    return (
+      <EmptyState
+        title="No lab results yet"
+        description="Your lab results will appear here once your care team releases them."
+      />
+    );
   }
 
   return (
@@ -170,8 +177,9 @@ export function LabResultsView() {
                               {result.unit}
                             </td>
                             <td className="px-6 py-3 text-text-subtle tabular-nums">
-                              {result.referenceRange.low} &ndash;{" "}
-                              {result.referenceRange.high}
+                              {result.referenceRange
+                                ? `${result.referenceRange.low} – ${result.referenceRange.high}`
+                                : "—"}
                             </td>
                             <td className="px-6 py-3 text-center">
                               <Badge
