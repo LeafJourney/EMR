@@ -245,8 +245,8 @@ export function pickPrevisitMilestone(
 
 export interface SendPrevisitRemindersInput {
   now: Date;
-  /** Generic portal origin; no PHI/path/query (validated by the renderer). */
-  portalUrl: string;
+  /** Global fallback portal origin from env; null when not configured. */
+  portalUrl: string | null;
 }
 
 export type PrevisitReminderResult =
@@ -256,6 +256,8 @@ export type PrevisitReminderResult =
   | "skipped:already-sent"
   | "skipped:no-channel"
   | "skipped:channel-unconfigured"
+  | "skipped:portal-url-missing"
+  | "skipped:portal-url-invalid"
   | "failed";
 
 export interface PrevisitReminderOutcome {
@@ -284,8 +286,7 @@ export interface SendDueVisitRemindersInput extends SendDueRemindersInput {
 
 export interface SendDueVisitRemindersResult {
   appointment: SendDueRemindersResult;
-  previsit: SendPrevisitRemindersResult | null;
-  previsitSkippedReason?: PrevisitReminderSkippedReason;
+  previsit: SendPrevisitRemindersResult;
 }
 
 export async function sendDuePrevisitCompletionReminders(
@@ -306,6 +307,17 @@ export async function sendDuePrevisitCompletionReminders(
     },
   });
 
+  // Batch-load per-org portal URL overrides to avoid N+1.
+  const orgIds = [...new Set(appointments.map((a) => a.patient.organizationId))];
+  const orgPortalUrlMap = new Map<string, string | null>();
+  if (orgIds.length > 0) {
+    const orgs = await prisma.organization.findMany({
+      where: { id: { in: orgIds } },
+      select: { id: true, previsitPortalUrl: true },
+    });
+    for (const o of orgs) orgPortalUrlMap.set(o.id, o.previsitPortalUrl);
+  }
+
   const details: PrevisitReminderOutcome[] = [];
   let sent = 0;
   let skipped = 0;
@@ -317,6 +329,22 @@ export async function sendDuePrevisitCompletionReminders(
       skipped += 1;
       continue;
     }
+
+    // Resolve per-org portal URL: org override → global env fallback.
+    // An explicitly-set but invalid org URL is quarantined rather than
+    // silently falling back to global (configuration error, not absence).
+    const orgRawUrl = orgPortalUrlMap.get(appt.patient.organizationId) ?? null;
+    const resolvedPortal = normalizePrevisitPortalOrigin(orgRawUrl ?? input.portalUrl);
+    if (!resolvedPortal.ok) {
+      const result =
+        resolvedPortal.reason === "portal-url-missing"
+          ? ("skipped:portal-url-missing" as const)
+          : ("skipped:portal-url-invalid" as const);
+      details.push({ appointmentId: appt.id, milestone, result });
+      skipped += 1;
+      continue;
+    }
+    const resolvedPortalUrl = resolvedPortal.portalUrl;
 
     // Only nudge patients with outstanding required items.
     const readiness = await getAppointmentReadiness(appt.id, now);
@@ -366,7 +394,7 @@ export async function sendDuePrevisitCompletionReminders(
       const send = await sendPrevisitChannel({
         channel,
         milestone,
-        portalUrl: input.portalUrl,
+        portalUrl: resolvedPortalUrl,
         phone,
         email: appt.patient.email,
         userId: appt.patient.userId,
@@ -484,25 +512,14 @@ export async function sendDueVisitReminders(
   input: SendDueVisitRemindersInput,
 ): Promise<SendDueVisitRemindersResult> {
   const appointment = await sendDueAppointmentReminders(input);
-  const portal = normalizePrevisitPortalOrigin(input.portalUrl);
-
-  if (!portal.ok) {
-    return {
-      appointment,
-      previsit: null,
-      previsitSkippedReason: portal.reason,
-    };
-  }
-
   const previsit = await sendDuePrevisitCompletionReminders({
     now: input.now,
-    portalUrl: portal.portalUrl,
+    portalUrl: input.portalUrl ?? null,
   });
-
   return { appointment, previsit };
 }
 
-function normalizePrevisitPortalOrigin(
+export function normalizePrevisitPortalOrigin(
   portalUrl: string | null | undefined,
 ):
   | { ok: true; portalUrl: string }

@@ -121,22 +121,21 @@ async function main() {
     cfoEnqueued += orgs.length;
   }
 
-  // 6. Visit SMS reminders. Appointment reminders always run; pre-visit
-  //    completion nudges only run when a bare HTTPS portal origin is configured.
+  // 6. Visit SMS reminders. Appointment and pre-visit completion nudges always
+  //    run; per-org URL overrides are resolved inside sendDueVisitReminders with
+  //    the global env value as a fallback. Appointments whose orgs have no valid
+  //    portal URL are quarantined per-appointment in previsit.details.
   const reminderResult = await sendDueVisitReminders({
     now,
     portalUrl: resolvePrevisitPortalUrl(process.env),
   });
-  const previsitSent = reminderResult.previsit?.sent ?? 0;
-  const previsitSkipped = reminderResult.previsit?.skipped ?? 0;
-  const previsitQuarantine = reminderResult.previsitSkippedReason
-    ? ` quarantine=${reminderResult.previsitSkippedReason}`
-    : "";
+  const previsitSent = reminderResult.previsit.sent;
+  const previsitSkipped = reminderResult.previsit.skipped;
 
   console.log(
     `[scheduler] enqueued outcome=${patients.length} stalled=${stalled.length} adherence=${adherenceEnqueued} cfo=${cfoEnqueued} ` +
       `sms=${reminderResult.appointment.sent} (skipped=${reminderResult.appointment.skipped}) ` +
-      `previsit=${previsitSent} (skipped=${previsitSkipped}${previsitQuarantine})`,
+      `previsit=${previsitSent} (skipped=${previsitSkipped})`,
   );
 
   // 6. Clearinghouse functional/payer acknowledgment polling
