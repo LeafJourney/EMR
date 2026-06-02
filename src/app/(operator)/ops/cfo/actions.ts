@@ -83,6 +83,20 @@ const expenseSchema = z.object({
   notes: z.string().optional(),
 });
 
+// A client-supplied bankAccountId must belong to the caller's org before it
+// can drive a balance mutation — otherwise an operator could move money in
+// another organization's account by passing its raw id (EMR-805).
+async function bankAccountBelongsToOrg(
+  bankAccountId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const acct = await prisma.bankAccount.findFirst({
+    where: { id: bankAccountId, organizationId },
+    select: { id: true },
+  });
+  return acct !== null;
+}
+
 export async function createExpenseAction(formData: FormData): Promise<ActionResult> {
   const user = await requireUser();
   if (!user.organizationId) return { ok: false, error: "Organization required." };
@@ -102,6 +116,13 @@ export async function createExpenseAction(formData: FormData): Promise<ActionRes
 
   const parsed = expenseSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid expense." };
+
+  if (
+    parsed.data.bankAccountId &&
+    !(await bankAccountBelongsToOrg(parsed.data.bankAccountId, user.organizationId))
+  ) {
+    return { ok: false, error: "Bank account not found." };
+  }
 
   const totalCents = parsed.data.amountCents + (parsed.data.taxCents ?? 0);
   const created = await prisma.expense.create({
@@ -243,6 +264,13 @@ export async function recordCashEntryAction(formData: FormData): Promise<ActionR
   const occurredOn = String(formData.get("occurredOn") || new Date().toISOString().slice(0, 10));
 
   if (!direction || !activity || !amountCents || !description) return { ok: false, error: "Missing required fields." };
+
+  if (
+    bankAccountId &&
+    !(await bankAccountBelongsToOrg(bankAccountId, user.organizationId))
+  ) {
+    return { ok: false, error: "Bank account not found." };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.cashFlowEntry.create({
