@@ -582,126 +582,128 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       {/* ── Dossier header ────────────────────────────────── */}
       <Card tone="ambient" className="mb-8 !overflow-visible">
         <CardContent className="pt-8 pb-8">
-          <div className="flex flex-wrap items-start gap-6">
-            <PatientAvatar
-              patientId={patient.id}
-              firstName={patient.firstName}
-              lastName={patient.lastName}
-              initialPhotoUrl={intake.photoUrl ?? null}
-            />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 mb-2">
-                <Eyebrow>Patient chart</Eyebrow>
-                <ChartingTimer
-                  startedAtIso={activeEncounter?.startedAt?.toISOString() ?? null}
-                  benchmarkSeconds={benchmarkSeconds}
-                />
-              </div>
-              <h1 className="font-display text-3xl text-text tracking-tight leading-tight flex items-center gap-2 flex-wrap">
-                <span>
-                  {patient.firstName} {patient.lastName}
-                  {age !== null ? (
-                    <span className="text-text-muted font-normal text-2xl">
-                      {" "}({age}, {sex === "Female" ? "F" : sex === "Male" ? "M" : sex})
-                    </span>
-                  ) : null}
-                </span>
-                {/* EMR-780: birthday indicator — renders 🎂 only when
-                    today matches the patient's DOB. Auto-clears at 00:01
-                    local the following day. */}
-                <BirthdayBadge dateOfBirth={patient.dateOfBirth} />
-              </h1>
-              <p
-                className="text-[15px] text-text-muted mt-1.5 leading-relaxed max-w-xl"
-                style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-              >
-                {chartSummaryText}
-              </p>
-              <div className="flex flex-col gap-1 mt-3">
-                <div className="flex items-center gap-2">
-                  <Badge tone="neutral">{patient.status}</Badge>
-                  {patient.qualificationStatus !== "unknown" && (
-                    <Badge
-                      tone={
-                        patient.qualificationStatus === "qualified"
-                          ? "success"
-                          : patient.qualificationStatus === "pending"
-                            ? "warning"
-                            : patient.qualificationStatus === "ineligible"
-                              ? "danger"
-                              : "info"
-                      }
-                    >
-                      {patient.qualificationStatus}
-                    </Badge>
-                  )}
-                </div>
-                <HeaderContact
-                  patientId={patient.id}
-                  patientName={`${patient.firstName} ${patient.lastName}`}
-                  dateOfBirth={patient.dateOfBirth}
-                  email={patient.email}
-                  phone={patient.phone}
-                />
-              </div>
-
-              {/* Chart readiness bar */}
-              <div className="mt-4 max-w-xs">
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-text-subtle">Chart readiness</span>
-                  <Badge tone="accent">{completenessScore}%</Badge>
-                </div>
-                <div className="h-2 bg-surface-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-accent to-accent-strong rounded-full transition-all duration-500"
-                    style={{ width: `${completenessScore}%` }}
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="flex items-start gap-6 flex-1 min-w-[320px]">
+              <PatientAvatar
+                patientId={patient.id}
+                firstName={patient.firstName}
+                lastName={patient.lastName}
+                initialPhotoUrl={intake.photoUrl ?? null}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-2">
+                  <Eyebrow>Patient chart</Eyebrow>
+                  <ChartingTimer
+                    startedAtIso={activeEncounter?.startedAt?.toISOString() ?? null}
+                    benchmarkSeconds={benchmarkSeconds}
                   />
                 </div>
-              </div>
-
-              {/* Patient tags & Allergy trigger */}
-              <div className="mt-4 flex items-center gap-2 flex-wrap">
-                <TagManager patientId={params.id} />
-                <AllergyManager patientId={params.id} initialAllergies={patient.allergies} />
-              </div>
-
-              {/* Allergies list prefixed with "Allergies:" */}
-              <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
-                    Allergies:
+                <h1 className="font-display text-3xl text-text tracking-tight leading-tight flex items-center gap-2 flex-wrap">
+                  <span>
+                    {patient.firstName} {patient.lastName}
+                    {age !== null ? (
+                      <span className="text-text-muted font-normal text-2xl">
+                        {" "}({age}, {sex === "Female" ? "F" : sex === "Male" ? "M" : sex})
+                      </span>
+                    ) : null}
                   </span>
-                  {patient.allergies?.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {patient.allergies.map((a: string) => (
-                        <AllergyBadge key={a} patientId={patient.id} allergyStr={a} />
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-text-muted italic">None documented</span>
-                  )}
+                  {/* EMR-780: birthday indicator — renders 🎂 only when
+                      today matches the patient's DOB. Auto-clears at 00:01
+                      local the following day. */}
+                  <BirthdayBadge dateOfBirth={patient.dateOfBirth} />
+                </h1>
+                <p
+                  className="text-[15px] text-text-muted mt-1.5 leading-relaxed max-w-xl"
+                  style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                >
+                  {chartSummaryText}
+                </p>
+                <div className="flex flex-col gap-1 mt-3">
+                  <div className="flex items-center gap-2">
+                    <Badge tone="neutral">{patient.status}</Badge>
+                    {patient.qualificationStatus !== "unknown" && (
+                      <Badge
+                        tone={
+                          patient.qualificationStatus === "qualified"
+                            ? "success"
+                            : patient.qualificationStatus === "pending"
+                              ? "warning"
+                              : patient.qualificationStatus === "ineligible"
+                                ? "danger"
+                                : "info"
+                        }
+                      >
+                        {patient.qualificationStatus}
+                      </Badge>
+                    )}
+                  </div>
+                  <HeaderContact
+                    patientId={patient.id}
+                    patientName={`${patient.firstName} ${patient.lastName}`}
+                    dateOfBirth={patient.dateOfBirth}
+                    email={patient.email}
+                    phone={patient.phone}
+                  />
                 </div>
 
-                {patient.contraindications?.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap mt-1">
-                    <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
-                      Contraindications:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {patient.contraindications.map((c: string) => (
-                        <Badge key={c} tone="warning" className="text-[10px]">
-                          ⊘ {c}
-                        </Badge>
-                      ))}
-                    </div>
+                {/* Chart readiness bar */}
+                <div className="mt-4 max-w-xs">
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-text-subtle">Chart readiness</span>
+                    <Badge tone="accent">{completenessScore}%</Badge>
                   </div>
-                )}
+                  <div className="h-2 bg-surface-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-accent to-accent-strong rounded-full transition-all duration-500"
+                      style={{ width: `${completenessScore}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Patient tags & Allergy trigger */}
+                <div className="mt-4 flex items-center gap-2 flex-wrap">
+                  <TagManager patientId={params.id} />
+                  <AllergyManager patientId={params.id} initialAllergies={patient.allergies} />
+                </div>
+
+                {/* Allergies list prefixed with "Allergies:" */}
+                <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
+                      Allergies:
+                    </span>
+                    {patient.allergies?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {patient.allergies.map((a: string) => (
+                          <AllergyBadge key={a} patientId={patient.id} allergyStr={a} />
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-text-muted italic">None documented</span>
+                    )}
+                  </div>
+
+                  {patient.contraindications?.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap mt-1">
+                      <span className="text-xs font-semibold text-text-subtle uppercase tracking-wider">
+                        Contraindications:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {patient.contraindications.map((c: string) => (
+                          <Badge key={c} tone="warning" className="text-[10px]">
+                            ⊘ {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
 
             {/* Quick actions */}
-            <div className="flex items-center gap-2 shrink-0 pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <MessagePatientDock
                 patientId={patient.id}
                 patientName={`${patient.firstName} ${patient.lastName}`}

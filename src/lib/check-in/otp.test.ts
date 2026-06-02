@@ -14,6 +14,7 @@ const NOW = new Date("2026-06-01T12:00:00.000Z");
 function record(overrides: Partial<OtpRecordState> = {}): OtpRecordState {
   return {
     codeHash: hashOtp("123456"),
+    salt: null,
     expiresAt: new Date(NOW.getTime() + 5 * 60 * 1000), // 5 min out
     attempts: 0,
     maxAttempts: 5,

@@ -13,6 +13,7 @@ const hoisted = vi.hoisted(() => {
     smsOtpCode: {
       findFirst: vi.fn(),
       updateMany: vi.fn(),
+      aggregate: vi.fn(),
     },
     auditLog: { create: vi.fn() },
   };
@@ -54,6 +55,7 @@ const baseOpts = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.auditLog.create.mockResolvedValue({});
+  mockPrisma.smsOtpCode.aggregate.mockResolvedValue({ _sum: { attempts: 0 } });
 });
 
 describe("verifyOtpCode — atomic attempt accounting", () => {
@@ -121,8 +123,18 @@ describe("verifyOtpCode — atomic attempt accounting", () => {
     );
 
     const res = await verifyOtpCode({ ...baseOpts, attemptCode: "123456", now: NOW });
-
+ 
     expect(res).toEqual({ ok: false, reason: "expired" });
+    expect(mockPrisma.smsOtpCode.updateMany).not.toHaveBeenCalled();
+  });
+ 
+  it("locks out when cross-code aggregate failed attempts exceed limit", async () => {
+    mockPrisma.smsOtpCode.aggregate.mockResolvedValueOnce({ _sum: { attempts: 10 } });
+ 
+    const res = await verifyOtpCode({ ...baseOpts, attemptCode: "123456", now: NOW });
+ 
+    expect(res).toEqual({ ok: false, reason: "locked_out" });
+    expect(mockPrisma.smsOtpCode.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.smsOtpCode.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -4999,7 +4999,8 @@ model SmsOtpCode {
   id          String    @id @default(cuid())
   patientId   String
   purpose     String // e.g. "kiosk_lobby_handoff"
-  codeHash    String // SHA-256 of the numeric code
+  codeHash    String // SHA-256 of (salt + code)
+  salt        String? // per-code random salt (null = legacy unsalted row)
   expiresAt   DateTime
   attempts    Int       @default(0)
   maxAttempts Int       @default(5)
