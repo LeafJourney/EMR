@@ -3,12 +3,10 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
 import { StatCard } from "@/components/ui/stat-card";
-import { formatDate } from "@/lib/utils/format";
+import { BillingTable, type SerializedClaim } from "./billing-table";
 
 export const metadata = { title: "Billing Workqueue" };
 
@@ -69,6 +67,14 @@ export default async function BillingPage({
         provider: {
           include: { user: { select: { firstName: true, lastName: true } } },
         },
+        // EMR-973 — relations for the denial audit/history trail.
+        denialEvents: { orderBy: { createdAt: "asc" } },
+        appealPackets: {
+          orderBy: { createdAt: "asc" },
+          include: { outcome: { select: { result: true } } },
+        },
+        submissions: { orderBy: { submittedAt: "asc" } },
+        adjudications: { orderBy: { eraDate: "asc" } },
       },
       orderBy: { serviceDate: "desc" },
       take: 50,
@@ -103,6 +109,74 @@ export default async function BillingPage({
   const pendingRevenueCents = statusCounts
     .filter((s) => s.status === "accepted" || s.status === "adjudicated" || s.status === "submitted")
     .reduce((acc, s) => acc + (s._sum.billedAmountCents ?? 0), 0);
+
+  // Serialize to plain rows for the client table — Dates → ISO strings,
+  // cents are already Ints. Never pass Prisma Date/Decimal objects across
+  // the server/client boundary.
+  const serializedClaims: SerializedClaim[] = claims.map((claim) => ({
+    id: claim.id,
+    status: claim.status,
+    patient: {
+      id: claim.patient.id,
+      firstName: claim.patient.firstName,
+      lastName: claim.patient.lastName,
+    },
+    serviceDate: claim.serviceDate.toISOString(),
+    cptCodes: (claim.cptCodes as Array<{ code: string; label?: string }>) ?? [],
+    icd10Codes: (claim.icd10Codes as Array<{ code: string }>) ?? [],
+    payerName: claim.payerName,
+    billedAmountCents: claim.billedAmountCents,
+    paidAmountCents: claim.paidAmountCents,
+    allowedAmountCents: claim.allowedAmountCents,
+    patientRespCents: claim.patientRespCents,
+    denialReason: claim.denialReason,
+    deniedAt: claim.deniedAt ? claim.deniedAt.toISOString() : null,
+    denialEvents: claim.denialEvents.map((d) => ({
+      id: d.id,
+      carcCode: d.carcCode,
+      rarcCode: d.rarcCode,
+      groupCode: d.groupCode,
+      denialCategory: d.denialCategory,
+      amountDeniedCents: d.amountDeniedCents,
+      recoverable: d.recoverable,
+      recoverableAmountCents: d.recoverableAmountCents,
+      resolution: d.resolution,
+      resolvedAt: d.resolvedAt ? d.resolvedAt.toISOString() : null,
+      createdAt: d.createdAt.toISOString(),
+    })),
+    appealPackets: claim.appealPackets.map((p) => ({
+      id: p.id,
+      appealLevel: p.appealLevel,
+      status: p.status,
+      submittedAt: p.submittedAt ? p.submittedAt.toISOString() : null,
+      submittedTo: p.submittedTo,
+      outcomeReceivedAt: p.outcomeReceivedAt ? p.outcomeReceivedAt.toISOString() : null,
+      reviewedBy: p.reviewedBy,
+      createdAt: p.createdAt.toISOString(),
+      outcomeDecision: p.outcome ? p.outcome.result : null,
+    })),
+    submissions: claim.submissions.map((s) => ({
+      id: s.id,
+      clearinghouseName: s.clearinghouseName,
+      responseStatus: s.responseStatus,
+      responseCode: s.responseCode,
+      responseMessage: s.responseMessage,
+      submittedAt: s.submittedAt.toISOString(),
+      respondedAt: s.respondedAt ? s.respondedAt.toISOString() : null,
+      retryCount: s.retryCount,
+    })),
+    adjudications: claim.adjudications.map((a) => ({
+      id: a.id,
+      claimStatus: a.claimStatus,
+      checkNumber: a.checkNumber,
+      totalPaidCents: a.totalPaidCents,
+      totalAllowedCents: a.totalAllowedCents,
+      totalAdjustedCents: a.totalAdjustedCents,
+      totalPatientRespCents: a.totalPatientRespCents,
+      eraDate: a.eraDate.toISOString(),
+      parsedAt: a.parsedAt.toISOString(),
+    })),
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -174,99 +248,7 @@ export default async function BillingPage({
       ) : (
         <Card tone="raised">
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Patient</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Date</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Codes</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Payer</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider text-right">Billed</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider text-right">Paid</th>
-                    <th className="py-3 px-5 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {claims.map((claim) => {
-                    const cptCodes = claim.cptCodes as Array<{ code: string; label: string }>;
-                    const icd10Codes = claim.icd10Codes as Array<{ code: string }>;
-                    return (
-                      <tr
-                        key={claim.id}
-                        className="hover:bg-surface-muted/40 transition-colors"
-                      >
-                        <td className="py-3 px-5">
-                          <Link
-                            href={`/clinic/patients/${claim.patient.id}`}
-                            className="flex items-center gap-2 group"
-                          >
-                            <Avatar
-                              firstName={claim.patient.firstName}
-                              lastName={claim.patient.lastName}
-                              size="sm"
-                            />
-                            <span className="font-medium text-text group-hover:text-accent transition-colors">
-                              {claim.patient.firstName} {claim.patient.lastName}
-                            </span>
-                          </Link>
-                        </td>
-                        <td className="py-3 px-5 text-text-muted tabular-nums">
-                          {formatDate(claim.serviceDate)}
-                        </td>
-                        <td className="py-3 px-5">
-                          <div className="flex flex-wrap gap-1">
-                            {cptCodes.slice(0, 2).map((c) => (
-                              <span
-                                key={c.code}
-                                className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-accent/10 text-accent"
-                              >
-                                {c.code}
-                              </span>
-                            ))}
-                            {icd10Codes.slice(0, 2).map((c) => (
-                              <span
-                                key={c.code}
-                                className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-highlight/10 text-[color:var(--highlight)]"
-                              >
-                                {c.code}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3 px-5 text-text-muted text-xs">
-                          {claim.payerName ?? "—"}
-                        </td>
-                        <td className="py-3 px-5 text-right font-medium text-text tabular-nums">
-                          {formatMoney(claim.billedAmountCents)}
-                        </td>
-                        <td className="py-3 px-5 text-right tabular-nums">
-                          <span
-                            className={
-                              claim.paidAmountCents === 0
-                                ? "text-text-subtle"
-                                : "text-success"
-                            }
-                          >
-                            {formatMoney(claim.paidAmountCents)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-5">
-                          <Badge tone={STATUS_TONE[claim.status]}>
-                            {STATUS_LABEL[claim.status]}
-                          </Badge>
-                          {claim.status === "denied" && claim.denialReason && (
-                            <p className="text-[10px] text-danger mt-1 max-w-[200px]">
-                              {claim.denialReason}
-                            </p>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <BillingTable claims={serializedClaims} />
           </CardContent>
         </Card>
       )}
