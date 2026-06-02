@@ -23,8 +23,7 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { StatCard } from "@/components/ui/stat-card";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Input } from "@/components/ui/input";
-import { formatDate } from "@/lib/utils/format";
-import { formatMoney } from "@/lib/domain/billing";
+import { formatDate, formatMoney } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import type { ScrubIssue, ScrubSeverity } from "@/lib/billing/scrub";
 
