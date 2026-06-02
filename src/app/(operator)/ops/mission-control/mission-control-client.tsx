@@ -1,11 +1,15 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { JobActions } from "./job-actions";
 import { JobDetail } from "./job-detail";
+import { approveAllJobsAction, rejectAllJobsAction } from "./actions";
 import { formatRelative } from "@/lib/utils/format";
 
 type BadgeTone = "neutral" | "accent" | "success" | "warning" | "danger" | "info" | "highlight";
@@ -79,6 +83,39 @@ export function MissionControlClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const confirm = useConfirm();
+  const [bulkPending, startBulkTransition] = useTransition();
+
+  // Jobs shown on the approval tab are exactly the org-scoped needs_approval
+  // set the bulk actions operate on; use that count for confirm copy + labels.
+  const queueCount = jobs.length;
+  const bulkDisabled = bulkPending || queueCount === 0;
+
+  function runBulk(decision: "approve" | "reject") {
+    void (async () => {
+      const ok = await confirm({
+        title:
+          decision === "approve"
+            ? `Approve all ${queueCount} jobs in the queue?`
+            : `Reject all ${queueCount} jobs in the queue?`,
+        description:
+          decision === "approve"
+            ? "Every job currently awaiting approval will be approved. This can't be undone."
+            : "Every job currently awaiting approval will be rejected and cancelled. This can't be undone.",
+        severity: decision === "approve" ? "warning" : "danger",
+        confirmLabel: decision === "approve" ? "Approve all" : "Reject all",
+      });
+      if (!ok) return;
+      startBulkTransition(async () => {
+        if (decision === "approve") {
+          await approveAllJobsAction();
+        } else {
+          await rejectAllJobsAction();
+        }
+        router.refresh();
+      });
+    })();
+  }
 
   function setTab(tab: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -138,14 +175,37 @@ export function MissionControlClient({
         {/* ---- Job table ---- */}
         <Card className={selectedJob ? "lg:col-span-2" : "lg:col-span-3"}>
           <CardHeader>
-            <CardTitle>
-              {activeTab === "approval" ? "Approval queue" : "Jobs"}
-            </CardTitle>
-            <CardDescription>
-              {activeTab === "approval"
-                ? "Jobs awaiting human approval before proceeding."
-                : "Latest 50 jobs across all workflows."}
-            </CardDescription>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <CardTitle>
+                  {activeTab === "approval" ? "Approval queue" : "Jobs"}
+                </CardTitle>
+                <CardDescription>
+                  {activeTab === "approval"
+                    ? "Jobs awaiting human approval before proceeding."
+                    : "Latest 50 jobs across all workflows."}
+                </CardDescription>
+              </div>
+              {activeTab === "approval" && (
+                <div className="inline-flex flex-shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={bulkDisabled}
+                    onClick={() => runBulk("reject")}
+                  >
+                    Reject all{queueCount > 0 ? ` (${queueCount})` : ""}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={bulkDisabled}
+                    onClick={() => runBulk("approve")}
+                  >
+                    Approve all{queueCount > 0 ? ` (${queueCount})` : ""}
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {jobs.length === 0 ? (

@@ -10,7 +10,6 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, EditorialRule } from "@/components/ui/ornament";
 import { formatDate, formatRelative } from "@/lib/utils/format";
@@ -20,6 +19,7 @@ import {
   NEXT_ACTION_LABEL,
   type DenialCategory,
 } from "@/lib/billing/denials";
+import { DenialCard, type TimelineEntry } from "./denials-client";
 
 export const metadata = { title: "Denials Command Center" };
 
@@ -52,15 +52,63 @@ export default async function DenialsPage({
       provider: {
         include: { user: { select: { firstName: true, lastName: true } } },
       },
+      // EMR-985 — relations powering the per-claim audit timeline.
+      denialEvents: {
+        select: {
+          id: true,
+          resolution: true,
+          resolvedAt: true,
+          createdAt: true,
+          carcCode: true,
+        },
+      },
+      appealPackets: {
+        select: {
+          id: true,
+          appealLevel: true,
+          status: true,
+          submittedAt: true,
+          outcomeReceivedAt: true,
+          createdAt: true,
+        },
+      },
+      appealOutcomes: {
+        select: {
+          id: true,
+          result: true,
+          decisionDate: true,
+          recoveredCents: true,
+          createdAt: true,
+        },
+      },
+      adjustments: {
+        select: {
+          id: true,
+          type: true,
+          amountCents: true,
+          postedAt: true,
+          createdAt: true,
+        },
+      },
+      submissions: {
+        select: {
+          id: true,
+          clearinghouseName: true,
+          submittedAt: true,
+          responseStatus: true,
+          isSecondary: true,
+        },
+      },
     },
     orderBy: { deniedAt: "desc" },
     take: 100,
   });
 
-  // Classify each denial
+  // Classify each denial + build a serialized audit timeline per claim.
   const triaged = claims.map((claim) => ({
     claim,
     triage: classifyDenial(claim.denialReason),
+    timeline: buildTimeline(claim),
   }));
 
   // Filter by category if active
@@ -238,101 +286,210 @@ export default async function DenialsPage({
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map(({ claim, triage }) => (
-            <Card
+          {filtered.map(({ claim, triage, timeline }) => (
+            <DenialCard
               key={claim.id}
-              tone="raised"
-              className={
-                triage.urgency === "high"
-                  ? "border-l-4 border-l-danger"
-                  : "border-l-4 border-l-[color:var(--warning)]"
+              urgency={triage.urgency}
+              urgencyTone={URGENCY_TONE[triage.urgency]}
+              patientId={claim.patient.id}
+              patientFirstName={claim.patient.firstName}
+              patientLastName={claim.patient.lastName}
+              serviceDateLabel={formatDate(claim.serviceDate)}
+              payerName={claim.payerName}
+              claimNumber={claim.claimNumber}
+              deniedRelative={
+                claim.deniedAt ? formatRelative(claim.deniedAt) : null
               }
-            >
-              <CardContent className="pt-5 pb-5">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div className="flex items-center gap-3">
-                    <Avatar
-                      firstName={claim.patient.firstName}
-                      lastName={claim.patient.lastName}
-                      size="md"
-                    />
-                    <div>
-                      <Link
-                        href={`/clinic/patients/${claim.patient.id}/billing`}
-                        className="text-sm font-medium text-text hover:text-accent transition-colors"
-                      >
-                        {claim.patient.firstName} {claim.patient.lastName}
-                      </Link>
-                      <p className="text-[11px] text-text-subtle">
-                        {formatDate(claim.serviceDate)} · {claim.payerName} · {claim.claimNumber}
-                      </p>
-                      {claim.deniedAt && (
-                        <p className="text-[11px] text-text-subtle">
-                          Denied {formatRelative(claim.deniedAt)}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-display text-xl text-text tabular-nums">
-                      {formatMoney(claim.billedAmountCents)}
-                    </p>
-                    <Badge
-                      tone={URGENCY_TONE[triage.urgency]}
-                      className="text-[10px] mt-1"
-                    >
-                      {triage.urgency} urgency
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Triage box */}
-                <div className="bg-danger/[0.04] border border-danger/15 rounded-lg p-4 mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge tone="danger" className="text-[9px]">
-                      {triage.label}
-                    </Badge>
-                    <span className="font-mono text-[10px] text-text-subtle">
-                      {triage.category}
-                    </span>
-                  </div>
-                  <p className="text-sm text-text leading-snug mb-2">
-                    {triage.description}
-                  </p>
-                  {claim.denialReason && (
-                    <p className="text-xs text-text-muted italic">
-                      Payer message: &ldquo;{claim.denialReason}&rdquo;
-                    </p>
-                  )}
-                </div>
-
-                {/* Suggested action */}
-                <div className="flex items-center justify-between pt-2 border-t border-border/60">
-                  <div className="flex items-center gap-2 text-xs text-text-muted">
-                    <span>Suggested action:</span>
-                    <Badge tone="accent">
-                      {NEXT_ACTION_LABEL[triage.suggestedAction]}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/clinic/patients/${claim.patient.id}/billing`}
-                      className="text-xs text-text-muted hover:text-text"
-                    >
-                      Open chart
-                    </Link>
-                    <button className="text-xs font-medium px-3 py-1.5 rounded-md bg-accent text-accent-ink hover:bg-accent/90">
-                      Take action
-                    </button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              billedLabel={formatMoney(claim.billedAmountCents)}
+              triageLabel={triage.label}
+              triageCategory={triage.category}
+              triageDescription={triage.description}
+              denialReason={claim.denialReason}
+              suggestedActionLabel={NEXT_ACTION_LABEL[triage.suggestedAction]}
+              timeline={timeline}
+            />
           ))}
         </div>
       )}
     </PageShell>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Timeline builder (EMR-985)
+// ---------------------------------------------------------------------------
+
+// Shape of the relations we select for the audit timeline. Kept local so the
+// builder is decoupled from the full Prisma payload type.
+type TimelineClaim = {
+  deniedAt: Date | null;
+  closedAt: Date | null;
+  closureType: string | null;
+  denialEvents: {
+    resolution: string;
+    resolvedAt: Date | null;
+    createdAt: Date;
+    carcCode: string;
+  }[];
+  appealPackets: {
+    appealLevel: number;
+    status: string;
+    submittedAt: Date | null;
+    outcomeReceivedAt: Date | null;
+    createdAt: Date;
+  }[];
+  appealOutcomes: {
+    result: string;
+    decisionDate: Date | null;
+    recoveredCents: number;
+    createdAt: Date;
+  }[];
+  adjustments: {
+    type: string;
+    amountCents: number;
+    postedAt: Date | null;
+    createdAt: Date;
+  }[];
+  submissions: {
+    clearinghouseName: string;
+    submittedAt: Date;
+    isSecondary: boolean;
+  }[];
+};
+
+const DENIAL_RESOLUTION_LABEL: Record<string, string> = {
+  pending: "Denial under review",
+  corrected_and_resubmitted: "Corrected and resubmitted",
+  appealed: "Appeal filed",
+  written_off: "Written off",
+  patient_responsibility: "Moved to patient responsibility",
+  overturned: "Denial overturned — resolved",
+  escalated: "Escalated for review",
+};
+
+const APPEAL_OUTCOME_LABEL: Record<string, string> = {
+  pending: "Appeal decision pending",
+  overturned: "Appeal overturned — denial reversed",
+  upheld: "Appeal upheld — denial stands",
+  partial: "Appeal partially overturned",
+  withdrawn: "Appeal withdrawn",
+  no_response: "Appeal — no payer response",
+};
+
+const ADJUSTMENT_TYPE_LABEL: Record<string, string> = {
+  contractual: "Contractual adjustment posted",
+  write_off: "Write-off posted",
+  refund: "Refund posted",
+  takeback: "Payer takeback posted",
+  courtesy: "Courtesy adjustment posted",
+};
+
+// Build the per-claim audit trail: the denial anchor plus every dated step
+// across submissions, appeals, outcomes, adjustments and denial-event
+// resolutions, merged and sorted chronologically. All dates are serialized to
+// ISO strings so the result is safe to pass to a client component.
+function buildTimeline(claim: TimelineClaim): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+
+  // Anchor: the denial itself. Always present even if deniedAt is null so the
+  // timeline never renders empty.
+  entries.push({
+    label: "Denied",
+    date: claim.deniedAt ? claim.deniedAt.toISOString() : null,
+    kind: "denied",
+  });
+
+  // Resubmissions to the clearinghouse.
+  for (const s of claim.submissions) {
+    entries.push({
+      label: s.isSecondary
+        ? `Secondary claim submitted to ${s.clearinghouseName}`
+        : `Resubmitted to ${s.clearinghouseName}`,
+      date: s.submittedAt.toISOString(),
+      kind: "submission",
+    });
+  }
+
+  // Appeal packets — sent + corrections received.
+  for (const a of claim.appealPackets) {
+    if (a.submittedAt) {
+      entries.push({
+        label: `Appeal sent (level ${a.appealLevel})`,
+        date: a.submittedAt.toISOString(),
+        kind: "appeal",
+      });
+    }
+    if (a.outcomeReceivedAt) {
+      entries.push({
+        label: "Corrections from insurer received",
+        date: a.outcomeReceivedAt.toISOString(),
+        kind: "insurer",
+      });
+    }
+  }
+
+  // Appeal outcomes (decision dates).
+  for (const o of claim.appealOutcomes) {
+    const when = o.decisionDate ?? null;
+    if (when) {
+      entries.push({
+        label: APPEAL_OUTCOME_LABEL[o.result] ?? `Appeal ${o.result}`,
+        date: when.toISOString(),
+        kind: o.result === "overturned" || o.result === "partial"
+          ? "resolved"
+          : "outcome",
+      });
+    }
+  }
+
+  // Adjustments posted to the ledger.
+  for (const adj of claim.adjustments) {
+    const when = adj.postedAt ?? null;
+    if (when) {
+      entries.push({
+        label: ADJUSTMENT_TYPE_LABEL[adj.type] ?? "Adjustment posted",
+        date: when.toISOString(),
+        kind: "adjustment",
+      });
+    }
+  }
+
+  // Denial-event resolutions — terminal/status changes on the denial.
+  for (const e of claim.denialEvents) {
+    if (e.resolution !== "pending" && e.resolvedAt) {
+      const isTerminal =
+        e.resolution === "overturned" ||
+        e.resolution === "written_off" ||
+        e.resolution === "patient_responsibility";
+      entries.push({
+        label:
+          DENIAL_RESOLUTION_LABEL[e.resolution] ??
+          `Resolved — ${e.resolution.replace(/_/g, " ")}`,
+        date: e.resolvedAt.toISOString(),
+        kind: isTerminal ? "resolved" : "revision",
+      });
+    }
+  }
+
+  // Claim closure as a final terminal marker if recorded.
+  if (claim.closedAt) {
+    const closure = (claim.closureType ?? "").replace(/_/g, " ");
+    entries.push({
+      label: closure ? `Claim closed — ${closure}` : "Claim closed",
+      date: claim.closedAt.toISOString(),
+      kind: "resolved",
+    });
+  }
+
+  // Sort chronologically. The denial anchor (or any null-dated entry) sorts to
+  // the front; everything else by ascending timestamp.
+  entries.sort((a, b) => {
+    if (a.date === null) return -1;
+    if (b.date === null) return 1;
+    return a.date.localeCompare(b.date);
+  });
+
+  return entries;
 }
 
 // ---------------------------------------------------------------------------
