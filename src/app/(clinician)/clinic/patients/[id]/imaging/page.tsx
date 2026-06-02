@@ -22,7 +22,6 @@ import {
   listStudies,
 } from "@/lib/domain/medical-imaging-store";
 import {
-  DEMO_PATIENT_ID,
   type ImagingAnnotation,
   type RadiologyReport,
 } from "@/lib/domain/medical-imaging";
@@ -52,13 +51,12 @@ export default async function PatientImagingChartPage({ params }: PageProps) {
 
   if (!patient) notFound();
 
-  // The imaging store is process-local and seeded against DEMO_PATIENT_ID.
-  // We look up the patient's real studies first; if there are none we fall
-  // back to the demo so the workspace never renders empty during the
-  // pilot. This branch is the seam where a real PACS adapter slots in.
-  const realStudies = listStudies(patient.id);
-  const studies =
-    realStudies.length > 0 ? realStudies : listStudies(DEMO_PATIENT_ID);
+  // Scope strictly to this patient's studies (EMR-806). Previously this fell
+  // back to the DEMO_PATIENT_ID seed when a patient had none, which rendered
+  // demo CT/MR studies attributed to a real patient — fabricated clinical
+  // data in a doctor-live route. An empty list now renders an honest empty
+  // workspace. This is the seam where a real PACS adapter slots in.
+  const studies = listStudies(patient.id);
 
   const annotationsByStudy: Record<string, ImagingAnnotation[]> =
     Object.fromEntries(studies.map((s) => [s.id, listAnnotations(s.id)]));

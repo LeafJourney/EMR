@@ -1,8 +1,9 @@
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/session";
+import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { PatientSectionNav } from "@/components/shell/PatientSectionNav";
 import {
-  DEMO_PATIENT_ID,
   type ImagingStudy,
   type RadiologyReport,
 } from "@/lib/domain/medical-imaging";
@@ -10,10 +11,8 @@ import {
   getReportForStudy,
   listStudies,
 } from "@/lib/domain/medical-imaging-store";
-import {
-  generateDemoLabPanels,
-  type LabPanel,
-} from "@/lib/domain/lab-results";
+import { type LabPanel } from "@/lib/domain/lab-results";
+import { getPatientLabPanels } from "@/lib/domain/lab-results-loader";
 import { ResultsView } from "./results-view";
 
 export const metadata = { title: "My Results" };
@@ -39,10 +38,19 @@ export const metadata = { title: "My Results" };
 // hand back, so we keep the boundary stable.
 
 export default async function ResultsPage() {
-  await requireRole("patient");
+  const user = await requireRole("patient");
 
-  const labPanels: LabPanel[] = generateDemoLabPanels();
-  const studies: ImagingStudy[] = listStudies(DEMO_PATIENT_ID);
+  // Scope labs and imaging to the signed-in patient (EMR-806). Both feeds
+  // were previously shared demo fixtures (generateDemoLabPanels +
+  // DEMO_PATIENT_ID), shown identically to every patient.
+  const patient = await prisma.patient.findFirst({
+    where: { userId: user.id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!patient) redirect("/portal/intake");
+
+  const labPanels: LabPanel[] = await getPatientLabPanels(patient.id);
+  const studies: ImagingStudy[] = listStudies(patient.id);
   // Imaging reports keyed by study; null when nothing has been released
   // to the patient yet (preliminary reads stay provider-side).
   const reports: Record<string, RadiologyReport | null> = Object.fromEntries(

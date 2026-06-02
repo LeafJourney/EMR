@@ -11,7 +11,9 @@
  * provider.
  */
 
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth/session";
+import { prisma } from "@/lib/db/prisma";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import {
   getReportForStudy,
@@ -19,7 +21,6 @@ import {
   listStudies,
 } from "@/lib/domain/medical-imaging-store";
 import {
-  DEMO_PATIENT_ID,
   type ImagingAnnotation,
   type RadiologyReport,
 } from "@/lib/domain/medical-imaging";
@@ -28,12 +29,19 @@ import { PatientImagingGallery } from "@/components/imaging/patient-imaging-gall
 export const metadata = { title: "My Imaging" };
 
 export default async function PatientImagingPage() {
-  await requireRole("patient");
+  const user = await requireRole("patient");
 
-  // The demo store is keyed off DEMO_PATIENT_ID so every authenticated
-  // patient sees the same seeded studies. When this rolls into production
-  // the store swap-in will scope by `user.patientId`.
-  const studies = listStudies(DEMO_PATIENT_ID);
+  // Scope to the signed-in patient only (EMR-806). Previously this read the
+  // shared demo store via DEMO_PATIENT_ID, so every patient saw the same
+  // seeded studies — a cross-patient PHI bleed. A patient with no imaging now
+  // gets an honest empty state from the gallery.
+  const patient = await prisma.patient.findFirst({
+    where: { userId: user.id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!patient) redirect("/portal/intake");
+
+  const studies = listStudies(patient.id);
 
   const annotationsByStudy: Record<string, ImagingAnnotation[]> =
     Object.fromEntries(
