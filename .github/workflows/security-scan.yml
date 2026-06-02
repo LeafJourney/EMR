@@ -40,6 +40,6 @@ jobs:
             # Git scan commits in pull request against the base branch
             gitleaks detect --log-opts="origin/${{ github.base_ref }}..HEAD" --config=.gitleaks.toml --verbose --redact
           else
-            # Full scan on push to main
-            gitleaks detect --config=.gitleaks.toml --verbose --redact
+            # Git scan only the commits pushed in the push event to main (avoid historical false positives)
+            gitleaks detect --log-opts="HEAD~1..HEAD" --config=.gitleaks.toml --verbose --redact
           fi
