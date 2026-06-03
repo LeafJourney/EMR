@@ -124,5 +124,41 @@ health, data quality, AI, simulation, and revenue, all over a real FHIR spine."*
   into the rest of the EMR).
 - Data contract: `src/lib/leafnerd/types.ts`. Pure client-safe demo data:
   `analytics.ts` (`DEMO_DATA`). Server DB overlay: `server-data.ts` (`getLeafnerdData`).
-- Server entry: `src/app/leafnerd/page.tsx` fetches data + real cohort/claims and mounts
-  `<LeafnerdApp/>`.
+- Server entry: `src/app/leafnerd/page.tsx` fetches data + real cohort/claims/clinical and
+  mounts `<LeafnerdApp/>`.
+
+---
+
+## Logins for Thursday
+
+**Login path:** `/sign-in` (e.g. `http://localhost:<PORT>/sign-in`). Clerk (dev instance),
+email + password.
+
+**Dedicated demo identity (created + Clerk-synced):**
+- Email: `lena.reyes@leafjourney.com`   Password: `Longbeach2026!`
+- Name: Dr. Lena Reyes · role `leafnerd` (lands on `/leafnerd`, matches the rail footer)
+- Re-create / repair anytime (idempotent): `npx tsx --conditions=react-server -r dotenv/config scripts/leafnerd-demo-login.ts`
+
+**Two ways to be logged in:**
+1. **Real form (works on dev OR a `next start` prod server):** go to `/sign-in`, enter the
+   credentials above, then navigate to `/leafnerd`.
+2. **Dev quick-login (one click, no password — DEV server only):**
+   `http://localhost:<PORT>/api/dev/login?email=lena.reyes@leafjourney.com&redirect=/leafnerd`
+   Returns 403 on a production (`next start`) server — use method 1 there.
+
+**Gotcha:** `/leafnerd` itself is open (no gate) for the demo, so it renders even when
+signed out — but logging in as Dr. Lena makes the rail greet you correctly. The other
+seeded accounts (`owner@demo.health` → `/ops`, `clinician@demo.health` → `/clinic`) all
+use the same `Longbeach2026!` password if you want to show the wider EMR.
+
+## Clinical rail is now LIVE (Phase 2)
+The six Clinical rail surfaces are wired to the real seeded population (~1,200 patients):
+- **Patients** — real roster, risk-scored, sortable, drill-in drawer
+- **Encounters** — real visits w/ modality + status
+- **Observations** — real obs, severity-triaged; detail drawer shows the **LOINC code + value**
+- **Conditions** — real problem list
+- **Medications** — real meds with the **unmapped-RxNorm** data-quality story ("N unmapped")
+- **Labs** — curated fallback (the seed doesn't create lab rows), abnormal-flagged
+Cohort Simulator now reads the full **~1,209 active patients**; Claims Auditor shows the
+real seeded **flagged claims**. All clinical lists fall back to curated rows if the DB is
+unavailable, so they never render empty.

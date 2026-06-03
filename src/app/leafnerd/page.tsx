@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { getLeafnerdData } from "@/lib/leafnerd/server-data";
+import { getLeafnerdClinicalData } from "@/lib/leafnerd/clinical-surfaces";
 import LeafnerdApp from "@/components/leafnerd/fhir-intelligence/LeafnerdApp";
 import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
 
@@ -23,6 +24,10 @@ export default async function LeafNerdDashboard() {
   // The analytics layer always returns a complete, believable payload (it falls
   // back to DEMO_DATA internally if any DB query fails).
   const data = await getLeafnerdData();
+
+  // Real seeded clinical lists (Patients/Encounters/Observations/Conditions/Medications/Labs).
+  // Never throws — falls back to curated rows internally.
+  const clinical = await getLeafnerdClinicalData();
 
   // Optional real-data overlays for the Cohort + Claims surfaces. Both are wrapped
   // in try/catch; on any failure the surfaces use their own curated demo fallback.
@@ -82,6 +87,7 @@ export default async function LeafNerdDashboard() {
       userName={userName}
       claims={claims}
       cohortStatusCounts={cohortStatusCounts}
+      clinical={clinical}
     />
   );
 }
