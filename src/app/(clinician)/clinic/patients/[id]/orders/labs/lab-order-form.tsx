@@ -9,6 +9,7 @@ import { FileUpload, type FileUploadItem } from "@/components/ui/file-upload";
 import { LAB_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
+import { useToast } from "@/components/ui/toast";
 
 type Priority = "stat" | "routine";
 
@@ -23,11 +24,7 @@ export function LabOrderForm({ patientName }: Props) {
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
   const [priority, setPriority] = useState<Priority>("routine");
   const [attachments, setAttachments] = useState<FileUploadItem[]>([]);
-  const [submitted, setSubmitted] = useState<{
-    orderId: string;
-    when: string;
-    labs: string[];
-  } | null>(null);
+  const { toast } = useToast();
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof LAB_CATALOG>();
@@ -71,68 +68,45 @@ export function LabOrderForm({ patientName }: Props) {
   function submit() {
     if (selected.length === 0) return;
     const orderId = `LAB-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    setSubmitted({
-      orderId,
-      when: new Date().toLocaleString(),
-      labs: selected.slice(),
-    });
-  }
 
-  if (submitted) {
-    return (
-      <Card tone="raised" className="border-l-4 border-l-emerald-500">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs">
-              ✓
-            </span>
-            Lab order submitted
-          </CardTitle>
-          <CardDescription>
-            Order #{submitted.orderId} placed for {patientName} at {submitted.when}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-wider text-text-subtle font-medium">
-              Labs ordered
-            </p>
-            <ul className="space-y-1">
-              {submitted.labs.map((code) => {
-                const lab = LAB_CATALOG.find((l) => l.code === code);
-                return (
-                  <li key={code} className="text-sm text-text flex items-center gap-2">
-                    <span className="font-mono text-xs text-text-subtle w-16 shrink-0">
-                      {code}
-                    </span>
-                    <span>{lab?.name}</span>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="pt-4">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setSubmitted(null);
-                  setSelected([]);
-                  setReason("");
-                  setIcd10Selected([]);
-                  setPriority("routine");
-                }}
-              >
-                Place another order
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    const payload = {
+      orderId,
+      patientName,
+      labs: selected,
+      reason,
+      diagnoses: icd10Selected,
+      priority,
+      attachments: attachments.map(a => a.name),
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log("[Simulation] Lab Order Submitted:", JSON.stringify(payload, null, 2));
+
+    toast({
+      title: "Order simulated",
+      description: `Lab order simulated & logged for ${patientName}.`,
+      variant: "success",
+    });
+
+    // Reset inputs
+    setSelected([]);
+    setReason("");
+    setIcd10Selected([]);
+    setPriority("routine");
+    setAttachments([]);
   }
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-accent/20 bg-accent/[0.03] p-4 flex gap-3 items-start">
+        <span className="text-accent text-base mt-0.5">ℹ️</span>
+        <div>
+          <p className="text-sm font-medium text-text">Demo mode enabled</p>
+          <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+            Lab orders are simulated in this sandbox environment. Submitting an order prints the full HL7/FHIR payload to the terminal console log. No real transmission is performed.
+          </p>
+        </div>
+      </div>
       <Card tone="raised">
         <CardHeader>
           <CardTitle className="text-base">Select labs</CardTitle>

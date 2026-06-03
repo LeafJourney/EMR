@@ -13,67 +13,73 @@ import {
 } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
 
+import {
+  addProblemAction,
+  updateProblemAction,
+  deleteProblemAction,
+} from "./actions";
+
 interface Props {
   patientId: string;
   providerName: string;
+  initialProblems: ProblemListEntry[];
 }
 
-const STORAGE_KEY_PREFIX = "patient-problems-";
-
-function makeId() {
-  return `p-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
-}
-
-export function ProblemListView({ patientId, providerName }: Props) {
-  const storageKey = `${STORAGE_KEY_PREFIX}${patientId}`;
-  const [problems, setProblems] = useState<ProblemListEntry[]>([]);
+export function ProblemListView({ patientId, providerName, initialProblems }: Props) {
+  const [problems, setProblems] = useState<ProblemListEntry[]>(initialProblems);
   const [hydrated, setHydrated] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (raw) setProblems(JSON.parse(raw) as ProblemListEntry[]);
-    } catch {
-      /* ignore */
-    }
+    setProblems(initialProblems);
+  }, [initialProblems]);
+
+  useEffect(() => {
     setHydrated(true);
-  }, [storageKey]);
+  }, []);
 
-  function persist(next: ProblemListEntry[]) {
-    setProblems(next);
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function addProblem(p: Omit<ProblemListEntry, "id" | "addedBy" | "addedAt">) {
+  async function addProblem(p: Omit<ProblemListEntry, "id" | "addedBy" | "addedAt">) {
     const entry: ProblemListEntry = {
       ...p,
-      id: makeId(),
+      id: `temp-${Date.now()}`,
       addedBy: providerName,
       addedAt: new Date().toISOString(),
     };
-    persist([entry, ...problems]);
+    setProblems((prev) => [entry, ...prev]);
+
+    await addProblemAction(patientId, {
+      icd10: p.icd10,
+      description: p.description,
+      status: p.status,
+      onsetDate: p.onsetDate,
+      notes: p.notes,
+      addedBy: providerName,
+    });
   }
 
-  function updateProblem(id: string, patch: Partial<ProblemListEntry>) {
-    persist(problems.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  async function updateProblem(id: string, patch: Partial<ProblemListEntry>) {
+    setProblems((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+
+    await updateProblemAction(patientId, id, {
+      status: patch.status ?? "active",
+      onsetDate: patch.onsetDate,
+      resolvedDate: patch.resolvedDate,
+      notes: patch.notes,
+    });
   }
 
-  function changeStatus(id: string, status: ProblemStatus) {
+  async function changeStatus(id: string, status: ProblemStatus) {
     const patch: Partial<ProblemListEntry> = { status };
     if (status === "resolved") {
       patch.resolvedDate = new Date().toISOString().slice(0, 10);
     }
-    updateProblem(id, patch);
+    await updateProblem(id, patch);
   }
 
-  function removeProblem(id: string) {
-    persist(problems.filter((p) => p.id !== id));
+  async function removeProblem(id: string) {
+    setProblems((prev) => prev.filter((p) => p.id !== id));
+    await deleteProblemAction(patientId, id);
   }
 
   const grouped = useMemo(() => {

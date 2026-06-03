@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { homeForRoles } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";

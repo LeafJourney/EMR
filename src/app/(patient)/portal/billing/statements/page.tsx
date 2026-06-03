@@ -76,6 +76,17 @@ export default async function PatientStatementsPage() {
 
       <PatientSectionNav section="account" />
 
+      {/* Pilot Warning Banner */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex gap-3 items-start mb-6">
+        <span className="text-amber-800 text-base mt-0.5">⚠️</span>
+        <div>
+          <p className="text-sm font-medium text-amber-800">Online bill pay is in pilot preparation</p>
+          <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+            Please settle balances at the clinic front desk. Online payments are currently disabled.
+          </p>
+        </div>
+      </div>
+
       {/* Header summary */}
       <Card tone="ambient" className="mb-8">
         <CardContent className="py-8 grid md:grid-cols-3 gap-6">
@@ -100,9 +111,9 @@ export default async function PatientStatementsPage() {
           <div className="flex flex-col justify-center gap-2">
             {totalDue > 0 ? (
               <>
-                <Button size="lg">Pay {formatMoney(totalDue)}</Button>
+                <Button size="lg" disabled>Pay {formatMoney(totalDue)}</Button>
                 {!paymentPlan && (
-                  <Button variant="secondary" size="sm">
+                  <Button variant="secondary" size="sm" disabled>
                     Set up a payment plan
                   </Button>
                 )}
@@ -375,13 +386,13 @@ function StatementCard({
 
         {statement.status !== "paid" && remaining > 0 && (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm">Pay {formatMoney(remaining)}</Button>
+            <Button size="sm" disabled>Pay {formatMoney(remaining)}</Button>
             <Link href="/portal/billing/disputes">
               <Button variant="secondary" size="sm">
                 Something looks wrong
               </Button>
             </Link>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" disabled>
               Download PDF
             </Button>
           </div>

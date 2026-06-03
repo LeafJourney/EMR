@@ -84,6 +84,7 @@ export async function signChangeAction(formData: FormData) {
   const party = String(formData.get("party") ?? "") as "pharmacist" | "provider";
   const comments = String(formData.get("comments") ?? "").trim() || undefined;
   if (!requestId || !threadId) return;
+  if (!user.organizationId) throw new Error("FORBIDDEN");
   await ensureThreadOrg(threadId, user.organizationId);
 
   await signChange(prisma, {
@@ -93,6 +94,7 @@ export async function signChangeAction(formData: FormData) {
     signedById: user.id,
     signedName: `${user.firstName} ${user.lastName}`.trim(),
     comments,
+    organizationId: user.organizationId,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }
@@ -102,11 +104,13 @@ export async function applyChangeAction(formData: FormData) {
   const threadId = String(formData.get("threadId") ?? "");
   const requestId = String(formData.get("requestId") ?? "");
   if (!requestId || !threadId) return;
+  if (!user.organizationId) throw new Error("FORBIDDEN");
   await ensureThreadOrg(threadId, user.organizationId);
 
   await applyChange(prisma, {
     requestId,
     appliedById: user.id,
+    organizationId: user.organizationId,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }

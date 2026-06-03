@@ -29,6 +29,64 @@ export default async function ProblemListPage({ params }: PageProps) {
 
   const providerName = `${user.firstName} ${user.lastName}`;
 
+  // Query conditions from database
+  const dbConditions = await prisma.pastMedicalCondition.findMany({
+    where: {
+      patientId: params.id,
+      deletedAt: null,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  // Map database rows to ProblemListEntry interface
+  const initialProblems = dbConditions.map((c) => {
+    let icd10 = "";
+    let description = c.condition;
+
+    if (c.condition.includes(" | ")) {
+      const parts = c.condition.split(" | ");
+      icd10 = parts[0];
+      description = parts.slice(1).join(" | ");
+    }
+
+    let status: any = "active";
+    let onsetDate: string | undefined = undefined;
+    let resolvedDate: string | undefined = undefined;
+    let notesText: string | undefined = undefined;
+    let addedBy = providerName;
+    let addedAt = c.createdAt.toISOString();
+
+    if (c.notes?.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(c.notes);
+        status = parsed.status ?? "active";
+        onsetDate = parsed.onsetDate ?? undefined;
+        resolvedDate = parsed.resolvedDate ?? undefined;
+        notesText = parsed.notes ?? undefined;
+        addedBy = parsed.addedBy ?? providerName;
+        addedAt = parsed.addedAt ?? c.createdAt.toISOString();
+      } catch {
+        notesText = c.notes;
+      }
+    } else {
+      notesText = c.notes ?? undefined;
+    }
+
+    return {
+      id: c.id,
+      icd10,
+      description,
+      status,
+      onsetDate,
+      resolvedDate,
+      notes: notesText,
+      addedBy,
+      addedAt,
+    };
+  });
+
   return (
     <PageShell maxWidth="max-w-[1080px]">
       <div className="flex items-center justify-between mb-8">
@@ -55,7 +113,11 @@ export default async function ProblemListPage({ params }: PageProps) {
         </Link>
       </div>
 
-      <ProblemListView patientId={params.id} providerName={providerName} />
+      <ProblemListView
+        patientId={params.id}
+        providerName={providerName}
+        initialProblems={initialProblems}
+      />
     </PageShell>
   );
 }
