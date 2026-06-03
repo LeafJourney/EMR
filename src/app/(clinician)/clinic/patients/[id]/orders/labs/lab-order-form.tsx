@@ -76,7 +76,7 @@ export function LabOrderForm({ patientName }: Props) {
       reason,
       diagnoses: icd10Selected,
       priority,
-      attachments: attachments.map(a => a.name),
+      attachments: attachments.map(a => a.file.name),
       timestamp: new Date().toISOString(),
     };
 
