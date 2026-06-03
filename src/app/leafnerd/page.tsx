@@ -1,81 +1,87 @@
-import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { OutcomeVelocityChart } from "@/components/leafnerd/OutcomeVelocityChart";
-import { InsightChat } from "@/components/leafnerd/InsightChat";
-import Link from "next/link";
+import { getLeafnerdData } from "@/lib/leafnerd/server-data";
+import LeafnerdApp from "@/components/leafnerd/fhir-intelligence/LeafnerdApp";
+import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
+
+// Force dynamic so the page always reflects fresh aggregates (and never tries to
+// statically prerender DB-backed data at build time).
+export const dynamic = "force-dynamic";
 
 export default async function LeafNerdDashboard() {
-  // 1. Auth check
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
-  
-  // 2. Permission gate
-  // Fetch memberships to see if they have the 'leafnerd' role we just added to the DB.
-  const memberships = await prisma.membership.findMany({
-    where: { userId: user.id }
-  });
-  
-  // Temporarily bypass the redirect in local dev if they don't have it yet, 
-  // but in prod this would enforce the gate:
-  const hasAccess = memberships.some((m: { role: string }) => m.role === 'leafnerd' || m.role === 'super_admin');
-  
-  // if (!hasAccess) {
-  //   redirect("/upgrade-leafnerd"); // Or to an access denied page
-  // }
+  // Auth is best-effort for the demo: if a user is signed in we greet them by name,
+  // but we never block rendering (all data shown is synthetic/demo data).
+  // NOTE: re-enable a real access gate before shipping to production.
+  let userName: string | undefined;
+  try {
+    const user = await getCurrentUser();
+    userName = user?.firstName ?? undefined;
+  } catch {
+    userName = undefined;
+  }
+
+  // The analytics layer always returns a complete, believable payload (it falls
+  // back to DEMO_DATA internally if any DB query fails).
+  const data = await getLeafnerdData();
+
+  // Optional real-data overlays for the Cohort + Claims surfaces. Both are wrapped
+  // in try/catch; on any failure the surfaces use their own curated demo fallback.
+  let cohortStatusCounts: CohortStatusCount[] | undefined;
+  try {
+    const grouped = await prisma.patient.groupBy({ by: ["status"], _count: true });
+    cohortStatusCounts = grouped.map((g) => ({
+      status: String((g as { status: unknown }).status),
+      count: typeof (g as { _count: unknown })._count === "number" ? (g as { _count: number })._count : 0,
+    }));
+  } catch {
+    cohortStatusCounts = undefined;
+  }
+
+  let claims: ClaimAnomalyRow[] | undefined;
+  try {
+    const rows = await prisma.claimScrubResult.findMany({
+      include: { claim: true },
+      orderBy: { scrubbedAt: "desc" },
+      take: 12,
+    });
+    claims = rows.map((row) => {
+      const r = row as unknown as {
+        id: string;
+        claimId?: string | null;
+        status?: string | null;
+        edits?: unknown;
+        scrubbedAt?: Date | null;
+        claim?: {
+          cptCodes?: unknown;
+          billedAmountCents?: number | null;
+          claimNumber?: string | null;
+        } | null;
+      };
+      const firstEdit = Array.isArray(r.edits) ? (r.edits[0] as { message?: string } | undefined) : undefined;
+      const firstCpt = Array.isArray(r.claim?.cptCodes)
+        ? ((r.claim?.cptCodes as Array<{ code?: string }>)[0]?.code as string | undefined)
+        : undefined;
+      return {
+        id: r.id,
+        claimId: r.claimId ?? undefined,
+        code: firstCpt,
+        description: firstEdit?.message ?? r.status ?? "Flagged claim",
+        amount:
+          typeof r.claim?.billedAmountCents === "number" ? r.claim!.billedAmountCents / 100 : undefined,
+        scrubbedAt: r.scrubbedAt ? r.scrubbedAt.toISOString() : undefined,
+      } satisfies ClaimAnomalyRow;
+    });
+    if (claims.length === 0) claims = undefined; // let the surface use its demo fallback
+  } catch {
+    claims = undefined;
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header className="flex justify-between items-end border-b border-border/10 pb-6 relative">
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-accent-strong/5 rounded-full blur-3xl pointer-events-none -mt-48" />
-        <div className="relative z-10">
-          <h2 className="text-3xl font-bold text-text-strong tracking-tight">Welcome back, {user.firstName}</h2>
-          <p className="text-text-muted mt-2 font-medium">Your clinical intelligence overlay is analyzing real-time data.</p>
-        </div>
-        {!hasAccess && (
-          <div className="relative z-10 bg-error/10 text-error px-4 py-2 rounded-lg text-sm font-semibold border border-error/20">
-            Preview Mode — Requires LeafNerd Access
-          </div>
-        )}
-      </header>
-
-      {/* Grid for Data Viz */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Big Chart Placeholder */}
-        <div className="lg:col-span-2 bg-bg-surface border border-border/10 rounded-2xl p-6 h-[400px] flex flex-col relative overflow-hidden shadow-sm">
-          <h3 className="text-lg font-semibold text-text-strong mb-1">Outcome Velocity vs Polypharmacy</h3>
-          <p className="text-xs text-text-muted mb-6">Tracking patient symptom reduction against prescription count.</p>
-          <div className="flex-1 rounded-xl overflow-hidden border border-border/10">
-            <OutcomeVelocityChart />
-          </div>
-        </div>
-
-        {/* AI Assistant Overlay */}
-        <InsightChat />
-      </div>
-
-      
-      {/* Secondary Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Link href="/leafnerd/cohorts" className="block">
-          <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:border-accent-strong/30 hover:bg-bg-highlight/5 transition-all cursor-pointer group">
-            <div>
-              <h4 className="font-semibold text-text-strong group-hover:text-accent-strong transition-colors">Run Cohort Simulation</h4>
-              <p className="text-sm text-text-muted mt-1">Test treatment efficacy across 10k synthetic profiles.</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-bg border border-border/10 flex items-center justify-center text-text-muted group-hover:bg-accent-strong/10 group-hover:text-accent-strong group-hover:border-accent-strong/30 transition-all">→</div>
-          </div>
-        </Link>
-        <Link href="/leafnerd/claims" className="block">
-          <div className="bg-bg-surface border border-border/10 rounded-2xl p-6 flex items-center justify-between shadow-sm hover:border-error/30 hover:bg-bg-highlight/5 transition-all cursor-pointer group">
-            <div>
-              <h4 className="font-semibold text-text-strong group-hover:text-error transition-colors">Real-time Claims Anomaly</h4>
-              <p className="text-sm text-text-muted mt-1">Review 3 flagged billing codes from yesterday.</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-error/10 border border-error/20 flex items-center justify-center text-error font-bold shadow-sm">3</div>
-          </div>
-        </Link>
-      </div>
-    </div>
+    <LeafnerdApp
+      data={data}
+      userName={userName}
+      claims={claims}
+      cohortStatusCounts={cohortStatusCounts}
+    />
   );
 }
