@@ -15,17 +15,27 @@ import type { CohortStatusCount } from "@/lib/leafnerd/types";
  * --border, --warning, --danger) that are ONLY declared under `.theme-leafmart`
  * — they are not defined inside the SPA's `.ln-root` botanical scope.
  *
- * THEME BRIDGE (hybrid — both layers applied):
+ * THEME BRIDGE (three layers — applied together):
  *   1. `className="theme-leafmart"` re-establishes every backing variable, so the
  *      component renders with correct, complete colors regardless of anything else
  *      (the resilient fallback path).
- *   2. Inline `style` overrides those same backing variables with botanical-palette
- *      hexes lifted from leafnerd-theme.css, so the existing Tailwind classes adopt
- *      the Leafnerd warm look with ZERO edits to CohortSimulator.tsx.
+ *   2. Inline `style` (BOTANICAL_BRIDGE) overrides those backing variables with
+ *      botanical-palette hexes lifted from leafnerd-theme.css, so every Tailwind
+ *      class that DOES resolve to a var adopts the Leafnerd warm look — plus the
+ *      `--color-accent-strong` / `--color-bg` vars the inline SVG gradients read.
+ *   3. The `cohort-skin` class hooks a scoped `.ln-root .cohort-skin …` block
+ *      appended to leafnerd-theme.css. That block is required because several
+ *      classes the component uses (bg-bg-surface, bg-bg-highlight, text-text-strong,
+ *      bg-error / text-error / border-error) reference Tailwind color KEYS that do
+ *      NOT exist in tailwind.config.ts (only `surface`, `text`, `danger` etc. do),
+ *      so Tailwind emits NO rule for them and the variable bridge can't reach them.
+ *      The appended CSS restyles those exact classes to botanical tones. ALL of it
+ *      stays under `.ln-root .cohort-skin`, so nothing leaks to the wider EMR.
  *
  * NOTE on var names: this codebase's leafmart tokens are backed by bare vars
  * (--bg, --surface, ...), NOT the `--color-bg`-style names. The bridge therefore
- * sets the real backing vars. (See report.)
+ * sets the real backing vars (and additionally the `--color-*` aliases the SVG
+ * gradient stops fall back through). (See report.)
  */
 
 // Botanical palette mapped onto leafmart backing variables (values from
@@ -63,6 +73,11 @@ const BOTANICAL_BRIDGE: React.CSSProperties = {
   ["--warning" as never]: "#B9831C", // --amber
   ["--danger" as never]: "#AE4435", // --rose
   ["--info" as never]: "#4C58A6", // --indigo
+  // SVG gradient fallbacks — the simulator's <linearGradient> stops and the peak
+  // dot read `var(--color-accent-strong, #10b981)` / `var(--color-bg, #0d0f12)`
+  // (dark defaults). Define the `--color-*` aliases so the chart is canopy-on-cream.
+  ["--color-accent-strong" as never]: "#2F7C51", // --canopy
+  ["--color-bg" as never]: "#F6F2E9", // --cream
 };
 
 // Believable demo cohort tally for when no real groupBy data is supplied.
@@ -103,9 +118,11 @@ export function CohortSurface({
       </div>
 
       {/* THEME BRIDGE: theme-leafmart re-establishes the leafmart backing vars
-          (resilient fallback) and the inline style remaps them to botanical hexes. */}
+          (resilient fallback); the inline style remaps them to botanical hexes;
+          and `cohort-skin` hooks the appended `.ln-root .cohort-skin` overrides
+          that catch the classes Tailwind never emits (see leafnerd-theme.css). */}
       <div
-        className="theme-leafmart"
+        className="theme-leafmart cohort-skin"
         style={{ ...BOTANICAL_BRIDGE, marginTop: 22 }}
       >
         <CohortSimulator statusCounts={simStatusCounts} />

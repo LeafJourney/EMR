@@ -12,6 +12,12 @@ import { OverviewSurface } from "./Overview";
 import { FhirExplorerSurface } from "./FhirExplorer";
 import { CohortSurface } from "./CohortSurface";
 import { ClaimsSurface } from "./ClaimsSurface";
+import { PatientsSurface } from "./PatientsSurface";
+import { EncountersSurface } from "./EncountersSurface";
+import { ObservationsSurface } from "./ObservationsSurface";
+import { ConditionsSurface } from "./ConditionsSurface";
+import { MedicationsSurface } from "./MedicationsSurface";
+import { LabsSurface } from "./LabsSurface";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 import type {
   LeafnerdAppProps,
@@ -24,6 +30,7 @@ import type {
 
 export function LeafnerdApp(props: LeafnerdAppProps) {
   const data = props.data ?? DEMO_DATA;
+  const clinical = props.clinical;
 
   const [active, setActive] = useState("overview");
   const [drawer, setDrawer] = useState<DrawerPayload | null>(null);
@@ -44,6 +51,9 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
     insight: (i: Insight) => setDrawer(buildDrawer.insight(i)),
   };
 
+  // Generic drawer opener for the clinical list surfaces — they build their own payload.
+  const openRecord = (payload: DrawerPayload) => setDrawer(payload);
+
   useEffect(() => { document.querySelector(".content")?.scrollTo(0, 0); }, [active]);
 
   let body;
@@ -52,6 +62,12 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "ai") body = <AiInsightsSurface data={data} openDrawer={openDrawer} toast={toast} />;
   else if (active === "claims") body = <ClaimsSurface anomalies={props.claims} />;
   else if (active === "risk" || active === "analytics") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
+  else if (active === "patients") body = <PatientsSurface rows={clinical?.patients} openDrawer={openDrawer} />;
+  else if (active === "encounters") body = <EncountersSurface rows={clinical?.encounters} openRecord={openRecord} />;
+  else if (active === "observations") body = <ObservationsSurface rows={clinical?.observations} openRecord={openRecord} />;
+  else if (active === "conditions") body = <ConditionsSurface rows={clinical?.conditions} openRecord={openRecord} />;
+  else if (active === "medications") body = <MedicationsSurface rows={clinical?.medications} openRecord={openRecord} />;
+  else if (active === "labs") body = <LabsSurface rows={clinical?.labs} openRecord={openRecord} />;
   else body = <Placeholder id={active} />;
 
   const fullBleed = active === "fhir" || active === "claims" || active === "risk" || active === "analytics";

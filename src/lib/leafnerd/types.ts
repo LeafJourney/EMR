@@ -167,6 +167,90 @@ export interface CohortStatusCount {
   count: number;
 }
 
+// ---------------------------------------------------------------------------
+// Clinical rail surfaces (real, seeded data). All date fields are ISO strings
+// (serialized for the client). Every list falls back to curated demo rows when
+// the corresponding array is absent/empty (cardinal resilience rule).
+// ---------------------------------------------------------------------------
+
+export interface EncounterRow {
+  id: string;
+  patientId: string;
+  patientName: string;
+  status: string; // complete | scheduled | ...
+  modality: string; // in_person | video | phone
+  scheduledFor: string | null;
+  completedAt: string | null;
+  reason: string | null;
+  provider: string | null;
+}
+
+export interface ObservationRow {
+  id: string;
+  patientId: string;
+  patientName: string;
+  category: string;
+  severity: string; // info | notable | concern | urgent
+  summary: string;
+  createdAt: string | null;
+  loinc: string | null;
+  value: string | null;
+  unit: string | null;
+  actionSuggested: string | null;
+}
+
+export interface ConditionRow {
+  id: string;
+  patientId: string;
+  patientName: string;
+  condition: string;
+  onsetYear: number | null;
+  source: string | null;
+  notes: string | null;
+}
+
+export interface MedicationRow {
+  id: string;
+  patientId: string;
+  patientName: string;
+  name: string;
+  genericName: string | null;
+  type: string; // prescription | otc | supplement | cannabis
+  dosage: string | null;
+  prescriber: string | null;
+  /** True when the local code never mapped to RxNorm (the data-quality story). */
+  unmapped: boolean;
+  notes: string | null;
+}
+
+export interface LabMarker {
+  name: string;
+  value: number | string;
+  unit?: string;
+  abnormal?: boolean;
+}
+
+export interface LabRow {
+  id: string;
+  patientId: string;
+  patientName: string;
+  panelName: string;
+  receivedAt: string | null;
+  abnormalFlag: boolean;
+  reviewOutcome: string | null;
+  markers: LabMarker[];
+}
+
+/** Real (seeded) clinical lists for the rail surfaces, scoped to the demo org. */
+export interface LeafnerdClinicalData {
+  patients: PatientRow[];
+  encounters: EncounterRow[];
+  observations: ObservationRow[];
+  conditions: ConditionRow[];
+  medications: MedicationRow[];
+  labs: LabRow[];
+}
+
 /** Props for the top-level SPA shell component (LeafnerdApp). */
 export interface LeafnerdAppProps {
   data: LeafnerdData;
@@ -174,4 +258,6 @@ export interface LeafnerdAppProps {
   /** Optional real data; surfaces fall back to internal demo data when absent. */
   claims?: ClaimAnomalyRow[];
   cohortStatusCounts?: CohortStatusCount[];
+  /** Real seeded clinical lists for the Clinical rail surfaces. */
+  clinical?: LeafnerdClinicalData;
 }

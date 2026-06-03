@@ -424,3 +424,121 @@
 }
 .ln-root .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .ln-root .toast .spark { color: var(--lime); }
+
+/* ============================================================
+   EMBEDDED-SURFACE RE-SKIN — Cohort Simulator & Claims Workbench
+   ------------------------------------------------------------
+   CohortSimulator.tsx / ClaimsWorkbench.tsx were authored against the
+   "leafmart" Tailwind theme. The wrappers (CohortSurface.tsx /
+   ClaimsSurface.tsx) bridge most colors by remapping the leafmart backing
+   vars (--bg, --surface, --accent-strong, --text-muted, --border, --warning,
+   --danger, ...) to botanical hexes via an inline style.
+
+   But several utility classes those components use reference Tailwind color
+   KEYS THAT DO NOT EXIST in tailwind.config.ts — there is no `bg-surface`,
+   `bg-highlight`, `text-strong`, or `error` color key (only `surface`, `text`,
+   `highlight`, `danger`, ...). Tailwind therefore emits NO rule at all for
+   `bg-bg-surface`, `bg-bg-highlight`, `text-text-strong`, and the
+   `bg-error / text-error / border-error` family, so the variable bridge can
+   never reach them. This block restyles those exact class strings (and a few
+   controls that benefit from sharper botanical tones) to the warm palette.
+
+   SCOPING CONTRACT: every selector below is prefixed
+   `.ln-root .cohort-skin` or `.ln-root .claims-skin` (wrapper classes added in
+   the two surface files). Nothing escapes `.ln-root`, and nothing touches the
+   rest of the EMR's leafmart usage. `!important` is used because these
+   compete with the (empty-but-present) Tailwind utility ordering and the
+   theme-leafmart base layer.
+   ============================================================ */
+
+/* --- Surfaces (the `bg-surface` / `bg-highlight` keys Tailwind never emits) --- */
+.ln-root .cohort-skin .bg-bg-surface,
+.ln-root .claims-skin .bg-bg-surface {
+  background-color: var(--paper) !important; /* #FDFCF8 */
+}
+/* bg-bg-surface/50 — translucent drawer-action footer (paper #FDFCF8) */
+.ln-root .claims-skin .bg-bg-surface\/50 {
+  background-color: rgba(253, 252, 248, 0.88) !important;
+}
+/* bg-bg-highlight tints (chips, hover wells, badges) → faint amber/sage */
+.ln-root .cohort-skin .bg-bg-highlight\/10,
+.ln-root .claims-skin .bg-bg-highlight\/10 {
+  background-color: var(--amber-soft) !important; /* #F4E9CF */
+}
+.ln-root .cohort-skin .bg-bg-highlight\/5,
+.ln-root .claims-skin .bg-bg-highlight\/5,
+.ln-root .claims-skin .hover\:bg-bg-highlight\/5:hover {
+  background-color: var(--sage-tint) !important; /* #F0F4EC */
+}
+
+/* --- Primary text (the `text-strong` key Tailwind never emits) --- */
+.ln-root .cohort-skin .text-text-strong,
+.ln-root .claims-skin .text-text-strong {
+  color: var(--ink) !important; /* #1E2922 */
+}
+/* group-hover:text-accent-strong already resolves; reinforce hover ink→canopy */
+.ln-root .claims-skin .group:hover .group-hover\:text-accent-strong {
+  color: var(--canopy) !important;
+}
+
+/* --- Error/danger family (the `error` key Tailwind never emits) → --rose --- */
+.ln-root .cohort-skin .text-error,
+.ln-root .claims-skin .text-error {
+  color: var(--rose) !important; /* #AE4435 */
+}
+.ln-root .claims-skin .bg-error {
+  background-color: var(--rose) !important;
+}
+.ln-root .claims-skin .bg-error\/10 {
+  background-color: rgba(174, 68, 53, 0.12) !important; /* --rose */
+}
+.ln-root .claims-skin .bg-error\/5 {
+  background-color: rgba(174, 68, 53, 0.07) !important; /* --rose */
+}
+.ln-root .claims-skin .border-error\/20 {
+  border-color: rgba(174, 68, 53, 0.30) !important; /* --rose */
+}
+.ln-root .claims-skin .border-error\/5 {
+  border-color: rgba(174, 68, 53, 0.14) !important; /* --rose */
+}
+
+/* --- Run Monte Carlo button + drawer "Apply Auto-Fix" (canopy FAB look) --- */
+.ln-root .cohort-skin button.bg-accent-strong,
+.ln-root .claims-skin button.bg-accent-strong {
+  background-color: var(--canopy) !important; /* #2F7C51 */
+  color: #FFFFFF !important;                   /* on-canopy text (text-bg) */
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 18px -8px rgba(33, 96, 61, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  letter-spacing: .01em;
+}
+.ln-root .cohort-skin button.bg-accent-strong:hover,
+.ln-root .claims-skin button.bg-accent-strong:hover {
+  background-color: var(--canopy-deep) !important; /* #21603D */
+}
+
+/* --- Result metric cards & distribution panel (Cohort) --- */
+.ln-root .cohort-skin .rounded-2xl {
+  border-radius: var(--r-lg, 16px);
+  border-color: var(--line) !important;
+}
+/* big metric numerals — efficacy(canopy)/optDose(ink) already covered;
+   adverse-rate uses text-error → rose (handled above). */
+
+/* --- Progress / step indicators (Cohort run pipeline) --- */
+.ln-root .cohort-skin .border-t-accent-strong {
+  border-top-color: var(--canopy) !important;
+}
+.ln-root .cohort-skin .border-accent-strong\/20,
+.ln-root .claims-skin .border-accent-strong\/20 {
+  border-color: rgba(47, 124, 81, 0.22) !important; /* --canopy */
+}
+
+/* --- Claims slide-over drawer panel + backdrop --- */
+.ln-root .claims-skin .bg-black\/60 {
+  background-color: rgba(19, 37, 27, 0.55) !important; /* warm forest scrim (--forest) */
+}
+.ln-root .claims-skin .border-l { border-left-color: var(--line) !important; }
+
+/* --- Status code chip (CPT badge) normal state uses bg-error/10 + text-error,
+       handled above; awaiting-provider uses bg-warning/10 + text-warning which
+       resolve through the bridge (--warning → --amber). No extra rule needed. */

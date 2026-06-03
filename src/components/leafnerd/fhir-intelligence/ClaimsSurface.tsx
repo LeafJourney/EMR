@@ -8,14 +8,23 @@ import type { ClaimAnomalyRow } from "@/lib/leafnerd/types";
  * ClaimsSurface — Leafnerd SPA wrapper around the existing, working
  * <ClaimsWorkbench/> real-data component.
  *
- * THEME BRIDGE (hybrid — both layers applied):
+ * THEME BRIDGE (three layers — applied together):
  *   1. `className="theme-leafmart"` re-establishes the leafmart backing CSS
  *      variables (--bg, --surface, --text, --text-muted, --accent-strong,
  *      --border, --warning, --danger) so the component renders with correct
  *      colors inside the SPA's `.ln-root` scope (resilient fallback path).
- *   2. Inline `style` remaps those same backing variables to botanical-palette
- *      hexes from leafnerd-theme.css, so the existing Tailwind classes adopt the
- *      Leafnerd warm look with ZERO edits to ClaimsWorkbench.tsx.
+ *   2. Inline `style` (BOTANICAL_BRIDGE) remaps those backing variables to
+ *      botanical-palette hexes from leafnerd-theme.css, so every Tailwind class
+ *      that DOES resolve to a var adopts the Leafnerd warm look (ZERO edits to
+ *      ClaimsWorkbench.tsx).
+ *   3. The `claims-skin` class hooks a scoped `.ln-root .claims-skin …` block
+ *      appended to leafnerd-theme.css. It is required because several classes the
+ *      workbench uses (bg-bg-surface, bg-bg-highlight, text-text-strong, and the
+ *      bg-error / text-error / border-error family) reference Tailwind color KEYS
+ *      that do NOT exist in tailwind.config.ts (only `surface`, `text`, `danger`
+ *      etc. do), so Tailwind emits NO rule for them and the variable bridge can't
+ *      reach them. The appended CSS restyles those exact classes to botanical
+ *      tones. ALL of it stays under `.ln-root .claims-skin`, so nothing leaks.
  *
  * NOTE on var names: leafmart tokens here are backed by bare vars (--bg,
  * --surface, ...), not `--color-bg`-style names, so the bridge sets the real
@@ -57,6 +66,10 @@ const BOTANICAL_BRIDGE: React.CSSProperties = {
   ["--warning" as never]: "#B9831C", // --amber
   ["--danger" as never]: "#AE4435", // --rose
   ["--info" as never]: "#4C58A6", // --indigo
+  // `--color-*` aliases kept symmetric with CohortSurface in case any nested
+  // element falls back through them.
+  ["--color-accent-strong" as never]: "#2F7C51", // --canopy
+  ["--color-bg" as never]: "#F6F2E9", // --cream
 };
 
 /**
@@ -163,9 +176,11 @@ export function ClaimsSurface({ anomalies }: { anomalies?: ClaimAnomalyRow[] }) 
       </div>
 
       {/* THEME BRIDGE: theme-leafmart re-establishes the leafmart backing vars
-          (resilient fallback) and the inline style remaps them to botanical hexes. */}
+          (resilient fallback); the inline style remaps them to botanical hexes;
+          and `claims-skin` hooks the appended `.ln-root .claims-skin` overrides
+          that catch the classes Tailwind never emits (see leafnerd-theme.css). */}
       <div
-        className="theme-leafmart"
+        className="theme-leafmart claims-skin"
         style={{ ...BOTANICAL_BRIDGE, marginTop: 22 }}
       >
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}

@@ -14,7 +14,7 @@ import type {
 } from "@/lib/leafnerd/types";
 
 export interface DrawerPayload {
-  kind: "fhir" | "patient" | "metric" | "anomaly" | "insight";
+  kind: "fhir" | "patient" | "metric" | "anomaly" | "insight" | "record";
   tag: string;
   title: React.ReactNode;
   sub?: React.ReactNode;
