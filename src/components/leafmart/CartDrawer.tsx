@@ -20,7 +20,7 @@ export function CartDrawer() {
   // True when the cart has at least one regulated item (THC > 0). The gate
   // only fires for these — non-regulated wellness products checkout freely.
   const cartRequiresAge = items.some((i) => i.product.requiresAgeVerification);
-  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
@@ -118,7 +118,7 @@ export function CartDrawer() {
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       />
-      <aside
+      <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
@@ -127,8 +127,9 @@ export function CartDrawer() {
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header */}
-        <header className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+        {/* Header — a plain <div>, not <header>, so it doesn't register as a
+            second `banner` landmark when this dialog leaves the sectioning flow. */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
           <div>
             <p className="eyebrow text-[var(--text-soft)]">Your cart</p>
             <h2 className="font-display text-[22px] font-medium tracking-tight text-[var(--ink)] leading-tight">
@@ -145,7 +146,7 @@ export function CartDrawer() {
               <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
           </button>
-        </header>
+        </div>
 
         {/* Shipping progress */}
         {items.length > 0 && (
@@ -329,7 +330,7 @@ export function CartDrawer() {
             </Link>
           </footer>
         )}
-      </aside>
+      </div>
 
       <AgeGateModal
         open={ageGateOpen}
