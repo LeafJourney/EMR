@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/db/prisma";
-import { AgentJobStatus, Prisma } from "@prisma/client";
+import { AgentJobStatus, Prisma, type PrismaClient } from "@prisma/client";
+
+// Minimal surface so the org/status guards can be unit tested without a real
+// database (the test injects a fake `agentJob.updateMany`).
+type ApprovalDb = { agentJob: Pick<PrismaClient["agentJob"], "updateMany"> };
 
 /**
  * Claim the next runnable job using Postgres row locking. Returns null if
@@ -89,9 +93,28 @@ function backoffMs(attempts: number): number {
   return Math.min(5000 * Math.pow(4, attempts), 5 * 60 * 1000);
 }
 
-export async function approveJob(jobId: string, userId: string) {
-  await prisma.agentJob.update({
-    where: { id: jobId },
+/**
+ * Approve a job awaiting human sign-off (EMR-805).
+ *
+ * A raw `jobId` must never authorize a mutation on its own. The update is
+ * scoped to (a) jobs the caller's org can see — its own org or shared
+ * null-org system jobs, mirroring the Mission Control listing — and (b) jobs
+ * actually in `needs_approval`. An `updateMany` that touches zero rows means
+ * wrong-org or wrong-status; we throw rather than silently no-op so the action
+ * does not write a misleading "approved" audit entry.
+ */
+export async function approveJob(
+  jobId: string,
+  userId: string,
+  organizationId: string,
+  db: ApprovalDb = prisma,
+) {
+  const { count } = await db.agentJob.updateMany({
+    where: {
+      id: jobId,
+      status: AgentJobStatus.needs_approval,
+      OR: [{ organizationId }, { organizationId: null }],
+    },
     data: {
       status: AgentJobStatus.succeeded,
       approvedById: userId,
@@ -99,11 +122,26 @@ export async function approveJob(jobId: string, userId: string) {
       completedAt: new Date(),
     },
   });
+  if (count === 0) {
+    throw new Error(
+      "Job not found, not awaiting approval, or outside your organization.",
+    );
+  }
 }
 
-export async function rejectJob(jobId: string, userId: string, reason: string) {
-  await prisma.agentJob.update({
-    where: { id: jobId },
+export async function rejectJob(
+  jobId: string,
+  userId: string,
+  reason: string,
+  organizationId: string,
+  db: ApprovalDb = prisma,
+) {
+  const { count } = await db.agentJob.updateMany({
+    where: {
+      id: jobId,
+      status: AgentJobStatus.needs_approval,
+      OR: [{ organizationId }, { organizationId: null }],
+    },
     data: {
       status: AgentJobStatus.cancelled,
       approvedById: userId,
@@ -112,4 +150,9 @@ export async function rejectJob(jobId: string, userId: string, reason: string) {
       completedAt: new Date(),
     },
   });
+  if (count === 0) {
+    throw new Error(
+      "Job not found, not awaiting approval, or outside your organization.",
+    );
+  }
 }

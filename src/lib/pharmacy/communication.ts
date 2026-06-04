@@ -190,19 +190,22 @@ export async function proposeChange(db: Db, input: ProposeChangeInput) {
 
 export interface SignChangeInput {
   requestId: string;
+  /** Caller's active org — the request lookup is scoped to it (EMR-805). */
+  organizationId: string;
   party: SignoffParty;
   decision: SignoffDecision;
   signedById: string;
   signedName: string;
   npi?: string;
   comments?: string;
-  organizationId: string;
 }
 
 export async function signChange(db: Db, input: SignChangeInput) {
   return db.$transaction(async (tx) => {
-    const req = await tx.medicationChangeRequest.findUnique({
-      where: { id: input.requestId },
+    // Scope by org so a raw requestId from another organization can never be
+    // signed, even when the caller passes a thread they legitimately own.
+    const req = await tx.medicationChangeRequest.findFirst({
+      where: { id: input.requestId, organizationId: input.organizationId },
       include: { signoffs: true },
     });
     if (!req) throw new Error("Change request not found.");
@@ -286,8 +289,9 @@ export async function signChange(db: Db, input: SignChangeInput) {
 
 export interface ApplyChangeInput {
   requestId: string;
-  appliedById: string;
+  /** Caller's active org — the request lookup is scoped to it (EMR-805). */
   organizationId: string;
+  appliedById: string;
 }
 
 /**
@@ -296,8 +300,10 @@ export interface ApplyChangeInput {
  */
 export async function applyChange(db: Db, input: ApplyChangeInput) {
   return db.$transaction(async (tx) => {
-    const req = await tx.medicationChangeRequest.findUnique({
-      where: { id: input.requestId },
+    // Scope by org so a raw requestId can't apply another organization's
+    // change to a PatientMedication row (EMR-805).
+    const req = await tx.medicationChangeRequest.findFirst({
+      where: { id: input.requestId, organizationId: input.organizationId },
       include: { signoffs: true },
     });
     if (!req) throw new Error("Change request not found.");

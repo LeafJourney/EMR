@@ -89,12 +89,12 @@ export async function signChangeAction(formData: FormData) {
 
   await signChange(prisma, {
     requestId,
+    organizationId: user.organizationId,
     party,
     decision: decision as "approve" | "reject",
     signedById: user.id,
     signedName: `${user.firstName} ${user.lastName}`.trim(),
     comments,
-    organizationId: user.organizationId,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }
@@ -109,8 +109,8 @@ export async function applyChangeAction(formData: FormData) {
 
   await applyChange(prisma, {
     requestId,
-    appliedById: user.id,
     organizationId: user.organizationId,
+    appliedById: user.id,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }

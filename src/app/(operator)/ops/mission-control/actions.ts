@@ -1,13 +1,29 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth/session";
+import type { Role } from "@prisma/client";
+import { requireUser, type AuthedUser } from "@/lib/auth/session";
 import { approveJob, rejectJob } from "@/lib/orchestration/queue";
 import { prisma } from "@/lib/db/prisma";
 
+// Roles permitted to drive Mission Control. The route group's layout already
+// gates the UI, but server actions are independently invocable, so re-check
+// here and resolve the org so a raw jobId can't authorize a cross-org or
+// non-operator approval (EMR-805).
+const OPERATOR_ROLES: Role[] = ["operator", "practice_owner", "system"];
+
+function requireOperatorOrg(user: AuthedUser): string {
+  if (!user.roles.some((r) => OPERATOR_ROLES.includes(r))) {
+    throw new Error("FORBIDDEN");
+  }
+  if (!user.organizationId) throw new Error("FORBIDDEN");
+  return user.organizationId;
+}
+
 export async function approveJobAction(jobId: string) {
   const user = await requireUser();
-  await approveJob(jobId, user.id);
+  const organizationId = requireOperatorOrg(user);
+  await approveJob(jobId, user.id, organizationId);
   await prisma.auditLog.create({
     data: {
       actorUserId: user.id,
@@ -23,7 +39,8 @@ export async function approveJobAction(jobId: string) {
 
 export async function rejectJobAction(jobId: string) {
   const user = await requireUser();
-  await rejectJob(jobId, user.id, "Rejected in Mission Control");
+  const organizationId = requireOperatorOrg(user);
+  await rejectJob(jobId, user.id, "Rejected in Mission Control", organizationId);
   await prisma.auditLog.create({
     data: {
       actorUserId: user.id,
@@ -57,11 +74,10 @@ export async function bulkDecisionAction(
   decision: "approve" | "reject",
 ): Promise<BulkDecisionResult> {
   const user = await requireUser();
+  const organizationId = requireOperatorOrg(user);
 
   // Mirror the page's org filter: this org's jobs plus org-less (shared) jobs.
-  const orgFilter = user.organizationId
-    ? { OR: [{ organizationId: user.organizationId }, { organizationId: null }] }
-    : {};
+  const orgFilter = { OR: [{ organizationId }, { organizationId: null }] };
 
   const jobs = await prisma.agentJob.findMany({
     where: { ...orgFilter, status: "needs_approval" as const },
@@ -74,7 +90,7 @@ export async function bulkDecisionAction(
   for (const job of jobs) {
     try {
       if (decision === "approve") {
-        await approveJob(job.id, user.id);
+        await approveJob(job.id, user.id, organizationId);
         await prisma.auditLog.create({
           data: {
             actorUserId: user.id,
@@ -85,7 +101,7 @@ export async function bulkDecisionAction(
           },
         });
       } else {
-        await rejectJob(job.id, user.id, "Rejected in Mission Control (bulk)");
+        await rejectJob(job.id, user.id, "Rejected in Mission Control (bulk)", organizationId);
         await prisma.auditLog.create({
           data: {
             actorUserId: user.id,
