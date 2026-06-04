@@ -74,11 +74,10 @@ export async function bulkDecisionAction(
   decision: "approve" | "reject",
 ): Promise<BulkDecisionResult> {
   const user = await requireUser();
+  const organizationId = requireOperatorOrg(user);
 
   // Mirror the page's org filter: this org's jobs plus org-less (shared) jobs.
-  const orgFilter = user.organizationId
-    ? { OR: [{ organizationId: user.organizationId }, { organizationId: null }] }
-    : {};
+  const orgFilter = { OR: [{ organizationId }, { organizationId: null }] };
 
   const jobs = await prisma.agentJob.findMany({
     where: { ...orgFilter, status: "needs_approval" as const },
@@ -91,7 +90,7 @@ export async function bulkDecisionAction(
   for (const job of jobs) {
     try {
       if (decision === "approve") {
-        await approveJob(job.id, user.id);
+        await approveJob(job.id, user.id, organizationId);
         await prisma.auditLog.create({
           data: {
             actorUserId: user.id,
@@ -102,7 +101,7 @@ export async function bulkDecisionAction(
           },
         });
       } else {
-        await rejectJob(job.id, user.id, "Rejected in Mission Control (bulk)");
+        await rejectJob(job.id, user.id, "Rejected in Mission Control (bulk)", organizationId);
         await prisma.auditLog.create({
           data: {
             actorUserId: user.id,
