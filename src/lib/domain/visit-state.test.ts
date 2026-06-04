@@ -61,8 +61,10 @@ describe("selectActiveVisitEncounter", () => {
     const arg = mockPrisma.encounter.findMany.mock.calls[0][0];
     expect(arg.where.patientId).toBe("patient_1");
     expect(arg.where.organizationId).toBe("org_1");
-    // Only scheduled + in_progress are candidates (never complete/cancelled).
-    expect(arg.where.status).toEqual({ in: ["scheduled", "in_progress"] });
+    // Every non-terminal status is a candidate — including the front-desk queue
+    // flow states (checked_in / rooming / roomed) the patient may already be in
+    // — never complete / cancelled / no_show.
+    expect(arg.where.status).toEqual({ in: [...ACTIVE_VISIT_STATUSES] });
   });
 
   it("returns null when there is no active encounter today", async () => {
@@ -210,7 +212,22 @@ describe("assignVisitProvider", () => {
 });
 
 describe("ACTIVE_VISIT_STATUSES", () => {
-  it("only includes non-terminal persisted statuses", () => {
-    expect([...ACTIVE_VISIT_STATUSES]).toEqual(["scheduled", "in_progress"]);
+  it("covers every non-terminal persisted status and excludes terminal ones", () => {
+    // The front-desk queue board persists checked_in..roomed/wrap_up onto the
+    // encounter row, so a reusable "active" encounter can be in any of these.
+    expect([...ACTIVE_VISIT_STATUSES]).toEqual([
+      "scheduled",
+      "checked_in",
+      "info_incomplete",
+      "ready",
+      "rooming",
+      "roomed",
+      "in_visit",
+      "wrap_up",
+      "in_progress",
+    ]);
+    for (const terminal of ["complete", "cancelled", "no_show"]) {
+      expect(ACTIVE_VISIT_STATUSES).not.toContain(terminal);
+    }
   });
 });
