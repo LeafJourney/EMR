@@ -117,3 +117,64 @@ export async function ensureTodayEncounters(
   }
   return created;
 }
+
+/**
+ * Kiosk self-sufficiency: ensure THIS patient's confirmed appointment for today
+ * has its Encounter before the kiosk looks it up, so a booked patient can check
+ * in even if no one has opened the queue board yet. Returns the (existing or new)
+ * encounter, or null if there's no eligible appointment.
+ */
+export async function ensureTodayEncounterForPatient(
+  organizationId: string,
+  patientId: string,
+  now: Date = new Date(),
+): Promise<Encounter | null> {
+  const { start, end } = dayBounds(now);
+
+  const appt = await prisma.appointment.findFirst({
+    where: {
+      patientId,
+      status: "confirmed",
+      startAt: { gte: start, lte: end },
+      encounter: { is: null },
+      NOT: { notes: { startsWith: "[CalendarBlock:" } },
+      patient: { organizationId, deletedAt: null },
+    },
+    select: { id: true },
+    orderBy: { startAt: "asc" },
+  });
+  if (!appt) return null;
+  return ensureEncounterForAppointment(appt.id);
+}
+
+/**
+ * Keep a materialized Encounter's scheduledFor in step with its Appointment when
+ * the appointment is moved. Only touches an encounter still in `scheduled`
+ * (untouched) state — never a checked-in / roomed / started visit. Idempotent.
+ */
+export async function syncEncounterScheduleForAppointment(
+  appointmentId: string,
+  newStartAt: Date,
+): Promise<void> {
+  await prisma.encounter.updateMany({
+    where: { appointmentId, status: "scheduled" },
+    data: { scheduledFor: newStartAt },
+  });
+}
+
+/**
+ * Cancel the Encounter materialized for an Appointment when that appointment is
+ * cancelled, so it doesn't linger as a ghost "Scheduled" card on the queue board
+ * (and isn't reused by selectActiveVisitEncounter). Only cancels an encounter
+ * still in `scheduled` state — a patient who already checked in, or a started
+ * visit, is left for staff to resolve on the queue. Idempotent.
+ */
+export async function cancelEncounterForAppointment(
+  appointmentId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await prisma.encounter.updateMany({
+    where: { appointmentId, status: "scheduled" },
+    data: { status: "cancelled", cancelledAt: now },
+  });
+}

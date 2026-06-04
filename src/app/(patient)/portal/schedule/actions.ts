@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  cancelEncounterForAppointment,
+  syncEncounterScheduleForAppointment,
+} from "@/lib/domain/ensure-encounter";
 import type { AppointmentType } from "@/lib/domain/scheduling";
 
 interface BookAppointmentInput {
@@ -137,6 +141,10 @@ export async function cancelAppointment(
     data: { status: "cancelled" },
   });
 
+  // If this appointment had already materialized a (still-scheduled) Encounter,
+  // cancel it too so it doesn't linger as a ghost card on the queue board.
+  await cancelEncounterForAppointment(appt.id);
+
   revalidatePath("/portal/schedule");
   return { ok: true };
 }
@@ -206,6 +214,10 @@ export async function rescheduleAppointment(
       status: "requested",
     },
   });
+
+  // Keep a materialized (still-scheduled) Encounter pointed at the new time so
+  // the queue board doesn't show the old slot.
+  await syncEncounterScheduleForAppointment(appt.id, newStart);
 
   revalidatePath("/portal/schedule");
   return { ok: true, id: appt.id };

@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-import { ensureEncounterForAppointment } from "@/lib/domain/ensure-encounter";
+import {
+  ensureEncounterForAppointment,
+  syncEncounterScheduleForAppointment,
+} from "@/lib/domain/ensure-encounter";
 
 const rescheduleSchema = z.object({
   appointmentId: z.string(),
@@ -64,6 +67,9 @@ export async function rescheduleAppointmentAction(
     where: { id: appt.id },
     data: { startAt: newStart, endAt: newEnd },
   });
+
+  // Keep a materialized (still-scheduled) Encounter aligned with the new slot.
+  await syncEncounterScheduleForAppointment(appt.id, newStart);
 
   revalidatePath("/clinic/schedule");
   return { ok: true };

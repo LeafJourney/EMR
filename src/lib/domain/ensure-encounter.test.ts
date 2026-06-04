@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 const hoisted = vi.hoisted(() => ({
   mockPrisma: {
-    appointment: { findUnique: vi.fn(), findMany: vi.fn() },
-    encounter: { create: vi.fn(), findUnique: vi.fn() },
+    appointment: { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
+    encounter: { create: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
   },
 }));
 
@@ -19,6 +19,9 @@ vi.mock("@/lib/db/prisma", () => ({ prisma: hoisted.mockPrisma }));
 import {
   ensureEncounterForAppointment,
   ensureTodayEncounters,
+  ensureTodayEncounterForPatient,
+  syncEncounterScheduleForAppointment,
+  cancelEncounterForAppointment,
   isCalendarBlockAppointment,
 } from "./ensure-encounter";
 
@@ -44,8 +47,10 @@ function appt(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.appointment.findUnique.mockResolvedValue(appt());
+  mockPrisma.appointment.findFirst.mockResolvedValue({ id: "appt_1" });
   mockPrisma.encounter.create.mockImplementation(async ({ data }: any) => ({ id: "enc_new", ...data }));
   mockPrisma.encounter.findUnique.mockResolvedValue(null);
+  mockPrisma.encounter.updateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("ensureEncounterForAppointment", () => {
@@ -125,6 +130,46 @@ describe("ensureTodayEncounters", () => {
     mockPrisma.appointment.findMany.mockResolvedValue([]);
     expect(await ensureTodayEncounters("org_1")).toBe(0);
     expect(mockPrisma.encounter.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("ensureTodayEncounterForPatient", () => {
+  it("materializes this patient's confirmed appointment for today", async () => {
+    const enc = await ensureTodayEncounterForPatient("org_1", "patient_1", new Date("2026-06-04T12:00:00Z"));
+    const where = mockPrisma.appointment.findFirst.mock.calls[0][0].where;
+    expect(where.patientId).toBe("patient_1");
+    expect(where.status).toBe("confirmed");
+    expect(where.encounter).toEqual({ is: null });
+    expect(where.NOT).toEqual({ notes: { startsWith: "[CalendarBlock:" } });
+    expect(enc?.id).toBe("enc_new");
+  });
+
+  it("returns null when the patient has no eligible appointment today", async () => {
+    mockPrisma.appointment.findFirst.mockResolvedValue(null);
+    expect(await ensureTodayEncounterForPatient("org_1", "patient_1")).toBeNull();
+    expect(mockPrisma.encounter.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncEncounterScheduleForAppointment", () => {
+  it("moves only a still-scheduled encounter to the new time", async () => {
+    const when = new Date("2026-06-05T18:00:00Z");
+    await syncEncounterScheduleForAppointment("appt_1", when);
+    expect(mockPrisma.encounter.updateMany).toHaveBeenCalledWith({
+      where: { appointmentId: "appt_1", status: "scheduled" },
+      data: { scheduledFor: when },
+    });
+  });
+});
+
+describe("cancelEncounterForAppointment", () => {
+  it("cancels only a still-scheduled encounter (no ghost board card)", async () => {
+    const now = new Date("2026-06-04T10:00:00Z");
+    await cancelEncounterForAppointment("appt_1", now);
+    expect(mockPrisma.encounter.updateMany).toHaveBeenCalledWith({
+      where: { appointmentId: "appt_1", status: "scheduled" },
+      data: { status: "cancelled", cancelledAt: now },
+    });
   });
 });
 
