@@ -19,6 +19,7 @@ import {
 } from "./dual-signoff";
 
 type Db = Pick<PrismaClient, "$transaction"> & {
+  patient: PrismaClient["patient"];
   pharmacyCommThread: PrismaClient["pharmacyCommThread"];
   pharmacyCommMessage: PrismaClient["pharmacyCommMessage"];
   medicationChangeRequest: PrismaClient["medicationChangeRequest"];
@@ -40,6 +41,30 @@ export interface OpenThreadInput {
 }
 
 export async function openThread(db: Db, input: OpenThreadInput) {
+  const patient = await db.patient.findUnique({
+    where: { id: input.patientId },
+    select: { organizationId: true },
+  });
+  if (!patient) {
+    throw new Error("Patient not found.");
+  }
+  if (patient.organizationId !== input.organizationId) {
+    throw new Error("Patient does not belong to the matching organization.");
+  }
+
+  if (input.medicationId) {
+    const medication = await db.patientMedication.findUnique({
+      where: { id: input.medicationId },
+      select: { patientId: true },
+    });
+    if (!medication) {
+      throw new Error("Medication not found.");
+    }
+    if (medication.patientId !== input.patientId) {
+      throw new Error("Medication does not belong to this patient.");
+    }
+  }
+
   return db.pharmacyCommThread.create({
     data: {
       organizationId: input.organizationId,
@@ -116,6 +141,30 @@ export interface ProposeChangeInput {
 }
 
 export async function proposeChange(db: Db, input: ProposeChangeInput) {
+  const patient = await db.patient.findUnique({
+    where: { id: input.patientId },
+    select: { organizationId: true },
+  });
+  if (!patient) {
+    throw new Error("Patient not found.");
+  }
+  if (patient.organizationId !== input.organizationId) {
+    throw new Error("Patient does not belong to the matching organization.");
+  }
+
+  if (input.medicationId) {
+    const medication = await db.patientMedication.findUnique({
+      where: { id: input.medicationId },
+      select: { patientId: true },
+    });
+    if (!medication) {
+      throw new Error("Medication not found.");
+    }
+    if (medication.patientId !== input.patientId) {
+      throw new Error("Medication does not belong to this patient.");
+    }
+  }
+
   // Defensive validation — the JSON blob is what we later write to
   // PatientMedication, so wrong shape here would silently corrupt
   // the chart. validateAfterPayload throws on missing fields.
@@ -149,6 +198,7 @@ export interface SignChangeInput {
   signedName: string;
   npi?: string;
   comments?: string;
+  organizationId: string;
 }
 
 export async function signChange(db: Db, input: SignChangeInput) {
@@ -160,6 +210,9 @@ export async function signChange(db: Db, input: SignChangeInput) {
       include: { signoffs: true },
     });
     if (!req) throw new Error("Change request not found.");
+    if (req.organizationId !== input.organizationId) {
+      throw new Error("Organization mismatch.");
+    }
 
     const state: ChangeRequestState = {
       status: req.status as ChangeRequestState["status"],
@@ -240,6 +293,7 @@ export interface ApplyChangeInput {
   /** Caller's active org — the request lookup is scoped to it (EMR-805). */
   organizationId: string;
   appliedById: string;
+  organizationId: string;
 }
 
 /**
@@ -255,6 +309,9 @@ export async function applyChange(db: Db, input: ApplyChangeInput) {
       include: { signoffs: true },
     });
     if (!req) throw new Error("Change request not found.");
+    if (req.organizationId !== input.organizationId) {
+      throw new Error("Organization mismatch.");
+    }
 
     const state: ChangeRequestState = {
       status: req.status as ChangeRequestState["status"],

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
@@ -17,7 +18,12 @@ export default async function MissionControlPage({
     ? { OR: [{ organizationId: user.organizationId }, { organizationId: null }] }
     : {};
 
-  const activeTab = searchParams.tab === "approval" ? "approval" : "all";
+  const activeTab =
+    searchParams.tab === "approval"
+      ? "approval"
+      : searchParams.tab === "fleet"
+        ? "fleet"
+        : "all";
   const selectedJobId = searchParams.job ?? null;
 
   const jobsWhere = activeTab === "approval"
@@ -86,19 +92,29 @@ export default async function MissionControlPage({
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <MetricTile label="Pending" value={countByStatus.pending ?? 0} />
-        <MetricTile
-          label="Running"
-          value={(countByStatus.running ?? 0) + (countByStatus.claimed ?? 0)}
-          accent="forest"
-        />
-        <MetricTile
-          label="Needs approval"
-          value={countByStatus.needs_approval ?? 0}
-          accent="amber"
-        />
-        <MetricTile label="Succeeded" value={countByStatus.succeeded ?? 0} accent="forest" />
-        <MetricTile label="Failed" value={countByStatus.failed ?? 0} />
+        <Link href="/ops/mission-control" className="block hover:-translate-y-0.5 transition-transform duration-200 focus-visible:outline-none">
+          <MetricTile label="Pending" value={countByStatus.pending ?? 0} />
+        </Link>
+        <Link href="/ops/mission-control" className="block hover:-translate-y-0.5 transition-transform duration-200 focus-visible:outline-none">
+          <MetricTile
+            label="Running"
+            value={(countByStatus.running ?? 0) + (countByStatus.claimed ?? 0)}
+            accent="forest"
+          />
+        </Link>
+        <Link href="/ops/mission-control?tab=approval" className="block hover:-translate-y-0.5 transition-transform duration-200 focus-visible:outline-none">
+          <MetricTile
+            label="Needs approval"
+            value={countByStatus.needs_approval ?? 0}
+            accent="amber"
+          />
+        </Link>
+        <Link href="/ops/mission-control" className="block hover:-translate-y-0.5 transition-transform duration-200 focus-visible:outline-none">
+          <MetricTile label="Succeeded" value={countByStatus.succeeded ?? 0} accent="forest" />
+        </Link>
+        <Link href="/ops/mission-control" className="block hover:-translate-y-0.5 transition-transform duration-200 focus-visible:outline-none">
+          <MetricTile label="Failed" value={countByStatus.failed ?? 0} />
+        </Link>
       </div>
 
       <MissionControlClient
@@ -116,6 +132,7 @@ export default async function MissionControlPage({
         agents={agentList.map((a) => ({
           name: a.name,
           version: a.version,
+          description: (a as any).description ?? "Autonomous workflow helper.",
           requiresApproval: a.requiresApproval,
           allowedActions: a.allowedActions,
           statusCounts: agentStatusCounts[a.name] ?? {},

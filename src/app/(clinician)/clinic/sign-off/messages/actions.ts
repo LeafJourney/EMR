@@ -75,6 +75,13 @@ export async function approveMessageDraft(
 
   const now = new Date();
   await prisma.$transaction([
+    prisma.message.deleteMany({
+      where: {
+        threadId: draft.threadId,
+        status: "draft",
+        id: { not: draft.id },
+      },
+    }),
     prisma.message.update({
       where: { id: draft.id },
       data: {
@@ -155,6 +162,13 @@ export async function editAndApproveMessageDraft(
 
   const now = new Date();
   await prisma.$transaction([
+    prisma.message.deleteMany({
+      where: {
+        threadId: draft.threadId,
+        status: "draft",
+        id: { not: draft.id },
+      },
+    }),
     prisma.message.update({
       where: { id: draft.id },
       data: {

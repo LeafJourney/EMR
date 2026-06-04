@@ -50,6 +50,46 @@ export interface CreatePlanResult {
 }
 
 // ---------------------------------------------------------------------------
+// Pure schedule math (testable without a DB)
+// ---------------------------------------------------------------------------
+
+export interface InstallmentSchedule {
+  installmentCount: number;
+  /** The remainder pulled on the last installment (total − level × (n−1)). */
+  finalInstallmentCents: number;
+}
+
+/** How a balance breaks into level installments plus a final remainder. */
+export function planInstallmentSchedule(
+  totalAmountCents: number,
+  installmentAmountCents: number,
+): InstallmentSchedule {
+  const installmentCount = Math.ceil(totalAmountCents / installmentAmountCents);
+  const finalInstallmentCents = totalAmountCents - installmentAmountCents * (installmentCount - 1);
+  return { installmentCount, finalInstallmentCents };
+}
+
+/** The amount to charge for the next installment. Non-final installments
+ *  charge the level amount; the final installment trues up to the exact
+ *  remaining balance using the amount *actually* paid so far
+ *  (`paidAmountCents`). Truing up from `paidAmountCents` — rather than
+ *  `installmentAmountCents × installmentsPaid` — keeps the last pull
+ *  correct even when `modifyInstallment` changed the level amount partway
+ *  through the plan, which would otherwise under-collect (mark the plan
+ *  paid-in-full while a balance remains) or overcharge the patient. */
+export function computeInstallmentCharge(plan: {
+  totalAmountCents: number;
+  installmentAmountCents: number;
+  installmentsPaid: number;
+  numberOfInstallments: number;
+  paidAmountCents: number;
+}): number {
+  const isFinal = plan.numberOfInstallments - plan.installmentsPaid <= 1;
+  if (!isFinal) return plan.installmentAmountCents;
+  return Math.max(0, plan.totalAmountCents - plan.paidAmountCents);
+}
+
+// ---------------------------------------------------------------------------
 // Plan creation
 // ---------------------------------------------------------------------------
 
@@ -58,13 +98,15 @@ export async function createPlan(input: CreatePlanInput): Promise<CreatePlanResu
   validateInstallment(input.installmentAmountCents);
   if (input.totalAmountCents <= 0) throw new Error("totalAmountCents must be positive");
 
-  const installmentCount = Math.ceil(input.totalAmountCents / input.installmentAmountCents);
+  const { installmentCount, finalInstallmentCents: finalInstallment } = planInstallmentSchedule(
+    input.totalAmountCents,
+    input.installmentAmountCents,
+  );
   if (installmentCount < MIN_INSTALLMENT_COUNT || installmentCount > MAX_INSTALLMENT_COUNT) {
     throw new Error(
       `installment count ${installmentCount} outside allowed range ${MIN_INSTALLMENT_COUNT}-${MAX_INSTALLMENT_COUNT}`,
     );
   }
-  const finalInstallment = input.totalAmountCents - input.installmentAmountCents * (installmentCount - 1);
 
   const plan = await prisma.paymentPlan.create({
     data: {
@@ -129,11 +171,7 @@ export async function chargeNextInstallment(planId: string, today: Date = new Da
   const card = plan.patient.paymentMethods[0] as StoredPaymentMethod | undefined;
   if (!card) return { ok: false, reason: "no_stored_method", detail: "no default card on file" };
 
-  const remaining = plan.numberOfInstallments - plan.installmentsPaid;
-  const isFinal = remaining === 1;
-  const chargeAmount = isFinal
-    ? plan.totalAmountCents - plan.installmentAmountCents * plan.installmentsPaid
-    : plan.installmentAmountCents;
+  const chargeAmount = computeInstallmentCharge(plan);
 
   // Plan installments are applied to the patient's oldest unsatisfied
   // claim — Payment requires a claimId in the schema. When no claim

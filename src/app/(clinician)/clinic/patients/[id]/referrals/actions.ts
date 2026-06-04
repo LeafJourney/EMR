@@ -270,3 +270,67 @@ function previewBlocks(blocks: unknown): string {
   }
   return "";
 }
+
+export type CreateReferralResult =
+  | { ok: true; referral: any }
+  | { ok: false; error: string };
+
+export async function createReferralAction(payload: {
+  patientId: string;
+  direction: string;
+  priority: string;
+  referringProviderName: string;
+  referringPracticeName: string;
+  referredToProviderName: string;
+  referredToSpecialty: string;
+  referredToPracticeName: string;
+  referredToPhone?: string;
+  referredToFax?: string;
+  reason: string;
+  diagnosisCodes: { code: string; label: string }[];
+  clinicalNotes?: string;
+}): Promise<CreateReferralResult> {
+  const user = await requireUser();
+  const orgId = user.organizationId!;
+
+  // Verify patient belongs to org
+  const patient = await prisma.patient.findFirst({
+    where: { id: payload.patientId, organizationId: orgId, deletedAt: null },
+  });
+  if (!patient) return { ok: false, error: "Patient not found." };
+
+  const referral = await prisma.referral.create({
+    data: {
+      organizationId: orgId,
+      patientId: payload.patientId,
+      direction: payload.direction,
+      priority: payload.priority,
+      referringProviderName: payload.referringProviderName,
+      referringPracticeName: payload.referringPracticeName,
+      referredToProviderName: payload.referredToProviderName,
+      referredToSpecialty: payload.referredToSpecialty,
+      referredToPracticeName: payload.referredToPracticeName,
+      referredToPhone: payload.referredToPhone || null,
+      referredToFax: payload.referredToFax || null,
+      reason: payload.reason,
+      diagnosisCodes: payload.diagnosisCodes as any,
+      clinicalNotes: payload.clinicalNotes || null,
+      status: "draft",
+    },
+  });
+
+  return {
+    ok: true,
+    referral: {
+      ...referral,
+      diagnosisCodes: referral.diagnosisCodes as any,
+      attachedDocumentIds: referral.attachedDocumentIds as any,
+      createdAt: referral.createdAt.toISOString(),
+      updatedAt: referral.updatedAt.toISOString(),
+      sentAt: referral.sentAt?.toISOString(),
+      receivedAt: referral.receivedAt?.toISOString(),
+      scheduledDate: referral.scheduledDate?.toISOString()?.slice(0, 10),
+      completedAt: referral.completedAt?.toISOString(),
+    },
+  };
+}

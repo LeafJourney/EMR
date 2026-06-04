@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => {
   const prisma = {
@@ -58,6 +58,8 @@ const dueAppointmentReminder = () =>
   makeAppt({ id: "appt_sms", startAt: new Date("2026-06-08T12:00:00.000Z") });
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
   vi.clearAllMocks();
   getMockSmsAdapter().reset();
   delete process.env.TWILIO_ACCOUNT_SID;
@@ -70,6 +72,10 @@ beforeEach(() => {
   sendEmail.mockResolvedValue({ ok: true, id: "email_1" });
   // Default: no org-level portal URL override.
   prisma.organization.findMany.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("pickPrevisitMilestone", () => {

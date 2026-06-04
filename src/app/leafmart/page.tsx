@@ -452,7 +452,7 @@ export default async function LeafmartHomePage() {
                 { q: "Any restrictions to know about?", a: "I prefer non-intoxicating" },
               ].map((row, i) => (
                 <div key={i} className="pb-3.5" style={{ borderBottom: i < 2 ? "1px solid rgba(255,248,232,0.18)" : "none" }}>
-                  <div className="text-[11.5px] text-[rgba(255,248,232,0.6)] tracking-[1.2px] uppercase font-semibold mb-1.5">0{i + 1}</div>
+                  <div className="text-[11.5px] text-[rgba(255,248,232,0.85)] tracking-[1.2px] uppercase font-semibold mb-1.5">0{i + 1}</div>
                   <div className="text-[13px] sm:text-sm text-[rgba(255,248,232,0.7)] mb-1.5">{row.q}</div>
                   <div className="font-display text-base sm:text-lg font-medium text-[#FFF8E8]">{row.a}</div>
                 </div>

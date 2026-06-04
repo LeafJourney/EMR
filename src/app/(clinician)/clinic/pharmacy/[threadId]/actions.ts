@@ -95,6 +95,7 @@ export async function signChangeAction(formData: FormData) {
     signedById: user.id,
     signedName: `${user.firstName} ${user.lastName}`.trim(),
     comments,
+    organizationId: user.organizationId,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }
@@ -111,6 +112,7 @@ export async function applyChangeAction(formData: FormData) {
     requestId,
     organizationId: user.organizationId,
     appliedById: user.id,
+    organizationId: user.organizationId,
   });
   revalidatePath(`/clinic/pharmacy/${threadId}`);
 }

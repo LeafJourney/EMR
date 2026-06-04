@@ -157,7 +157,7 @@ export function StatusView({ snapshot, incidents, maintenance }: StatusViewProps
           </h1>
           <p className="text-sm text-text-muted mt-1">
             Last checked {checkedLabel} ·{" "}
-            <span className="text-text-subtle">
+            <span className="text-text-muted">
               {formatPct(overallUptime)} average uptime over the last 90 days
             </span>
           </p>

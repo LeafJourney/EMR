@@ -12,6 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
+import { Icd10PickerButton } from "./icd10-picker-button";
+
+// EMR-959 — the recommendation string that becomes a clickable ICD-10 picker.
+const ICD10_RECOMMENDATION = "Document qualifying condition with ICD-10 coding";
 
 // ---------------------------------------------------------------------------
 // Eligibility rules engine (deterministic — no API needed)
@@ -319,7 +323,11 @@ export default function EligibilityPage() {
                         className="text-sm text-text-muted flex items-start gap-2"
                       >
                         <span className="text-accent shrink-0">{i + 1}.</span>
-                        {r}
+                        {r === ICD10_RECOMMENDATION ? (
+                          <Icd10PickerButton seedQuery={formData.diagnosis} />
+                        ) : (
+                          r
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { SystemBannerRail } from "@/components/ui/system-banner";

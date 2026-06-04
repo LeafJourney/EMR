@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { IMAGING_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
+import { useToast } from "@/components/ui/toast";
 
 interface Props {
   patientName: string;
@@ -23,11 +24,7 @@ export function ImagingOrderForm({ patientName }: Props) {
   const [icd10Query, setIcd10Query] = useState("");
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
   const [priorAuth, setPriorAuth] = useState(false);
-  const [submitted, setSubmitted] = useState<{
-    orderId: string;
-    study: string;
-    when: string;
-  } | null>(null);
+  const { toast } = useToast();
 
   const availableStudies = useMemo(
     () => IMAGING_CATALOG.filter((i) => i.modality === modality),
@@ -59,51 +56,45 @@ export function ImagingOrderForm({ patientName }: Props) {
     const study = IMAGING_CATALOG.find((i) => i.code === studyCode);
     if (!study) return;
     const orderId = `IMG-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    setSubmitted({
-      orderId,
-      study: study.name,
-      when: new Date().toLocaleString(),
-    });
-  }
 
-  if (submitted) {
-    return (
-      <Card tone="raised" className="border-l-4 border-l-emerald-500">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white text-xs">
-              ✓
-            </span>
-            Imaging order submitted
-          </CardTitle>
-          <CardDescription>
-            Order #{submitted.orderId} placed for {patientName} at {submitted.when}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-text mb-4">
-            Study: <span className="font-medium">{submitted.study}</span>
-          </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setSubmitted(null);
-              setStudyCode("");
-              setIndication("");
-              setIcd10Selected([]);
-              setPriorAuth(false);
-            }}
-          >
-            Place another order
-          </Button>
-        </CardContent>
-      </Card>
-    );
+    const payload = {
+      orderId,
+      patientName,
+      modality,
+      studyCode,
+      studyName: study.name,
+      indication,
+      diagnoses: icd10Selected,
+      priorAuth,
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log("[Simulation] Imaging Order Submitted:", JSON.stringify(payload, null, 2));
+
+    toast({
+      title: "Order simulated",
+      description: `Imaging order simulated & logged for ${patientName}.`,
+      variant: "success",
+    });
+
+    // Reset inputs
+    setStudyCode("");
+    setIndication("");
+    setIcd10Selected([]);
+    setPriorAuth(false);
   }
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-accent/20 bg-accent/[0.03] p-4 flex gap-3 items-start">
+        <span className="text-accent text-base mt-0.5">ℹ️</span>
+        <div>
+          <p className="text-sm font-medium text-text">Demo mode enabled</p>
+          <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+            Imaging orders are simulated in this sandbox environment. Submitting an order prints the full HL7/FHIR payload to the terminal console log. No real transmission is performed.
+          </p>
+        </div>
+      </div>
       <Card tone="raised">
         <CardHeader>
           <CardTitle className="text-base">Modality</CardTitle>

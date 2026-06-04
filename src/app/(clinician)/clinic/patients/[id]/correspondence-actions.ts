@@ -41,6 +41,12 @@ export async function sendChartReply(
   const now = new Date();
 
   await prisma.$transaction([
+    prisma.message.deleteMany({
+      where: {
+        threadId: parsed.data.threadId,
+        status: "draft",
+      },
+    }),
     prisma.message.create({
       data: {
         threadId: parsed.data.threadId,

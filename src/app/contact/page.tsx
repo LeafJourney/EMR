@@ -29,6 +29,9 @@ export default function ContactPage() {
             </p>
           </div>
 
+          {/* sr-only heading keeps the heading order valid (h1 → h2 → the
+              footer's h3) on this otherwise heading-sparse page. */}
+          <h2 className="sr-only">Send us a message</h2>
           <Suspense fallback={null}>
             <ContactForm />
           </Suspense>
