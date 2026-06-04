@@ -102,7 +102,11 @@ export function Rail({
                 </button>
               </SignOutButton>
             ) : (
-              <a href="/sign-in" className="dropdown-item logout" role="menuitem">
+              <a 
+                href={process.env.NODE_ENV !== "production" ? "/api/dev/logout?redirect=/sign-in" : "/sign-in"} 
+                className="dropdown-item logout" 
+                role="menuitem"
+              >
                 <Icon name="logout" size={15} />
                 <span>Sign out</span>
               </a>

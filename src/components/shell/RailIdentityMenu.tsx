@@ -83,7 +83,7 @@ export function RailIdentityMenu({
               </SignOutButton>
             ) : (
               <a
-                href="/sign-in"
+                href={process.env.NODE_ENV !== "production" ? "/api/dev/logout?redirect=/sign-in" : "/sign-in"}
                 role="menuitem"
                 className="block w-full rounded-md px-3 py-2 text-left text-sm text-text-subtle transition-colors hover:bg-surface-muted hover:text-text"
               >
