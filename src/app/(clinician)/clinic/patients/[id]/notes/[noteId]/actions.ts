@@ -89,6 +89,17 @@ export async function saveNoteBlocks(
     }
     throw err;
   }
+
+  // A signed note (finalized or amended) is a locked legal record. The editor
+  // hides the Save button once a note leaves draft/needs_review, but the server
+  // must enforce it too: a direct action call (or a stale client) must not
+  // silently mutate a signed note. Mirrors the guard saveObjectiveDocumentation
+  // already applies. Amending a signed note is a deliberate, audited flow — not
+  // a plain block save.
+  if (note.status === "finalized" || note.status === "amended") {
+    return { ok: false, error: "This note is signed and can no longer be edited." };
+  }
+
   // EMR-784: AI-drafted notes (voice/ambient scribe) must keep the
   // patient verbal-consent disclaimer even if the clinician edited the
   // draft. Re-inject if it was stripped.
