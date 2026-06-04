@@ -49,7 +49,7 @@
 
   /* Highlight — burnt amber */
   --highlight: #B8782F;
-  --highlight-hover: #9A6220;
+  --highlight-hover: #80501A;
   --highlight-soft: #F5E6B8;
 
   /* Pastel shelves — category carriers */
@@ -97,20 +97,20 @@
   --mint-stamp: #1F4D37;
   --coral-stamp: #A0522D;
   --lavender-stamp: #6B4C8A;
-  --seafoam-stamp: #2E8B6F;
-  --honey-stamp: #B8860B;
+  --seafoam-stamp: #1F6B54;
+  --honey-stamp: #8A6408;
   --blush-stamp: #9E4D45;
   --sky-stamp: #3D5A80;
   --sand-stamp: #7A6A4F;
   --moss-stamp: #4A6A3A;
-  --cream-stamp: #A0793D;
+  --cream-stamp: #7C5829;
   --stone-stamp: #6B5B4A;
   --cloud-stamp: #4A4A4A;
   --gold-stamp: #1F4D37;
   --sprout-stamp: #3A7A4A;
 
   /* Semantic */
-  --success: #3A8560;
+  --success: #2A6E4C;
   --warning: #B4701E;
   --danger: #B83B2E;
   --info: #2E5B8C;

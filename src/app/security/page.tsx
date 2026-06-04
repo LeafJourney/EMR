@@ -171,6 +171,9 @@ export default function SecurityPage() {
 
       {/* Security Pillars */}
       <section className="max-w-[1280px] mx-auto px-6 lg:px-12 py-20">
+        {/* sr-only section heading keeps the heading order valid (h1 → h2 → h3
+            cards) without adding visible chrome to the pillar grid. */}
+        <h2 className="sr-only">Security pillars</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {SECURITY_PILLARS.map((pillar) => {
             const Icon = pillar.Icon;
