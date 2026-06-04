@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getLeafnerdData } from "@/lib/leafnerd/server-data";
 import { getLeafnerdClinicalData } from "@/lib/leafnerd/clinical-surfaces";
 import { getRealFhirResources } from "@/lib/leafnerd/fhir-real";
+import { getAgentWorkbenchData } from "@/lib/leafnerd/agent-workbench";
 import LeafnerdApp from "@/components/leafnerd/fhir-intelligence/LeafnerdApp";
 import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
 
@@ -16,17 +17,37 @@ export default async function LeafNerdDashboard() {
   // `leafnerd` (or `super_admin`) role — the demo identity Dr. Lena Reyes carries it.
   // Kept open in dev so local iteration never bounces to /sign-in.
   const user = await getCurrentUser().catch(() => null);
+  const memberships = user
+    ? await prisma.membership
+        .findMany({ where: { userId: user.id } })
+        .catch(() => [] as { role: string }[])
+    : [];
+
   if (process.env.NODE_ENV === "production") {
     if (!user) redirect("/sign-in?redirect_url=/leafnerd");
-    const memberships = await prisma.membership
-      .findMany({ where: { userId: user.id } })
-      .catch(() => [] as { role: string }[]);
     const hasAccess = memberships.some(
       (m: { role: string }) => m.role === "leafnerd" || m.role === "super_admin",
     );
     if (!hasAccess) redirect("/forbidden");
   }
-  const userName: string | undefined = user?.firstName ?? undefined;
+  const userName: string | undefined = user
+    ? user.lastName
+      ? `Dr. ${user.lastName}`
+      : user.firstName
+    : undefined;
+
+  let userRole: string | undefined = undefined;
+  if (memberships.length > 0) {
+    const rolesList = memberships.map((m) => m.role);
+    if (rolesList.includes("leafnerd")) {
+      userRole = "Population Health Lead";
+    } else if (rolesList.includes("super_admin")) {
+      userRole = "Super Admin";
+    } else {
+      const r = rolesList[0];
+      userRole = r.charAt(0).toUpperCase() + r.slice(1).replace("_", " ");
+    }
+  }
 
   // The analytics layer always returns a complete, believable payload (it falls
   // back to DEMO_DATA internally if any DB query fails).
@@ -35,6 +56,9 @@ export default async function LeafNerdDashboard() {
   // Real seeded clinical lists (Patients/Encounters/Observations/Conditions/Medications/Labs).
   // Never throws — falls back to curated rows internally.
   const clinical = await getLeafnerdClinicalData();
+
+  // Fetch real/fallback Agent Workbench data.
+  const agentWorkbench = await getAgentWorkbenchData();
 
   // Prepend genuinely-mapped FHIR R4 resources (built from real seeded patients via
   // platform/fhir.ts) so the FHIR Explorer leads with real data. Falls back silently.
@@ -101,9 +125,11 @@ export default async function LeafNerdDashboard() {
     <LeafnerdApp
       data={data}
       userName={userName}
+      userRole={userRole}
       claims={claims}
       cohortStatusCounts={cohortStatusCounts}
       clinical={clinical}
+      agentWorkbench={agentWorkbench}
     />
   );
 }
