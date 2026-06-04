@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import type { KeyboardEvent } from "react";
+import type { ClipboardEvent, KeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -198,7 +198,7 @@ function RxDetailPane({
   onDone: (id: string) => void;
 }) {
   const [phase, setPhase] = useState<"idle" | "approve-pin" | "deny-reason">("idle");
-  const [pin, setPin] = useState<string[]>(["", "", "", ""]);
+  const [pin, setPin] = useState<string[]>(["" , "", "", ""]);
   const [denyReason, setDenyReason] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -206,18 +206,42 @@ function RxDetailPane({
 
   const pinFilled = pin.every((d) => d !== "");
 
+  const submitApprove = (digits: string[]) => {
+    if (!digits.every((d) => d !== "")) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await approveRefillAction(row.id);
+      if (!res.ok) setError(res.error);
+      else onDone(row.id);
+    });
+  };
+
   const handlePinChange = (i: number, val: string) => {
     const digit = val.replace(/\D/g, "").slice(-1);
     const next = [...pin];
     next[i] = digit;
     setPin(next);
-    if (digit && i < 3) pinRefs.current[i + 1]?.focus();
+    if (digit && i < 3) {
+      pinRefs.current[i + 1]?.focus();
+    } else if (digit && i === 3 && next.every((d) => d !== "")) {
+      submitApprove(next);
+    }
   };
 
   const handlePinKeyDown = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace" && pin[i] === "" && i > 0) {
       pinRefs.current[i - 1]?.focus();
     }
+  };
+
+  const handlePinPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4);
+    if (digits.length === 0) return;
+    e.preventDefault();
+    const next = (["", "", "", ""] as string[]).map((_, idx) => digits[idx] ?? "");
+    setPin(next);
+    pinRefs.current[Math.min(digits.length, 3)]?.focus();
+    if (digits.length === 4) submitApprove(next);
   };
 
   const resetPhase = () => {
@@ -227,15 +251,7 @@ function RxDetailPane({
     setError(null);
   };
 
-  const confirmApprove = () => {
-    if (!pinFilled) return;
-    setError(null);
-    startTransition(async () => {
-      const res = await approveRefillAction(row.id);
-      if (!res.ok) setError(res.error);
-      else onDone(row.id);
-    });
-  };
+  const confirmApprove = () => submitApprove(pin);
 
   const confirmDeny = () => {
     if (!denyReason.trim()) return;
@@ -412,6 +428,7 @@ function RxDetailPane({
                   autoFocus={i === 0}
                   onChange={(e) => handlePinChange(i, e.target.value)}
                   onKeyDown={(e) => handlePinKeyDown(i, e)}
+                  onPaste={handlePinPaste}
                   className="w-12 h-12 rounded-xl border-2 border-border text-center text-lg font-mono text-text bg-surface focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
                   aria-label={`PIN digit ${i + 1}`}
                 />
@@ -435,11 +452,6 @@ function RxDetailPane({
                 {pending ? "Signing…" : "Complete sign-off"}
               </Button>
             </div>
-
-            <p className="text-[11px] text-text-subtle">
-              Phase 1 stub — PIN is recorded for audit intent; server-side PIN
-              hashing ships in Phase 2 (MALLIK-012).
-            </p>
           </div>
         )}
 
