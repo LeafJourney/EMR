@@ -313,7 +313,7 @@ export default async function ClinicHomePage() {
             chartSummary: true,
             observations: {
               where: { acknowledgedAt: null },
-              select: { severity: true },
+              select: { severity: true, summary: true, category: true },
             },
             documents: {
               where: { deletedAt: null },
