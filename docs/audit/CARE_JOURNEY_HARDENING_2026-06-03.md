@@ -107,12 +107,18 @@ appointment against a missing, inactive, or cross-org provider.
    materializes a `scheduled` Encounter from a **confirmed** appointment (idempotent via the
    `@unique appointmentId`, race-safe, skips `[CalendarBlock:…]` holds), wired **eagerly** per
    product decision: at appointment confirmation (`createPatientAppointmentAction`) and as a
-   day-of backstop on the `/ops/queue` board (`ensureTodayEncounters`). Commit `a52f9a17`,
-   9 unit tests. Residual: the kiosk console (`loadTodayEncounter`) does not itself run the
-   backstop — it relies on the board having been opened (clinic open) or the appointment having
-   been confirmed via the clinician path; a patient self-booking that is auto-confirmed by some
-   other path before any board load would still need staff to open the queue first. Patient
-   self-bookings remain `requested` until confirmed (no encounter until then — by design).
+   day-of backstop on the `/ops/queue` board (`ensureTodayEncounters`). Commits `a52f9a17`,
+   `5289d234`, 13 unit tests. The kiosk console now also self-serves
+   (`ensureTodayEncounterForPatient` inside `loadTodayEncounter`), so a booked patient can
+   check in even before the board is opened. Appointment lifecycle is kept consistent:
+   cancel → `cancelEncounterForAppointment` (no ghost board card), reschedule (all 3 paths) →
+   `syncEncounterScheduleForAppointment` (no stale time). Patient self-bookings remain
+   `requested` until confirmed (no encounter until then — by design).
+   **Blast-radius verified:** the crons that iterate `status:"scheduled"` encounters
+   (`cron/reminders`, `integrations/eligibility-check`) are unscheduled (no `vercel.json`) and
+   are logging/simulation mocks, so the now-plentiful scheduled encounters don't trigger real
+   sends. Forward note: if real cron scheduling + sending is wired later, dedupe the
+   encounter-based reminders against the appointment-based `sendDueReminders`.
 
 1. **Concurrent walk-in duplicate** — `selectActiveVisitEncounter`+`create` is not atomic.
    The deterministic roomed-miss is fixed and repeat-clicks reuse, but two *simultaneous*
@@ -138,10 +144,10 @@ Baseline before changes: 269 test files / 2566 tests, all passing.
 
 | Gate | Command | Result |
 |------|---------|--------|
-| Unit + integration | `npx vitest run` | **276 files / 2622 tests passing** (+7 files, +56 tests over baseline) |
-| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after the bridge; Prisma relation-filter types check out |
+| Unit + integration | `npx vitest run` | **276 files / 2626 tests passing** (+7 files, +60 tests over baseline) |
+| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after the lifecycle round; Prisma relation-filter types check out |
 | Lint | `npm run lint` (`next lint`) | pass (exit 0); only a pre-existing `no-img-element` warning in `ShareDialog.tsx` (untouched) |
-| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) — re-run after the bridge; full production build |
+| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) — re-run after the lifecycle round; full production build |
 
 New / changed tests:
 - `src/lib/domain/visit-state.select-active.test.ts` (new, 13) — drives the real
@@ -173,6 +179,7 @@ ad2084b0 test(visit): end-to-end same-day care-journey integration spine
 61735a21 fix(portal): validate provider exists, is active, and shares the patient's org on booking
 4615b128 docs(audit): round-2 update — siblings, provider validation, appointment↔encounter finding
 a52f9a17 feat(visit): materialize Encounter from confirmed Appointment (check-in/queue bridge)
+5289d234 fix(visit): keep materialized Encounter in sync across appointment cancel/reschedule + kiosk self-serve
 ```
 
 ### F. Appointment→Encounter bridge (round 3)  — **HIGH (systemic)**
@@ -181,3 +188,13 @@ documented "check in on appointment day" scenario was broken end-to-end. Added
 `ensureEncounterForAppointment` / `ensureTodayEncounters`
 (`src/lib/domain/ensure-encounter.ts`), wired at confirm + the queue day-of view.
 - Tests: `ensure-encounter.test.ts` (9). Commit `a52f9a17`.
+
+### G. Bridge lifecycle consistency + kiosk self-serve (round 4)  — **MED**
+Direct follow-through on F: a materialized encounter has to track its appointment,
+or the bridge leaves ghost "Scheduled" cards / stale times. Added (guarded to a
+still-`scheduled` encounter, idempotent): `cancelEncounterForAppointment`,
+`syncEncounterScheduleForAppointment`, `ensureTodayEncounterForPatient`. Wired into
+portal cancel/reschedule, both clinician drag-reschedule actions, and the kiosk
+`loadTodayEncounter`. Audited the blast radius (more scheduled encounters now exist):
+the scheduled-encounter crons are unscheduled mocks — no real double-sends.
+- Tests: `ensure-encounter.test.ts` (→13). Commit `5289d234`.
