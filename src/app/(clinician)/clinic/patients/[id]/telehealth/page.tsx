@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
 import { generateRoomUrl, PATIENT_CHECKLIST } from "@/lib/domain/telehealth";
+import { ACTIVE_VISIT_STATUSES } from "@/lib/domain/visit-state";
 import { VideoRoom } from "./video-room";
 
 interface PageProps {
@@ -30,12 +31,16 @@ export default async function TelehealthPage({ params }: PageProps) {
 
   if (!patient) notFound();
 
-  // Get or create an encounter for this telehealth visit
+  // Find the active telehealth encounter for this patient. Must include every
+  // non-terminal status — a video visit the front desk already checked in or
+  // roomed sits in checked_in/rooming/roomed, and the old scheduled/in_progress
+  // filter missed it, falling back to a bogus patientId-as-encounterId room URL.
   const encounter = await prisma.encounter.findFirst({
     where: {
       patientId: params.id,
+      organizationId: user.organizationId!,
       modality: "video",
-      status: { in: ["scheduled", "in_progress"] },
+      status: { in: [...ACTIVE_VISIT_STATUSES] },
     },
     orderBy: { scheduledFor: "desc" },
   });

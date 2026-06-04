@@ -140,6 +140,45 @@ describe("startVisit — encounter selection", () => {
   });
 });
 
+describe("startVisit — reuses front-desk queue-state encounters (duplicate-encounter regression)", () => {
+  // Replicate Prisma's `status { in }` filter so the production WHERE clause in
+  // selectActiveVisitEncounter is exercised end-to-end, not just the mock's
+  // canned return. A patient checked-in / roomed by the front desk sits in a
+  // queue flow status; Start Visit must reuse that row, not mint a duplicate.
+  function withFilteringFindMany(rows: Array<Record<string, unknown>>) {
+    mockPrisma.encounter.findMany.mockImplementation(async ({ where }: any) =>
+      rows.filter((e: any) => where.status.in.includes(e.status)),
+    );
+  }
+
+  for (const status of ["checked_in", "ready", "rooming", "roomed", "wrap_up"]) {
+    it(`reuses today's ${status} encounter and advances it in-place`, async () => {
+      withFilteringFindMany([scheduledEncounter({ id: "live_1", status })]);
+
+      await expect(startVisit("patient_1")).rejects.toThrow(/redirect:/);
+
+      // No duplicate encounter minted...
+      expect(mockPrisma.encounter.create).not.toHaveBeenCalled();
+      // ...and the existing row (carrying the MA rooming handoff) is advanced
+      // into the visit rather than abandoned.
+      expect(mockPrisma.encounter.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "live_1" },
+          data: expect.objectContaining({ status: "in_progress" }),
+        }),
+      );
+    });
+  }
+
+  it("mints a fresh encounter when today's only encounter is terminal (complete)", async () => {
+    withFilteringFindMany([scheduledEncounter({ id: "done_1", status: "complete" })]);
+
+    await expect(startVisit("patient_1")).rejects.toThrow(/redirect:/);
+
+    expect(mockPrisma.encounter.create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("startVisit — provider attribution", () => {
   it("Dr B starting Dr A's scheduled encounter preserves ownership and stamps rendering provider", async () => {
     // Dr A owns today's scheduled encounter; Dr B (current user) starts the visit.
