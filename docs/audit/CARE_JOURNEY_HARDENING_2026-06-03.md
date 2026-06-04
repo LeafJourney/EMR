@@ -30,7 +30,7 @@ Queue board (`/ops/queue`, kiosk) persists the intermediate flow states via `com
 | Step / required scenario | Status | Evidence |
 |---|---|---|
 | Patient books through portal | **fixed** | `bookAppointment` now guards conflicts/past/invalid + preserves modality; `actions.book.test.ts` |
-| Same patient checks in on appt day | **⚠ gap** | check-in transition works (`api/mobile/kiosk/check-in`, `kioskCheckIn`, `computeQueueTransition`) **but only if an Encounter already exists** — booked appointments are never materialized into encounters (see Risk #1), so a booked-but-no-encounter patient hits "No appointment found" |
+| Same patient checks in on appt day | **fixed** | confirmed appointments now materialize a `scheduled` Encounter (`ensureEncounterForAppointment` at confirm + `ensureTodayEncounters` day-of on the queue board), so the patient is checkinable and appears on `/ops/queue`; then `kioskCheckIn`/`computeQueueTransition` advance it |
 | Missing required intake detected/surfaced | pass | `intake-gate` + `previsit-readiness` (existing suites) |
 | QR/OTP rescue (no portal password for older adult) | pass | `kiosk-handoff` → OTP → lobby session; existing `check-in/*` suites |
 | Front desk marks readiness / sees blockers | pass | `getAppointmentReadiness`, `MissingRequirement[]` deep links |
@@ -101,22 +101,18 @@ appointment against a missing, inactive, or cross-org provider.
 
 ## 4. Residual risks (do NOT mark fully shipped without these)
 
-0. **★ Appointments are never materialized into Encounters (SYSTEMIC — needs a product decision).**
-   `Encounter.appointmentId` is `@unique` in the schema but is **never set anywhere in app
-   code** — confirmed by auditing every `encounter.create` site. Booking creates only an
-   `Appointment`; encounters are created solely at visit-start (`startVisit` /
-   `startVisitWithBriefing` / `startVoiceEncounter`) or walk-in, all as `in_progress`. The
-   readiness/intake side runs off Appointments; the check-in → rooming → visit side runs off
-   Encounters; **nothing bridges them.** Consequence: a patient who books and shows up has no
-   Encounter, so `kioskCheckIn` returns *"No appointment found for today"* and the queue board
-   never shows them. The seeded demo hides this because it creates encounters directly.
-   - **Recommended fix (team decision required — timing/semantics):** an idempotent
-     `ensureEncounterForAppointment(appointmentId)` that creates a `scheduled` Encounter from a
-     confirmed Appointment (copying `scheduledFor`/`providerId`/`modality`, linking
-     `appointmentId` — the `@unique` makes it race-safe). Wire it at ONE agreed trigger: at
-     appointment confirmation, a day-of cron, or lazily on first check-in / queue-board load.
-     This affects what the queue/dashboards/billing count, so it's a workflow-semantics call,
-     not a silent fix — deliberately left for you.
+0. **✅ FIXED — Appointment→Encounter bridge.** Previously `Encounter.appointmentId` was
+   `@unique` but never set in app code, so booked appointments never became encounters and a
+   booked patient couldn't be checked in ("No appointment found"). Now `ensureEncounterForAppointment`
+   materializes a `scheduled` Encounter from a **confirmed** appointment (idempotent via the
+   `@unique appointmentId`, race-safe, skips `[CalendarBlock:…]` holds), wired **eagerly** per
+   product decision: at appointment confirmation (`createPatientAppointmentAction`) and as a
+   day-of backstop on the `/ops/queue` board (`ensureTodayEncounters`). Commit `a52f9a17`,
+   9 unit tests. Residual: the kiosk console (`loadTodayEncounter`) does not itself run the
+   backstop — it relies on the board having been opened (clinic open) or the appointment having
+   been confirmed via the clinician path; a patient self-booking that is auto-confirmed by some
+   other path before any board load would still need staff to open the queue first. Patient
+   self-bookings remain `requested` until confirmed (no encounter until then — by design).
 
 1. **Concurrent walk-in duplicate** — `selectActiveVisitEncounter`+`create` is not atomic.
    The deterministic roomed-miss is fixed and repeat-clicks reuse, but two *simultaneous*
@@ -142,10 +138,10 @@ Baseline before changes: 269 test files / 2566 tests, all passing.
 
 | Gate | Command | Result |
 |------|---------|--------|
-| Unit + integration | `npx vitest run` | **275 files / 2613 tests passing** (+6 files, +47 tests over baseline) |
-| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after round 2 |
+| Unit + integration | `npx vitest run` | **276 files / 2622 tests passing** (+7 files, +56 tests over baseline) |
+| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after the bridge; Prisma relation-filter types check out |
 | Lint | `npm run lint` (`next lint`) | pass (exit 0); only a pre-existing `no-img-element` warning in `ShareDialog.tsx` (untouched) |
-| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) at round 1; round-2 changes are typecheck+lint+test clean (build not re-run) |
+| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) at round 1; later rounds are typecheck+lint+test clean (build not re-run) |
 
 New / changed tests:
 - `src/lib/domain/visit-state.select-active.test.ts` (new, 13) — drives the real
@@ -175,5 +171,13 @@ ad2084b0 test(visit): end-to-end same-day care-journey integration spine
 61121004 test(visit): align ACTIVE_VISIT_STATUSES contract test with the non-terminal fix
 8a0f3619 fix(visit): close two more duplicate-encounter siblings (voice charting, telehealth overlay)
 61735a21 fix(portal): validate provider exists, is active, and shares the patient's org on booking
-docs(audit): round-2 update — siblings, provider validation, appointment↔encounter finding
+4615b128 docs(audit): round-2 update — siblings, provider validation, appointment↔encounter finding
+a52f9a17 feat(visit): materialize Encounter from confirmed Appointment (check-in/queue bridge)
 ```
+
+### F. Appointment→Encounter bridge (round 3)  — **HIGH (systemic)**
+See Risk #0 (now ✅ fixed). Booked appointments never became encounters, so the
+documented "check in on appointment day" scenario was broken end-to-end. Added
+`ensureEncounterForAppointment` / `ensureTodayEncounters`
+(`src/lib/domain/ensure-encounter.ts`), wired at confirm + the queue day-of view.
+- Tests: `ensure-encounter.test.ts` (9). Commit `a52f9a17`.
