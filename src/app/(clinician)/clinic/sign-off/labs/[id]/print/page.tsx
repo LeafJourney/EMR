@@ -84,10 +84,23 @@ export default async function LabPrintPage({ params }: PageProps) {
         },
       },
       signedBy: { select: { firstName: true, lastName: true } },
+      outreach: { select: { patientDraft: true, status: true } },
     },
   });
 
   if (!lab) notFound();
+
+  const prior = await prisma.labResult.findFirst({
+    where: {
+      patientId: lab.patientId,
+      panelName: lab.panelName,
+      id: { not: lab.id },
+      receivedAt: { lt: lab.receivedAt },
+    },
+    orderBy: { receivedAt: "desc" },
+    select: { receivedAt: true, results: true },
+  });
+  const priorMarkers = prior ? parseMarkers(prior.results) : [];
 
   const providerName =
     lab.signedBy != null
@@ -196,6 +209,83 @@ export default async function LabPrintPage({ params }: PageProps) {
           </table>
         )}
       </PrintSection>
+
+      {prior && priorMarkers.length > 0 && (
+        <PrintSection
+          heading={`Prior values — ${formatDate(prior.receivedAt)}`}
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Marker</th>
+                <th style={{ textAlign: "right" }}>Prior value</th>
+                <th>Unit</th>
+                <th>Current value</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {markers.map(([name, c]) => {
+                const p = priorMarkers.find(([n]) => n === name)?.[1];
+                if (!p) return null;
+                const delta = c.value - p.value;
+                return (
+                  <tr key={name} className="break-avoid">
+                    <td>
+                      <strong>{name}</strong>
+                    </td>
+                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {p.value}
+                    </td>
+                    <td>{c.unit}</td>
+                    <td style={{ fontVariantNumeric: "tabular-nums", fontWeight: c.abnormal ? 600 : 400 }}>
+                      {c.value}
+                      {c.abnormal && (
+                        <span style={{ color: "#b3261e", marginLeft: "0.4em" }}>↑</span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        fontVariantNumeric: "tabular-nums",
+                        color:
+                          Math.abs(delta) < 0.001
+                            ? "#888"
+                            : delta > 0
+                              ? "#b3261e"
+                              : "#1a7f37",
+                      }}
+                    >
+                      {Math.abs(delta) < 0.001
+                        ? "no change"
+                        : `${delta > 0 ? "+" : ""}${delta.toFixed(Math.abs(delta) < 1 ? 1 : 0)}`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </PrintSection>
+      )}
+
+      {lab.outreach?.patientDraft && (
+        <PrintSection heading="Patient summary">
+          <p
+            style={{
+              margin: 0,
+              padding: "0.75rem 1rem",
+              background: "#f5f5f7",
+              borderRadius: "0.5rem",
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {lab.outreach.patientDraft}
+          </p>
+          <p style={{ margin: "0.5rem 0 0", color: "#6e6e73", fontSize: "0.75rem" }}>
+            Draft patient message — review before sending.
+          </p>
+        </PrintSection>
+      )}
 
       {lab.reviewOutcome && (
         <PrintSection heading="Review outcome">
