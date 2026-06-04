@@ -141,7 +141,7 @@ Baseline before changes: 269 test files / 2566 tests, all passing.
 | Unit + integration | `npx vitest run` | **276 files / 2622 tests passing** (+7 files, +56 tests over baseline) |
 | Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after the bridge; Prisma relation-filter types check out |
 | Lint | `npm run lint` (`next lint`) | pass (exit 0); only a pre-existing `no-img-element` warning in `ShareDialog.tsx` (untouched) |
-| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) at round 1; later rounds are typecheck+lint+test clean (build not re-run) |
+| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) — re-run after the bridge; full production build |
 
 New / changed tests:
 - `src/lib/domain/visit-state.select-active.test.ts` (new, 13) — drives the real
