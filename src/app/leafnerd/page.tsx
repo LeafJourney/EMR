@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { getLeafnerdData } from "@/lib/leafnerd/server-data";
 import { getLeafnerdClinicalData } from "@/lib/leafnerd/clinical-surfaces";
+import { getRealFhirResources } from "@/lib/leafnerd/fhir-real";
 import LeafnerdApp from "@/components/leafnerd/fhir-intelligence/LeafnerdApp";
 import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
 
@@ -10,16 +12,21 @@ import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
 export const dynamic = "force-dynamic";
 
 export default async function LeafNerdDashboard() {
-  // Auth is best-effort for the demo: if a user is signed in we greet them by name,
-  // but we never block rendering (all data shown is synthetic/demo data).
-  // NOTE: re-enable a real access gate before shipping to production.
-  let userName: string | undefined;
-  try {
-    const user = await getCurrentUser();
-    userName = user?.firstName ?? undefined;
-  } catch {
-    userName = undefined;
+  // Access gate. ENFORCED in production: requires a signed-in user holding the
+  // `leafnerd` (or `super_admin`) role — the demo identity Dr. Lena Reyes carries it.
+  // Kept open in dev so local iteration never bounces to /sign-in.
+  const user = await getCurrentUser().catch(() => null);
+  if (process.env.NODE_ENV === "production") {
+    if (!user) redirect("/sign-in?redirect_url=/leafnerd");
+    const memberships = await prisma.membership
+      .findMany({ where: { userId: user.id } })
+      .catch(() => [] as { role: string }[]);
+    const hasAccess = memberships.some(
+      (m: { role: string }) => m.role === "leafnerd" || m.role === "super_admin",
+    );
+    if (!hasAccess) redirect("/forbidden");
   }
+  const userName: string | undefined = user?.firstName ?? undefined;
 
   // The analytics layer always returns a complete, believable payload (it falls
   // back to DEMO_DATA internally if any DB query fails).
@@ -28,6 +35,15 @@ export default async function LeafNerdDashboard() {
   // Real seeded clinical lists (Patients/Encounters/Observations/Conditions/Medications/Labs).
   // Never throws — falls back to curated rows internally.
   const clinical = await getLeafnerdClinicalData();
+
+  // Prepend genuinely-mapped FHIR R4 resources (built from real seeded patients via
+  // platform/fhir.ts) so the FHIR Explorer leads with real data. Falls back silently.
+  try {
+    const realFhir = await getRealFhirResources();
+    if (realFhir.length) data.fhirResources = [...realFhir, ...data.fhirResources];
+  } catch {
+    /* keep the curated fhirResources */
+  }
 
   // Optional real-data overlays for the Cohort + Claims surfaces. Both are wrapped
   // in try/catch; on any failure the surfaces use their own curated demo fallback.
