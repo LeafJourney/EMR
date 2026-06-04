@@ -162,3 +162,20 @@ The six Clinical rail surfaces are wired to the real seeded population (~1,200 p
 Cohort Simulator now reads the full **~1,209 active patients**; Claims Auditor shows the
 real seeded **flagged claims**. All clinical lists fall back to curated rows if the DB is
 unavailable, so they never render empty.
+
+## Intelligence depth (Phase 3)
+- **FHIR Explorer** now **leads with genuinely-mapped FHIR R4** built from real seeded patients
+  via `platform/fhir.ts` — the Raw JSON tab shows actual R4 output; mapping-confidence/validation
+  is derived honestly (unmapped local codes → "err"). Curated resources follow.
+- **Quality measures** — HEDIS/CMS measure cards (rate vs. target gauges, gap + reachable counts,
+  trend sparklines, one-click outreach).
+- **Analytics Workbench** — interactive population → measure → trend (live chart, insight, deltas).
+- **Ask Leafnerd** — command-bar button or **⌘K** opens a chat panel wired to `/api/leafnerd/chat`,
+  grounded in real counts (answers cite the live ~1,209-patient figure). Falls back to a
+  deterministic mock if the model backend is unavailable, so it never dead-ends on stage.
+
+## Production
+This is built to ship to **`leafnerd.leafjourney.com`** (Render, from `main`). The `/leafnerd`
+access gate is **enforced in production** (requires the `leafnerd` role — `Dr. Lena` carries it).
+Full deploy steps (env vars, prod seed, prod-Clerk provisioning, smoke test) are in
+**`docs/plans/leafnerd-production-runbook.md`**.
