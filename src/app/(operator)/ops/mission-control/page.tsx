@@ -17,7 +17,12 @@ export default async function MissionControlPage({
     ? { OR: [{ organizationId: user.organizationId }, { organizationId: null }] }
     : {};
 
-  const activeTab = searchParams.tab === "approval" ? "approval" : "all";
+  const activeTab =
+    searchParams.tab === "approval"
+      ? "approval"
+      : searchParams.tab === "fleet"
+        ? "fleet"
+        : "all";
   const selectedJobId = searchParams.job ?? null;
 
   const jobsWhere = activeTab === "approval"
@@ -116,6 +121,7 @@ export default async function MissionControlPage({
         agents={agentList.map((a) => ({
           name: a.name,
           version: a.version,
+          description: (a as any).description ?? "Autonomous workflow helper.",
           requiresApproval: a.requiresApproval,
           allowedActions: a.allowedActions,
           statusCounts: agentStatusCounts[a.name] ?? {},
