@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { selectActiveVisitEncounter } from "@/lib/domain/visit-state";
 import { resolveModelClient } from "@/lib/orchestration/model-client";
 import {
   buildExtractionPrompt,
@@ -574,20 +575,12 @@ export async function startVoiceEncounter(
     throw new Error("Patient not found.");
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
-
-  // Reuse an existing in-progress encounter for today if one exists
-  let encounter = await prisma.encounter.findFirst({
-    where: {
-      patientId,
-      organizationId: user.organizationId!,
-      status: "in_progress",
-      createdAt: { gte: todayStart, lte: todayEnd },
-    },
-  });
+  // Reuse today's active encounter before minting a new one. The old query
+  // matched status="in_progress" only, so a patient the front desk had already
+  // checked in or roomed (status checked_in/rooming/roomed) was missed and voice
+  // charting spun up a DUPLICATE encounter. selectActiveVisitEncounter covers
+  // every non-terminal status and prefers an already-started visit.
+  let encounter = await selectActiveVisitEncounter(patientId, user.organizationId!);
 
   if (!encounter) {
     encounter = await prisma.encounter.create({

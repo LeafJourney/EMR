@@ -184,7 +184,7 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
           action: "rescheduled",
         });
       } else {
-        await bookAppointment({
+        const res = await bookAppointment({
           patientId,
           providerId: selectedProviderId,
           slotDate: selectedDate,
@@ -192,6 +192,10 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
           appointmentType,
           modality: appointmentType === "telehealth" ? "video" : "in_person",
         });
+        if (!res.ok) {
+          setSubmitError(res.error);
+          return;
+        }
         setBookedDetails({
           date: formatDateLabel(selectedDate),
           time: `${selectedSlot.startTime} - ${selectedSlot.endTime}`,

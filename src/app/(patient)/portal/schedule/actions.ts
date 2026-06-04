@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  cancelEncounterForAppointment,
+  syncEncounterScheduleForAppointment,
+} from "@/lib/domain/ensure-encounter";
 import type { AppointmentType } from "@/lib/domain/scheduling";
 
 interface BookAppointmentInput {
@@ -20,6 +24,12 @@ function durationMinutesFor(t: AppointmentType): number {
   return t === "new_patient" ? 60 : t === "urgent" ? 15 : 30;
 }
 
+const BOOK_MODALITIES = new Set(["in_person", "video", "phone"]);
+
+export type BookAppointmentResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; code?: string };
+
 async function getOwnedPatient(userId: string, patientId: string) {
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, userId, deletedAt: null },
@@ -28,14 +38,62 @@ async function getOwnedPatient(userId: string, patientId: string) {
   return patient;
 }
 
-export async function bookAppointment(input: BookAppointmentInput) {
+export async function bookAppointment(
+  input: BookAppointmentInput,
+): Promise<BookAppointmentResult> {
   const user = await requireUser();
-  await getOwnedPatient(user.id, input.patientId);
+  const patient = await getOwnedPatient(user.id, input.patientId);
 
   const startAt = new Date(`${input.slotDate}T${input.slotStartTime}:00`);
+  if (Number.isNaN(startAt.getTime())) {
+    return { ok: false, error: "Invalid appointment time." };
+  }
+  if (startAt.getTime() < Date.now()) {
+    return { ok: false, error: "Choose a time in the future." };
+  }
+
   const endAt = new Date(
     startAt.getTime() + durationMinutesFor(input.appointmentType) * 60_000,
   );
+
+  // The provider must exist, be active, and belong to the patient's org —
+  // bookAppointment previously trusted an arbitrary providerId, so the portal
+  // could create a dangling appointment against a missing or cross-org provider.
+  const provider = await prisma.provider.findFirst({
+    where: {
+      id: input.providerId,
+      organizationId: patient.organizationId,
+      active: true,
+    },
+    select: { id: true },
+  });
+  if (!provider) {
+    return { ok: false, error: "That provider isn't available for booking." };
+  }
+
+  // Don't let the portal double-book a provider's slot. rescheduleAppointment
+  // already enforces this guard; bookAppointment skipped it, so two patients
+  // (or one patient clicking twice) could create overlapping "requested"
+  // appointments on the same provider.
+  const conflict = await prisma.appointment.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: ["requested", "confirmed"] },
+      startAt: { lt: endAt },
+      endAt: { gt: startAt },
+    },
+  });
+  if (conflict) {
+    return {
+      ok: false,
+      error: "That time was just taken. Please pick another slot.",
+      code: "CONFLICT",
+    };
+  }
+
+  // Preserve the requested modality (in_person | video | phone). The old code
+  // silently collapsed "phone" into "video".
+  const modality = BOOK_MODALITIES.has(input.modality) ? input.modality : "video";
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -44,13 +102,13 @@ export async function bookAppointment(input: BookAppointmentInput) {
       status: "requested",
       startAt,
       endAt,
-      modality: input.modality === "in_person" ? "in_person" : "video",
+      modality,
       notes: input.reason ?? null,
     },
   });
 
   revalidatePath("/portal/schedule");
-  return { id: appointment.id };
+  return { ok: true, id: appointment.id };
 }
 
 const cancelSchema = z.object({ appointmentId: z.string().min(1) });
@@ -82,6 +140,10 @@ export async function cancelAppointment(
     where: { id: appt.id },
     data: { status: "cancelled" },
   });
+
+  // If this appointment had already materialized a (still-scheduled) Encounter,
+  // cancel it too so it doesn't linger as a ghost card on the queue board.
+  await cancelEncounterForAppointment(appt.id);
 
   revalidatePath("/portal/schedule");
   return { ok: true };
@@ -152,6 +214,10 @@ export async function rescheduleAppointment(
       status: "requested",
     },
   });
+
+  // Keep a materialized (still-scheduled) Encounter pointed at the new time so
+  // the queue board doesn't show the old slot.
+  await syncEncounterScheduleForAppointment(appt.id, newStart);
 
   revalidatePath("/portal/schedule");
   return { ok: true, id: appt.id };
