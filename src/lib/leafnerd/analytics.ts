@@ -120,6 +120,11 @@ const anomalies: Anomaly[] = [
       "Expected ~1,200/day, received 710 on Jun 1. Possible interface outage.",
     source: "Observation",
     confidence: 0.91,
+    impact: [
+      "≈490 Observations short today (710 of ~1,200 expected)",
+      "184 HbA1c results delayed → CDC-HbA1c measure at risk",
+      "37 diabetes-cohort patients now overdue for follow-up",
+    ],
   },
   {
     id: "a2",
@@ -129,6 +134,11 @@ const anomalies: Anomaly[] = [
     detail: "RxNorm mapping confidence below 0.6 for new source vocabulary.",
     source: "MedicationRequest",
     confidence: 0.84,
+    impact: [
+      "312 MedicationRequest excluded from drug-interaction checks",
+      "SUPD (Statin Use in Diabetes) denominator understated",
+      "RxNorm coverage down to 78% — the largest open mapping gap",
+    ],
   },
   {
     id: "a3",
@@ -139,6 +149,10 @@ const anomalies: Anomaly[] = [
       "Period.end absent on inpatient encounters from Source: HL7v2 feed.",
     source: "Encounter",
     confidence: 0.77,
+    impact: [
+      "≈9,000 Encounters with absent Period.end",
+      "Length-of-stay & readmission analytics understated for inpatient cohort",
+    ],
   },
   {
     id: "a4",
@@ -149,6 +163,10 @@ const anomalies: Anomaly[] = [
       "58 candidate pairs above 0.85 similarity awaiting steward review.",
     source: "Patient",
     confidence: 0.88,
+    impact: [
+      "58 patients potentially double-counted in the panel",
+      "Risk scores & care gaps split across duplicate records",
+    ],
   },
 ];
 
@@ -348,6 +366,11 @@ const insights: Insight[] = [
     confidence: "High",
     conf: 0.88,
     source: "Diabetes cohort · n=3,210 · refreshed 2h ago",
+    impact: [
+      "42 patients with missing refill events vs. expected cadence",
+      "Projected ~$310K avoidable ED utilization if unaddressed",
+      "Largest single driver of the rising-risk diabetes sub-cohort",
+    ],
   },
   {
     id: "i2",
@@ -364,6 +387,11 @@ const insights: Insight[] = [
     confidence: "High",
     conf: 0.91,
     source: "HEDIS CDC measure · refreshed today",
+    impact: [
+      "184 reachable patients · +0.6 pts on HEDIS CDC if closed",
+      "71% of overdue HbA1c concentrated in 3 of the panel's sites",
+      "Closing the gap lifts the measure above its 78% benchmark",
+    ],
   },
   {
     id: "i3",
@@ -380,6 +408,11 @@ const insights: Insight[] = [
     confidence: "Medium",
     conf: 0.74,
     source: "Ingestion monitor · 710 of ~1,200 expected",
+    impact: [
+      "≈490 Observations short of the 30-day baseline",
+      "Blocks downstream HbA1c, lipid & metabolic results",
+      "Cascades into the CDC-HbA1c quality measure",
+    ],
   },
 ];
 
@@ -653,6 +686,7 @@ const nav: NavGroup[] = [
       { id: "quality", label: "Quality", icon: "check" },
       { id: "risk", label: "Risk", icon: "pulse", badge: "42", badgeTone: "rose" },
       { id: "analytics", label: "Analytics", icon: "chart" },
+      { id: "simulator", label: "Cohort Simulator", icon: "target" },
       { id: "ai", label: "AI Insights", icon: "spark", badge: "3", badgeTone: "amber" },
     ],
   },
