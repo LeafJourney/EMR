@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { ACTIVE_VISIT_STATUSES } from "@/lib/domain/visit-state";
 import {
   startTelehealthVisit,
   endTelehealthVisit,
@@ -49,13 +50,16 @@ export async function startOverlayTelehealthVisit(): Promise<OverlayTelehealthVi
     throw new Error("No active patients found in the database to start a visit with.");
   }
 
-  // Get or create a scheduled/in-progress video encounter
+  // Reuse any non-terminal video encounter for this patient (incl. ones the
+  // front desk already checked in / roomed) before minting a new one — the old
+  // scheduled/in_progress-only filter duplicated the encounter when a patient
+  // pivoted to telehealth mid-flow.
   let encounter = await prisma.encounter.findFirst({
     where: {
       patientId: patient.id,
       organizationId: user.organizationId,
       modality: "video",
-      status: { in: ["scheduled", "in_progress"] },
+      status: { in: [...ACTIVE_VISIT_STATUSES] },
     },
     orderBy: { scheduledFor: "desc" },
   });
