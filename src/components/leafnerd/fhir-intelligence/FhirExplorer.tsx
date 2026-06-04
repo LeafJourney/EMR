@@ -11,13 +11,15 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
   const [activeId, setActiveId] = React.useState(D.fhirResources[0].id);
   const [rtab, setRtab] = React.useState("raw");
   const [query, setQuery] = React.useState("");
-  const r = D.fhirResources.find(x => x.id === activeId)!;
 
   // free-text filter across type, label, patient, code, status
   const q = query.trim().toLowerCase();
   const matches = (x: typeof D.fhirResources[number]) =>
     !q || [x.type, x.label, x.patient, x.code, x.status].some(v => v.toLowerCase().includes(q));
   const visible = D.fhirResources.filter(matches);
+  // The active resource follows the filter: if the current selection is filtered
+  // out, fall back to the first visible match (never crashes when nothing matches).
+  const r = visible.find(x => x.id === activeId) || visible[0] || D.fhirResources[0];
 
   // group (filtered) resources by type for the tree
   const groups: Record<string, typeof D.fhirResources> = {};
