@@ -198,6 +198,7 @@ export interface SignChangeInput {
   signedName: string;
   npi?: string;
   comments?: string;
+  organizationId: string;
 }
 
 export async function signChange(db: Db, input: SignChangeInput) {
@@ -292,6 +293,7 @@ export interface ApplyChangeInput {
   /** Caller's active org — the request lookup is scoped to it (EMR-805). */
   organizationId: string;
   appliedById: string;
+  organizationId: string;
 }
 
 /**
