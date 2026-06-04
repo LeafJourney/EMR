@@ -20,6 +20,12 @@ function durationMinutesFor(t: AppointmentType): number {
   return t === "new_patient" ? 60 : t === "urgent" ? 15 : 30;
 }
 
+const BOOK_MODALITIES = new Set(["in_person", "video", "phone"]);
+
+export type BookAppointmentResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; code?: string };
+
 async function getOwnedPatient(userId: string, patientId: string) {
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, userId, deletedAt: null },
@@ -28,14 +34,49 @@ async function getOwnedPatient(userId: string, patientId: string) {
   return patient;
 }
 
-export async function bookAppointment(input: BookAppointmentInput) {
+export async function bookAppointment(
+  input: BookAppointmentInput,
+): Promise<BookAppointmentResult> {
   const user = await requireUser();
   await getOwnedPatient(user.id, input.patientId);
 
   const startAt = new Date(`${input.slotDate}T${input.slotStartTime}:00`);
+  if (Number.isNaN(startAt.getTime())) {
+    return { ok: false, error: "Invalid appointment time." };
+  }
+  if (startAt.getTime() < Date.now()) {
+    return { ok: false, error: "Choose a time in the future." };
+  }
+
   const endAt = new Date(
     startAt.getTime() + durationMinutesFor(input.appointmentType) * 60_000,
   );
+
+  // Don't let the portal double-book a provider's slot. rescheduleAppointment
+  // already enforces this guard; bookAppointment skipped it, so two patients
+  // (or one patient clicking twice) could create overlapping "requested"
+  // appointments on the same provider.
+  if (input.providerId) {
+    const conflict = await prisma.appointment.findFirst({
+      where: {
+        providerId: input.providerId,
+        status: { in: ["requested", "confirmed"] },
+        startAt: { lt: endAt },
+        endAt: { gt: startAt },
+      },
+    });
+    if (conflict) {
+      return {
+        ok: false,
+        error: "That time was just taken. Please pick another slot.",
+        code: "CONFLICT",
+      };
+    }
+  }
+
+  // Preserve the requested modality (in_person | video | phone). The old code
+  // silently collapsed "phone" into "video".
+  const modality = BOOK_MODALITIES.has(input.modality) ? input.modality : "video";
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -44,13 +85,13 @@ export async function bookAppointment(input: BookAppointmentInput) {
       status: "requested",
       startAt,
       endAt,
-      modality: input.modality === "in_person" ? "in_person" : "video",
+      modality,
       notes: input.reason ?? null,
     },
   });
 
   revalidatePath("/portal/schedule");
-  return { id: appointment.id };
+  return { ok: true, id: appointment.id };
 }
 
 const cancelSchema = z.object({ appointmentId: z.string().min(1) });
