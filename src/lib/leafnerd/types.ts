@@ -271,10 +271,62 @@ export interface LeafnerdClinicalData {
   labs: LabRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Agent Workbench — the governed-execution surface, over the REAL AgentJob /
+// AgentReasoning tables (the orchestration harness). Read-only list + the
+// human approve/reject actions. Falls back to curated rows when the DB is empty.
+// ---------------------------------------------------------------------------
+
+export type AgentJobStatusLite =
+  | "pending" | "claimed" | "running" | "needs_approval" | "succeeded" | "failed" | "cancelled";
+
+export interface AgentReasoningSummary {
+  steps: number;
+  sources: string[];
+  confidence: number | null; // 0..1
+  summary: string | null;
+}
+
+export interface AgentJobRow {
+  id: string;
+  workflowName: string;
+  agentName: string;
+  eventName: string;
+  status: AgentJobStatusLite;
+  requiresApproval: boolean;
+  /** Human label pulled from the job input, when present. */
+  label: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  reasoning: AgentReasoningSummary | null;
+}
+
+export interface SourceFreshnessRow {
+  id: string;
+  source: string; // "Riverside Lab", "Northbay EHR", ...
+  kind: string; // "HL7v2 ORU", "FHIR R4", "Claims 837/835", "Wearable", ...
+  lastSeen: string; // human relative, e.g. "14m ago"
+  state: "ok" | "stale" | "gap";
+  recordsToday: number;
+  note: string | null;
+}
+
+export interface AgentWorkbenchData {
+  jobs: AgentJobRow[];
+  sources: SourceFreshnessRow[];
+  stats: {
+    total: number;
+    needsApproval: number;
+    succeededToday: number;
+    running: number;
+  };
+}
+
 /** Props for the top-level SPA shell component (LeafnerdApp). */
 export interface LeafnerdAppProps {
   data: LeafnerdData;
   userName?: string;
+  userRole?: string;
   /** Optional real data; surfaces fall back to internal demo data when absent. */
   claims?: ClaimAnomalyRow[];
   cohortStatusCounts?: CohortStatusCount[];
@@ -282,4 +334,6 @@ export interface LeafnerdAppProps {
   clinical?: LeafnerdClinicalData;
   /** Quality measures for the Quality surface (falls back to curated). */
   quality?: QualityMeasureRow[];
+  /** Governed-execution surface data (real AgentJob/AgentReasoning rows). */
+  agentWorkbench?: AgentWorkbenchData;
 }
