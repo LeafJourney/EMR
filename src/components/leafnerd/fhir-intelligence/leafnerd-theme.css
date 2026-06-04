@@ -165,8 +165,11 @@
   background: var(--indigo-soft); color: var(--indigo); font-size: 12px; font-weight: 550; border: 1px solid #d2d6ea;
   white-space: nowrap; flex: none;
 }
-.ln-root .cmdbar > .cmd-ctrl, .ln-root .cmdbar > .sync, .ln-root .cmdbar > .ai-btn { flex: none; }
+.ln-root .cmdbar > .cmd-ctrl, .ln-root .cmdbar > .sync, .ln-root .cmdbar > .ai-btn, .ln-root .cmdbar > .demo-chip { flex: none; }
 .ln-root .search { flex: 0 1 340px; min-width: 150px; }
+/* "Demo dataset" trust chip — matches the 36px control rhythm */
+.ln-root .cmdbar > .demo-chip { height: 28px; padding: 0 10px; border: 1px solid var(--line-sage); }
+@media (max-width: 1400px) { .ln-root .cmdbar > .demo-chip { display: none; } }
 @media (max-width: 1180px) { .ln-root .cmdbar > .fhir-chip, .ln-root .cmdbar > .sync { display: none; } }
 @media (max-width: 1000px) { .ln-root .search .kbd { display: none; } }
 .ln-root .sync { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }

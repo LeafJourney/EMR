@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { SplitWorkspace } from "@/components/shell/SplitWorkspace";
 import { ContextPane } from "@/components/shell/ContextPane";

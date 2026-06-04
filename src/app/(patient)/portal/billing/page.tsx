@@ -58,6 +58,17 @@ export default async function PortalBillingPage() {
 
       <PatientSectionNav section="account" />
 
+      {/* Pilot Warning Banner */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex gap-3 items-start mb-6">
+        <span className="text-amber-800 text-base mt-0.5">⚠️</span>
+        <div>
+          <p className="text-sm font-medium text-amber-800">Online bill pay is in pilot preparation</p>
+          <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+            Please settle balances at the clinic front desk. Online payments are currently disabled.
+          </p>
+        </div>
+      </div>
+
       {/* Year-end tax summary link */}
       <div className="flex justify-end mb-4">
         <Link href="/portal/billing/tax-summary">
@@ -85,19 +96,16 @@ export default async function PortalBillingPage() {
                 </p>
               )}
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                <Button size="lg">Pay now</Button>
+                <Button size="lg" disabled>Pay now</Button>
                 {!paymentPlan && (
-                  <Button variant="secondary" size="lg">
+                  <Button variant="secondary" size="lg" disabled>
                     Set up payment plan
                   </Button>
                 )}
               </div>
               {paymentMethods.length > 0 && (
                 <p className="text-xs text-text-subtle mt-5">
-                  We&apos;ll use {paymentMethods[0].brand} •{paymentMethods[0].last4} on file.{" "}
-                  <button className="text-accent hover:underline">
-                    Change
-                  </button>
+                  We&apos;ll use {paymentMethods[0].brand} •{paymentMethods[0].last4} on file.
                 </p>
               )}
             </>
@@ -269,10 +277,12 @@ export default async function PortalBillingPage() {
 
                     {statement.status !== "paid" && remaining > 0 && (
                       <div className="mt-4 flex gap-2">
-                        <Button size="sm">Pay {formatMoney(remaining)}</Button>
-                        <Button variant="secondary" size="sm">
-                          Questions?
-                        </Button>
+                        <Button size="sm" disabled>Pay {formatMoney(remaining)}</Button>
+                        <Link href="/portal/messages">
+                          <Button variant="secondary" size="sm">
+                            Questions?
+                          </Button>
+                        </Link>
                       </div>
                     )}
                   </CardContent>

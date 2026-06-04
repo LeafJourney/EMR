@@ -122,6 +122,8 @@ const COMMON_DIAGNOSES = [
   { code: "R11.0", label: "Nausea" },
 ];
 
+import { createReferralAction } from "./actions";
+
 // ── Priority badge config ───────────────────────────
 
 const PRIORITY_BADGE: Record<ReferralPriority, { tone: "danger" | "warning" | "neutral" }> = {
@@ -135,13 +137,13 @@ const PRIORITY_BADGE: Record<ReferralPriority, { tone: "danger" | "warning" | "n
 export function ReferralForm({
   patientId,
   patientName,
+  initialReferrals,
 }: {
   patientId: string;
   patientName: string;
+  initialReferrals: Referral[];
 }) {
-  const [referrals, setReferrals] = useState<Referral[]>(
-    buildDemoReferrals(patientId, patientName)
-  );
+  const [referrals, setReferrals] = useState<Referral[]>(initialReferrals);
   const [showForm, setShowForm] = useState(false);
 
   // Form state
@@ -167,34 +169,31 @@ export function ReferralForm({
     setSelectedDiagnoses([]);
   }
 
-  function handleSubmit() {
-    const newReferral: Referral = {
-      id: `ref-${Date.now()}`,
+  async function handleSubmit() {
+    const referringProv = direction === "outbound" ? "Dr. Elena Rivera" : providerName;
+    const referringPrac = direction === "outbound" ? "Leafjourney Clinic" : practiceName;
+    const referredToProv = direction === "outbound" ? providerName : "Dr. Elena Rivera";
+    const referredToPrac = direction === "outbound" ? practiceName : "Leafjourney Clinic";
+
+    const res = await createReferralAction({
       patientId,
-      patientName,
       direction,
-      status: "draft",
       priority,
-      referringProviderName:
-        direction === "outbound" ? "Dr. Elena Rivera" : providerName,
-      referringPracticeName:
-        direction === "outbound" ? "Leafjourney Clinic" : practiceName,
-      referredToProviderName:
-        direction === "outbound" ? providerName : "Dr. Elena Rivera",
+      referringProviderName: referringProv,
+      referringPracticeName: referringPrac,
+      referredToProviderName: referredToProv,
       referredToSpecialty: specialty,
-      referredToPracticeName:
-        direction === "outbound" ? practiceName : "Leafjourney Clinic",
+      referredToPracticeName: referredToPrac,
       reason,
       diagnosisCodes: selectedDiagnoses,
       clinicalNotes: clinicalNotes || undefined,
-      attachedDocumentIds: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
-    setReferrals((prev) => [newReferral, ...prev]);
-    resetForm();
-    setShowForm(false);
+    if (res.ok && res.referral) {
+      setReferrals((prev) => [res.referral, ...prev]);
+      resetForm();
+      setShowForm(false);
+    }
   }
 
   function toggleDiagnosis(diag: { code: string; label: string }) {

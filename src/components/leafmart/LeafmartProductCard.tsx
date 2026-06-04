@@ -167,7 +167,7 @@ export function LeafmartProductCard({ product }: { product: LeafmartProduct }) {
         <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--text-soft)] mb-2">
           {p.partner} · {p.formatLabel}
         </p>
-        <h4 className="font-display text-[22px] font-medium tracking-tight leading-tight text-[var(--ink)] mb-2">{p.name}</h4>
+        <h3 className="font-display text-[22px] font-medium tracking-tight leading-tight text-[var(--ink)] mb-2">{p.name}</h3>
         <p className="text-[13.5px] text-[var(--text-soft)] leading-relaxed flex-1">{p.support}</p>
         <div className="flex justify-between items-center mt-4 pt-3.5 border-t border-[var(--border)]">
           <div>

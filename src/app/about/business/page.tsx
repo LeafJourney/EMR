@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 const STATUS_COPY: Record<string, { label: string; tone: string }> = {
   shipped: { label: "Shipped", tone: "bg-accent/15 text-accent border-accent/30" },
-  in_progress: { label: "In progress", tone: "bg-highlight/15 text-highlight border-highlight/40" },
+  in_progress: { label: "In progress", tone: "bg-highlight/15 text-[color:var(--highlight-hover)] border-highlight/40" },
   planned: { label: "Planned", tone: "bg-surface-muted text-text-subtle border-border" },
 };
 

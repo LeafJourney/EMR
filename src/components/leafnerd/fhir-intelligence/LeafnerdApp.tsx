@@ -20,6 +20,7 @@ import { MedicationsSurface } from "./MedicationsSurface";
 import { LabsSurface } from "./LabsSurface";
 import { QualitySurface } from "./QualitySurface";
 import { AnalyticsSurface } from "./AnalyticsSurface";
+import { AdminSurface } from "./AdminSurface";
 import { AskLeafnerdPanel } from "./AskLeafnerdPanel";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 import type {
@@ -80,12 +81,13 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "risk") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
   else if (active === "analytics") body = <AnalyticsSurface toast={toast} />;
   else if (active === "quality") body = <QualitySurface rows={props.quality} toast={toast} />;
-  else if (active === "patients") body = <PatientsSurface rows={clinical?.patients} openDrawer={openDrawer} />;
-  else if (active === "encounters") body = <EncountersSurface rows={clinical?.encounters} openRecord={openRecord} />;
-  else if (active === "observations") body = <ObservationsSurface rows={clinical?.observations} openRecord={openRecord} />;
-  else if (active === "conditions") body = <ConditionsSurface rows={clinical?.conditions} openRecord={openRecord} />;
+  else if (active === "patients") body = <PatientsSurface rows={clinical?.patients} openDrawer={openDrawer} toast={toast} />;
+  else if (active === "encounters") body = <EncountersSurface rows={clinical?.encounters} openRecord={openRecord} toast={toast} />;
+  else if (active === "observations") body = <ObservationsSurface rows={clinical?.observations} openRecord={openRecord} toast={toast} />;
+  else if (active === "conditions") body = <ConditionsSurface rows={clinical?.conditions} openRecord={openRecord} toast={toast} />;
   else if (active === "medications") body = <MedicationsSurface rows={clinical?.medications} openRecord={openRecord} />;
   else if (active === "labs") body = <LabsSurface rows={clinical?.labs} openRecord={openRecord} />;
+  else if (active === "admin") body = <AdminSurface toast={toast} openRecord={openRecord} />;
   else body = <Placeholder id={active} />;
 
   const fullBleed = active === "fhir" || active === "claims" || active === "risk";
@@ -95,7 +97,7 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
       <div className="app">
         <Rail nav={data.nav} active={active} setActive={setActive} userName={props.userName} />
         <div className="main">
-          <CommandBar onAsk={() => setAskOpen(true)} />
+          <CommandBar onAsk={() => setAskOpen(true)} onSources={() => setActive("admin")} toast={toast} />
           <div className="content" style={fullBleed ? { overflow: "auto", display: "block" } : {}}>
             {body}
           </div>

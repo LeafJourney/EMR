@@ -78,7 +78,9 @@ const FALLBACK: LabRow[] = [
 ];
 
 export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord: (p: DrawerPayload) => void }) {
-  const data = rows && rows.length ? rows : FALLBACK;
+  const all = rows && rows.length ? rows : FALLBACK;
+  const [onlyAbnormal, setOnlyAbnormal] = React.useState(false);
+  const data = onlyAbnormal ? all.filter(r => r.abnormalFlag) : all;
 
   const open = (row: LabRow) =>
     openRecord({
@@ -126,7 +128,7 @@ export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord:
       ),
     });
 
-  const abnormalCount = data.filter(r => r.abnormalFlag).length;
+  const abnormalCount = all.filter(r => r.abnormalFlag).length;
 
   return (
     <div className="page">
@@ -140,8 +142,8 @@ export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord:
 
       <div className="tbl-wrap">
         <div className="tbl-tools">
-          <button className="chip on">All panels <span className="x">×</span></button>
-          {abnormalCount > 0 && <button className="chip"><Icon name="alert" size={13} />{abnormalCount} abnormal</button>}
+          <button className={`chip${onlyAbnormal ? "" : " on"}`} onClick={() => setOnlyAbnormal(false)}>All panels{onlyAbnormal ? "" : " "}{!onlyAbnormal && <span className="x">×</span>}</button>
+          {abnormalCount > 0 && <button className={`chip${onlyAbnormal ? " on" : ""}`} onClick={() => setOnlyAbnormal(true)}><Icon name="alert" size={13} />{abnormalCount} abnormal</button>}
           <div style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>{data.length} results</div>
         </div>
         <div className="tbl-scroll">

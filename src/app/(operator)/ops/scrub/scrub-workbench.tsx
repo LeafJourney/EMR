@@ -267,53 +267,54 @@ function ClaimRow({ claim }: { claim: SerializedScrubClaim }) {
             <div>
               <Link
                 href={`/clinic/patients/${claim.patient.id}`}
-                className="text-sm font-medium text-text hover:text-accent transition-colors"
+                className="text-sm font-semibold text-text hover:text-accent transition-colors"
               >
                 {claim.patient.firstName} {claim.patient.lastName}
               </Link>
-              <p className="text-[11px] text-text-subtle">
+              {/* EMR-984: larger/darker date·insurance·CLM */}
+              <p className="text-xs font-semibold text-text-muted mt-0.5">
                 {formatDate(claim.serviceDateIso)} ·{" "}
-                {claim.payerName ?? "No payer"} · {claim.claimNumber}
+                {claim.payerName ?? "No payer"} · {claim.claimNumber ?? "No CLM #"}
               </p>
             </div>
           </div>
           <div className="text-right">
-            <p className="font-display text-xl text-text tabular-nums">
+            <p className="font-display text-xl text-text font-semibold tabular-nums">
               {formatMoney(claim.billedAmountCents)}
             </p>
             <div className="flex items-center gap-1 mt-1">
               {counts.error > 0 && (
-                <Badge tone="danger" className="text-[9px]">
+                <Badge tone="danger" className="text-[9px] font-semibold">
                   {counts.error} error
                   {counts.error !== 1 ? "s" : ""}
                 </Badge>
               )}
               {counts.warning > 0 && (
-                <Badge tone="warning" className="text-[9px]">
+                <Badge tone="warning" className="text-[9px] font-semibold">
                   {counts.warning} warning
                   {counts.warning !== 1 ? "s" : ""}
                 </Badge>
               )}
               {counts.info > 0 && (
-                <Badge tone="info" className="text-[9px]">
+                <Badge tone="info" className="text-[9px] font-semibold">
                   {counts.info} info
                 </Badge>
               )}
               {issues.length === 0 && (
-                <Badge tone="success" className="text-[9px]">
-                  Clean
+                <Badge tone="success" className="text-[9.5px] font-semibold">
+                  Reviewed and ready
                 </Badge>
               )}
             </div>
           </div>
         </div>
 
-        {/* CPT + ICD codes */}
+        {/* CPT + ICD codes (EMR-984: larger CPT/ICD codes) */}
         <div className="flex flex-wrap gap-1.5 mb-4">
           {claim.cptCodes.map((c) => (
             <span
               key={c.code}
-              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-accent/10 text-accent"
+              className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-mono bg-accent/10 text-accent font-semibold"
             >
               {c.code}
             </span>
@@ -321,7 +322,7 @@ function ClaimRow({ claim }: { claim: SerializedScrubClaim }) {
           {claim.icd10Codes.map((c) => (
             <span
               key={c.code}
-              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-highlight/10 text-[color:var(--highlight)]"
+              className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-mono bg-highlight/10 text-[color:var(--highlight)] font-semibold"
             >
               {c.code}
             </span>
@@ -332,7 +333,7 @@ function ClaimRow({ claim }: { claim: SerializedScrubClaim }) {
         {issues.length > 0 && (
           <div className="space-y-2 mb-4">
             {issues.map((issue, i) => (
-              <IssueRow key={i} issue={issue} />
+              <IssueRow key={i} issue={issue} patientId={claim.patient.id} />
             ))}
           </div>
         )}
@@ -341,15 +342,15 @@ function ClaimRow({ claim }: { claim: SerializedScrubClaim }) {
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
           <Link
             href={`/clinic/patients/${claim.patient.id}/billing`}
-            className="text-xs text-text-muted hover:text-text"
+            className="text-xs text-text-subtle hover:text-text font-semibold"
           >
             Open billing
           </Link>
           <button
             disabled={!submittable}
-            className={`text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+            className={`text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${
               submittable
-                ? "bg-accent text-accent-ink hover:bg-accent/90"
+                ? "bg-accent text-accent-ink hover:bg-accent/90 shadow-sm"
                 : "bg-surface-muted text-text-subtle cursor-not-allowed"
             }`}
           >
@@ -361,37 +362,78 @@ function ClaimRow({ claim }: { claim: SerializedScrubClaim }) {
   );
 }
 
-function IssueRow({ issue }: { issue: ScrubIssue }) {
+function IssueRow({ issue, patientId }: { issue: ScrubIssue; patientId: string }) {
+  const isWarning = issue.severity === "warning";
+  
+  // EMR-984: Map issue code to deep-link target path
+  const deepLinks: Record<string, string> = {
+    MISSING_DIAGNOSIS: `/clinic/patients/${patientId}`,
+    HIGH_LEVEL_EM_REVIEW: `/clinic/patients/${patientId}`,
+    UNRECOGNIZED_EM_CODE: `/clinic/patients/${patientId}`,
+  };
+  const targetPath = deepLinks[issue.ruleCode] ?? `/clinic/patients/${patientId}/billing`;
+
   return (
     <div
-      className="flex items-start gap-3 p-3 rounded-lg bg-surface-muted/40"
-      style={{
-        borderLeft: `2px solid ${SEVERITY_COLORS[issue.severity]}`,
-      }}
+      className={cn(
+        "flex items-start gap-3 p-3 rounded-lg border",
+        isWarning
+          ? "bg-amber-50/50 border-amber-200/60 text-amber-900"
+          : issue.severity === "error"
+            ? "bg-red-50/45 border-red-100 text-red-955"
+            : "bg-surface-muted/40 border-border text-text"
+      )}
+      style={
+        !isWarning && issue.severity !== "error"
+          ? { borderLeft: `3px solid ${SEVERITY_COLORS[issue.severity]}` }
+          : undefined
+      }
     >
       <div className="shrink-0 pt-0.5">
         <span
-          className="inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-bold text-white"
-          style={{ backgroundColor: SEVERITY_COLORS[issue.severity] }}
+          className={cn(
+            "inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-bold text-white shadow-sm",
+            isWarning 
+              ? "bg-amber-500" 
+              : issue.severity === "error" 
+                ? "bg-red-500" 
+                : "bg-blue-500"
+          )}
         >
           {issue.severity === "error" ? "!" : issue.severity === "warning" ? "?" : "i"}
         </span>
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10px] font-mono text-text-subtle uppercase">
+          <span className="text-[10px] font-mono text-text-subtle uppercase font-semibold">
             {issue.ruleCode}
           </span>
           {issue.relatedCode && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/10 text-accent font-semibold">
               {issue.relatedCode}
             </span>
           )}
         </div>
-        <p className="text-sm text-text leading-snug">{issue.message}</p>
-        <p className="text-xs text-text-muted mt-1 leading-snug">
+        <p className="text-xs font-semibold leading-snug">{issue.message}</p>
+        <p className="text-xs opacity-80 mt-1 leading-snug font-medium">
           → {issue.suggestion}
         </p>
+        {/* EMR-984: deep-link fix suggestions */}
+        <div className="mt-2">
+          <Link
+            href={targetPath}
+            className={cn(
+              "inline-flex items-center gap-0.5 text-[11px] font-bold transition-colors hover:underline",
+              isWarning 
+                ? "text-amber-800 hover:text-amber-950" 
+                : issue.severity === "error"
+                  ? "text-red-800 hover:text-red-950"
+                  : "text-accent hover:text-accent-ink"
+            )}
+          >
+            Fix in chart →
+          </Link>
+        </div>
       </div>
     </div>
   );

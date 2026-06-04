@@ -35,6 +35,11 @@ const SHARED_PATHS = [
   "/_next/",
   "/favicon.ico",
   "/icon.svg",
+  "/sign-in",
+  "/sign-up",
+  "/post-sign-in",
+  "/forbidden",
+  "/no-org",
 ];
 
 function isLeafmartHost(host: string): boolean {

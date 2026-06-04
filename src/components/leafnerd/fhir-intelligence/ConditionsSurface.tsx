@@ -14,7 +14,7 @@ const FALLBACK: ConditionRow[] = [
   { id: "cond-006", patientId: "pt-0608", patientName: "Lena Fischer", condition: "Migraine without aura", onsetYear: 2011, source: "EHR · ICD-10 G43.009", notes: "4-6 episodes/month. Tracking triggers in the post-dose check-in." },
 ];
 
-export function ConditionsSurface({ rows, openRecord }: { rows?: ConditionRow[]; openRecord: (p: DrawerPayload) => void }) {
+export function ConditionsSurface({ rows, openRecord, toast }: { rows?: ConditionRow[]; openRecord: (p: DrawerPayload) => void; toast?: (m: string) => void }) {
   const data = rows && rows.length ? rows : FALLBACK;
 
   const open = (row: ConditionRow) =>
@@ -68,7 +68,7 @@ export function ConditionsSurface({ rows, openRecord }: { rows?: ConditionRow[];
       <div className="tbl-wrap">
         <div className="tbl-tools">
           <button className="chip on">Problem list <span className="x">×</span></button>
-          <button className="chip"><Icon name="plus" size={13} />Add filter</button>
+          <button className="chip" onClick={() => toast?.("Filter builder — add ICD-10 chapter, onset range, or source conditions")}><Icon name="plus" size={13} />Add filter</button>
           <div style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>{data.length} conditions</div>
         </div>
         <div className="tbl-scroll">

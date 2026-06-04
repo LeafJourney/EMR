@@ -49,10 +49,12 @@ export function InsightCard({ ins, onEvidence, toast }: { ins: Insight; onEviden
   );
 }
 
-export function PatientTable({ patients, onOpen }: { patients: PatientRow[]; onOpen: (p: PatientRow) => void }) {
+export function PatientTable({ patients, onOpen, toast }: { patients: PatientRow[]; onOpen: (p: PatientRow) => void; toast?: (m: string) => void }) {
   const [dense, setDense] = React.useState(false);
+  const [riskFilter, setRiskFilter] = React.useState(true);
   const [sort, setSort] = React.useState<{ key: keyof PatientRow; dir: number }>({ key: "score", dir: -1 });
-  const sorted = [...patients].sort((a, b) => {
+  const filtered = riskFilter ? patients.filter(p => p.risk !== "Low") : patients;
+  const sorted = [...filtered].sort((a, b) => {
     const av = a[sort.key], bv = b[sort.key];
     return (av < bv ? -1 : av > bv ? 1 : 0) * sort.dir;
   });
@@ -67,15 +69,18 @@ export function PatientTable({ patients, onOpen }: { patients: PatientRow[]; onO
   return (
     <div className="tbl-wrap">
       <div className="tbl-tools">
-        <button className="chip on">Risk ≥ Moderate <span className="x">×</span></button>
-        <button className="chip"><Icon name="plus" size={13} />Add filter</button>
+        {riskFilter
+          ? <button className="chip on" onClick={() => setRiskFilter(false)} title="Remove filter">Risk ≥ Moderate <span className="x">×</span></button>
+          : <button className="chip" onClick={() => setRiskFilter(true)}><Icon name="filter" size={13} />Risk ≥ Moderate</button>}
+        <button className="chip" onClick={() => toast?.("Filter builder — add risk, cohort, source, or gap conditions")}><Icon name="plus" size={13} />Add filter</button>
+        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{sorted.length} of {patients.length}</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Density</span>
           <div className="density-toggle">
             <button className={!dense ? "on" : ""} onClick={() => setDense(false)}>Comfortable</button>
             <button className={dense ? "on" : ""} onClick={() => setDense(true)}>Compact</button>
           </div>
-          <button className="cmd-ctrl" style={{ height: 30 }}><Icon name="download" size={14} />Export</button>
+          <button className="cmd-ctrl" style={{ height: 30 }} onClick={() => toast?.(`Exporting ${sorted.length} patients (CSV) — de-identified cohort`)}><Icon name="download" size={14} />Export</button>
         </div>
       </div>
       <div className="tbl-scroll">

@@ -167,7 +167,7 @@ export default async function ScrubWorkbenchPage() {
 
   const tiles = [
     { key: "queue" as const, label: "Claims in queue", value: totalClaims.toString(), tone: "neutral" as const },
-    { key: "clean" as const, label: "Clean & ready", value: cleanClaims.toString(), tone: "success" as const },
+    { key: "clean" as const, label: "Reviewed and ready", value: cleanClaims.toString(), tone: "success" as const },
     {
       key: "blocked" as const,
       label: "Blocked",
