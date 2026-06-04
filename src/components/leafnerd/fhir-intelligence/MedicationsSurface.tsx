@@ -22,7 +22,9 @@ const TYPE_TONE: Record<string, string> = {
 };
 
 export function MedicationsSurface({ rows, openRecord }: { rows?: MedicationRow[]; openRecord: (p: DrawerPayload) => void }) {
-  const data = rows && rows.length ? rows : FALLBACK;
+  const all = rows && rows.length ? rows : FALLBACK;
+  const [onlyUnmapped, setOnlyUnmapped] = React.useState(false);
+  const data = onlyUnmapped ? all.filter(r => r.unmapped) : all;
 
   const open = (row: MedicationRow) =>
     openRecord({
@@ -80,7 +82,7 @@ export function MedicationsSurface({ rows, openRecord }: { rows?: MedicationRow[
       ),
     });
 
-  const unmappedCount = data.filter(r => r.unmapped).length;
+  const unmappedCount = all.filter(r => r.unmapped).length;
 
   return (
     <div className="page">
@@ -94,8 +96,8 @@ export function MedicationsSurface({ rows, openRecord }: { rows?: MedicationRow[
 
       <div className="tbl-wrap">
         <div className="tbl-tools">
-          <button className="chip on">All medications <span className="x">×</span></button>
-          {unmappedCount > 0 && <button className="chip"><Icon name="alert" size={13} />{unmappedCount} unmapped</button>}
+          <button className={`chip${onlyUnmapped ? "" : " on"}`} onClick={() => setOnlyUnmapped(false)}>All medications{!onlyUnmapped && <> <span className="x">×</span></>}</button>
+          {unmappedCount > 0 && <button className={`chip${onlyUnmapped ? " on" : ""}`} onClick={() => setOnlyUnmapped(true)}><Icon name="alert" size={13} />{unmappedCount} unmapped</button>}
           <div style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>{data.length} medications</div>
         </div>
         <div className="tbl-scroll">

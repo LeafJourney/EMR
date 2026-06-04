@@ -2,7 +2,16 @@
 /* LEAFNERD — top command bar */
 import { Icon } from "./primitives";
 
-export function CommandBar({ onAsk }: { onAsk?: () => void }) {
+export function CommandBar({
+  onAsk,
+  onSources,
+  toast,
+}: {
+  onAsk?: () => void;
+  /** Jump to the Admin / governance surface (the source-of-truth for feeds). */
+  onSources?: () => void;
+  toast?: (m: string) => void;
+}) {
   return (
     <header className="cmdbar">
       <div className="search" onClick={onAsk} style={{ cursor: "text" }}>
@@ -11,8 +20,15 @@ export function CommandBar({ onAsk }: { onAsk?: () => void }) {
         <span className="kbd">⌘K</span>
       </div>
       <div className="cmd-spacer"></div>
-      <button className="cmd-ctrl"><Icon name="source" size={15} /><span className="mut">Sources</span><b>4 active</b><Icon name="chevD" size={13} /></button>
-      <button className="cmd-ctrl"><Icon name="clock" size={15} /><b>Last 30 days</b><Icon name="chevD" size={13} /></button>
+      <span className="badge green demo-chip" title="Synthetic, de-identified demo data — safe to show">
+        <span className="bd"></span>Demo dataset · de-identified
+      </span>
+      <button className="cmd-ctrl" onClick={onSources} title="View connected data sources">
+        <Icon name="source" size={15} /><span className="mut">Sources</span><b>4 active</b><Icon name="chevD" size={13} />
+      </button>
+      <button className="cmd-ctrl" onClick={() => toast?.("Time range — showing the last 30 days")}>
+        <Icon name="clock" size={15} /><b>Last 30 days</b><Icon name="chevD" size={13} />
+      </button>
       <span className="fhir-chip"><Icon name="git" size={14} />FHIR R4 · US Core 6.1</span>
       <span className="sync"><span className="dot"></span>Synced 14m</span>
       <button className="ai-btn" onClick={onAsk}><Icon name="spark" size={15} className="spark" />Ask Leafnerd</button>

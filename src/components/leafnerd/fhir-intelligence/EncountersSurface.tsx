@@ -85,9 +85,11 @@ function buildPayload(row: EncounterRow): DrawerPayload {
 export function EncountersSurface({
   rows,
   openRecord,
+  toast,
 }: {
   rows?: EncounterRow[];
   openRecord: (p: DrawerPayload) => void;
+  toast?: (m: string) => void;
 }) {
   const data = rows && rows.length ? rows : FALLBACK;
   return (
@@ -105,7 +107,7 @@ export function EncountersSurface({
       <div className="tbl-wrap">
         <div className="tbl-tools">
           <button className="chip on">Last 30 days <span className="x">×</span></button>
-          <button className="chip"><Icon name="plus" size={13} />Add filter</button>
+          <button className="chip" onClick={() => toast?.("Filter builder — add modality, status, or provider conditions")}><Icon name="plus" size={13} />Add filter</button>
         </div>
         <div className="tbl-scroll">
           <table className="tbl">

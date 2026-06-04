@@ -15,9 +15,11 @@ const FALLBACK: PatientRow[] = [
 export function PatientsSurface({
   rows,
   openDrawer,
+  toast,
 }: {
   rows?: PatientRow[];
   openDrawer: { patient: (p: PatientRow) => void };
+  toast?: (m: string) => void;
 }) {
   const patients = rows && rows.length ? rows : FALLBACK;
   return (
@@ -32,7 +34,7 @@ export function PatientsSurface({
           </p>
         </div>
       </div>
-      <PatientTable patients={patients} onOpen={openDrawer.patient} />
+      <PatientTable patients={patients} onOpen={openDrawer.patient} toast={toast} />
     </div>
   );
 }

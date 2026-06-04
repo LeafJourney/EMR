@@ -86,11 +86,16 @@ function buildPayload(row: ObservationRow): DrawerPayload {
 export function ObservationsSurface({
   rows,
   openRecord,
+  toast,
 }: {
   rows?: ObservationRow[];
   openRecord: (p: DrawerPayload) => void;
+  toast?: (m: string) => void;
 }) {
-  const data = rows && rows.length ? rows : FALLBACK;
+  const all = rows && rows.length ? rows : FALLBACK;
+  const [notableOnly, setNotableOnly] = React.useState(true);
+  const isNotable = (r: ObservationRow) => r.severity.toLowerCase() !== "info";
+  const data = notableOnly ? all.filter(isNotable) : all;
   return (
     <div className="page">
       <div className="page-head">
@@ -105,8 +110,11 @@ export function ObservationsSurface({
       </div>
       <div className="tbl-wrap">
         <div className="tbl-tools">
-          <button className="chip on">Severity ≥ Notable <span className="x">×</span></button>
-          <button className="chip"><Icon name="plus" size={13} />Add filter</button>
+          {notableOnly
+            ? <button className="chip on" onClick={() => setNotableOnly(false)} title="Show all severities">Severity ≥ Notable <span className="x">×</span></button>
+            : <button className="chip" onClick={() => setNotableOnly(true)}><Icon name="filter" size={13} />Severity ≥ Notable</button>}
+          <button className="chip" onClick={() => toast?.("Filter builder — add category, LOINC, value, or date conditions")}><Icon name="plus" size={13} />Add filter</button>
+          <div style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>{data.length} of {all.length}</div>
         </div>
         <div className="tbl-scroll">
           <table className="tbl">

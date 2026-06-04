@@ -10,11 +10,18 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
   const D = data;
   const [activeId, setActiveId] = React.useState(D.fhirResources[0].id);
   const [rtab, setRtab] = React.useState("raw");
+  const [query, setQuery] = React.useState("");
   const r = D.fhirResources.find(x => x.id === activeId)!;
 
-  // group resources by type for the tree
+  // free-text filter across type, label, patient, code, status
+  const q = query.trim().toLowerCase();
+  const matches = (x: typeof D.fhirResources[number]) =>
+    !q || [x.type, x.label, x.patient, x.code, x.status].some(v => v.toLowerCase().includes(q));
+  const visible = D.fhirResources.filter(matches);
+
+  // group (filtered) resources by type for the tree
   const groups: Record<string, typeof D.fhirResources> = {};
-  D.fhirResources.forEach(x => { (groups[x.type] = groups[x.type] || []).push(x); });
+  visible.forEach(x => { (groups[x.type] = groups[x.type] || []).push(x); });
   const typeOrder = ["Patient", "Condition", "Observation", "MedicationRequest", "Encounter"];
   const validTone: Record<string, string> = { pass: "green", warn: "amber", err: "rose" };
 
@@ -25,14 +32,31 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
         <div className="exp-pane-head">
           <div className="t">Resource tree</div>
           <div className="search" style={{ width: "auto", marginTop: 10, padding: "6px 10px" }}>
-            <Icon name="search" size={14} /><input placeholder="Filter resources…" />
+            <Icon name="search" size={14} />
+            <input
+              placeholder="Filter resources…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Filter FHIR resources"
+            />
+            {query && (
+              <span role="button" aria-label="Clear filter" onClick={() => setQuery("")} style={{ cursor: "pointer", color: "var(--faint)", display: "inline-flex" }}>
+                <Icon name="x" size={14} />
+              </span>
+            )}
           </div>
         </div>
+        {visible.length === 0 && (
+          <div style={{ padding: "18px 16px", fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
+            No resources match <b className="mono" style={{ color: "var(--ink-2)" }}>{query}</b>.
+            <span className="link" style={{ marginLeft: 6, color: "var(--canopy)", cursor: "pointer" }} onClick={() => setQuery("")}>Clear</span>
+          </div>
+        )}
         {typeOrder.filter(t => groups[t]).map(type => (
           <div key={type} className="tree-group">
             <div className="tree-grp-label">
               <Icon name="chevD" size={12} />{type}
-              <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontWeight: 400 }}>{(D.fhirCounts[type] || groups[type].length).toLocaleString()}</span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontWeight: 400 }}>{(q ? groups[type].length : (D.fhirCounts[type] || groups[type].length)).toLocaleString()}</span>
             </div>
             {groups[type].map(x => (
               <div key={x.id} className={`tree-item ${x.id === activeId ? "active" : ""}`} onClick={() => setActiveId(x.id)}>

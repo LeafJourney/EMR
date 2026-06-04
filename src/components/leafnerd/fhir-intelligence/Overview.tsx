@@ -86,8 +86,8 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
           <p className="page-lede">A single aperture across 48,210 patients, seven clinical domains, and 2.4M FHIR resources — with provenance on every number.</p>
         </div>
         <div className="page-head-actions">
-          <button className="cmd-ctrl"><Icon name="download" size={15} />Export brief</button>
-          <button className="cmd-ctrl"><Icon name="clock" size={15} /><b>Last 30 days</b><Icon name="chevD" size={13} /></button>
+          <button className="cmd-ctrl" onClick={() => toast("Generating executive brief (PDF) — population & data health…")}><Icon name="download" size={15} />Export brief</button>
+          <button className="cmd-ctrl" onClick={() => toast("Time range — showing the last 30 days")}><Icon name="clock" size={15} /><b>Last 30 days</b><Icon name="chevD" size={13} /></button>
         </div>
       </div>
 
@@ -189,7 +189,7 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
         <h2>High-risk cohort</h2><span className="count">1,206 patients</span>
         <span className="link" onClick={() => toast("Opening cohort in Analytics Workbench…")}>Open in Analytics<Icon name="arrowR" size={14} /></span>
       </div>
-      <PatientTable patients={D.patients} onOpen={openDrawer.patient} />
+      <PatientTable patients={D.patients} onOpen={openDrawer.patient} toast={toast} />
     </div>
   );
 }

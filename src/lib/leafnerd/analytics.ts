@@ -660,7 +660,7 @@ const nav: NavGroup[] = [
     group: "Data",
     items: [
       { id: "fhir", label: "FHIR Explorer", icon: "git" },
-      { id: "admin", label: "Admin", icon: "gear" },
+      { id: "admin", label: "Admin", icon: "gear", badge: "2", badgeTone: "amber" },
     ],
   },
 ];
