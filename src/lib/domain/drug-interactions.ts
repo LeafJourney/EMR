@@ -8,6 +8,8 @@ export interface DrugInteraction {
   severity: Severity;
   mechanism: string;
   recommendation: string;
+  /** Raw reference strings from the database (e.g. "PMID: 12345678"). */
+  references: string[];
 }
 
 interface InteractionEntry {
@@ -63,6 +65,7 @@ export function checkInteractions(
           severity: entry.severity as Severity,
           mechanism: entry.mechanism,
           recommendation: entry.recommendation,
+          references: entry.references ?? [],
         });
         break; // Avoid duplicate matches for same med against same entry
       }
@@ -93,6 +96,7 @@ export function getAllInteractions(): DrugInteraction[] {
       severity: e.severity as Severity,
       mechanism: e.mechanism,
       recommendation: e.recommendation,
+      references: e.references ?? [],
     }))
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
 }

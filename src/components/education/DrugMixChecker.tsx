@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle, ShieldAlert } from "lucide-react";
 import {
   checkInteractions,
+  getSeverityLabel,
   type DrugInteraction,
 } from "@/lib/domain/drug-interactions";
 
@@ -27,7 +28,8 @@ export function parseMedicationInput(input: string): string[] {
     .filter(Boolean);
 }
 
-const DEFAULT_CANNABINOIDS = ["THC", "CBD", "CBN"];
+// CBN omitted — the bundled database has no CBN entries yet.
+const DEFAULT_CANNABINOIDS = ["THC", "CBD"];
 
 export interface DrugMixCheckerProps {
   /**
@@ -206,7 +208,7 @@ export function DrugMixChecker({
                             tone={isRed ? "danger" : isYellow ? "warning" : "success"}
                             className="uppercase tracking-widest text-[10px] font-bold"
                           >
-                            {ix.severity} Severity
+                            {getSeverityLabel(ix.severity)}
                           </Badge>
                         </div>
 
@@ -229,6 +231,36 @@ export function DrugMixChecker({
                         >
                           <span>Action:</span> {ix.recommendation}
                         </p>
+
+                        {ix.references.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {ix.references.map((ref) => {
+                              const pmidMatch = ref.match(/PMID:\s*(\d+)/i);
+                              const href = pmidMatch
+                                ? `https://pubmed.ncbi.nlm.nih.gov/${pmidMatch[1]}/`
+                                : null;
+                              return href ? (
+                                <a
+                                  key={ref}
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-accent bg-slate-100 hover:bg-accent/10 px-2.5 py-1 rounded-full transition-colors"
+                                >
+                                  {ref}
+                                  <span aria-hidden="true">↗</span>
+                                </a>
+                              ) : (
+                                <span
+                                  key={ref}
+                                  className="inline-flex items-center text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full"
+                                >
+                                  {ref}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>
