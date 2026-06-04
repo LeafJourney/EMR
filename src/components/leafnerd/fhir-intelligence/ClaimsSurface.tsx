@@ -183,7 +183,6 @@ export function ClaimsSurface({ anomalies }: { anomalies?: ClaimAnomalyRow[] }) 
         className="theme-leafmart claims-skin"
         style={{ ...BOTANICAL_BRIDGE, marginTop: 22 }}
       >
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <ClaimsWorkbench initialAnomalies={workbenchAnomalies as any} />
       </div>
     </div>
