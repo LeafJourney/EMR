@@ -54,6 +54,88 @@ export function ProvSteps({ steps }: { steps: ProvenanceStep[] }) {
   </div>;
 }
 
+/* ---- Per-patient risk-driver decomposition (explainability) ----
+   Deterministic: derived purely from the patient's own fields so the same
+   patient always yields the same breakdown. Weights are normalized to sum to
+   100% — answering "why is this score what it is?" without a black box. */
+function lastEncDays(s: string): number {
+  const m = /(\d+)\s*(mo|wk|w|d|m|y)/i.exec(s || "");
+  if (!m) return 14;
+  const n = parseInt(m[1], 10);
+  const u = m[2].toLowerCase();
+  if (u === "d") return n;
+  if (u === "w" || u === "wk") return n * 7;
+  if (u === "mo" || u === "m") return n * 30;
+  if (u === "y") return n * 365;
+  return n;
+}
+
+const DRIVER_TONE: Record<string, string> = {
+  rose: "var(--c-rose)", amber: "var(--c-amber)", indigo: "var(--c-indigo)", sage: "var(--c-sage)",
+};
+
+function riskDrivers(p: PatientRow): { label: string; pct: number; detail: string; res: string; tone: string }[] {
+  const c = (p.cohort || "").toLowerCase();
+  const has = (k: string) => c.includes(k);
+  const acute = has("chf") || has("ckd") || has("copd") || has("mi");
+  const diabetic = has("diabet") || has("dm");
+  const raw = [
+    { label: "Comorbidity burden", w: Math.max(0.4, p.hcc), detail: `HCC ${p.hcc.toFixed(2)} across active conditions`, res: "Condition", tone: "rose" },
+    { label: "Acute utilization", w: (acute ? 2.4 : 1.0) * (0.6 + p.score), detail: acute ? "ED / inpatient above cohort baseline" : "Recent encounter pattern", res: "Encounter · Claim", tone: "amber" },
+    { label: "Medication adherence", w: (diabetic ? 1.9 : has("pain") || has("anxiety") || has("insomnia") ? 1.3 : 0.7) * (0.6 + p.gaps * 0.12), detail: diabetic ? "Refill cadence vs. expected (glycemic regimen)" : "Refill cadence vs. expected", res: "MedicationRequest", tone: "indigo" },
+    { label: "Open care gaps", w: 0.5 + p.gaps * 0.7, detail: `${p.gaps} overdue measure${p.gaps === 1 ? "" : "s"}`, res: "Quality measure", tone: "sage" },
+    { label: "Engagement recency", w: Math.min(2.4, lastEncDays(p.lastEnc) / 14), detail: `Last encounter ${p.lastEnc} ago`, res: "Encounter", tone: "amber" },
+  ];
+  const total = raw.reduce((s, d) => s + d.w, 0) || 1;
+  const pcts = raw.map((d) => ({ label: d.label, detail: d.detail, res: d.res, tone: d.tone, pct: Math.round((d.w / total) * 100) }));
+  pcts.sort((a, b) => b.pct - a.pct);
+  const sum = pcts.reduce((s, d) => s + d.pct, 0);
+  if (pcts.length) pcts[0].pct += 100 - sum; // absorb rounding into the top driver
+  return pcts;
+}
+
+function RiskDrivers({ p }: { p: PatientRow }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+      {riskDrivers(p).map((d, i) => (
+        <div key={i}>
+          <div className="between" style={{ marginBottom: 4, gap: 10 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 540 }}>{d.label}</span>
+            <span className="tnum" style={{ fontSize: 12.5, fontWeight: 600, color: DRIVER_TONE[d.tone] }}>{d.pct}%</span>
+          </div>
+          <div style={{ height: 7, background: "var(--cream-deep)", borderRadius: 5, overflow: "hidden" }}>
+            <div style={{ width: d.pct + "%", height: "100%", background: DRIVER_TONE[d.tone], borderRadius: 5, transition: "width .6s ease" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 4 }}>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{d.detail}</span>
+            <span className="dotsep">·</span>
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--faint)" }}>{d.res}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Downstream-impact block — the quantified "so what" / blast radius of a
+   signal, framed as a watch (amber) rather than a hard error. */
+function ImpactList({ items }: { items?: string[] }) {
+  if (!items || !items.length) return null;
+  return (
+    <div className="norm-section">
+      <div className="nh">Downstream impact</div>
+      <div className="norm-card" style={{ background: "var(--amber-soft)", borderColor: "#e6d6ad" }}>
+        {items.map((t, i) => (
+          <div key={i} style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: i ? "8px 0 0" : 0 }}>
+            <span style={{ color: "var(--amber)", flex: "none", marginTop: 2 }}><Icon name="arrowR" size={13} /></span>
+            <span style={{ fontSize: 12.5, lineHeight: 1.45, color: "#5f4a13" }}>{t}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Drawer({ payload, onClose, toast }: { payload: DrawerPayload; onClose: () => void; toast: (m: string) => void }) {
   const [tab, setTab] = React.useState(payload.tab || "summary");
   React.useEffect(() => {
@@ -191,6 +273,13 @@ export const buildDrawer = {
             </div>
           </div>
           <div className="norm-section">
+            <div className="nh">Risk drivers · why {p.score.toFixed(2)}</div>
+            <div className="norm-card">
+              <RiskDrivers p={p} />
+              <div className="m-prov" style={{ marginTop: 12 }}><Icon name="layers" size={11} /> HCC v28 + utilization model · each driver's contribution to this score · refreshed 2h ago</div>
+            </div>
+          </div>
+          <div className="norm-section">
             <div className="nh">Encounter timeline</div>
             <div className="norm-card" style={{ padding: "6px 0" }}>
               {[
@@ -259,6 +348,7 @@ export const buildDrawer = {
               <dt>Detection conf.</dt><dd><span style={{ display: "inline-flex" }}><Conf value={a.confidence} /></span></dd>
               <dt>First seen</dt><dd>{a.when}</dd>
             </dl></div></div>
+          <ImpactList items={a.impact} />
           <button className="insight-action" style={{ width: "100%", justifyContent: "center" }} onClick={() => toast("Incident opened · integration team notified")}>
             <Icon name="bolt" size={15} />Open incident
           </button>
@@ -283,6 +373,7 @@ export const buildDrawer = {
           <div className="norm-section"><div className="nh">Evidence ({ins.evidence.length})</div>
             <div className="norm-card"><div className="wrap-gap">{ins.evidence.map((e, i) => <Badge key={i} tone="indigo" mono dot={false}>{e}</Badge>)}</div>
             <div className="m-prov" style={{ marginTop: 10 }}><Icon name="layers" size={11} /> {ins.source}</div></div></div>
+          <ImpactList items={ins.impact} />
           <div className="norm-section"><div className="nh">Recommended action</div>
             <button className="insight-action" style={{ width: "100%", justifyContent: "center" }} onClick={() => toast(`Queued: ${ins.action}`)}>
               <Icon name="bolt" size={15} />{ins.action}

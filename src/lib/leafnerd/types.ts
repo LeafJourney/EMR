@@ -45,6 +45,8 @@ export interface Anomaly {
   detail: string;
   source: string;
   confidence: number; // 0..1
+  /** Quantified downstream consequences — the "so what" behind the signal. */
+  impact?: string[];
 }
 
 export interface Opportunity {
@@ -92,6 +94,8 @@ export interface Insight {
   confidence: ConfidenceLabel;
   conf: number; // 0..1
   source: string;
+  /** Quantified downstream consequences — the "so what" behind the finding. */
+  impact?: string[];
 }
 
 export interface FhirRelated {

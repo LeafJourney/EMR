@@ -21,6 +21,7 @@ import { LabsSurface } from "./LabsSurface";
 import { QualitySurface } from "./QualitySurface";
 import { AnalyticsSurface } from "./AnalyticsSurface";
 import { AdminSurface } from "./AdminSurface";
+import { RiskSurface } from "./RiskSurface";
 import { AskLeafnerdPanel } from "./AskLeafnerdPanel";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 import type {
@@ -78,7 +79,8 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "fhir") body = <FhirExplorerSurface data={data} toast={toast} />;
   else if (active === "ai") body = <AiInsightsSurface data={data} openDrawer={openDrawer} toast={toast} />;
   else if (active === "claims") body = <ClaimsSurface anomalies={props.claims} />;
-  else if (active === "risk") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
+  else if (active === "risk") body = <RiskSurface patients={clinical?.patients ?? data.patients} openDrawer={openDrawer} toast={toast} />;
+  else if (active === "simulator") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
   else if (active === "analytics") body = <AnalyticsSurface toast={toast} />;
   else if (active === "quality") body = <QualitySurface rows={props.quality} toast={toast} />;
   else if (active === "patients") body = <PatientsSurface rows={clinical?.patients} openDrawer={openDrawer} toast={toast} />;
@@ -90,7 +92,7 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "admin") body = <AdminSurface toast={toast} openRecord={openRecord} />;
   else body = <Placeholder id={active} />;
 
-  const fullBleed = active === "fhir" || active === "claims" || active === "risk";
+  const fullBleed = active === "fhir" || active === "claims" || active === "simulator";
 
   return (
     <div className="ln-root">
