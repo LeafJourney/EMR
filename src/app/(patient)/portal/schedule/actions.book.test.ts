@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const hoisted = vi.hoisted(() => ({
   mockPrisma: {
     patient: { findFirst: vi.fn() },
+    provider: { findFirst: vi.fn() },
     appointment: { findFirst: vi.fn(), create: vi.fn() },
   },
   requireUserMock: vi.fn(),
@@ -46,7 +47,8 @@ function base(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   requireUserMock.mockResolvedValue({ id: "user_1" });
-  mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1" });
+  mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1", organizationId: "org_1" });
+  mockPrisma.provider.findFirst.mockResolvedValue({ id: "prov_1" });
   mockPrisma.appointment.findFirst.mockResolvedValue(null);
   mockPrisma.appointment.create.mockResolvedValue({ id: "appt_new" });
 });
@@ -73,6 +75,22 @@ describe("bookAppointment", () => {
     expect(where.status.in).toEqual(["requested", "confirmed"]);
     expect(where.startAt.lt).toBeInstanceOf(Date);
     expect(where.endAt.gt).toBeInstanceOf(Date);
+  });
+
+  it("rejects an unknown / inactive / cross-org provider without booking", async () => {
+    mockPrisma.provider.findFirst.mockResolvedValue(null);
+    const res = await bookAppointment(base());
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/provider/i);
+    expect(mockPrisma.appointment.create).not.toHaveBeenCalled();
+  });
+
+  it("scopes the provider lookup to the patient's org and active providers", async () => {
+    await bookAppointment(base());
+    const where = mockPrisma.provider.findFirst.mock.calls[0][0].where;
+    expect(where.id).toBe("prov_1");
+    expect(where.organizationId).toBe("org_1");
+    expect(where.active).toBe(true);
   });
 
   it("rejects a time in the past without touching the DB", async () => {

@@ -38,7 +38,7 @@ export async function bookAppointment(
   input: BookAppointmentInput,
 ): Promise<BookAppointmentResult> {
   const user = await requireUser();
-  await getOwnedPatient(user.id, input.patientId);
+  const patient = await getOwnedPatient(user.id, input.patientId);
 
   const startAt = new Date(`${input.slotDate}T${input.slotStartTime}:00`);
   if (Number.isNaN(startAt.getTime())) {
@@ -52,26 +52,39 @@ export async function bookAppointment(
     startAt.getTime() + durationMinutesFor(input.appointmentType) * 60_000,
   );
 
+  // The provider must exist, be active, and belong to the patient's org —
+  // bookAppointment previously trusted an arbitrary providerId, so the portal
+  // could create a dangling appointment against a missing or cross-org provider.
+  const provider = await prisma.provider.findFirst({
+    where: {
+      id: input.providerId,
+      organizationId: patient.organizationId,
+      active: true,
+    },
+    select: { id: true },
+  });
+  if (!provider) {
+    return { ok: false, error: "That provider isn't available for booking." };
+  }
+
   // Don't let the portal double-book a provider's slot. rescheduleAppointment
   // already enforces this guard; bookAppointment skipped it, so two patients
   // (or one patient clicking twice) could create overlapping "requested"
   // appointments on the same provider.
-  if (input.providerId) {
-    const conflict = await prisma.appointment.findFirst({
-      where: {
-        providerId: input.providerId,
-        status: { in: ["requested", "confirmed"] },
-        startAt: { lt: endAt },
-        endAt: { gt: startAt },
-      },
-    });
-    if (conflict) {
-      return {
-        ok: false,
-        error: "That time was just taken. Please pick another slot.",
-        code: "CONFLICT",
-      };
-    }
+  const conflict = await prisma.appointment.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: ["requested", "confirmed"] },
+      startAt: { lt: endAt },
+      endAt: { gt: startAt },
+    },
+  });
+  if (conflict) {
+    return {
+      ok: false,
+      error: "That time was just taken. Please pick another slot.",
+      code: "CONFLICT",
+    };
   }
 
   // Preserve the requested modality (in_person | video | phone). The old code
