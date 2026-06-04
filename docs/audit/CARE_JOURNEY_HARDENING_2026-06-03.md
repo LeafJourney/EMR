@@ -30,7 +30,7 @@ Queue board (`/ops/queue`, kiosk) persists the intermediate flow states via `com
 | Step / required scenario | Status | Evidence |
 |---|---|---|
 | Patient books through portal | **fixed** | `bookAppointment` now guards conflicts/past/invalid + preserves modality; `actions.book.test.ts` |
-| Same patient checks in on appt day | pass | `api/mobile/kiosk/check-in/route.ts` + `computeQueueTransition`; existing route test |
+| Same patient checks in on appt day | **⚠ gap** | check-in transition works (`api/mobile/kiosk/check-in`, `kioskCheckIn`, `computeQueueTransition`) **but only if an Encounter already exists** — booked appointments are never materialized into encounters (see Risk #1), so a booked-but-no-encounter patient hits "No appointment found" |
 | Missing required intake detected/surfaced | pass | `intake-gate` + `previsit-readiness` (existing suites) |
 | QR/OTP rescue (no portal password for older adult) | pass | `kiosk-handoff` → OTP → lobby session; existing `check-in/*` suites |
 | Front desk marks readiness / sees blockers | pass | `getAppointmentReadiness`, `MissingRequirement[]` deep links |
@@ -80,9 +80,43 @@ server didn't enforce it; `saveObjectiveDocumentation` already did).
 - Fix: reject block saves on finalized/amended notes.
 - Tests: `actions.save-note-lock.test.ts`. Commit `886e495b`.
 
+### D. Two more duplicate-encounter siblings (round 2)  — **MED**
+An audit of EVERY `prisma.encounter.find*` selector for the same status-drift class found
+two more find-or-create paths that missed queue-state encounters:
+- `startVoiceEncounter` (`voice-chart/actions.ts`) matched `status:"in_progress"` only →
+  voice charting on a checked-in/roomed patient minted a duplicate. Now uses
+  `selectActiveVisitEncounter`.
+- `startOverlayTelehealthVisit` (`communications/actions.ts`) filtered
+  `["scheduled","in_progress"]` → broadened to `ACTIVE_VISIT_STATUSES`.
+- Tests: `actions.start-voice.test.ts`, `actions.overlay-telehealth.test.ts`. Commit `8a0f3619`.
+- (The `/ops/queue` board query was audited and is correct — no status filter, loads the full day.)
+
+### E. Booking trusted an arbitrary providerId (round 2)  — **MED**
+`bookAppointment` never validated `providerId`, so the portal could create a dangling
+appointment against a missing, inactive, or cross-org provider.
+- Fix: look the provider up by id + patient's `organizationId` + `active` before booking.
+- Tests: extended `actions.book.test.ts`. Commit `61735a21`.
+
 ---
 
 ## 4. Residual risks (do NOT mark fully shipped without these)
+
+0. **★ Appointments are never materialized into Encounters (SYSTEMIC — needs a product decision).**
+   `Encounter.appointmentId` is `@unique` in the schema but is **never set anywhere in app
+   code** — confirmed by auditing every `encounter.create` site. Booking creates only an
+   `Appointment`; encounters are created solely at visit-start (`startVisit` /
+   `startVisitWithBriefing` / `startVoiceEncounter`) or walk-in, all as `in_progress`. The
+   readiness/intake side runs off Appointments; the check-in → rooming → visit side runs off
+   Encounters; **nothing bridges them.** Consequence: a patient who books and shows up has no
+   Encounter, so `kioskCheckIn` returns *"No appointment found for today"* and the queue board
+   never shows them. The seeded demo hides this because it creates encounters directly.
+   - **Recommended fix (team decision required — timing/semantics):** an idempotent
+     `ensureEncounterForAppointment(appointmentId)` that creates a `scheduled` Encounter from a
+     confirmed Appointment (copying `scheduledFor`/`providerId`/`modality`, linking
+     `appointmentId` — the `@unique` makes it race-safe). Wire it at ONE agreed trigger: at
+     appointment confirmation, a day-of cron, or lazily on first check-in / queue-board load.
+     This affects what the queue/dashboards/billing count, so it's a workflow-semantics call,
+     not a silent fix — deliberately left for you.
 
 1. **Concurrent walk-in duplicate** — `selectActiveVisitEncounter`+`create` is not atomic.
    The deterministic roomed-miss is fixed and repeat-clicks reuse, but two *simultaneous*
@@ -108,10 +142,10 @@ Baseline before changes: 269 test files / 2566 tests, all passing.
 
 | Gate | Command | Result |
 |------|---------|--------|
-| Unit + integration | `npx vitest run` | **273 files / 2601 tests passing** (+4 files, +35 tests) |
-| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) |
+| Unit + integration | `npx vitest run` | **275 files / 2613 tests passing** (+6 files, +47 tests over baseline) |
+| Typecheck | `npm run typecheck` (`tsc --noEmit`) | pass (exit 0) — re-run after round 2 |
 | Lint | `npm run lint` (`next lint`) | pass (exit 0); only a pre-existing `no-img-element` warning in `ShareDialog.tsx` (untouched) |
-| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0); full production build incl. `/telehealth`, portal schedule, clinic notes |
+| Build | `npm run build` (`prisma generate && next build`) | pass (exit 0) at round 1; round-2 changes are typecheck+lint+test clean (build not re-run) |
 
 New / changed tests:
 - `src/lib/domain/visit-state.select-active.test.ts` (new, 13) — drives the real
@@ -121,6 +155,9 @@ New / changed tests:
 - `src/app/(clinician)/clinic/patients/[id]/notes/[noteId]/actions.save-note-lock.test.ts` (new, 5).
 - `actions.start-visit.test.ts` (+6 queue-state reuse / terminal-create cases).
 - `visit-state.test.ts` (updated contract assertions to the corrected non-terminal set).
+- Round 2: `voice-chart/actions.start-voice.test.ts` (new, 7),
+  `communications/actions.overlay-telehealth.test.ts` (new, 3),
+  `actions.book.test.ts` (+2 provider-validation cases).
 
 Playwright e2e was **not executed**: the authed care-journey UI needs a running
 dev server + seeded DB + Clerk auth, which can't be stood up with synthetic-only,
@@ -136,4 +173,7 @@ specs (public/authed surfaces) remain unchanged.
 886e495b fix(notes): block saveNoteBlocks from silently mutating a signed note
 ad2084b0 test(visit): end-to-end same-day care-journey integration spine
 61121004 test(visit): align ACTIVE_VISIT_STATUSES contract test with the non-terminal fix
+8a0f3619 fix(visit): close two more duplicate-encounter siblings (voice charting, telehealth overlay)
+61735a21 fix(portal): validate provider exists, is active, and shares the patient's org on booking
+docs(audit): round-2 update — siblings, provider validation, appointment↔encounter finding
 ```
