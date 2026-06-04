@@ -241,6 +241,22 @@ export interface LabRow {
   markers: LabMarker[];
 }
 
+/** A HEDIS/CMS-style quality measure with a gap list (Quality surface). */
+export interface QualityMeasureRow {
+  id: string;
+  measure: string; // "Comprehensive Diabetes Care — HbA1c control"
+  abbrev: string; // "CDC-HbA1c"
+  steward: string; // "HEDIS" | "CMS" | "NCQA"
+  rate: number; // current performance, 0..1
+  target: number; // benchmark, 0..1
+  numerator: number;
+  denominator: number;
+  gaps: number; // open care gaps
+  reachable: number; // reachable for outreach
+  trend: number[]; // sparkline series
+  status: "ahead" | "near" | "behind";
+}
+
 /** Real (seeded) clinical lists for the rail surfaces, scoped to the demo org. */
 export interface LeafnerdClinicalData {
   patients: PatientRow[];
@@ -260,4 +276,6 @@ export interface LeafnerdAppProps {
   cohortStatusCounts?: CohortStatusCount[];
   /** Real seeded clinical lists for the Clinical rail surfaces. */
   clinical?: LeafnerdClinicalData;
+  /** Quality measures for the Quality surface (falls back to curated). */
+  quality?: QualityMeasureRow[];
 }

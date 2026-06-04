@@ -18,6 +18,9 @@ import { ObservationsSurface } from "./ObservationsSurface";
 import { ConditionsSurface } from "./ConditionsSurface";
 import { MedicationsSurface } from "./MedicationsSurface";
 import { LabsSurface } from "./LabsSurface";
+import { QualitySurface } from "./QualitySurface";
+import { AnalyticsSurface } from "./AnalyticsSurface";
+import { AskLeafnerdPanel } from "./AskLeafnerdPanel";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 import type {
   LeafnerdAppProps,
@@ -35,12 +38,25 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   const [active, setActive] = useState("overview");
   const [drawer, setDrawer] = useState<DrawerPayload | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [askOpen, setAskOpen] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toast = useCallback((msg: string) => {
     setToastMsg(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToastMsg(null), 2600);
+  }, []);
+
+  // ⌘K / Ctrl-K opens "Ask Leafnerd".
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setAskOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const openDrawer = {
@@ -61,7 +77,9 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "fhir") body = <FhirExplorerSurface data={data} toast={toast} />;
   else if (active === "ai") body = <AiInsightsSurface data={data} openDrawer={openDrawer} toast={toast} />;
   else if (active === "claims") body = <ClaimsSurface anomalies={props.claims} />;
-  else if (active === "risk" || active === "analytics") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
+  else if (active === "risk") body = <CohortSurface statusCounts={props.cohortStatusCounts} />;
+  else if (active === "analytics") body = <AnalyticsSurface toast={toast} />;
+  else if (active === "quality") body = <QualitySurface rows={props.quality} toast={toast} />;
   else if (active === "patients") body = <PatientsSurface rows={clinical?.patients} openDrawer={openDrawer} />;
   else if (active === "encounters") body = <EncountersSurface rows={clinical?.encounters} openRecord={openRecord} />;
   else if (active === "observations") body = <ObservationsSurface rows={clinical?.observations} openRecord={openRecord} />;
@@ -70,19 +88,20 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "labs") body = <LabsSurface rows={clinical?.labs} openRecord={openRecord} />;
   else body = <Placeholder id={active} />;
 
-  const fullBleed = active === "fhir" || active === "claims" || active === "risk" || active === "analytics";
+  const fullBleed = active === "fhir" || active === "claims" || active === "risk";
 
   return (
     <div className="ln-root">
       <div className="app">
         <Rail nav={data.nav} active={active} setActive={setActive} userName={props.userName} />
         <div className="main">
-          <CommandBar />
+          <CommandBar onAsk={() => setAskOpen(true)} />
           <div className="content" style={fullBleed ? { overflow: "auto", display: "block" } : {}}>
             {body}
           </div>
         </div>
         {drawer && <Drawer payload={drawer} onClose={() => setDrawer(null)} toast={toast} />}
+        <AskLeafnerdPanel open={askOpen} onClose={() => setAskOpen(false)} />
         <div className={`toast ${toastMsg ? "show" : ""}`}>
           <Icon name="spark" size={15} className="spark" />{toastMsg}
         </div>
