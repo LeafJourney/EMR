@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { dispatch } from "./dispatch";
 import { resolveModelClient } from "./model-client";
+import { withPhiRedaction } from "./redacting-model-client";
 import { buildToolRegistry } from "./tool-registry";
 import type { AgentContext, AgentLogEntry, AllowedAction, StepResult } from "./types";
 import type { DomainEvent } from "./events";
@@ -88,7 +89,10 @@ export function createAgentContext(args: CreateContextArgs): {
         throw new Error(`Agent ${args.agentName}@${args.agentVersion} not permitted to ${action}`);
       }
     },
-    model: resolveModelClient(args.organizationId, args.agentName),
+    model: withPhiRedaction(
+      resolveModelClient(args.organizationId, args.agentName),
+      args.agentName,
+    ),
     tools,
     stepResults: new Map<string, StepResult>(),
   };
@@ -160,7 +164,10 @@ export function createLightContext(opts: {
     log() {},
     async emit() {},
     assertCan() {},
-    model: resolveModelClient(opts.organizationId, opts.agentName),
+    model: withPhiRedaction(
+      resolveModelClient(opts.organizationId, opts.agentName),
+      opts.agentName,
+    ),
     tools,
     stepResults: new Map(),
   };

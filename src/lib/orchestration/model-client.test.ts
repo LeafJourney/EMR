@@ -103,10 +103,26 @@ describe("OpenRouterModelClient — credit fallback + classification", () => {
       model: "anthropic/claude-sonnet-4.5",
       maxRetries: 0,
       timeoutMs: 5000,
+      allowFreeFallback: true,
     });
     const out = await client.complete("hi");
     expect(out).toBe("from free model");
     expect(calls).toBe(2);
+  });
+
+  it("does NOT fall back to a free model by default (no BAA)", async () => {
+    const fetchMock = vi.fn(async () =>
+      fakeResponse(402, { error: { message: "you can only afford 100" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new OpenRouterModelClient({
+      apiKey: "test-key",
+      maxRetries: 0,
+      timeoutMs: 5000,
+    });
+    const err = await client.complete("hi").catch((e) => e);
+    expect(err.code).toBe("credit_limit");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([

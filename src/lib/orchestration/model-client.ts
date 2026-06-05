@@ -171,6 +171,14 @@ const DEFAULT_MODEL_MAX_RETRIES =
     ? Math.max(0, Number(process.env.AGENT_MODEL_MAX_RETRIES) || 0)
     : 2;
 
+/**
+ * Whether to silently fall back to a free community `:free` model on a 402/429.
+ * OFF by default: free models carry no BAA, so a PHI-bearing clinical prompt
+ * must never be silently rerouted to one. Opt in (AGENT_ALLOW_FREE_FALLBACK=true)
+ * only for non-PHI demo/dev environments.
+ */
+const DEFAULT_ALLOW_FREE_FALLBACK = process.env.AGENT_ALLOW_FREE_FALLBACK === "true";
+
 /** Sleep that rejects early if the caller's abort signal fires. */
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -198,6 +206,7 @@ export class OpenRouterModelClient implements ModelClient {
   private readonly defaultTemperature: number | undefined;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly allowFreeFallback: boolean;
 
   constructor(options?: {
     apiKey?: string;
@@ -206,6 +215,7 @@ export class OpenRouterModelClient implements ModelClient {
     temperature?: number;
     timeoutMs?: number;
     maxRetries?: number;
+    allowFreeFallback?: boolean;
   }) {
     const apiKey = options?.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -221,6 +231,7 @@ export class OpenRouterModelClient implements ModelClient {
     this.defaultTemperature = options?.temperature;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.maxRetries = options?.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
+    this.allowFreeFallback = options?.allowFreeFallback ?? DEFAULT_ALLOW_FREE_FALLBACK;
   }
 
 
@@ -232,8 +243,9 @@ export class OpenRouterModelClient implements ModelClient {
     try {
       return await this._callWithRetry(this.model, prompt, options);
     } catch (err) {
-      // On credit-limit (402) or rate-limit (429), fall back to free model
-      if (isModelError(err) && (err.code === "credit_limit" || err.code === "rate_limited")) {
+      // On credit-limit (402) or rate-limit (429), optionally fall back to a
+      // free model — gated, since free models have no BAA (see DEFAULT_ALLOW_FREE_FALLBACK).
+      if (this.allowFreeFallback && isModelError(err) && (err.code === "credit_limit" || err.code === "rate_limited")) {
         console.warn(
           `[OpenRouter] Primary model ${this.model} blocked (${err.code}). Falling back to free model: ${this.freeModel}`
         );
@@ -305,6 +317,7 @@ export class OpenRouterModelClient implements ModelClient {
       }
     } catch (err) {
       if (
+        this.allowFreeFallback &&
         !yielded &&
         isModelError(err) &&
         (err.code === "credit_limit" || err.code === "rate_limited")
