@@ -251,7 +251,7 @@ test.describe("LeafNerd hardening — /leafnerd SPA", () => {
     await expect(page.getByText("Clinical Insight")).toBeVisible();
 
     // The CBD-dominant summary proves the result reflects the selected regimen.
-    await expect(page.getByText(/CBD Dominant regimen/)).toBeVisible();
+    await expect(page.getByText(/CBD-dominant/)).toBeVisible();
 
     // The control re-enables once the run completes.
     await expect(run).toBeEnabled();
