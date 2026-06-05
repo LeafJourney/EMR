@@ -8,7 +8,7 @@ import { PdfExportButton } from "./pdf-export-button";
 import { InteractionBubbles } from "./interaction-bubbles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isModalityEnabled } from "@/lib/modality/server";
-import { ChatCB } from "../research/chat-cb";
+import { ChatCBPanel } from "../research/chat-cb-panel";
 
 export const metadata = { title: "Clinical Library" };
 
@@ -121,6 +121,21 @@ export default async function LibraryPage() {
                   <td className="py-3 pr-4 text-text-muted">Pepper, spicy, woody</td>
                   <td className="py-3 text-text-muted">CB2 agonist, anti-inflammatory, analgesic, gastroprotective</td>
                 </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Ocimene</td>
+                  <td className="py-3 pr-4 text-text-muted">Sweet, herbal, woody</td>
+                  <td className="py-3 text-text-muted">Antiviral, decongestant, mild anti-inflammatory; often found in energetic/uplifting cultivars</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Terpinolene</td>
+                  <td className="py-3 pr-4 text-text-muted">Fresh, piney, floral, herbaceous</td>
+                  <td className="py-3 text-text-muted">Mildly sedating, antifungal, antioxidant; associated with cerebral/creative effects at low doses</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Humulene</td>
+                  <td className="py-3 pr-4 text-text-muted">Earthy, hoppy, woody</td>
+                  <td className="py-3 text-text-muted">Anti-inflammatory, appetite suppressant, antibacterial; shares terpene backbone with beta-caryophyllene</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -213,10 +228,7 @@ export default async function LibraryPage() {
       {/* ChatCB — AI evidence assistant, cannabis-modality only */}
       {cannabisEnabled && (
         <div className="mb-6">
-          <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-3">
-            AI evidence assistant
-          </p>
-          <ChatCB />
+          <ChatCBPanel />
         </div>
       )}
 
