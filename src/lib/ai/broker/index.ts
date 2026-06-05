@@ -21,6 +21,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
+import { persistLlmUsage } from "../usage-repository";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -148,7 +149,7 @@ async function checkThrottle(
 }
 
 /**
- * Append-only usage row writer. No-op until LlmUsage Prisma model lands.
+ * Append-only usage row writer — persists to the LlmUsage ledger (EMR-755).
  * Exported for testing — call sites should never invoke directly.
  */
 export async function recordLlmUsage(row: {
@@ -162,9 +163,19 @@ export async function recordLlmUsage(row: {
   ok: boolean;
   errorCode?: string;
 }): Promise<void> {
-  // Structured log so an aggregator can already see the shape we'll
-  // eventually persist; the row gets durable storage once LlmUsage lands.
-  logger.info({ event: "llm.usage", ...row });
+  // persistLlmUsage also emits the structured `llm.usage` log and is
+  // best-effort (never throws into the caller).
+  await persistLlmUsage({
+    organizationId: row.practiceId,
+    agentBucket: row.agentBucket,
+    agentName: row.agentName,
+    model: row.model,
+    tokensIn: row.tokensIn,
+    tokensOut: row.tokensOut,
+    latencyMs: row.latencyMs,
+    ok: row.ok,
+    errorCode: row.errorCode,
+  });
 }
 
 /**

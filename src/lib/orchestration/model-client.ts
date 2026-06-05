@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
+import { persistLlmUsage } from "@/lib/ai/usage-repository";
 import type { ModelCallOptions, ModelClient } from "./types";
 
 
@@ -207,6 +208,12 @@ export class OpenRouterModelClient implements ModelClient {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly allowFreeFallback: boolean;
+  private readonly onUsage?: (u: {
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    latencyMs: number;
+  }) => void;
 
   constructor(options?: {
     apiKey?: string;
@@ -216,6 +223,12 @@ export class OpenRouterModelClient implements ModelClient {
     timeoutMs?: number;
     maxRetries?: number;
     allowFreeFallback?: boolean;
+    onUsage?: (u: {
+      model: string;
+      tokensIn: number;
+      tokensOut: number;
+      latencyMs: number;
+    }) => void;
   }) {
     const apiKey = options?.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -232,6 +245,7 @@ export class OpenRouterModelClient implements ModelClient {
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
     this.maxRetries = options?.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
     this.allowFreeFallback = options?.allowFreeFallback ?? DEFAULT_ALLOW_FREE_FALLBACK;
+    this.onUsage = options?.onUsage;
   }
 
 
@@ -350,6 +364,8 @@ export class OpenRouterModelClient implements ModelClient {
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
+    const t0 = Date.now();
+
     // Total-request timeout combined with any caller-provided signal. Without
     // this a hung provider connection blocks the worker indefinitely.
     const controller = new AbortController();
@@ -410,7 +426,10 @@ export class OpenRouterModelClient implements ModelClient {
         );
       }
 
-      let json: { choices?: Array<{ message?: { content?: string } }> };
+      let json: {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
       try {
         json = (await response.json()) as typeof json;
       } catch (err) {
@@ -435,6 +454,14 @@ export class OpenRouterModelClient implements ModelClient {
           requestedMaxTokens,
         });
       }
+      // Surface token usage so callers (ConfigurableModelClient) can persist an
+      // LlmUsage row for spend accounting + cost-guardrail reconciliation.
+      this.onUsage?.({
+        model,
+        tokensIn: json.usage?.prompt_tokens ?? 0,
+        tokensOut: json.usage?.completion_tokens ?? 0,
+        latencyMs: Date.now() - t0,
+      });
       return content;
     } finally {
       clearTimeout(timer);
@@ -792,11 +819,28 @@ export class ConfigurableModelClient implements ModelClient {
           console.warn("OpenRouter API key missing in ConfigurableModelClient. Falling back to StubModelClient.");
           return new StubModelClient();
         }
+        const usageOrgId = orgId;
+        const usageAgentName = this.agentName ?? "unknown";
         return new OpenRouterModelClient({
           apiKey: finalApiKey,
           model: modelId,
           maxTokens: maxTokens ? Number(maxTokens) : undefined,
           temperature: temperature ? Number(temperature) : undefined,
+          onUsage: (u) => {
+            // Fire-and-forget: a usage write must never block or fail the model
+            // call. Skip when the call isn't org-scoped (nothing to bill to).
+            if (!usageOrgId) return;
+            void persistLlmUsage({
+              organizationId: usageOrgId,
+              agentBucket: "uncategorized",
+              agentName: usageAgentName,
+              model: u.model,
+              tokensIn: u.tokensIn,
+              tokensOut: u.tokensOut,
+              latencyMs: u.latencyMs,
+              ok: true,
+            });
+          },
         });
       }
 

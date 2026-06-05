@@ -125,6 +125,29 @@ describe("OpenRouterModelClient — credit fallback + classification", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("reports token usage via onUsage on a successful call", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fakeResponse(200, {
+          choices: [{ message: { content: "hello" } }],
+          usage: { prompt_tokens: 12, completion_tokens: 7 },
+        }),
+      ),
+    );
+    const seen: Array<{ tokensIn: number; tokensOut: number; latencyMs: number }> = [];
+    const client = new OpenRouterModelClient({
+      apiKey: "test-key",
+      maxRetries: 0,
+      timeoutMs: 5000,
+      onUsage: (u) => seen.push(u),
+    });
+    await client.complete("hi");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ tokensIn: 12, tokensOut: 7 });
+    expect(typeof seen[0].latencyMs).toBe("number");
+  });
+
   it.each([
     [401, "unauthorized"],
     [429, "rate_limited"],

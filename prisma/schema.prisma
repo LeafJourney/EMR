@@ -5306,6 +5306,31 @@ model PracticeSubscription {
   @@index([tier])
 }
 
+/// Append-only LLM usage ledger (EMR-755). One row per upstream model call —
+/// success or failure — so per-practice spend is queryable and the EMR-756
+/// cost guardrail can reconcile the `PracticeSubscription.throttled` flag off
+/// real token totals instead of a perpetual zero. No FK to Organization on
+/// purpose: this is high-volume append-only telemetry, indexed by org + time.
+model LlmUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Coarse cost bucket: charting | billing | messaging | research |
+  /// background | patient_facing | uncategorized
+  agentBucket    String   @default("uncategorized")
+  /// Stable agent identifier (e.g. "dosing-recommendation").
+  agentName      String
+  model          String
+  tokensIn       Int      @default(0)
+  tokensOut      Int      @default(0)
+  latencyMs      Int      @default(0)
+  ok             Boolean  @default(true)
+  errorCode      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([agentBucket])
+}
+
 model PastMedicalCondition {
   id        String    @id @default(cuid())
   patientId String

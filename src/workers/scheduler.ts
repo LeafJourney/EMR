@@ -12,6 +12,8 @@ import { parse999, parse277CA, decide277Actions } from "../lib/billing/clearingh
 import { recordDeadLetter } from "../lib/billing/clearinghouse/dead-letter";
 import { derivePrimaryControlNumbers } from "../lib/agents/billing/clearinghouse-submission-agent";
 import { writeAgentAudit } from "../lib/orchestration/context";
+import { reconcileThrottleState } from "../lib/billing/cost-guardrails";
+import { sumTokensMTD } from "../lib/ai/usage-repository";
 
 function resolvePrevisitPortalUrl(env: NodeJS.ProcessEnv): string | null {
   return env.PREVISIT_PORTAL_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.APP_URL ?? null;
@@ -140,6 +142,41 @@ async function main() {
 
   // 6. Clearinghouse functional/payer acknowledgment polling
   await pollClearinghouseGateway();
+
+  // 7. Reconcile AI cost-guardrail throttle state (EMR-756) from the real
+  //    LlmUsage ledger — flips PracticeSubscription.throttled when a practice
+  //    crosses its monthly token allowance (manual overrides win).
+  await reconcileAiThrottles();
+}
+
+async function reconcileAiThrottles(): Promise<void> {
+  // Reach the PracticeSubscription delegate defensively — same pattern as
+  // cost-guardrails, since it may not be in older generated clients.
+  const subs = (prisma as unknown as Record<string, any>)["practiceSubscription"];
+  if (!subs?.findMany) return;
+  let reconciled = 0;
+  let flipped = 0;
+  try {
+    const rows: Array<{ organizationId: string }> = await subs.findMany({
+      where: { includedMonthlyTokens: { not: null } },
+      select: { organizationId: true },
+    });
+    for (const row of rows) {
+      const usedTokensMTD = await sumTokensMTD(row.organizationId);
+      const result = await reconcileThrottleState({
+        prisma,
+        organizationId: row.organizationId,
+        usedTokensMTD,
+      });
+      reconciled++;
+      if (result.flipped) flipped++;
+    }
+  } catch (err) {
+    console.error("[scheduler] AI throttle reconcile failed", err);
+  }
+  console.log(
+    `[scheduler] ai-throttle reconciled=${reconciled} flipped=${flipped}`,
+  );
 }
 
 export async function pollClearinghouseGateway() {
