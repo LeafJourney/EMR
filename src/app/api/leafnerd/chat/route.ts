@@ -24,6 +24,7 @@ export const maxDuration = 60;
  */
 
 const STUB_SENTINEL = "AI output unavailable";
+const LEAFNERD_DEMO_ORG_SLUG = "leafnerd-demo";
 
 interface Grounding {
   activePatients: number;
@@ -44,9 +45,18 @@ type StreamEvent =
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 /** Pull a live, org-scoped snapshot of the figures the assistant may cite. */
-async function loadGrounding(organizationId: string | null): Promise<Grounding> {
-  const orgScope = organizationId ? { organizationId } : {};
-  const outcomeScope = organizationId ? { patient: { organizationId } } : {};
+async function loadGrounding(userOrgId: string | null): Promise<Grounding> {
+  let orgId = userOrgId;
+  if (!orgId) {
+    const demoOrg = await prisma.organization.findUnique({
+      where: { slug: LEAFNERD_DEMO_ORG_SLUG },
+      select: { id: true },
+    });
+    orgId = demoOrg?.id ?? null;
+  }
+
+  const orgScope = orgId ? { organizationId: orgId } : {};
+  const outcomeScope = orgId ? { patient: { organizationId: orgId } } : {};
   const weekAgo = new Date(Date.now() - 7 * 86400000);
 
   const [activePatients, totalPatients, activeEncounters, encountersThisWeek, recentOutcomesCount, outcomeByMetric] =
@@ -199,11 +209,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err?.message ?? "Unauthorized" }, { status: 401 });
   }
 
-  // Must be a LeafNerd or Super Admin.
-  const memberships = await prisma.membership.findMany({ where: { userId: user.id } });
-  const hasAccess = memberships.some(
-    (m: { role: string }) => m.role === "leafnerd" || m.role === "super_admin",
-  );
+  // Authorize via the Clerk session roles (user.roles)
+  const hasAccess = user.roles.some((r) => r === "leafnerd" || r === "super_admin");
   if (!hasAccess) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
