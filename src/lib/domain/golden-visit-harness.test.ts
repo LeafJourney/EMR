@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => {
   const FIXED_NOW = new Date("2099-06-05T16:00:00.000Z");
@@ -651,6 +651,229 @@ beforeEach(() => {
   vi.setSystemTime(FIXED_NOW);
   h.resetFixture();
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function activeEncountersForPatient() {
+  return fixture.db.encounters.filter(
+    (encounter) =>
+      encounter.patientId === PATIENT_ID &&
+      !["complete", "cancelled", "no_show"].includes(encounter.status),
+  );
+}
+
+function expectSingleActiveEncounter(label: string) {
+  const activeEncounters = activeEncountersForPatient();
+  expect(activeEncounters, label).toHaveLength(1);
+  expect(activeEncounters[0].id, label).toBe(ENCOUNTER_ID);
+  return activeEncounters[0];
+}
+
+function dispatchCount(name: string) {
+  return fixture.dispatchEvents.filter((event) => event.name === name).length;
+}
+
+function noteBlocks() {
+  return [
+    {
+      heading: "Subjective",
+      body:
+        "Golden reports chronic arthritic pain with morning stiffness. Topical CBD helps pain, but the new evening CBD dose caused daytime somnolence.",
+    },
+    {
+      heading: "Objective",
+      body:
+        "Vitals reviewed. BP 148/86 on arrival and 142/84 on recheck; HR 78. Patient appears alert, mildly anxious, and in no acute distress.",
+    },
+    {
+      heading: "Assessment",
+      body:
+        "Chronic pain, ICD-10 G89.29, partially responsive to CBD therapy. Daytime somnolence is likely related to recent dose timing change.",
+    },
+    {
+      heading: "Plan",
+      body:
+        "Reduce evening CBD dose and avoid daytime use while monitoring somnolence. Order labs including CMP and renal function panel. RTC in 6 weeks for BP and pain reassessment.",
+    },
+  ];
+}
+
+async function runGoldenVisit() {
+  vi.useFakeTimers();
+  vi.setSystemTime(FIXED_NOW);
+
+  fixture.session.currentUser = fixture.users.patient;
+  const booked = await bookAppointment({
+    patientId: PATIENT_ID,
+    providerId: PROVIDER_ID,
+    slotDate: "2099-06-05",
+    slotStartTime: "09:00",
+    appointmentType: "follow_up",
+    modality: "in_person",
+    reason: "Golden Visit harness follow-up",
+  });
+  expect(booked).toEqual({ ok: true, id: APPOINTMENT_ID });
+
+  const appointment = fixture.db.appointments.find((row) => row.id === APPOINTMENT_ID);
+  expect(appointment).toBeDefined();
+  if (!appointment) throw new Error("Golden Visit appointment was not created.");
+  appointment.status = "confirmed";
+
+  const ensuredEncounter = await ensureEncounterForAppointment(APPOINTMENT_ID);
+  expect(ensuredEncounter?.id).toBe(ENCOUNTER_ID);
+  expectSingleActiveEncounter("after appointment encounter materialization");
+
+  fixture.session.currentUser = fixture.users.kiosk;
+  const verified = await kioskVerifyDob(PATIENT_ID, "1954-02-11");
+  expect(verified.ok).toBe(true);
+  expect(verified.context?.appointment?.encounterId).toBe(ENCOUNTER_ID);
+
+  const firstCheckIn = await kioskCheckIn(PATIENT_ID);
+  expect(firstCheckIn).toMatchObject({
+    ok: true,
+    status: "checked_in",
+    alreadyCheckedIn: false,
+  });
+  expectSingleActiveEncounter("after first kiosk check-in");
+
+  const secondCheckIn = await kioskCheckIn(PATIENT_ID);
+  expect(secondCheckIn).toMatchObject({
+    ok: true,
+    status: "checked_in",
+    alreadyCheckedIn: true,
+  });
+  expectSingleActiveEncounter("after idempotent kiosk check-in");
+
+  fixture.session.currentUser = fixture.users.ma;
+  expect(
+    await moveQueueEncounter({ encounterId: ENCOUNTER_ID, target: "rooming" }),
+  ).toEqual({ ok: true });
+  expect(fixture.db.encounters.find((row) => row.id === ENCOUNTER_ID)?.status).toBe(
+    "rooming",
+  );
+
+  expect(
+    await saveRoomingHandoff({
+      encounterId: ENCOUNTER_ID,
+      room: "A3",
+      handoffNote: "BP a little high; patient anxious about new dose.",
+      readinessFlags: ["bp_recheck", "review_cbd_somnolence"],
+    }),
+  ).toEqual({ ok: true });
+
+  expect(
+    await moveQueueEncounter({ encounterId: ENCOUNTER_ID, target: "roomed" }),
+  ).toEqual({ ok: true });
+  const roomedEncounter = expectSingleActiveEncounter("after roomed transition");
+  expect(roomedEncounter.status).toBe("roomed");
+  expect(roomedEncounter.briefingContext?.rooming).toMatchObject({
+    room: "A3",
+    handoffNote: "BP a little high; patient anxious about new dose.",
+    readinessFlags: ["bp_recheck", "review_cbd_somnolence"],
+  });
+
+  fixture.session.currentUser = fixture.users.physician;
+  await h.prisma.note.create({
+    data: {
+      id: NOTE_ID,
+      encounterId: ENCOUNTER_ID,
+      status: "draft",
+      aiDrafted: false,
+      blocks: noteBlocks(),
+      createdAt: FIXED_NOW,
+    },
+  });
+
+  await expect(startVisit(PATIENT_ID)).rejects.toThrow(
+    `redirect:/clinic/patients/${PATIENT_ID}/notes/${NOTE_ID}`,
+  );
+  const inProgressEncounter = expectSingleActiveEncounter("after physician starts visit");
+  expect(inProgressEncounter.status).toBe("in_progress");
+  expect(inProgressEncounter.providerId).toBe(PROVIDER_ID);
+  const roomingHandoffVisibleToPhysician = Boolean(
+    inProgressEncounter.briefingContext?.rooming?.room === "A3" &&
+      inProgressEncounter.briefingContext?.rooming?.handoffNote ===
+        "BP a little high; patient anxious about new dose." &&
+      inProgressEncounter.briefingContext?.rooming?.readinessFlags?.includes("bp_recheck") &&
+      inProgressEncounter.briefingContext?.rooming?.readinessFlags?.includes(
+        "review_cbd_somnolence",
+      ),
+  );
+  expect(roomingHandoffVisibleToPhysician).toBe(true);
+
+  await expect(startVisit(PATIENT_ID)).rejects.toThrow(
+    `redirect:/clinic/patients/${PATIENT_ID}/notes/${NOTE_ID}`,
+  );
+  expectSingleActiveEncounter("after idempotent physician start visit");
+
+  const finalized = await saveAndFinalizeNote(NOTE_ID, noteBlocks());
+  expect(finalized).toEqual({ ok: true, status: "finalized" });
+  expect(fixture.db.encounters.find((row) => row.id === ENCOUNTER_ID)?.status).toBe(
+    "complete",
+  );
+
+  const finalizedAgain = await saveAndFinalizeNote(NOTE_ID, noteBlocks());
+  expect(finalizedAgain).toEqual({ ok: true, status: "finalized" });
+
+  const bundle = buildVisitCompletionBundle({
+    patientFirstName: "Golden",
+    blocks: noteBlocks(),
+    hasFutureAppointment: false,
+    codingSuggestion: {
+      emLevel: "99214",
+      icd10: [{ code: "G89.29", label: "Other chronic pain", confidence: 0.95 }],
+      rationale: "Established follow-up with chronic pain management and medication adjustment.",
+    },
+  });
+  let selection = initializeVisitCompletionSelection(bundle);
+  for (const card of bundle.cards) {
+    selection = applyVisitCompletionAction(bundle, selection, {
+      type: "confirm_card",
+      cardId: card.id,
+      confirmationNote: `Confirmed ${card.title} for Golden Visit closeout.`,
+    });
+  }
+  const releasePayload = buildVisitCompletionReleasePayload(bundle, selection);
+  expect(releasePayload.canRelease).toBe(true);
+
+  const scrubIssues = scrubClaim({
+    cptCodes: [
+      {
+        code: "99214",
+        label: "Established patient office visit",
+        units: 1,
+        chargeAmount: 235,
+        modifiers: [],
+      },
+    ],
+    icd10Codes: [{ code: "G89.29", label: "Other chronic pain" }],
+    payerName: "Blue Cross",
+    payerId: "bcbs",
+    serviceDate: FIXED_NOW,
+    providerId: PROVIDER_ID,
+    patientCoverage: {
+      payerName: "Blue Cross",
+      eligibilityStatus: "active",
+    },
+  });
+  expect(isClaimSubmittable(scrubIssues)).toBe(true);
+
+  return {
+    appointmentId: APPOINTMENT_ID,
+    encounterId: ENCOUNTER_ID,
+    finalEncounterStatus: fixture.db.encounters.find((row) => row.id === ENCOUNTER_ID)
+      ?.status,
+    duplicateActiveEncounterCount: activeEncountersForPatient().filter(
+      (encounter) => encounter.id !== ENCOUNTER_ID,
+    ).length,
+    roomingHandoffVisibleToPhysician,
+    noteFinalizedDispatchCount: dispatchCount("note.finalized"),
+    encounterCompletedDispatchCount: dispatchCount("encounter.completed"),
+    closeoutReady: releasePayload.canRelease && isClaimSubmittable(scrubIssues),
+  };
+}
 
 describe("Golden Visit harness", () => {
   it("walks one scheduled patient from booking to closeout without losing encounter continuity", async () => {
