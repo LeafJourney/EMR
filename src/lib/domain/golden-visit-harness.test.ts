@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => {
-  const FIXED_NOW = new Date("2099-06-05T16:00:00.000Z");
+  // Keep this local-time based because bookAppointment parses slotDate +
+  // slotStartTime in the process timezone. 08:00 local keeps the 09:00 slot in
+  // the future under UTC, Pacific, and CI timezones.
+  const FIXED_NOW = new Date(2099, 5, 5, 8, 0, 0, 0);
   const ORG_ID = "org_golden";
   const PATIENT_ID = "patient_golden";
   const PATIENT_USER_ID = "user_patient_golden";
