@@ -28,47 +28,37 @@ export async function POST(req: Request) {
       take: 100
     });
 
+    // ADVISORY ONLY — this agent must NOT change dispense status. The risk
+    // signals below are not yet wired to real dose/polypharmacy data; the
+    // previous version hardcoded isHighRisk=true and wrote "REQUIRED_REVIEW" /
+    // "AUTO_CLEARED" into dispense notes — gating (and auto-clearing) real
+    // dispenses on mock logic. It now returns review recommendations for a
+    // pharmacist and never mutates a dispense. (EMR-084 follow-up wires scoring.)
     let flaggedCount = 0;
+    const recommendations: Array<{ dispenseId: string; reason: string }> = [];
 
     for (const rx of pendingRx) {
-      // 2. Logic: High-Risk Detection
-      // Assuming rx.items contains the dose or product info
-      const isHighRisk = true; // Mock: e.g., checking if THC > 50mg/day for a naive patient
-      const isPolyPharmacy = false; // Mock: checking if patient has > 5 active CNS depressants
+      // TODO(EMR-084): score from rx items (THC mg/day in cannabis-naive
+      // patients, >5 active CNS depressants). No real signals → no recommendation.
+      const isHighRisk = false;
+      const isPolyPharmacy = false;
 
       if (isHighRisk || isPolyPharmacy) {
-        // 3. Queue for Pharmacist Review
-        // Update the prescription status to strictly require an override
-        await prisma.dispensaryDispense.update({
-          where: { id: rx.id },
-          data: {
-            // We can attach a flag to the JSON items or notes
-            notes: "Pharmacist review required: REQUIRED_REVIEW", 
-            // In reality, this would be a specific status field
-          }
-        });
-
-        logger.info({ 
-          event: "agents.dur_queue.flagged_for_review", 
-          rxId: rx.id, 
-          reason: isPolyPharmacy ? "Polypharmacy" : "High Dose Limit Exceeded"
+        recommendations.push({
+          dispenseId: rx.id,
+          reason: isPolyPharmacy ? "Polypharmacy" : "High Dose Limit Exceeded",
         });
         flaggedCount++;
-      } else {
-        // Clear for dispensing
-        await prisma.dispensaryDispense.update({
-          where: { id: rx.id },
-          data: {
-            notes: "Pharmacist review: AUTO_CLEARED", 
-          }
-        });
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
       prescriptionsAnalyzed: pendingRx.length,
-      flaggedForReview: flaggedCount
+      flaggedForReview: flaggedCount,
+      recommendations,
     });
 
   } catch (error) {

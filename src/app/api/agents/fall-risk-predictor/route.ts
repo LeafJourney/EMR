@@ -27,55 +27,38 @@ export async function POST(req: Request) {
       take: 50
     });
 
-    let highRiskFlagged = 0;
+    // ADVISORY ONLY — this agent must NOT write to the chart. The risk inputs
+    // below are not yet wired to real medication / gait data; the previous
+    // version hardcoded them to `true`, scoring EVERY geriatric patient at 85
+    // and appending "HIGH FALL RISK" to patient.presentingConcerns plus an
+    // auditLog "protocol activated" — polluting every chart. Until a real risk
+    // model lands (EMR-101) it must not assert risk or mutate the chart; it
+    // returns Bed-Alarm recommendations for clinician review only.
+    const recommendations: Array<{ patientId: string; riskScore: number }> = [];
 
     for (const patient of geriatricPatients) {
-      // 2. ML Risk Scoring Mock
-      // Analyze recent prescriptions for Benzodiazepines, Z-drugs, or Opioids
-      const recentlyPrescribedSedatives = true; // Mocked condition
-      // Analyze PT notes for "gait instability"
-      const hasGaitInstability = true; // Mocked condition
+      // TODO(EMR-101): score from real CNS-depressant prescriptions + PT gait
+      // notes. No real signals available → no score, no chart write.
+      const recentlyPrescribedSedatives = false;
+      const hasGaitInstability = false;
 
       let riskScore = 0;
       if (recentlyPrescribedSedatives) riskScore += 45;
       if (hasGaitInstability) riskScore += 40;
 
       if (riskScore >= 75) {
-        // 3. Trigger Fall Risk Protocol
-        logger.warn({ 
-          event: "agents.fall_risk_predictor.high_risk_detected", 
-          patientId: patient.id, 
-          riskScore 
-        });
-
-        // Add a permanent clinical alert to the patient chart
-        await prisma.patient.update({
-          where: { id: patient.id },
-          data: {
-            // Appending a mock clinical flag
-            presentingConcerns: patient.presentingConcerns ? `${patient.presentingConcerns}, HIGH FALL RISK` : "HIGH FALL RISK"
-          }
-        });
-
-        // Fire alert to nursing station for Bed Alarm placement
-        await prisma.auditLog.create({
-          data: {
-            organizationId: patient.organizationId,
-            action: "FALL_PREVENTION_PROTOCOL_ACTIVATED",
-            subjectType: "Patient",
-            subjectId: patient.id,
-            metadata: { riskScore, requiredAction: "Place Bed Alarm" }
-          }
-        });
-
-        highRiskFlagged++;
+        // Recommend a Bed-Alarm protocol for clinician review — never auto-apply.
+        recommendations.push({ patientId: patient.id, riskScore });
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
       patientsAnalyzed: geriatricPatients.length,
-      highRiskFlagged
+      highRiskCandidates: recommendations.length,
+      recommendations,
     });
 
   } catch (error) {
