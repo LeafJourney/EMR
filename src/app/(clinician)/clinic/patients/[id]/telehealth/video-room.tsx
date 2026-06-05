@@ -195,12 +195,7 @@ export function VideoRoom({
                           : "bg-surface border-border hover:bg-surface-muted",
                       )}
                     >
-                      <div className={cn(
-                        "mt-0.5 flex h-5 w-5 items-center justify-center rounded border transition-colors",
-                        checkedItems.has(item.id) ? "border-accent bg-accent text-white" : "border-border-strong text-transparent"
-                      )}>
-                        <LeafSprig size={12} className="text-current" />
-                      </div>
+                      <ChecklistLeaf checked={checkedItems.has(item.id)} />
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-text">
@@ -768,5 +763,18 @@ export function VideoRoom({
         )}
       </div>
     </div>
+  );
+}
+
+function ChecklistLeaf({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className={cn(
+        "mt-0.5 shrink-0 transition-all duration-200",
+        checked ? "text-success scale-110" : "text-text-subtle",
+      )}
+    >
+      <LeafSprig size={14} className="text-current" />
+    </span>
   );
 }
