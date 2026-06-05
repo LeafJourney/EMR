@@ -671,6 +671,13 @@ function expectSingleActiveEncounter(label: string) {
   return activeEncounters[0];
 }
 
+function expectOnlyGoldenEncounter(label: string) {
+  expect(
+    fixture.db.encounters.map((encounter) => encounter.id),
+    label,
+  ).toEqual([ENCOUNTER_ID]);
+}
+
 function dispatchCount(name: string) {
   return fixture.dispatchEvents.filter((event) => event.name === name).length;
 }
@@ -724,6 +731,7 @@ async function runGoldenVisit() {
   const ensuredEncounter = await ensureEncounterForAppointment(APPOINTMENT_ID);
   expect(ensuredEncounter?.id).toBe(ENCOUNTER_ID);
   expectSingleActiveEncounter("after appointment encounter materialization");
+  expectOnlyGoldenEncounter("after appointment encounter materialization");
 
   fixture.session.currentUser = fixture.users.kiosk;
   const verified = await kioskVerifyDob(PATIENT_ID, "1954-02-11");
@@ -745,6 +753,7 @@ async function runGoldenVisit() {
     alreadyCheckedIn: true,
   });
   expectSingleActiveEncounter("after idempotent kiosk check-in");
+  expectOnlyGoldenEncounter("after idempotent kiosk check-in");
 
   fixture.session.currentUser = fixture.users.ma;
   expect(
@@ -807,6 +816,9 @@ async function runGoldenVisit() {
     `redirect:/clinic/patients/${PATIENT_ID}/notes/${NOTE_ID}`,
   );
   expectSingleActiveEncounter("after idempotent physician start visit");
+  expectOnlyGoldenEncounter("after idempotent physician start visit");
+  expect(dispatchCount("encounter.note.draft.requested")).toBe(0);
+  expect(fixture.db.agentJobs).toHaveLength(0);
 
   const finalized = await saveAndFinalizeNote(NOTE_ID, noteBlocks());
   expect(finalized).toEqual({ ok: true, status: "finalized" });
@@ -816,6 +828,8 @@ async function runGoldenVisit() {
 
   const finalizedAgain = await saveAndFinalizeNote(NOTE_ID, noteBlocks());
   expect(finalizedAgain).toEqual({ ok: true, status: "finalized" });
+  expectOnlyGoldenEncounter("after final closeout");
+  expect(activeEncountersForPatient()).toHaveLength(0);
 
   const bundle = buildVisitCompletionBundle({
     patientFirstName: "Golden",
