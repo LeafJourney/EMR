@@ -411,6 +411,18 @@ routes:
     owner: leafmart
     notes: "Clears Leafmart session cookies."
 
+  leafnerd/enqueue:
+    methods: [POST]
+    auth: required
+    owner: agents
+    notes: "Agent Workbench surface. Enqueue a new agent job."
+
+  leafnerd/job-action:
+    methods: [POST]
+    auth: required
+    owner: agents
+    notes: "Agent Workbench surface. Trigger an action on an agent job."
+
   # ── Marketplace ───────────────────────────────────────────
   marketplace/age-gate/confirm:
     methods: [POST]
@@ -565,6 +577,18 @@ routes:
     auth: required
     owner: integrations
     notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — gate exists."
+
+  dev/login:
+    methods: [GET]
+    auth: establishes_auth
+    owner: platform-security
+    notes: "Development bypass login. Disabled in production."
+
+  dev/logout:
+    methods: [GET]
+    auth: establishes_auth
+    owner: platform-security
+    notes: "Development bypass logout. Disabled in production."
 
   integrations/linear/issues/[identifier]:
     methods: [GET]
