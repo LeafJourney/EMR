@@ -25,6 +25,7 @@ const TransitionSchema = z.object({
     "rooming",
     "roomed",
     "wrap_up",
+    "complete",
     "cancelled",
     "no_show",
   ]),
