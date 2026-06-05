@@ -476,6 +476,28 @@
 .ln-root .fresh .bar.stale { background: var(--amber); }
 .ln-root .fresh .bar.gap { background: var(--rose); }
 
+/* interactive Overview charts — hover tooltips (volume + completeness) */
+.ln-root .ln-chart { cursor: crosshair; }
+.ln-root .ln-chart-tip {
+  position: absolute; z-index: 6; pointer-events: none;
+  transform: translate(-50%, calc(-100% - 11px));
+  background: var(--ink); color: var(--paper);
+  border-radius: var(--r-sm); padding: 5px 9px;
+  font-size: 12px; line-height: 1.35; white-space: nowrap;
+  box-shadow: var(--sh-3); display: flex; flex-direction: column; gap: 1px;
+}
+.ln-root .ln-chart-tip .t { color: var(--forest-dim); font-size: 10.5px; font-family: var(--mono); }
+.ln-root .ln-chart-tip .v { font-weight: 600; letter-spacing: -.01em; }
+.ln-root .ln-chart-tip .s { color: var(--forest-dim); font-size: 10.5px; }
+.ln-root .ln-chart-tip::after {
+  content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--ink);
+}
+.ln-root .ln-bar-row .ln-bar-tip {
+  left: auto; right: 0; top: 0; transform: translate(0, calc(-100% - 7px));
+}
+.ln-root .ln-bar-row .ln-bar-tip::after { left: auto; right: 15px; transform: none; }
+
 /* misc */
 .ln-root .divider { height: 1px; background: var(--line-soft); margin: 16px 0; }
 .ln-root .dotsep { color: var(--faint); margin: 0 7px; }

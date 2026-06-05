@@ -1,7 +1,7 @@
 "use client";
 /* LEAFNERD — Executive Overview */
-import { Icon, Badge, Sparkline, Gauge, BarsH, AreaChart } from "./primitives";
-import { InsightCard, PatientTable } from "./widgets";
+import { Icon, Badge, Sparkline, Gauge } from "./primitives";
+import { InsightCard, PatientTable, VolumeChart, DomainBars } from "./widgets";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 import type { LeafnerdData, Metric, Insight, Anomaly, PatientRow } from "@/lib/leafnerd/types";
 
@@ -17,12 +17,26 @@ function MetricCard({ m, onOpen }: { m: Metric; onOpen: (m: Metric) => void }) {
   const toneBg = { green: "var(--canopy-soft)", amber: "var(--amber-soft)", rose: "var(--rose-soft)" }[m.tone];
   const dirIc = m.dir === "up" ? "arrowUp" : m.dir === "down" ? "arrowDown" : "arrowR";
   const deltaClass = m.good ? "up" : (m.dir === "up" ? (m.tone === "rose" ? "down" : "up") : "down");
+  const open = () => onOpen(m);
   return (
-    <div className="card lift metric" onClick={() => onOpen(m)}>
+    <div
+      className="card lift metric"
+      role="button"
+      tabIndex={0}
+      aria-label={`${m.label}: ${m.value}${m.unit}. View provenance.`}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
       <div className="m-top">
         <span className="m-ic" style={{ background: toneBg, color: toneColor }}><Icon name={m.icon} size={15} /></span>
         <span className="m-label">{m.label}</span>
-        <span style={{ marginLeft: "auto" }}><Sparkline data={m.spark} color={toneColor} w={64} h={24} /></span>
+        {/* pointer-events:none so the inline sparkline never swallows the card click */}
+        <span style={{ marginLeft: "auto", pointerEvents: "none" }}><Sparkline data={m.spark} color={toneColor} w={64} h={24} /></span>
       </div>
       <div className="m-val tnum">{m.value}{m.unit && <span className="unit">{m.unit}</span>}</div>
       <div className={`m-delta ${deltaClass}`}>
@@ -112,7 +126,15 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
             </div>
             <Badge tone="green" dot={false}>+18% MoM</Badge>
           </div>
-          <AreaChart data={volData} labels={volLabels} w={620} h={188} yMax={2.0} />
+          <VolumeChart
+            data={volData}
+            labels={volLabels}
+            w={620}
+            h={188}
+            yMax={2.0}
+            ariaLabel="Clinical data volume — FHIR resources ingested per month"
+            formatValue={(v) => `${v.toFixed(2)}M resources`}
+          />
           <div style={{ display: "flex", gap: 9, alignItems: "flex-start", marginTop: 6, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
             <span style={{ color: "var(--canopy)", flex: "none", marginTop: 1 }}><Icon name="trendUp" size={16} /></span>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
@@ -130,7 +152,7 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
               6 of 7 domains exceed 85%. <b>Social history</b> lags at 61% and caps the composite score.
             </div>
           </div>
-          <BarsH data={D.domains} />
+          <DomainBars data={D.domains} />
         </div>
       </div>
 
