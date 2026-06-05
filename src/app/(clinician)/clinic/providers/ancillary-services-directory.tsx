@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -149,6 +149,18 @@ const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as ServiceCategory[];
 export function AncillaryServicesDirectory() {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<ServiceCategory | null>(null);
+
+  // Listen for "ancillary:filter" events dispatched by the provider-directory
+  // slash-command handler (e.g. /ancillary lab) so the two sibling client
+  // components stay decoupled without lifting state to the server page.
+  useEffect(() => {
+    function handleFilter(e: Event) {
+      const cat = (e as CustomEvent<{ category: string }>).detail.category;
+      setActiveCategory(ALL_CATEGORIES.includes(cat as ServiceCategory) ? (cat as ServiceCategory) : null);
+    }
+    document.addEventListener("ancillary:filter", handleFilter);
+    return () => document.removeEventListener("ancillary:filter", handleFilter);
+  }, []);
 
   const categoryCounts = useMemo(() => {
     const counts = {} as Record<ServiceCategory, number>;
