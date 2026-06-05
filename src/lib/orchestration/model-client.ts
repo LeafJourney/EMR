@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { persistLlmUsage } from "@/lib/ai/usage-repository";
+import { resolveFleetEnabled } from "./fleet";
 import type { ModelCallOptions, ModelClient } from "./types";
 
 
@@ -785,7 +786,6 @@ export class ConfigurableModelClient implements ModelClient {
       }
 
       const defaultModel = aiConfig?.defaultModel;
-      const fleetOverrides = aiConfig?.fleet;
 
       let provider = defaultModel?.provider || process.env.AGENT_MODEL_CLIENT || "stub";
       let modelId = defaultModel?.modelId;
@@ -793,23 +793,24 @@ export class ConfigurableModelClient implements ModelClient {
       let maxTokens = defaultModel?.maxTokens;
       let temperature = defaultModel?.temperature;
 
-      // Apply fleet overrides if matching agentName
-      if (this.agentName && fleetOverrides && fleetOverrides[this.agentName]) {
-        const override = fleetOverrides[this.agentName];
-        if (override.enabled === false) {
-          return new StubModelClient();
-        }
-        if (override.modelId) {
-          modelId = override.modelId;
-          try {
-            const { findModel } = await import("@/lib/domain/byok");
-            const found = findModel(modelId);
-            if (found) {
-              provider = found.provider;
-            }
-          } catch (e) {
-            console.error("Failed to dynamically import @/lib/domain/byok or find model:", e);
+      // Fleet gating (EMR-757 — ship inert). An agent runs only if explicitly
+      // enabled, or if the practice's fleet default is enabled. New practices
+      // seed fleetDefaultEnabled:false; practices predating the field are
+      // grandfathered (absent ⇒ enabled). Explicit per-agent override wins.
+      const fleet = resolveFleetEnabled(aiConfig, this.agentName);
+      if (!fleet.enabled) {
+        return new StubModelClient();
+      }
+      if (fleet.modelId) {
+        modelId = fleet.modelId;
+        try {
+          const { findModel } = await import("@/lib/domain/byok");
+          const found = findModel(fleet.modelId);
+          if (found) {
+            provider = found.provider;
           }
+        } catch (e) {
+          console.error("Failed to dynamically import @/lib/domain/byok or find model:", e);
         }
       }
 

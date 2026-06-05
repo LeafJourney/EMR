@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
+import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
 
 export async function saveAiConfigAction(data: {
   defaultModel?: {
@@ -51,7 +52,11 @@ export async function saveAiConfigAction(data: {
         physicianShellTemplateId: "physician-default",
         patientShellTemplateId: "patient-default",
         regulatoryFlags: {
-          aiConfig: {},
+          // Ship inert (EMR-757): new practices default agents OFF; practices
+          // predating the cutoff are grandfathered ON.
+          aiConfig: {
+            fleetDefaultEnabled: defaultFleetEnabledForPractice(practice.createdAt),
+          },
         },
       },
     });
