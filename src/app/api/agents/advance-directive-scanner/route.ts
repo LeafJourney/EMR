@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 
 // EMR-134: NLP Advance Directive Scanner
@@ -35,43 +34,35 @@ export async function POST(req: Request) {
       codeStatus = codeStatus ? `${codeStatus}/DNI` : "DNI";
     }
 
-    // 2. Update Patient Chart Global Banner
+    // ADVISORY ONLY — resuscitation code status is a clinician-confirmed
+    // determination, never an auto-write. The previous version overwrote
+    // patient.presentingConcerns (the chart-banner / chief-complaint field) with
+    // "[CRITICAL: CODE STATUS ...]" off a substring match — a false positive (a
+    // document merely *discussing* DNR) would flip a full-code patient to DNR, a
+    // potentially fatal documentation error. Surface the detection for explicit
+    // clinician confirmation in the chart UI; perform no write.
     if (codeStatus) {
-      logger.warn({ 
-        event: "agents.advance_directive_scanner.code_status_updated", 
-        patientId, 
-        codeStatus 
+      logger.warn({
+        event: "agents.advance_directive_scanner.code_status_detected",
+        patientId,
+        codeStatus,
       });
-
-      // Update Patient Record (Mocking a clinical flags field)
-      await prisma.patient.update({
-        where: { id: patientId },
-        data: {
-          presentingConcerns: `[CRITICAL: CODE STATUS ${codeStatus}]`
-        }
-      });
-
-      // Log the legal document processing
-      await prisma.auditLog.create({
-        data: {
-          organizationId: payload.organizationId || "DEFAULT",
-          action: "ADVANCE_DIRECTIVE_RECORDED",
-          subjectType: "Patient",
-          subjectId: patientId,
-          metadata: { documentId, codeStatus }
-        }
-      });
-
-      return NextResponse.json({ 
-        success: true, 
-        status: "directive_recorded",
-        codeStatus
+      return NextResponse.json({
+        success: true,
+        advisory: true,
+        applied: false,
+        status: "directive_detected",
+        detectedCodeStatus: codeStatus,
+        documentId,
+        requiresClinicianConfirmation: true,
       });
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      status: "no_directives_found"
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
+      status: "no_directives_found",
     });
 
   } catch (error) {

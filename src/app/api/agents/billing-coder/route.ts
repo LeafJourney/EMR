@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 
 // EMR-032: Billing Rules Engine & Auto-Coding
@@ -45,38 +44,25 @@ export async function POST(req: Request) {
       suggestedCpt.push({ code: "99213", description: "Office or other outpatient visit (Low severity)" });
     }
 
-    // 2. Draft the Claim in the database
-    const encounter = await prisma.encounter.findUnique({
-      where: { id: payload.encounterId }
-    });
-
-    if (encounter) {
-      await prisma.claim.create({
-        data: {
-          organizationId: encounter.organizationId,
-          patientId: encounter.patientId,
-          providerId: encounter.providerId || "UNKNOWN",
-          encounterId: encounter.id,
-          serviceDate: encounter.completedAt || new Date(),
-          status: "draft",
-          billedAmountCents: suggestedCpt.some(c => c.code === "99214") ? 15000 : 10000,
-          cptCodes: suggestedCpt,
-          icd10Codes: suggestedIcd10
-        }
-      });
-    }
-
-    logger.info({ 
-      event: "agents.billing_coder.completed", 
-      encounterId: payload.encounterId, 
+    // ADVISORY ONLY — this agent must NOT create payer claims. The previous
+    // version auto-created a real Claim with a hardcoded billedAmountCents and
+    // an E/M level chosen purely by note LENGTH (text.length > 500 → 99214) —
+    // note length is not a lawful basis for an E/M level (upcoding / False
+    // Claims Act exposure). Return the code suggestions for a certified coder to
+    // review and apply in the biller UI; persist nothing.
+    logger.info({
+      event: "agents.billing_coder.suggested",
+      encounterId: payload.encounterId,
       cptCount: suggestedCpt.length,
-      icd10Count: suggestedIcd10.length 
+      icd10Count: suggestedIcd10.length,
     });
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
       suggestedCpt,
-      suggestedIcd10
+      suggestedIcd10,
     });
 
   } catch (error) {
