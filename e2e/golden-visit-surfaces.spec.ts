@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 
 const AUTH_FILE = ".auth/clerk.json";
+const hasAuthState = existsSync(AUTH_FILE);
 const PUBLIC_ROUTES = ["/kiosk"];
 const AUTHED_ROUTES = ["/portal", "/ops/queue", "/clinic"];
 
@@ -27,9 +28,10 @@ test.describe("Golden Visit route smoke", () => {
 
   test.describe("authenticated surfaces", () => {
     test.skip(
-      !existsSync(AUTH_FILE) && (!process.env.TEST_USER_EMAIL || !process.env.TEST_USER_PASSWORD),
-      "Golden Visit authed smoke requires .auth/clerk.json or TEST_USER_EMAIL/TEST_USER_PASSWORD.",
+      !hasAuthState,
+      "Golden Visit authed smoke requires .auth/clerk.json. Run e2e/auth.setup.ts or capture auth first.",
     );
+    test.use({ storageState: AUTH_FILE });
 
     for (const route of AUTHED_ROUTES) {
       test(`authed surface loads: ${route}`, async ({ page, request }) => {
