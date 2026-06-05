@@ -17,6 +17,8 @@ import type {
   AgentWorkbenchData,
   AgentJobRow,
   AgentJobStatusLite,
+  AgentJobAction,
+  AgentLogLine,
   SourceFreshnessRow,
 } from "@/lib/leafnerd/types";
 
@@ -42,6 +44,12 @@ const FALLBACK_JOBS: AgentJobRow[] = [
     label: "Re-map 312 Northbay MedicationRequest codes to RxNorm",
     createdAt: "2m ago", completedAt: null,
     reasoning: { steps: 2, sources: ["MedicationRequest ×312", "RxNorm crosswalk"], confidence: 0.66, summary: "Matching local vocabulary (e.g. MTF1000) against RxNorm; 188/312 auto-mapped ≥0.8, remainder queued for steward review." },
+    logs: [
+      { at: "15:02:11", level: "info", message: "Claimed job · worker pool=mapping-2" },
+      { at: "15:02:12", level: "info", message: "Loaded 312 unmapped MedicationRequest codes from Northbay EHR" },
+      { at: "15:02:18", level: "info", message: "RxNorm crosswalk warm · 161,402 concepts indexed" },
+      { at: "15:02:31", level: "info", message: "Auto-mapped 188/312 at ≥0.80 confidence" },
+    ],
   },
   {
     id: "fb-job-4", workflowName: "adherence-drift-check", agentName: "adherenceDriftDetector",
@@ -77,6 +85,11 @@ const FALLBACK_JOBS: AgentJobRow[] = [
     label: "Scrub claim CLM-48217 (dx/procedure mismatch)",
     createdAt: "2h ago", completedAt: "2h ago",
     reasoning: { steps: 3, sources: ["Claim CLM-48217", "NCCI edits", "ICD-10 F41.1"], confidence: 0.59, summary: "Blocked: ICD-10 F41.1 does not support the billed level-3 E/M; returned to coder." },
+    logs: [
+      { at: "13:41:02", level: "info", message: "Claimed claim CLM-48217 for scrub" },
+      { at: "13:41:03", level: "info", message: "Loaded NCCI edit set + ICD-10 linkage rules" },
+      { at: "13:41:05", level: "error", message: "ICD-10 F41.1 does not support billed level-3 E/M — returned to coder" },
+    ],
   },
 ];
 
@@ -138,6 +151,201 @@ function statusLabel(s: AgentJobStatusLite): string {
   return STATUS_LABEL[s] ?? s;
 }
 
+// --- execution log streaming ----------------------------------------------
+// Active jobs (running/claimed, not paused) stream a live console. Real jobs
+// poll the governed endpoint for authoritative AgentJob.logs; curated demo rows
+// (ids prefixed "fb-") reveal a scripted continuation so the board feels live
+// even with ZERO real jobs (the cardinal resilience rule).
+
+const EMPTY_LOGS: AgentLogLine[] = [];
+
+const DEMO_STREAM: Record<string, string[]> = {
+  "terminology-remap": [
+    "Built steward queue for 124 sub-0.80 matches",
+    "Applying RxNorm SCD/SBD normal-form heuristics…",
+    "Auto-mapped 14 more via ingredient + strength match",
+    "Checkpoint flushed · 202/312 resolved",
+    "Holding remaining 110 codes for steward review",
+  ],
+};
+
+function demoStreamFor(job: AgentJobRow): string[] {
+  return (
+    DEMO_STREAM[job.workflowName] ?? [
+      `Executing ${job.workflowName} · step in progress`,
+      "Gathering evidence from bound sources…",
+      "Intermediate checkpoint persisted",
+      "Continuing under dry-run guard",
+    ]
+  );
+}
+
+/** A job is actively executing (and therefore streaming) when running/claimed and not paused. */
+function isLive(job: AgentJobRow): boolean {
+  return (job.status === "running" || job.status === "claimed") && !job.paused;
+}
+
+function shortTime(at: string): string {
+  if (!at) return "";
+  // ISO timestamps → HH:MM:SS; curated rows already carry a clock string.
+  const t = at.indexOf("T");
+  if (t >= 0) return at.slice(t + 1, t + 9);
+  return at;
+}
+
+function logColor(level: AgentLogLine["level"]): string {
+  return level === "error" ? "var(--rose)" : level === "warn" ? "var(--amber)" : "var(--ink-2)";
+}
+
+/**
+ * Returns the live log lines for a job. Demo rows append scripted lines on a
+ * timer; real rows replace with the server's authoritative buffer via polling.
+ * Streaming only runs while `live` so a paused/finished job freezes its console.
+ */
+function useExecutionLog(job: AgentJobRow, live: boolean): AgentLogLine[] {
+  const [lines, setLines] = React.useState<AgentLogLine[]>(job.logs ?? EMPTY_LOGS);
+  // Cursor into the demo continuation script (separate from the seed buffer).
+  // Held in a ref so pausing/resuming continues rather than restarting.
+  const demoIdx = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    if (!live) return;
+    const isDemo = job.id.startsWith("fb-");
+
+    if (isDemo) {
+      const script = demoStreamFor(job);
+      let i = Math.max(0, demoIdx.current);
+      const t = setInterval(() => {
+        if (i >= script.length) {
+          window.clearInterval(t);
+          return;
+        }
+        const msg = script[i];
+        i += 1;
+        demoIdx.current = i;
+        const at = new Date().toISOString();
+        setLines((prev) => [...prev, { at, level: "info", message: msg }]);
+      }, 1500);
+      return () => window.clearInterval(t);
+    }
+
+    // Real job — poll the governed endpoint; server logs are authoritative.
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/leafnerd/job-action?jobId=${encodeURIComponent(job.id)}`);
+        if (!r.ok) return;
+        const data = (await r.json()) as { logs?: AgentLogLine[] };
+        if (!stopped && Array.isArray(data.logs)) setLines(data.logs);
+      } catch {
+        /* transient — next tick retries */
+      }
+    };
+    void poll();
+    const t = window.setInterval(poll, 1800);
+    return () => {
+      stopped = true;
+      window.clearInterval(t);
+    };
+    // job identity + live state drive (re)subscription; log content is internal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job.id, live]);
+
+  return lines;
+}
+
+/** Monospace, auto-scrolling execution console. */
+function LogConsole({ lines, live }: { lines: AgentLogLine[]; live: boolean }) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines.length]);
+  const shown = lines.slice(-40);
+  return (
+    <div
+      ref={ref}
+      style={{
+        fontFamily: "var(--mono)",
+        fontSize: 11.5,
+        lineHeight: 1.75,
+        background: "var(--cream-deep)",
+        border: "1px solid var(--line-soft)",
+        borderRadius: 10,
+        padding: "9px 11px",
+        maxHeight: 156,
+        overflowY: "auto",
+      }}
+    >
+      {shown.length === 0 ? (
+        <span style={{ color: "var(--faint)" }}>No log output yet…</span>
+      ) : (
+        shown.map((l, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span style={{ color: "var(--faint)", flex: "none" }}>{shortTime(l.at)}</span>
+            <span style={{ color: logColor(l.level), textWrap: "pretty" }}>{l.message}</span>
+          </div>
+        ))
+      )}
+      {live && (
+        <div style={{ color: "var(--indigo)", marginTop: 2 }}>▍ streaming…</div>
+      )}
+    </div>
+  );
+}
+
+/** One active/failed job: header + live console + lifecycle controls. */
+function ExecutionCard({ job, act }: { job: AgentJobRow; act: (j: AgentJobRow, a: AgentJobAction) => void }) {
+  const live = isLive(job);
+  const lines = useExecutionLog(job, live);
+  const paused = !!job.paused;
+  const failed = job.status === "failed";
+
+  const badge = paused
+    ? { tone: "amber", label: "Paused" }
+    : { tone: statusTone(job.status), label: statusLabel(job.status) };
+
+  return (
+    <div className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="between" style={{ alignItems: "flex-start", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, letterSpacing: "-.01em" }}>{job.agentName}</span>
+          <Badge tone="indigo" dot={false}>{job.workflowName}</Badge>
+        </div>
+        <Badge tone={badge.tone} dot={!failed}>{badge.label}</Badge>
+      </div>
+
+      {job.label && (
+        <div style={{ fontSize: 13.5, fontWeight: 550, lineHeight: 1.35, textWrap: "pretty" }}>{job.label}</div>
+      )}
+
+      <LogConsole lines={lines} live={live} />
+
+      <div className="between" style={{ paddingTop: 10, borderTop: "1px solid var(--line-soft)", gap: 10, marginTop: "auto" }}>
+        <span className="m-prov"><Icon name="clock" size={11} />{job.completedAt ?? job.createdAt ?? "—"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {failed ? (
+            <button className="insight-action" onClick={() => act(job, "retry")}>
+              <Icon name="refresh" size={13} />Retry
+            </button>
+          ) : paused ? (
+            <button className="insight-action" onClick={() => act(job, "retry")}>
+              <Icon name="play" size={13} />Resume
+            </button>
+          ) : (
+            <button className="chip" onClick={() => act(job, "pause")}>
+              <Icon name="pause" size={13} />Pause
+            </button>
+          )}
+          <button className="chip" onClick={() => act(job, "cancel")}>
+            <Icon name="x" size={13} />Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- summary stat tile -----------------------------------------------------
 function StatTile({ label, value, icon, color }: { label: string; value: number; icon: string; color: string }) {
   return (
@@ -164,31 +372,52 @@ export function AgentWorkbenchSurface({
   const [jobs, setJobs] = React.useState<AgentJobRow[]>(seed.jobs);
   const sources = seed.sources && seed.sources.length ? seed.sources : FALLBACK_SOURCES;
 
-  // Live stats derived from local state so approve/reject reflects immediately.
+  // Live stats derived from local state so every action reflects immediately.
   const stats = {
     total: jobs.length,
     needsApproval: jobs.filter((j) => j.status === "needs_approval").length,
-    running: jobs.filter((j) => j.status === "running").length,
+    running: jobs.filter((j) => j.status === "running" || j.status === "claimed").length,
     succeeded: jobs.filter((j) => j.status === "succeeded").length,
   };
 
   const pending = jobs.filter((j) => j.status === "needs_approval");
+  // Execution monitor: jobs with a live lifecycle a human can drive.
+  const active = jobs.filter(
+    (j) => j.status === "running" || j.status === "claimed" || j.status === "pending" || j.status === "failed",
+  );
 
-  const act = (job: AgentJobRow, action: "approve" | "reject") => {
-    const nextStatus: AgentJobStatusLite = action === "approve" ? "succeeded" : "cancelled";
+  // Optimistic local patch for each action so the UI updates before the
+  // round-trip. Mirrors the server transition in agent-workbench.ts.
+  const optimisticPatch = (action: AgentJobAction): Partial<AgentJobRow> => {
+    switch (action) {
+      case "approve":
+        return { status: "succeeded", completedAt: "just now", paused: false };
+      case "reject":
+        return { status: "cancelled", completedAt: "just now", paused: false };
+      case "cancel":
+        return { status: "cancelled", completedAt: "just now", paused: false };
+      case "pause":
+        return { paused: true }; // stays "running" underneath; parked server-side
+      case "retry":
+        return { status: "running", paused: false, completedAt: null };
+    }
+  };
+
+  const ACTION_TOAST: Record<AgentJobAction, string> = {
+    approve: "Approved",
+    reject: "Rejected",
+    pause: "Paused",
+    retry: "Re-queued",
+    cancel: "Cancelled",
+  };
+
+  const act = (job: AgentJobRow, action: AgentJobAction) => {
     // Optimistic local update.
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id ? { ...j, status: nextStatus, completedAt: j.completedAt ?? "just now" } : j,
-      ),
-    );
-    toast?.(
-      action === "approve"
-        ? `Approved — ${job.agentName} cleared to run: ${job.label ?? job.workflowName}`
-        : `Rejected — ${job.agentName} cancelled: ${job.label ?? job.workflowName}`,
-    );
-    // Fire-and-forget to the governed-action endpoint; the optimistic update
-    // stands regardless (curated rows aren't actionable in demo scope).
+    setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, ...optimisticPatch(action) } : j)));
+    toast?.(`${ACTION_TOAST[action]} — ${job.agentName}: ${job.label ?? job.workflowName}`);
+    // Fire-and-forget to the governed-action endpoint; it writes the AuditLog
+    // entry and applies the real transition. The optimistic update stands even
+    // for curated demo rows (which the server audits but cannot transition).
     void fetch("/api/leafnerd/job-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -301,6 +530,25 @@ export function AgentWorkbenchSurface({
         </div>
       )}
 
+      {/* execution monitor — live logs + lifecycle controls for active jobs */}
+      <div className="sec-title">
+        <h2>Execution monitor</h2>
+        <span className="count">{active.length} active</span>
+      </div>
+
+      {active.length === 0 ? (
+        <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 12, color: "var(--ink-2)" }}>
+          <span style={{ color: "var(--muted)" }}><Icon name="activity" size={18} /></span>
+          <span style={{ fontSize: 13.5 }}>No jobs executing — the worker queue is idle.</span>
+        </div>
+      ) : (
+        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          {active.map((job) => (
+            <ExecutionCard key={job.id} job={job} act={act} />
+          ))}
+        </div>
+      )}
+
       {/* recent activity log */}
       <div className="sec-title">
         <h2>Recent activity</h2>
@@ -332,7 +580,11 @@ export function AgentWorkbenchSurface({
                         ? <div style={{ display: "inline-flex" }}><Conf value={conf} /></div>
                         : <span className="muted" style={{ fontSize: 12.5 }}>—</span>}
                     </td>
-                    <td><Badge tone={statusTone(job.status)} dot={false}>{statusLabel(job.status)}</Badge></td>
+                    <td>
+                      {job.paused
+                        ? <Badge tone="amber" dot={false}>Paused</Badge>
+                        : <Badge tone={statusTone(job.status)} dot={false}>{statusLabel(job.status)}</Badge>}
+                    </td>
                     <td><span className="muted" style={{ fontSize: 12.5 }}>{job.completedAt ?? job.createdAt ?? "—"}</span></td>
                   </tr>
                 );
