@@ -14,6 +14,7 @@ import type { ModelCallOptions, ModelClient } from "./types";
  *   server_error   — 5xx / provider hiccup
  *   empty_response — provider returned 200 but no content
  *   network        — fetch itself failed
+ *   timeout        — request exceeded the client timeout
  *   unknown        — fallback
  */
 export type ModelErrorCode =
@@ -24,6 +25,7 @@ export type ModelErrorCode =
   | "server_error"
   | "empty_response"
   | "network"
+  | "timeout"
   | "unknown";
 
 export class ModelError extends Error {
@@ -158,6 +160,33 @@ const FREE_MODEL_CANDIDATES = [
  *   OPENROUTER_SITE_URL    — optional, for OpenRouter attribution
  *   OPENROUTER_APP_NAME    — optional, for OpenRouter attribution
  */
+/**
+ * Request timeout + retry policy. Without these a hung provider connection
+ * blocks the worker forever — no agent passes an abort signal, so the client
+ * must enforce its own deadline. Overridable via env for ops tuning.
+ */
+const DEFAULT_MODEL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS) || 45_000;
+const DEFAULT_MODEL_MAX_RETRIES =
+  process.env.AGENT_MODEL_MAX_RETRIES != null
+    ? Math.max(0, Number(process.env.AGENT_MODEL_MAX_RETRIES) || 0)
+    : 2;
+
+/** Sleep that rejects early if the caller's abort signal fires. */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("aborted"));
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new Error("aborted"));
+    };
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export class OpenRouterModelClient implements ModelClient {
   private readonly endpoint = "https://openrouter.ai/api/v1/chat/completions";
   private readonly model: string;
@@ -167,12 +196,16 @@ export class OpenRouterModelClient implements ModelClient {
   private readonly appName: string;
   private readonly defaultMaxTokens: number | undefined;
   private readonly defaultTemperature: number | undefined;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
 
   constructor(options?: {
     apiKey?: string;
     model?: string;
     maxTokens?: number;
     temperature?: number;
+    timeoutMs?: number;
+    maxRetries?: number;
   }) {
     const apiKey = options?.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -186,6 +219,8 @@ export class OpenRouterModelClient implements ModelClient {
     this.appName = process.env.OPENROUTER_APP_NAME ?? "Leafjourney";
     this.defaultMaxTokens = options?.maxTokens;
     this.defaultTemperature = options?.temperature;
+    this.timeoutMs = options?.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+    this.maxRetries = options?.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
   }
 
 
@@ -193,9 +228,9 @@ export class OpenRouterModelClient implements ModelClient {
     prompt: string,
     options?: ModelCallOptions
   ): Promise<string> {
-    // Try primary model first
+    // Try primary model first (with timeout + transient-error retry)
     try {
-      return await this._call(this.model, prompt, options);
+      return await this._callWithRetry(this.model, prompt, options);
     } catch (err) {
       // On credit-limit (402) or rate-limit (429), fall back to free model
       if (isModelError(err) && (err.code === "credit_limit" || err.code === "rate_limited")) {
@@ -203,7 +238,7 @@ export class OpenRouterModelClient implements ModelClient {
           `[OpenRouter] Primary model ${this.model} blocked (${err.code}). Falling back to free model: ${this.freeModel}`
         );
         try {
-          return await this._call(this.freeModel, prompt, options);
+          return await this._callWithRetry(this.freeModel, prompt, options);
         } catch (freeErr) {
           // If the free model also fails, throw the original error
           // with extra context so the UI knows what happened.
@@ -216,6 +251,40 @@ export class OpenRouterModelClient implements ModelClient {
       }
       throw err;
     }
+  }
+
+  /**
+   * Wrap `_call` with bounded retry + exponential backoff for TRANSIENT
+   * failures only (5xx, network, timeout). Deterministic errors (4xx, empty)
+   * are not retried; credit_limit/rate_limited bubble up so `complete()` can
+   * run its free-model fallback.
+   */
+  private async _callWithRetry(
+    model: string,
+    prompt: string,
+    options?: ModelCallOptions
+  ): Promise<string> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await this._call(model, prompt, options);
+      } catch (err) {
+        lastErr = err;
+        const transient =
+          isModelError(err) &&
+          (err.code === "server_error" ||
+            err.code === "network" ||
+            err.code === "timeout");
+        if (!transient || attempt === this.maxRetries) throw err;
+        // 300ms, 600ms, 1200ms … capped at 3s.
+        const backoff = Math.min(3000, 300 * 2 ** attempt);
+        console.warn(
+          `[OpenRouter] ${model} ${(err as ModelError).code} — retry ${attempt + 1}/${this.maxRetries} in ${backoff}ms`
+        );
+        await delay(backoff, options?.signal);
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -252,7 +321,7 @@ export class OpenRouterModelClient implements ModelClient {
     }
   }
 
-  /** Low-level call to a specific model. No fallback logic. */
+  /** Low-level call to a specific model. No fallback logic; enforces timeout. */
   private async _call(
     model: string,
     prompt: string,
@@ -268,55 +337,96 @@ export class OpenRouterModelClient implements ModelClient {
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
-    let response: Response;
+    // Total-request timeout combined with any caller-provided signal. Without
+    // this a hung provider connection blocks the worker indefinitely.
+    const controller = new AbortController();
+    let timedOut = false;
+    const onCallerAbort = () => controller.abort();
+    if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    const timeoutError = (where: string) =>
+      new ModelError({
+        code: "timeout",
+        friendly:
+          "The AI provider took too long to respond. Try again in a moment.",
+        providerBody: `${where} timed out after ${this.timeoutMs}ms`,
+        model,
+        requestedMaxTokens,
+      });
+
     try {
-      response = await fetch(this.endpoint, {
-        method: "POST",
-        headers,
-        signal: options?.signal,
-        body: JSON.stringify({
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: requestedMaxTokens,
+            temperature: requestedTemperature,
+          }),
+        });
+      } catch (err) {
+        if (timedOut) throw timeoutError("request");
+        throw new ModelError({
+          code: "network",
+          friendly:
+            "Couldn't reach the AI provider. Check your connection and try again.",
+          providerBody: err instanceof Error ? err.message : String(err),
           model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: requestedMaxTokens,
-          temperature: requestedTemperature,
-        }),
-      });
+          requestedMaxTokens,
+        });
+      }
 
-    } catch (err) {
-      throw new ModelError({
-        code: "network",
-        friendly:
-          "Couldn't reach the AI provider. Check your connection and try again.",
-        providerBody: err instanceof Error ? err.message : String(err),
-        model,
-        requestedMaxTokens,
-      });
-    }
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw classifyOpenRouterError(
+          response.status,
+          body,
+          model,
+          requestedMaxTokens,
+        );
+      }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw classifyOpenRouterError(
-        response.status,
-        body,
-        model,
-        requestedMaxTokens,
-      );
-    }
+      let json: { choices?: Array<{ message?: { content?: string } }> };
+      try {
+        json = (await response.json()) as typeof json;
+      } catch (err) {
+        if (timedOut) throw timeoutError("response body");
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned a malformed response. Try again in a moment.",
+          providerBody: err instanceof Error ? err.message : String(err),
+          model,
+          requestedMaxTokens,
+        });
+      }
 
-    const json = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = json.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || content.length === 0) {
-      throw new ModelError({
-        code: "empty_response",
-        friendly:
-          "The AI provider returned an empty response. Try again — if it keeps happening, try a different refinement mode.",
-        model,
-        requestedMaxTokens,
-      });
+      const content = json.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || content.length === 0) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned an empty response. Try again — if it keeps happening, try a different refinement mode.",
+          model,
+          requestedMaxTokens,
+        });
+      }
+      return content;
+    } finally {
+      clearTimeout(timer);
+      options?.signal?.removeEventListener("abort", onCallerAbort);
     }
-    return content;
   }
 
   /**
@@ -339,87 +449,125 @@ export class OpenRouterModelClient implements ModelClient {
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
-    let response: Response;
+    // Inactivity timeout: abort if the connection or the stream stalls for
+    // longer than timeoutMs, reset on every chunk so a long but live stream
+    // isn't killed. Combined with any caller-provided signal.
+    const controller = new AbortController();
+    let stalled = false;
+    const onCallerAbort = () => controller.abort();
+    if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const armTimer = () => {
+      timer = setTimeout(() => {
+        stalled = true;
+        controller.abort();
+      }, this.timeoutMs);
+    };
+    const resetTimer = () => {
+      clearTimeout(timer);
+      armTimer();
+    };
+    armTimer();
+
     try {
-      response = await fetch(this.endpoint, {
-        method: "POST",
-        headers,
-        signal: options?.signal,
-        body: JSON.stringify({
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: requestedMaxTokens,
+            temperature: requestedTemperature,
+            stream: true,
+          }),
+        });
+      } catch (err) {
+        if (stalled) {
+          throw new ModelError({
+            code: "timeout",
+            friendly:
+              "The AI provider took too long to respond. Try again in a moment.",
+            providerBody: `stream timed out after ${this.timeoutMs}ms`,
+            model,
+            requestedMaxTokens,
+          });
+        }
+        throw new ModelError({
+          code: "network",
+          friendly:
+            "Couldn't reach the AI provider. Check your connection and try again.",
+          providerBody: err instanceof Error ? err.message : String(err),
           model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: requestedMaxTokens,
-          temperature: requestedTemperature,
-          stream: true,
-        }),
-      });
+          requestedMaxTokens,
+        });
+      }
 
-    } catch (err) {
-      throw new ModelError({
-        code: "network",
-        friendly:
-          "Couldn't reach the AI provider. Check your connection and try again.",
-        providerBody: err instanceof Error ? err.message : String(err),
-        model,
-        requestedMaxTokens,
-      });
-    }
+      if (!response.ok || !response.body) {
+        const body = response.body ? await response.text().catch(() => "") : "";
+        throw classifyOpenRouterError(
+          response.status,
+          body,
+          model,
+          requestedMaxTokens,
+        );
+      }
 
-    if (!response.ok || !response.body) {
-      const body = response.body ? await response.text().catch(() => "") : "";
-      throw classifyOpenRouterError(
-        response.status,
-        body,
-        model,
-        requestedMaxTokens,
-      );
-    }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let sawContent = false;
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let sawContent = false;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          resetTimer();
+          buffer += decoder.decode(value, { stream: true });
 
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE framing: events separated by blank lines, each line prefixed with "data: ".
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl).replace(/\r$/, "");
-          buffer = buffer.slice(nl + 1);
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(payload) as {
-              choices?: Array<{ delta?: { content?: string } }>;
-            };
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (typeof delta === "string" && delta.length > 0) {
-              sawContent = true;
-              yield delta;
+          // SSE framing: events separated by blank lines, each "data: "-prefixed.
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).replace(/\r$/, "");
+            buffer = buffer.slice(nl + 1);
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(payload) as {
+                choices?: Array<{ delta?: { content?: string } }>;
+              };
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (typeof delta === "string" && delta.length > 0) {
+                sawContent = true;
+                yield delta;
+              }
+            } catch {
+              // Provider sometimes inserts comment lines (": OPENROUTER PROCESSING") — ignore.
             }
-          } catch {
-            // Provider sometimes inserts comment lines (": OPENROUTER PROCESSING") — ignore.
           }
         }
+      } finally {
+        reader.releaseLock();
+      }
+
+      if (!sawContent) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned an empty stream. Try again in a moment.",
+          model,
+          requestedMaxTokens,
+        });
       }
     } finally {
-      reader.releaseLock();
-    }
-
-    if (!sawContent) {
-      throw new ModelError({
-        code: "empty_response",
-        friendly:
-          "The AI provider returned an empty stream. Try again in a moment.",
-        model,
-        requestedMaxTokens,
-      });
+      clearTimeout(timer);
+      options?.signal?.removeEventListener("abort", onCallerAbort);
     }
   }
 }
