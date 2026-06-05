@@ -17,6 +17,8 @@
     "db:seed-cfo": "tsx --conditions=react-server scripts/seed-cfo.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
+    "test:golden-visit": "vitest run src/lib/domain/golden-visit-harness.test.ts",
+    "e2e:golden-visit": "playwright test e2e/golden-visit-surfaces.spec.ts",
     "test:watch": "vitest",
     "test:smoke": "tsx --conditions=react-server scripts/smoke-test.ts",
     "pm": "tsx --conditions=react-server scripts/pm-agent.ts",
