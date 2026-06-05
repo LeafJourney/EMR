@@ -23,6 +23,7 @@ import {
 
 export interface ProviderRow extends SearchableProvider {
   id: string;
+  userId: string;
   bio: string | null;
 }
 
@@ -283,7 +284,7 @@ export function ProvidersDirectoryClient({ providers }: Props) {
 
                 <div className="mt-4 pt-3 border-t border-border/60">
                   <a
-                    href="/clinic/providers/messages"
+                    href={`/clinic/providers/messages?userId=${provider.userId}`}
                     className="flex items-center justify-center gap-2 w-full text-sm font-medium text-accent py-2 rounded-md border border-accent/30 bg-accent/5 hover:bg-accent/10 transition-colors"
                   >
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-accent">
