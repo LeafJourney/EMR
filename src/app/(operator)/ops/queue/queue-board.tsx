@@ -66,6 +66,7 @@ type QueueActionTarget =
   | "rooming"
   | "roomed"
   | "wrap_up"
+  | "complete"
   | "cancelled"
   | "no_show";
 
@@ -103,6 +104,8 @@ function canMoveVisit(entry: QueueEntry, target: QueueActionTarget): boolean {
       return status === "rooming" || status === "ready";
     case "wrap_up":
       return status === "roomed" || status === "in_visit";
+    case "complete":
+      return status === "wrap_up" || status === "in_visit";
     case "cancelled":
       return [
         "scheduled",
@@ -319,7 +322,7 @@ function QueueCard({ entry }: { entry: QueueEntry }) {
       },
     },
     {
-      label: "Ready",
+      label: "Mark ready",
       icon: ContextMenuIcons.Check,
       disabled: mutating || !canMoveVisit(entry, "ready"),
       onSelect: (c) => {
@@ -346,11 +349,29 @@ function QueueCard({ entry }: { entry: QueueEntry }) {
       },
     },
     {
-      label: "Send to checkout",
-      icon: ContextMenuIcons.Calendar,
+      label: "Start checkout",
+      icon: ContextMenuIcons.Check,
       disabled: mutating || !canMoveVisit(entry, "wrap_up"),
       onSelect: (c) => {
         runMove("wrap_up");
+        c();
+      },
+    },
+    {
+      label: "Complete visit",
+      icon: ContextMenuIcons.Check,
+      disabled: mutating || !canMoveVisit(entry, "complete"),
+      onSelect: (c) => {
+        runMove("complete");
+        c();
+      },
+    },
+    {
+      label: "Mark no-show",
+      icon: ContextMenuIcons.Archive,
+      disabled: mutating || !canMoveVisit(entry, "no_show"),
+      onSelect: (c) => {
+        runMove("no_show");
         c();
       },
     },
@@ -368,15 +389,6 @@ function QueueCard({ entry }: { entry: QueueEntry }) {
       },
     },
     { divider: true, label: "" },
-    {
-      label: "Mark no-show",
-      icon: ContextMenuIcons.Archive,
-      disabled: mutating || !canMoveVisit(entry, "no_show"),
-      onSelect: (c) => {
-        runMove("no_show");
-        c();
-      },
-    },
     {
       label: "Cancel visit",
       icon: ContextMenuIcons.Archive,
