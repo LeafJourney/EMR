@@ -1,8 +1,211 @@
 "use client";
-/* LEAFNERD — shared widgets: InsightCard, PatientTable, RiskBadge */
+/* LEAFNERD — shared widgets: InsightCard, PatientTable, RiskBadge, Overview charts */
 import React from "react";
 import { Icon, Badge, Conf } from "./primitives";
-import type { Insight, PatientRow, RiskLevel } from "@/lib/leafnerd/types";
+import type { DomainCompleteness, Insight, PatientRow, RiskLevel } from "@/lib/leafnerd/types";
+
+// ---------------------------------------------------------------------------
+// Interactive Overview charts (clinical volume + domain completeness).
+//
+// The geometry below is pure (no DOM, no React) so it can be unit-tested and
+// shared between the rendered <path> and the hover hit-testing. The charts
+// render genuine inline SVG paths — no static mockups — and surface the exact
+// underlying numbers on hover.
+// ---------------------------------------------------------------------------
+
+export interface ChartGeom {
+  w: number;
+  h: number;
+  padL: number;
+  padR: number;
+  padT: number;
+  padB: number;
+}
+
+export interface ChartPoint {
+  x: number;
+  y: number;
+  v: number;
+  i: number;
+}
+
+/**
+ * Compute the SVG geometry for a value series: the plotted points, the line
+ * path, the closed area path, and the baseline y. Pure — exported for tests.
+ *
+ * A single-point series is centered horizontally; an empty series yields no
+ * points and an empty area path (callers render nothing).
+ */
+export function buildChartGeometry(
+  data: number[],
+  geom: ChartGeom,
+  yMax?: number,
+): { points: ChartPoint[]; line: string; area: string; baseY: number; max: number } {
+  const iw = geom.w - geom.padL - geom.padR;
+  const ih = geom.h - geom.padT - geom.padB;
+  const baseY = geom.padT + ih;
+  const max = yMax ?? (data.length ? Math.max(...data) * 1.12 : 1);
+  const span = max || 1; // min is fixed at 0
+  const X = (i: number) =>
+    geom.padL + (data.length <= 1 ? iw / 2 : (i / (data.length - 1)) * iw);
+  const Y = (v: number) => geom.padT + ih - (v / span) * ih;
+  const points: ChartPoint[] = data.map((v, i) => ({ x: X(i), y: Y(v), v, i }));
+  const line = points
+    .map((p, i) => (i ? "L" : "M") + p.x.toFixed(1) + " " + p.y.toFixed(1))
+    .join(" ");
+  const area = points.length
+    ? `${line} L${points[points.length - 1].x.toFixed(1)} ${baseY.toFixed(1)} L${points[0].x.toFixed(1)} ${baseY.toFixed(1)} Z`
+    : "";
+  return { points, line, area, baseY, max };
+}
+
+/**
+ * Index of the data point whose x is nearest the cursor x (both in viewBox
+ * units). Returns -1 for an empty series. Pure — exported for tests.
+ */
+export function nearestPointIndex(x: number, points: { x: number }[]): number {
+  if (!points.length) return -1;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const d = Math.abs(points[i].x - x);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Interactive area/line chart. Renders inline SVG paths from `data` and shows a
+ * crosshair + floating tooltip (label + exact value) tracking the nearest point
+ * under the cursor.
+ */
+export function VolumeChart({
+  data,
+  labels = [],
+  w = 620,
+  h = 188,
+  yMax,
+  color = "var(--c-canopy)",
+  formatValue = (v) => String(v),
+  ariaLabel = "Clinical data volume",
+}: {
+  data: number[];
+  labels?: string[];
+  w?: number;
+  h?: number;
+  yMax?: number;
+  color?: string;
+  formatValue?: (v: number, i: number) => string;
+  ariaLabel?: string;
+}) {
+  const rawId = React.useId();
+  const id = rawId.replace(/:/g, "");
+  const geom: ChartGeom = { w, h, padL: 4, padR: 4, padT: 10, padB: 22 };
+  const { points, line, area, baseY } = buildChartGeometry(data, geom, yMax);
+  const [hover, setHover] = React.useState<number | null>(null);
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  const grid = [0, 0.5, 1];
+  const ih = h - geom.padT - geom.padB;
+
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = wrapRef.current;
+    if (!el || !points.length) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const relX = ((e.clientX - rect.left) / rect.width) * w;
+    setHover(nearestPointIndex(relX, points));
+  };
+
+  const hv = hover != null ? points[hover] : null;
+  const leftPct = hv ? Math.min(93, Math.max(7, (hv.x / w) * 100)) : 0;
+
+  return (
+    <div
+      ref={wrapRef}
+      className="ln-chart"
+      style={{ position: "relative" }}
+      onMouseMove={handleMove}
+      onMouseLeave={() => setHover(null)}
+    >
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }} role="img" aria-label={ariaLabel}>
+        <defs>
+          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={color} stopOpacity="0.22" />
+            <stop offset="1" stopColor={color} stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        {grid.map((g, i) => {
+          const y = geom.padT + ih * g;
+          return (
+            <line key={i} x1={geom.padL} y1={y} x2={w - geom.padR} y2={y} stroke="var(--c-grid)" strokeWidth="1" strokeDasharray={i === 2 ? "0" : "3 4"} />
+          );
+        })}
+        {area && <path d={area} fill={`url(#${id})`} />}
+        {line && <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+        {hv && <line x1={hv.x} y1={geom.padT} x2={hv.x} y2={baseY} stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.45" />}
+        {points.map((p) => (
+          <circle key={p.i} cx={p.x} cy={p.y} r={hover === p.i ? 4 : 2.4} fill={hover === p.i ? color : "var(--paper)"} stroke={color} strokeWidth="1.6" />
+        ))}
+        {labels.map((l, i) =>
+          points[i] ? (
+            <text key={i} x={points[i].x} y={h - 6} fontSize="10.5" fill={hover === i ? "var(--ink)" : "var(--muted)"} textAnchor="middle" fontFamily="var(--mono)">
+              {l}
+            </text>
+          ) : null,
+        )}
+      </svg>
+      {hv && (
+        <div className="ln-chart-tip" style={{ left: `${leftPct}%`, top: `${(hv.y / h) * 100}%` }}>
+          {labels[hover as number] && <span className="t">{labels[hover as number]}</span>}
+          <span className="v tnum">{formatValue(hv.v, hover as number)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Interactive horizontal completeness bars. Mirrors the static `BarsH` look but
+ * highlights the hovered domain and floats a tooltip with the exact percentage
+ * and where it sits against the 85% target.
+ */
+export function DomainBars({ data }: { data: DomainCompleteness[] }) {
+  const [hover, setHover] = React.useState<number | null>(null);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {data.map((d, i) => {
+        const color = d.pct >= 85 ? "var(--c-canopy)" : d.pct >= 70 ? "var(--c-sage)" : "var(--c-amber)";
+        const status = d.pct >= 85 ? "meets 85% target" : d.pct >= 70 ? "below 85% target" : "lags — caps composite score";
+        const on = hover === i;
+        return (
+          <div
+            key={i}
+            className="ln-bar-row"
+            style={{ position: "relative", display: "flex", alignItems: "center", gap: 12 }}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+          >
+            <div style={{ width: 104, fontSize: 12.5, color: on ? "var(--ink)" : "var(--ink-2)", flex: "none", transition: "color .12s" }}>{d.name}</div>
+            <div style={{ flex: 1, height: 8, background: "var(--cream-deep)", borderRadius: 5, overflow: "hidden" }}>
+              <div style={{ width: d.pct + "%", height: "100%", background: color, borderRadius: 5, transition: "width .7s ease, filter .12s", filter: on ? "brightness(1.08)" : "none" }} />
+            </div>
+            <div className="tnum" style={{ width: 34, textAlign: "right", fontSize: 12.5, fontWeight: 550, color: d.pct < 70 ? "var(--amber)" : "var(--ink)" }}>{d.pct}%</div>
+            {on && (
+              <div className="ln-chart-tip ln-bar-tip">
+                <span className="t">{d.name}</span>
+                <span className="v tnum">{d.pct}% complete</span>
+                <span className="s">{status}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function RiskBadge({ risk }: { risk: RiskLevel }) {
   const map: Record<string, "rose" | "amber" | "green"> = { Critical: "rose", High: "rose", Moderate: "amber", Low: "green" };

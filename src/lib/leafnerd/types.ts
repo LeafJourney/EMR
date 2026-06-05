@@ -280,6 +280,16 @@ export interface LeafnerdClinicalData {
 export type AgentJobStatusLite =
   | "pending" | "claimed" | "running" | "needs_approval" | "succeeded" | "failed" | "cancelled";
 
+/** Human-dispatchable lifecycle controls over a governed AgentJob. */
+export type AgentJobAction = "approve" | "reject" | "pause" | "retry" | "cancel";
+
+/** One streamed execution-log line (mirrors orchestration AgentLogEntry, client-safe). */
+export interface AgentLogLine {
+  at: string; // ISO timestamp (or human-relative for curated rows)
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
 export interface AgentReasoningSummary {
   steps: number;
   sources: string[];
@@ -299,6 +309,26 @@ export interface AgentJobRow {
   createdAt: string | null;
   completedAt: string | null;
   reasoning: AgentReasoningSummary | null;
+  /** Streamed execution logs (AgentJob.logs). Newest last. Empty when none. */
+  logs?: AgentLogLine[];
+  /** True when a `pending` job has been parked far in the future by a human pause. */
+  paused?: boolean;
+}
+
+/** Result of dispatching a human action against a governed job. */
+export interface AgentJobActionResult {
+  ok: boolean;
+  /** The action requested. */
+  action: AgentJobAction;
+  jobId: string;
+  /** True when a real DB row transitioned; false for curated/demo or invalid-state no-ops. */
+  applied: boolean;
+  /** True when an AuditLog row was written for this dispatch. */
+  audited: boolean;
+  /** Resulting lite status (after transition), when known. */
+  status: AgentJobStatusLite | null;
+  /** Machine-readable note when not applied (e.g. "not-found", "invalid-state"). */
+  note?: string;
 }
 
 export interface SourceFreshnessRow {

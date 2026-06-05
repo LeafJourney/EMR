@@ -10,10 +10,49 @@ import type {
   AgentWorkbenchData,
   AgentJobRow,
   AgentJobStatusLite,
+  AgentJobAction,
+  AgentJobActionResult,
+  AgentLogLine,
   SourceFreshnessRow,
 } from "./types";
 
 const DEMO_ORG_SLUG = "leafnerd-demo";
+
+// Pause parks a job's `runAfter` far in the future (the worker only claims
+// `pending` rows whose runAfter <= now), so "paused" is a derived view over the
+// existing schema — no new enum value. A job is "paused" when it is `pending`
+// but parked more than a year out.
+const PAUSE_PARK_AT = new Date("2999-01-01T00:00:00.000Z");
+const PAUSE_THRESHOLD_MS = 365 * 24 * 60 * 60 * 1000;
+
+function isParked(runAfter: Date | null | undefined): boolean {
+  return !!runAfter && runAfter.getTime() - Date.now() > PAUSE_THRESHOLD_MS;
+}
+
+/** Lazily resolve the prisma client; null if unavailable so renders never crash. */
+async function getPrisma(): Promise<typeof import("@/lib/db/prisma").prisma | null> {
+  try {
+    return (await import("@/lib/db/prisma")).prisma ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Coerce an AgentJob.logs Json blob into client-safe log lines (tail-capped). */
+function coerceLogLines(raw: unknown): AgentLogLine[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AgentLogLine[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const o = e as Record<string, unknown>;
+    const message = typeof o.message === "string" ? o.message : null;
+    if (!message) continue;
+    const level = o.level === "warn" || o.level === "error" ? o.level : "info";
+    const at = typeof o.at === "string" ? o.at : "";
+    out.push({ at, level, message });
+  }
+  return out.slice(-40); // keep the tail so chatty jobs stay small over the wire
+}
 
 // --- Curated fallback (representative governed actions) --------------------
 const FALLBACK_JOBS: AgentJobRow[] = [
@@ -37,6 +76,12 @@ const FALLBACK_JOBS: AgentJobRow[] = [
     label: "Re-map 312 Northbay MedicationRequest codes to RxNorm",
     createdAt: "2m ago", completedAt: null,
     reasoning: { steps: 2, sources: ["MedicationRequest ×312", "RxNorm crosswalk"], confidence: 0.66, summary: "Matching local vocabulary (e.g. MTF1000) against RxNorm; 188/312 auto-mapped ≥0.8, remainder queued for steward review." },
+    logs: [
+      { at: "15:02:11", level: "info", message: "Claimed job · worker pool=mapping-2" },
+      { at: "15:02:12", level: "info", message: "Loaded 312 unmapped MedicationRequest codes from Northbay EHR" },
+      { at: "15:02:18", level: "info", message: "RxNorm crosswalk warm · 161,402 concepts indexed" },
+      { at: "15:02:31", level: "info", message: "Auto-mapped 188/312 at ≥0.80 confidence" },
+    ],
   },
   {
     id: "fb-job-4", workflowName: "adherence-drift-check", agentName: "adherenceDriftDetector",
@@ -72,6 +117,11 @@ const FALLBACK_JOBS: AgentJobRow[] = [
     label: "Scrub claim CLM-48217 (dx/procedure mismatch)",
     createdAt: "2h ago", completedAt: "2h ago",
     reasoning: { steps: 3, sources: ["Claim CLM-48217", "NCCI edits", "ICD-10 F41.1"], confidence: 0.59, summary: "Blocked: ICD-10 F41.1 does not support the billed level-3 E/M; returned to coder." },
+    logs: [
+      { at: "13:41:02", level: "info", message: "Claimed claim CLM-48217 for scrub" },
+      { at: "13:41:03", level: "info", message: "Loaded NCCI edit set + ICD-10 linkage rules" },
+      { at: "13:41:05", level: "error", message: "ICD-10 F41.1 does not support billed level-3 E/M — returned to coder" },
+    ],
   },
 ];
 
@@ -161,6 +211,8 @@ export async function getAgentWorkbenchData(): Promise<AgentWorkbenchData> {
               summary: re.summary ?? null,
             }
           : null,
+        logs: coerceLogLines(j.logs),
+        paused: j.status === "pending" && isParked(j.runAfter),
       };
     });
 
@@ -185,5 +237,214 @@ export async function getAgentWorkbenchData(): Promise<AgentWorkbenchData> {
     };
   } catch {
     return fallback;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Governed job actions — the human lifecycle controls (approve / reject / pause
+// / retry / cancel). Every dispatch writes an AuditLog row, applied or not, so
+// the governed-execution invariant ("every AI action is bounded + audited")
+// holds even when a click targets a curated/demo row or an invalid state.
+// ---------------------------------------------------------------------------
+
+export const AGENT_JOB_ACTIONS: readonly AgentJobAction[] = [
+  "approve",
+  "reject",
+  "pause",
+  "retry",
+  "cancel",
+] as const;
+
+export function isAgentJobAction(v: unknown): v is AgentJobAction {
+  return typeof v === "string" && (AGENT_JOB_ACTIONS as readonly string[]).includes(v);
+}
+
+/** Statuses an action may legally transition *from*. */
+const ALLOWED_FROM: Record<AgentJobAction, AgentJobStatusLite[]> = {
+  approve: ["needs_approval"],
+  reject: ["needs_approval"],
+  pause: ["pending", "claimed", "running"],
+  retry: ["failed", "cancelled", "pending"],
+  cancel: ["pending", "claimed", "running", "needs_approval", "failed"],
+};
+
+/** Dot-namespaced AuditLog action per dispatch (mirrors Mission Control). */
+const AUDIT_ACTION: Record<AgentJobAction, string> = {
+  approve: "agent.job.approved",
+  reject: "agent.job.rejected",
+  pause: "agent.job.paused",
+  retry: "agent.job.retried",
+  cancel: "agent.job.cancelled",
+};
+
+type JobForTransition = { id: string; status: string; runAfter: Date | null; logs: unknown };
+
+/** The prisma `data` patch + the human-action log line for an action. */
+function buildTransition(
+  action: AgentJobAction,
+  actorUserId: string,
+): { data: Record<string, unknown>; logLine: AgentLogLine } {
+  const now = new Date();
+  const line = (level: AgentLogLine["level"], message: string): AgentLogLine => ({
+    at: now.toISOString(),
+    level,
+    message,
+  });
+  switch (action) {
+    case "approve":
+      return {
+        data: { status: "succeeded", approvedById: actorUserId, approvedAt: now, completedAt: now },
+        logLine: line("info", "Approved by reviewer — cleared to run."),
+      };
+    case "reject":
+      return {
+        data: {
+          status: "cancelled",
+          approvedById: actorUserId,
+          approvedAt: now,
+          completedAt: now,
+          lastError: "Rejected by reviewer",
+        },
+        logLine: line("warn", "Rejected by reviewer — job cancelled."),
+      };
+    case "pause":
+      return {
+        data: { status: "pending", runAfter: PAUSE_PARK_AT },
+        logLine: line("warn", "Paused by operator — execution parked."),
+      };
+    case "retry":
+      return {
+        data: { status: "pending", runAfter: now, lastError: null, completedAt: null },
+        logLine: line("info", "Re-queued by operator — awaiting worker claim."),
+      };
+    case "cancel":
+      return {
+        data: { status: "cancelled", completedAt: now },
+        logLine: line("warn", "Cancelled by operator."),
+      };
+  }
+}
+
+/** Is `action` legal from this job's current state? (paused/pending nuance included.) */
+function transitionAllowed(action: AgentJobAction, job: JobForTransition): boolean {
+  const from = job.status as AgentJobStatusLite;
+  if (!ALLOWED_FROM[action].includes(from)) return false;
+  if (from === "pending") {
+    const parked = isParked(job.runAfter);
+    // Only a *parked* (paused) pending job can be retried/resumed; a freshly
+    // queued one is already on its way. And an already-parked job can't re-pause.
+    if (action === "retry" && !parked) return false;
+    if (action === "pause" && parked) return false;
+  }
+  return true;
+}
+
+/**
+ * Dispatch a human lifecycle action against a governed job. Org-scoped (own org
+ * or shared null-org system jobs) and status-guarded. ALWAYS writes an AuditLog
+ * row — even when the row is missing (curated/demo id) or the state is invalid —
+ * so every dispatch is auditable. Never throws.
+ */
+export async function dispatchJobAction(args: {
+  jobId: string;
+  action: AgentJobAction;
+  actorUserId: string;
+  organizationId: string | null;
+}): Promise<AgentJobActionResult> {
+  const { jobId, action, actorUserId, organizationId } = args;
+  const result: AgentJobActionResult = {
+    ok: true,
+    action,
+    jobId,
+    applied: false,
+    audited: false,
+    status: null,
+  };
+
+  const prisma = await getPrisma();
+  if (!prisma) return { ...result, ok: false, note: "db-unavailable" };
+
+  const orgWhere = organizationId
+    ? { OR: [{ organizationId }, { organizationId: null }] }
+    : { organizationId: null };
+
+  let fromStatus: AgentJobStatusLite | null = null;
+  let toStatus: AgentJobStatusLite | null = null;
+
+  try {
+    const job = (await prisma.agentJob.findFirst({
+      where: { id: jobId, ...orgWhere },
+      select: { id: true, status: true, runAfter: true, logs: true },
+    })) as JobForTransition | null;
+
+    if (!job) {
+      result.note = "not-found"; // curated/demo id or outside caller's org
+    } else {
+      fromStatus = job.status as AgentJobStatusLite;
+      result.status = fromStatus;
+      if (!transitionAllowed(action, job)) {
+        result.note = "invalid-state";
+      } else {
+        const { data, logLine } = buildTransition(action, actorUserId);
+        const nextLogs = [...coerceLogLines(job.logs), logLine];
+        const updated = await prisma.agentJob.update({
+          where: { id: jobId },
+          data: { ...data, logs: nextLogs as never },
+          select: { status: true },
+        });
+        toStatus = updated.status as AgentJobStatusLite;
+        result.applied = true;
+        result.status = toStatus;
+      }
+    }
+  } catch {
+    result.note = "transition-error";
+  }
+
+  // Audit EVERY dispatch — the governed-execution invariant.
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorUserId,
+        action: AUDIT_ACTION[action],
+        subjectType: "AgentJob",
+        subjectId: jobId,
+        organizationId: organizationId ?? undefined,
+        metadata: {
+          action,
+          applied: result.applied,
+          fromStatus,
+          toStatus,
+          note: result.note ?? null,
+        },
+      },
+    });
+    result.audited = true;
+  } catch {
+    result.audited = false;
+  }
+
+  return result;
+}
+
+/** Latest status + streamed logs for one job (org-scoped). Powers the live console poll. */
+export async function getAgentJobLogs(
+  jobId: string,
+  organizationId: string | null,
+): Promise<{ jobId: string; status: AgentJobStatusLite | null; logs: AgentLogLine[] }> {
+  const prisma = await getPrisma();
+  if (!prisma) return { jobId, status: null, logs: [] };
+  try {
+    const orgWhere = organizationId
+      ? { OR: [{ organizationId }, { organizationId: null }] }
+      : { organizationId: null };
+    const job = await prisma.agentJob.findFirst({
+      where: { id: jobId, ...orgWhere },
+      select: { status: true, logs: true },
+    });
+    if (!job) return { jobId, status: null, logs: [] };
+    return { jobId, status: job.status as AgentJobStatusLite, logs: coerceLogLines(job.logs) };
+  } catch {
+    return { jobId, status: null, logs: [] };
   }
 }

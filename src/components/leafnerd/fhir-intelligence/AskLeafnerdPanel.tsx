@@ -1,14 +1,28 @@
 "use client";
 /* LEAFNERD — "Ask Leafnerd" conversational chat panel.
-   Right-side slide-in built from the theme's .scrim + .drawer classes.
-   Calls POST /api/leafnerd/chat with { message } and renders { reply }. */
+   Premium botanical glass slide-in built on the theme's .scrim + .drawer.ln-ask
+   classes. Streams POST /api/leafnerd/chat (SSE) and renders the assistant
+   reply as live, full Markdown grounded in real DB counts. */
 import React from "react";
 import { Icon } from "./primitives";
+import { Markdown } from "./markdown";
+
+interface Grounding {
+  activePatients: number;
+  totalPatients: number;
+  activeEncounters: number;
+  encountersThisWeek: number;
+  recentOutcomesCount: number;
+  topMetric: { metric: string; count: number; avg: number | null } | null;
+  generatedAt: string;
+}
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  streaming?: boolean;
+  grounding?: Grounding | null;
 }
 
 const SUGGESTIONS = [
@@ -21,9 +35,26 @@ const GREETING: ChatMessage = {
   id: "greeting",
   role: "assistant",
   text:
-    "Hi — I'm Leafnerd. Ask me about cohorts, care gaps, anomalies, or billing, " +
+    "Hi — I'm **Leafnerd**. Ask me about cohorts, care gaps, anomalies, or billing, " +
     "and I'll answer from your live FHIR data. Try one of the prompts below to get started.",
 };
+
+const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** Subtle "grounded in live data" footer rendered under assistant replies. */
+function GroundingFooter({ g }: { g: Grounding }) {
+  const bits = [
+    `${fmt(g.activePatients)} active patients`,
+    `${fmt(g.activeEncounters)} encounters in flight`,
+    `${fmt(g.recentOutcomesCount)} outcome logs (7d)`,
+  ];
+  return (
+    <div className="ln-grounding" aria-label="Grounded in live data">
+      <Icon name="shield" size={11} />
+      <span>Grounded in live data · {bits.join(" · ")}</span>
+    </div>
+  );
+}
 
 export function AskLeafnerdPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([GREETING]);
@@ -57,35 +88,85 @@ export function AskLeafnerdPanel({ open, onClose }: { open: boolean; onClose: ()
 
     seq.current += 1;
     const userMsg: ChatMessage = { id: `u-${seq.current}`, role: "user", text };
-    setMessages((prev) => [...prev, userMsg]);
+    seq.current += 1;
+    const replyId = `a-${seq.current}`;
+    const placeholder: ChatMessage = { id: replyId, role: "assistant", text: "", streaming: true };
+    setMessages((prev) => [...prev, userMsg, placeholder]);
     setInput("");
     setLoading(true);
+
+    const patch = (fn: (m: ChatMessage) => ChatMessage) =>
+      setMessages((prev) => prev.map((m) => (m.id === replyId ? fn(m) : m)));
 
     try {
       const res = await fetch("/api/leafnerd/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ message: text, stream: true }),
       });
       if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const data = await res.json();
-      seq.current += 1;
-      const reply: ChatMessage = {
-        id: `a-${seq.current}`,
-        role: "assistant",
-        text: data.reply || "No insights found for that query.",
+
+      const ct = res.headers.get("content-type") ?? "";
+
+      // Graceful fallback if a non-streaming JSON body comes back.
+      if (!res.body || !ct.includes("text/event-stream")) {
+        const data = await res.json();
+        patch((m) => ({
+          ...m,
+          text: data.reply || "No insights found for that query.",
+          grounding: data.grounding ?? null,
+          streaming: false,
+        }));
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let acc = "";
+      let errored: string | null = null;
+
+      const handleEvent = (payload: string) => {
+        if (!payload || payload === "[DONE]") return;
+        let evt: any;
+        try { evt = JSON.parse(payload); } catch { return; }
+        if (evt.type === "delta" && typeof evt.text === "string") {
+          acc += evt.text;
+          patch((m) => ({ ...m, text: acc }));
+        } else if (evt.type === "grounding" && evt.data) {
+          patch((m) => ({ ...m, grounding: evt.data }));
+        } else if (evt.type === "error" && typeof evt.message === "string") {
+          errored = evt.message;
+        }
       };
-      setMessages((prev) => [...prev, reply]);
+
+      // Read the SSE stream, splitting on blank-line-delimited events.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl).replace(/\r$/, "");
+          buffer = buffer.slice(nl + 1);
+          if (line.startsWith("data:")) handleEvent(line.slice(5).trim());
+        }
+      }
+
+      if (errored && !acc) {
+        patch((m) => ({ ...m, text: errored as string, streaming: false }));
+      } else {
+        patch((m) => ({ ...m, text: acc || "No insights found for that query.", streaming: false }));
+      }
     } catch {
-      seq.current += 1;
-      const fallback: ChatMessage = {
-        id: `a-${seq.current}`,
-        role: "assistant",
+      patch((m) => ({
+        ...m,
         text:
           "I couldn't reach the intelligence service just now. Please check your connection " +
           "and try that question again in a moment.",
-      };
-      setMessages((prev) => [...prev, fallback]);
+        streaming: false,
+      }));
     } finally {
       setLoading(false);
     }
@@ -96,15 +177,9 @@ export function AskLeafnerdPanel({ open, onClose }: { open: boolean; onClose: ()
   return (
     <React.Fragment>
       <div className="scrim" onClick={onClose}></div>
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Ask Leafnerd">
+      <aside className="drawer ln-ask" role="dialog" aria-modal="true" aria-label="Ask Leafnerd">
         <div className="drawer-head">
-          <span
-            style={{
-              width: 34, height: 34, borderRadius: 9, flex: "none", display: "grid",
-              placeItems: "center", background: "var(--canopy-faint)", color: "var(--canopy)",
-              border: "1px solid var(--line-sage)",
-            }}
-          >
+          <span className="ln-ask-avatar">
             <Icon name="spark" size={18} />
           </span>
           <div style={{ minWidth: 0 }}>
@@ -119,60 +194,32 @@ export function AskLeafnerdPanel({ open, onClose }: { open: boolean; onClose: ()
           </button>
         </div>
 
-        <div className="drawer-body" ref={bodyRef}>
+        <div className="drawer-body ln-ask-body" ref={bodyRef}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {messages.map((m) => {
               const isUser = m.role === "user";
+              const showThinking = m.streaming && m.text === "";
               return (
-                <div
-                  key={m.id}
-                  style={{
-                    alignSelf: isUser ? "flex-end" : "flex-start",
-                    maxWidth: "86%",
-                    padding: "10px 13px",
-                    borderRadius: 13,
-                    fontSize: 13.5,
-                    lineHeight: 1.55,
-                    border: "1px solid",
-                    borderColor: isUser ? "var(--canopy)" : "var(--line-sage)",
-                    background: isUser ? "var(--canopy)" : "var(--sage-tint)",
-                    color: isUser ? "#fff" : "var(--ink)",
-                    boxShadow: "var(--sh-1)",
-                  }}
-                >
-                  {m.text}
+                <div key={m.id} className={`ln-msg ${isUser ? "user" : "bot"}`}>
+                  {isUser ? (
+                    <span className="ln-msg-text">{m.text}</span>
+                  ) : showThinking ? (
+                    <span className="ln-thinking" aria-live="polite">
+                      {[0, 1, 2].map((i) => (
+                        <span key={i} className="ln-dot" style={{ animationDelay: `${i * 0.18}s` }} />
+                      ))}
+                      <span className="ln-thinking-label">Leafnerd is thinking…</span>
+                    </span>
+                  ) : (
+                    <React.Fragment>
+                      <Markdown source={m.text} />
+                      {m.streaming && <span className="ln-caret" aria-hidden="true" />}
+                      {!m.streaming && m.grounding && <GroundingFooter g={m.grounding} />}
+                    </React.Fragment>
+                  )}
                 </div>
               );
             })}
-
-            {loading && (
-              <div
-                aria-live="polite"
-                style={{
-                  alignSelf: "flex-start",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "11px 14px",
-                  borderRadius: 13,
-                  border: "1px solid var(--line-sage)",
-                  background: "var(--sage-tint)",
-                  boxShadow: "var(--sh-1)",
-                }}
-              >
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    style={{
-                      width: 6, height: 6, borderRadius: "50%", background: "var(--canopy)",
-                      animation: "ln-pulse 1.1s ease-in-out infinite",
-                      animationDelay: `${i * 0.18}s`,
-                    }}
-                  />
-                ))}
-                <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 2 }}>Leafnerd is thinking…</span>
-              </div>
-            )}
 
             {messages.length === 1 && !loading && (
               <div className="wrap-gap" style={{ marginTop: 4 }}>
@@ -187,11 +234,8 @@ export function AskLeafnerdPanel({ open, onClose }: { open: boolean; onClose: ()
         </div>
 
         <form
+          className="ln-ask-composer"
           onSubmit={(e) => { e.preventDefault(); send(input); }}
-          style={{
-            display: "flex", alignItems: "center", gap: 9, padding: "12px 14px",
-            borderTop: "1px solid var(--line)", background: "var(--paper-2)",
-          }}
         >
           <label className="search" style={{ flex: 1, width: "auto" }}>
             <Icon name="search" size={15} />
