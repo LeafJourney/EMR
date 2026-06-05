@@ -6,6 +6,7 @@
 
 import { prisma } from "../lib/db/prisma";
 import { dispatch } from "../lib/orchestration/dispatch";
+import { reapStuckJobs } from "../lib/orchestration/queue";
 import { sendDueVisitReminders } from "../lib/scheduling/send-reminders";
 import { getDefaultAdapter } from "../lib/billing/clearinghouse/gateway";
 import { parse999, parse277CA, decide277Actions } from "../lib/billing/clearinghouse-ack";
@@ -147,6 +148,19 @@ async function main() {
   //    LlmUsage ledger — flips PracticeSubscription.throttled when a practice
   //    crosses its monthly token allowance (manual overrides win).
   await reconcileAiThrottles();
+
+  // 8. Reap AgentJob rows orphaned by a dead worker (visibility timeout), so a
+  //    crashed/rescheduled worker can't strand a clinical job forever.
+  try {
+    const reaped = await reapStuckJobs();
+    if (reaped.reclaimed || reaped.failed) {
+      console.log(
+        `[scheduler] reaped jobs: reclaimed=${reaped.reclaimed} failed=${reaped.failed}`,
+      );
+    }
+  } catch (err) {
+    console.error("[scheduler] job reaper failed", err);
+  }
 }
 
 async function reconcileAiThrottles(): Promise<void> {
