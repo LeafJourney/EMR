@@ -1,24 +1,82 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type RefObject } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const BAR_COUNT = 5;
+
+function AudioLevelBars({ streamRef }: { streamRef: RefObject<MediaStream | null> }) {
+  const [levels, setLevels] = useState<number[]>(Array(BAR_COUNT).fill(0));
+  const rafRef = useRef<number | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    const stream = streamRef.current;
+    if (!stream) return;
+
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.6;
+    source.connect(analyser);
+    analyserRef.current = analyser;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    function tick() {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteFrequencyData(data);
+      const bucketSize = Math.floor(data.length / BAR_COUNT);
+      const bars = Array.from({ length: BAR_COUNT }, (_: unknown, i: number) => {
+        let sum = 0;
+        for (let j = 0; j < bucketSize; j++) {
+          sum += data[i * bucketSize + j] ?? 0;
+        }
+        return Math.min(1, (sum / bucketSize) / 128);
+      });
+      setLevels(bars);
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      analyserRef.current = null;
+      source.disconnect();
+      void ctx.close();
+    };
+  }, [streamRef]);
+
+  return (
+    <div className="flex items-end gap-[3px] h-5" aria-hidden>
+      {levels.map((level: number, i: number) => (
+        <div
+          key={i}
+          className="w-1.5 rounded-sm bg-danger transition-none"
+          style={{ height: `${Math.max(10, level * 100)}%`, opacity: 0.5 + level * 0.5 }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function AmbientMicToggle() {
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Release stream on unmount
   useEffect(() => {
     return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
     };
   }, []);
 
   const toggle = useCallback(async () => {
     if (active) {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
       streamRef.current = null;
       setActive(false);
       setError(null);
@@ -49,6 +107,7 @@ export function AmbientMicToggle() {
                 <span className="relative rounded-full h-2 w-2 bg-danger" />
               </span>
               <span className="text-sm font-medium text-danger">Listening…</span>
+              <AudioLevelBars streamRef={streamRef} />
             </>
           ) : (
             <span className="text-sm text-text-muted">Off</span>
