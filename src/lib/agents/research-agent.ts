@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
+import { searchPubMed } from "@/lib/domain/pubmed";
 import corpus from "../../../data/cannabis-research-corpus.json";
 
 // ---------------------------------------------------------------------------
@@ -114,11 +115,13 @@ const output = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * Research Synthesizer Agent v2
- * -----------------------------
+ * Research Synthesizer Agent v2.1
+ * --------------------------------
  * Searches Justin Kander's curated cannabis research corpus (50+ peer-reviewed
- * studies with PMIDs and structured dosing data). Matches by keyword across
- * symptom categories, cannabinoids, delivery methods, and outcomes.
+ * studies with PMIDs and structured dosing data) then supplements with live
+ * PubMed E-utilities results (4 s timeout, fail-open). Corpus hits come first
+ * since they carry dose/outcome data; live PubMed fills the remaining slots up
+ * to MAX_RESULTS=10 with deduplication by PMID.
  *
  * When OpenRouter is configured, the agent uses the LLM to generate a
  * synthesized summary of the matching studies. Otherwise falls back to a
@@ -126,8 +129,8 @@ const output = z.object({
  */
 export const researchAgent: Agent<z.infer<typeof input>, z.infer<typeof output>> = {
   name: "researchSynthesizer",
-  version: "2.0.0",
-  description: "Searches the cannabis research corpus and synthesizes evidence.",
+  version: "2.1.0",
+  description: "Searches the internal cannabis corpus then supplements with live PubMed results.",
   inputSchema: input,
   outputSchema: output,
   allowedActions: ["read.research", "read.patient"],
@@ -168,9 +171,52 @@ export const researchAgent: Agent<z.infer<typeof input>, z.infer<typeof output>>
       .sort((a, b) => b.score - a.score)
       .slice(0, 8);
 
-    const hits = scored.map((s) => s.entry);
+    const corpusHits = scored.map((s) => s.entry);
 
-    ctx.log("info", `Corpus search for "${query}": ${hits.length} hits from ${CORPUS.length} entries`);
+    ctx.log("info", `Corpus search for "${query}": ${corpusHits.length} hits from ${CORPUS.length} entries`);
+
+    // Supplement with live PubMed — general biomedical search, 4 s timeout.
+    // scopeToCannabis:false so non-cannabis practices get useful results too.
+    // Fail-open: any network or parse error is swallowed; corpus results
+    // are returned as-is.
+    // Live hits are normalized to CorpusEntry so the rest of the function
+    // (citations build, persist) doesn't need to branch on source type.
+    const corpusPmids = new Set(corpusHits.map((h) => h.pmid).filter(Boolean));
+    let liveHits: CorpusEntry[] = [];
+
+    try {
+      const liveResult = await Promise.race([
+        searchPubMed(query, 5, { scopeToCannabis: false }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+      ]);
+      if (liveResult) {
+        liveHits = liveResult.articles
+          .filter((a) => !corpusPmids.has(a.pmid))
+          .map((a) => ({
+            title: a.title,
+            source: `PubMed PMID: ${a.pmid}`,
+            year: a.year || null,
+            pmid: a.pmid,
+            url: a.url,
+            category: "PubMed",
+            cannabinoids: [],
+            delivery: null,
+            outcome: null,
+            doseInfo: "",
+            tags: [],
+            summary: a.abstract
+              ? a.abstract.slice(0, 400)
+              : `Published in ${a.journal}${a.year ? `, ${a.year}` : ""}. Open the PubMed link for the full abstract.`,
+          }));
+        ctx.log("info", `Live PubMed: ${liveHits.length} new articles for "${query}" (${liveResult.totalResults} total)`);
+      }
+    } catch {
+      // supplemental only — swallow errors
+    }
+
+    // Corpus results first (richer dose data); live PubMed fills remaining slots
+    const MAX_RESULTS = 10;
+    const hits = [...corpusHits.slice(0, MAX_RESULTS), ...liveHits].slice(0, MAX_RESULTS);
 
     // Build citations
     const citations = hits.map((h) => ({
@@ -191,7 +237,7 @@ export const researchAgent: Agent<z.infer<typeof input>, z.infer<typeof output>>
     // Generate summary — try LLM first, fall back to concatenation
     let summary: string;
     if (hits.length === 0) {
-      summary = `No matching studies found for "${query}" in the indexed corpus of ${CORPUS.length} studies. Try broader terms like "pain", "sleep", "anxiety", "nausea", "appetite", "fatigue", or specific cannabinoids like "CBD", "THC".`;
+      summary = `No matching studies found for "${query}" in the indexed corpus of ${CORPUS.length} studies or in the live PubMed search. Try broader terms like "pain", "sleep", "anxiety", "nausea", "appetite", "fatigue", or specific cannabinoids like "CBD", "THC".`;
     } else {
       try {
         const studyList = hits
@@ -201,14 +247,7 @@ export const researchAgent: Agent<z.infer<typeof input>, z.infer<typeof output>>
           )
           .join("\n");
 
-        const prompt = `Synthesize these ${hits.length} cannabis research studies into a concise clinical summary for a physician. Focus on dosing recommendations and clinical outcomes. Keep it under 200 words.
-
-Query: "${query}"
-
-Studies:
-${studyList}
-
-Write a brief, evidence-based synthesis paragraph.`;
+        const prompt = `Synthesize these ${hits.length} cannabis research studies into a concise clinical summary for a physician. Focus on dosing recommendations and clinical outcomes. Keep it under 200 words.\n\nQuery: "${query}"\n\nStudies:\n${studyList}\n\nWrite a brief, evidence-based synthesis paragraph.`;
 
         const modelSummary = await ctx.model.complete(prompt, {
           maxTokens: 512,
@@ -251,11 +290,11 @@ Write a brief, evidence-based synthesis paragraph.`;
 
     await writeAgentAudit(
       "researchSynthesizer",
-      "2.0.0",
+      "2.1.0",
       null,
       "research.query.answered",
       { type: "ResearchQuery", id: queryId },
-      { hitCount: hits.length, corpusSize: CORPUS.length }
+      { hitCount: hits.length, corpusHits: corpusHits.length, liveHits: liveHits.length, corpusSize: CORPUS.length }
     );
 
     ctx.log("info", "Research query answered", { hitCount: hits.length });
