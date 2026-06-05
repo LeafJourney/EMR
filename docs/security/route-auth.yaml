@@ -566,6 +566,12 @@ routes:
     owner: integrations
     notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — gate exists."
 
+  dev/login:
+    methods: [GET]
+    auth: establishes_auth
+    owner: platform-security
+    notes: "Development bypass login. Disabled in production."
+
   dev/logout:
     methods: [GET]
     auth: establishes_auth
@@ -844,6 +850,18 @@ routes:
     auth: required
     owner: agents
     notes: "AI Insight Engine for LeafNerd dashboard. Uses requireUser + explicit leafnerd role check."
+
+  leafnerd/enqueue:
+    methods: [POST]
+    auth: public
+    owner: agents
+    notes: "LeafNerd demo dashboard endpoint to enqueue governed AgentJobs. No user auth required."
+
+  leafnerd/job-action:
+    methods: [GET, POST]
+    auth: required
+    owner: agents
+    notes: "Governed AgentJob lifecycle endpoint for the LeafNerd Agent Workbench. Uses requireUser + role check."
 
   terminology/[system]/[code]:
     methods: [GET]
