@@ -1,11 +1,11 @@
 "use server";
 
-// EMR-143 — schedule a HIPAA-compliant Zoom meeting from the EMR.
+// EMR-143 / EMR-672 — schedule a HIPAA-compliant Beam visit from the EMR.
 //
-// Persists the meeting as a CallLog row (channel='video', status='initiated',
-// zoom* columns populated). The passcode is encrypted at rest with the
-// same envelope used for provider-to-provider message bodies — only the
-// host should ever see the plaintext.
+// Persists the visit as a CallLog row (channel='video', status='initiated',
+// zoom* columns populated by the underlying Beam/Zoom integration). The
+// passcode is encrypted at rest with the same envelope used for
+// provider-to-provider message bodies — only the host ever sees plaintext.
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -18,13 +18,13 @@ const scheduleSchema = z
   .object({
     topic: z.string().min(1).max(200),
     scheduledFor: z.string().min(1),
-    durationMinutes: z.coerce.number().int().min(15).max(8 * 60),
+    durationMinutes: z.coerce.number().int().min(5).max(60),
     patientId: z.string().optional().nullable(),
     providerUserId: z.string().optional().nullable(),
   })
   .refine(
-    (d) => Boolean(d.patientId) !== Boolean(d.providerUserId),
-    "Pick exactly one counterparty (patient OR provider).",
+    (d) => Boolean(d.patientId) || Boolean(d.providerUserId),
+    "Select at least one participant (patient or provider).",
   );
 
 export type ScheduleBeamResult =
@@ -43,6 +43,8 @@ export async function scheduleBeamMeetingAction(
     return { ok: false, error: "Only providers can schedule Beam visits." };
   }
 
+  // The "Connect With" toggle can submit both a patientId and a
+  // providerUserId for group calls — the schema allows either or both.
   const parsed = scheduleSchema.safeParse({
     topic: (formData.get("topic") as string)?.trim(),
     scheduledFor: formData.get("scheduledFor"),
