@@ -51,6 +51,50 @@ import {
 
 const DEMO_ORG_SLUG = "leafnerd-demo";
 
+/**
+ * Canonical US Core StructureDefinition URLs, keyed by the FhirResource
+ * `profile` display we assign. Stamped onto each resource's `meta.profile` so
+ * the R4 payload genuinely *asserts* the profile it claims to conform to — the
+ * same `meta.profile` a real US Core validator keys off — instead of only
+ * naming it in a label.
+ */
+const US_CORE_PROFILE_URL: Record<string, string> = {
+  "US Core Patient": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient",
+  "US Core Encounter": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter",
+  "US Core Blood Pressure": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-blood-pressure",
+  "US Core Laboratory Result": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-observation-lab",
+  "US Core Condition": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-condition-problems-health-concerns",
+  "US Core MedicationRequest": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-medicationrequest",
+};
+
+/**
+ * Stamp `meta.profile` (and a `meta.tag` marking the synthetic demo org) onto a
+ * built resource's JSON, in place, so the Raw-JSON tab shows the conformance
+ * assertion immediately under resourceType/id. No-op when the profile is
+ * unknown so nothing fabricated leaks in.
+ */
+function stampMeta(res: FhirResource): FhirResource {
+  const url = US_CORE_PROFILE_URL[res.profile];
+  if (!url) return res;
+  const { resourceType, id, ...rest } = res.json as Record<string, unknown>;
+  res.json = {
+    resourceType,
+    id,
+    meta: {
+      profile: [url],
+      tag: [
+        {
+          system: "https://leafjourney.com/tags",
+          code: "leafnerd-demo",
+          display: "Leafnerd demo cohort",
+        },
+      ],
+    },
+    ...rest,
+  };
+  return res;
+}
+
 // Keep the resource set in the contract's ~20-40 sweet spot: ~8 patients, each
 // fanning out into a Patient + Encounter + 1-2 Observations + Condition + meds.
 const PATIENT_TAKE = 8;
@@ -357,7 +401,9 @@ export async function getRealFhirResources(): Promise<FhirResource[]> {
       }
     }
 
-    return out;
+    // Stamp the conformance assertion (meta.profile) onto every resource so the
+    // R4 payload declares the US Core profile it claims in its label.
+    return out.map(stampMeta);
   } catch {
     // ANY failure → [] so the explorer keeps its curated resources.
     return [];

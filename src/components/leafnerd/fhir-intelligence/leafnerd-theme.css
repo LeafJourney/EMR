@@ -433,6 +433,14 @@
 .ln-root .json .b { color: #d59ad0; }
 .ln-root .json .p { color: #6f8278; }
 
+/* foldable JSON tree (Raw JSON tab) */
+.ln-root .json.jtree { white-space: normal; }
+.ln-root .json .jrow { cursor: pointer; border-radius: 4px; margin: 0 -4px; padding-right: 4px; }
+.ln-root .json .jrow:hover { background: rgba(143, 208, 166, 0.08); }
+.ln-root .json .jtog { display: inline-flex; vertical-align: -1px; width: 13px; color: #8fd0a6; opacity: .65; }
+.ln-root .json .jrow:hover .jtog { opacity: 1; }
+.ln-root .json .jsum { color: #6f8278; font-style: italic; }
+
 /* ============================================================
    FHIR EXPLORER (split pane)
    ============================================================ */
