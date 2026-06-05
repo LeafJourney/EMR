@@ -26,7 +26,7 @@ export default async function ProvidersPage() {
     },
     include: {
       user: {
-        select: { firstName: true, lastName: true, email: true },
+        select: { id: true, firstName: true, lastName: true, email: true },
       },
     },
     orderBy: { createdAt: "asc" },
@@ -45,6 +45,7 @@ export default async function ProvidersPage() {
 
   const rows: ProviderRow[] = providers.map((p) => ({
     id: p.id,
+    userId: p.user.id,
     firstName: p.user.firstName,
     lastName: p.user.lastName,
     title: p.title,
