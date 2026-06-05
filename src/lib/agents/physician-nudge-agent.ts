@@ -171,7 +171,11 @@ Generate 2-5 specific, actionable tasks. Examples:
 - "Discuss treatment goals refinement — patient approaching initial targets"`;
 
     // ── Call the model and parse ─────────────────────────────────────
-    const raw = await ctx.model.complete(prompt, { maxTokens: 1024, temperature: 0.4 });
+    const raw = await ctx.model.complete(prompt, {
+      maxTokens: 1024,
+      temperature: 0.4,
+      redactNames: [patient.firstName, patient.lastName].filter(Boolean),
+    });
 
     let parsed: z.infer<typeof taskResponseSchema>;
     try {

@@ -124,6 +124,7 @@ Keep every chapter under 60 words. The tone should feel like a children's book f
       raw = await ctx.model.complete(prompt, {
         maxTokens: 800,
         temperature: 0.55,
+        redactNames: [patient.firstName, patient.lastName].filter(Boolean),
       });
     } catch (err) {
       ctx.log("warn", "LLM call failed — using fallback narrative", {

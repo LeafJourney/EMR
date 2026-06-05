@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
 import { resolveModelClient } from "@/lib/orchestration/model-client";
+import { withPhiRedaction } from "@/lib/orchestration/redacting-model-client";
 
 // ---------------------------------------------------------------------------
 // Lab Summarizer Agent — MALLIK-006
@@ -126,8 +127,16 @@ export async function summarizeLabResult(
       ? `\nPRIOR RESULTS (received ${prior.receivedAt.toISOString().slice(0, 10)}):\n${formatMarkers(priorMarkers)}`
       : `\nPRIOR RESULTS: none on file (first time this panel has been drawn)`);
 
-  const model = resolveModelClient();
-  const raw = await model.complete(prompt, { maxTokens: 800, temperature: 0.3 });
+  // Route through the PHI-redaction chokepoint — this agent calls
+  // resolveModelClient() directly (not via ctx.model), so without this wrapper
+  // the full patient name + meds + lab markers would egress to OpenRouter
+  // unredacted.
+  const model = withPhiRedaction(resolveModelClient(), "lab-summarizer");
+  const raw = await model.complete(prompt, {
+    maxTokens: 800,
+    temperature: 0.3,
+    redactNames: [lab.patient.firstName, lab.patient.lastName].filter(Boolean),
+  });
 
   // Tolerant JSON extraction — models sometimes wrap in ```json fences or
   // add preambles. Pull the first {...} block we can parse.

@@ -434,6 +434,7 @@ Non-negotiable safety rules (these OVERRIDE every other guideline):
       modelResponse = await ctx.model.complete(promptWithPersona, {
         maxTokens: 1024,
         temperature: 0.3,
+        redactNames: [patient.firstName, patient.lastName].filter(Boolean),
       });
       trace.step("llm complete", { rawLen: modelResponse.length });
     } catch (err) {
