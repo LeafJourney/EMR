@@ -438,6 +438,10 @@ function ComposeModal({
   const [patientQuery, setPatientQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // EMR-642 — track form edits via state so isDirty is always current when
+  // Dialog reads it (a DOM-query approach would return stale render-snapshot
+  // values for uncontrolled inputs like subject/body).
+  const [formDirty, setFormDirty] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
 
@@ -475,19 +479,7 @@ function ComposeModal({
     setDropdownOpen(true);
   }
 
-  // EMR-642 — the compose form is a true edit surface, so any progress
-  // typed by the clinician should be guarded against accidental dismissal.
-  const isDirty =
-    patientQuery.length > 0 ||
-    (formRef.current?.elements
-      ? Array.from(formRef.current.elements).some((el) => {
-          if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-            if (el.type === "hidden") return false;
-            return el.value.length > 0;
-          }
-          return false;
-        })
-      : false);
+  const isDirty = patientQuery.length > 0 || formDirty;
 
   return (
     <Dialog
@@ -509,7 +501,7 @@ function ComposeModal({
         </div>
 
         {/* Form */}
-        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4">
+        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
           {selectedPatient && (
             <input type="hidden" name="patientId" value={selectedPatient.id} />
           )}
@@ -1069,7 +1061,6 @@ export function SmartInboxView({
     initialThreadId ?? triaged[0]?.threadId ?? null,
   );
   const [showCompose, setShowCompose] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
   // EMR-659 — in-thread search: filters the visible message timeline by body
   // text (case-insensitive substring). Resets whenever the selected thread
   // changes so a stale query doesn't carry across threads.
@@ -1861,32 +1852,6 @@ export function SmartInboxView({
           )}
         </Card>
       </div>
-
-      {/* Gmail-style floating compose window */}
-      {composeOpen && (
-        <div className="fixed bottom-0 right-8 w-[400px] bg-surface border border-border rounded-t-xl shadow-2xl z-50 flex flex-col">
-          <div className="bg-surface-raised px-4 py-2 border-b border-border rounded-t-xl flex justify-between items-center cursor-pointer">
-            <h3 className="text-sm font-semibold text-text">New Message</h3>
-            <button onClick={() => setComposeOpen(false)} className="text-text-muted hover:text-text">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <div className="p-4 flex flex-col gap-3">
-            <Input placeholder="To: Patient Name" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
-            <Input placeholder="Subject" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
-            <Textarea placeholder="Type message... (type '/' for shortcuts)" className="min-h-[150px] border-0 focus-visible:ring-0 px-0 shadow-none text-sm resize-none" />
-          </div>
-          <div className="bg-surface-muted px-4 py-3 border-t border-border flex justify-between items-center">
-            <div className="flex gap-2 text-text-muted">
-              <button title="Format" className="p-1.5 hover:bg-surface rounded-md"><SparklesIcon /></button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setComposeOpen(false)}>Save Draft</Button>
-              <Button size="sm" onClick={() => setComposeOpen(false)}>Send</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Bulk action bar — slides up when any inbox thread is selected. */}
       <BulkActionBar
