@@ -10,6 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
     "worker": "tsx --conditions=react-server src/workers/agent-worker.ts",
+    "eval": "tsx --conditions=react-server scripts/evals/run.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
