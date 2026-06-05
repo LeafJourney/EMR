@@ -3,26 +3,46 @@ import { requireUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { resolveModelClient } from "@/lib/orchestration/model-client";
 
+// The LeafNerd demo/tenant org. All DB reads here are scoped to this org so the
+// assistant never aggregates counts across tenants (no cross-tenant leak). Kept
+// in sync with the slug used by src/lib/leafnerd/* and src/app/leafnerd/page.tsx.
+const LEAFNERD_DEMO_ORG_SLUG = "leafnerd-demo";
+
 export async function POST(req: Request) {
   try {
     const user = await requireUser();
-    
-    // Must be a LeafNerd or Super Admin
-    const memberships = await prisma.membership.findMany({ where: { userId: user.id } });
-    const hasAccess = memberships.some((m: { role: string }) => m.role === 'leafnerd' || m.role === 'super_admin');
+
+    // Authorize via the Clerk-backed session roles (the single source of truth
+    // for the signed-in user's roles) — must hold leafnerd or super_admin.
+    const hasAccess = user.roles.some((r) => r === 'leafnerd' || r === 'super_admin');
     if (!hasAccess) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
     const { message } = await req.json();
-    
-    const recentOutcomesCount = await prisma.outcomeLog.count({
-      where: { loggedAt: { gte: new Date(Date.now() - 7 * 86400000) } }
-    });
 
-    const activePatients = await prisma.patient.count({
-      where: { status: 'active' }
+    // Scope every aggregate to the demo org so the assistant only ever reports on
+    // a single tenant's data. If the org can't be resolved, counts read as 0.
+    const demoOrg = await prisma.organization.findUnique({
+      where: { slug: LEAFNERD_DEMO_ORG_SLUG },
+      select: { id: true },
     });
+    const organizationId = demoOrg?.id ?? null;
+
+    const recentOutcomesCount = organizationId
+      ? await prisma.outcomeLog.count({
+          where: {
+            loggedAt: { gte: new Date(Date.now() - 7 * 86400000) },
+            patient: { is: { organizationId } },
+          },
+        })
+      : 0;
+
+    const activePatients = organizationId
+      ? await prisma.patient.count({
+          where: { status: 'active', organizationId },
+        })
+      : 0;
 
     const prompt = `You are the LeafNerd Insight Assistant, a cutting-edge clinical intelligence AI.
 Current real-time database state:
