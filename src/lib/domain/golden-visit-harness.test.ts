@@ -111,7 +111,7 @@ const h = vi.hoisted(() => {
       return db.providers.find((provider) => provider.id === row.providerId) ?? null;
     }
     if (relation === "encounter") {
-      if (row.appointmentId) {
+      if ("startAt" in row && "endAt" in row) {
         return db.encounters.find((encounter) => encounter.appointmentId === row.id) ?? null;
       }
       if (row.encounterId) {
@@ -441,7 +441,11 @@ const h = vi.hoisted(() => {
     throw new Error(`redirect:${href}`);
   });
   const requireUser = vi.fn(async () => fixture.session.currentUser);
-  const requireRole = vi.fn(async () => fixture.session.currentUser);
+  const requireRole = vi.fn(async (role: string) => {
+    const user = fixture.session.currentUser;
+    if (!user.roles.includes(role)) throw new Error("FORBIDDEN");
+    return user;
+  });
   const dispatch = vi.fn(async (event: any) => {
     fixture.dispatchEvents.push(clone(event));
     if (event.name !== "encounter.note.draft.requested") return [];
