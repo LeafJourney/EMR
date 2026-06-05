@@ -13,7 +13,7 @@ import { recordDeadLetter } from "../lib/billing/clearinghouse/dead-letter";
 import { derivePrimaryControlNumbers } from "../lib/agents/billing/clearinghouse-submission-agent";
 import { writeAgentAudit } from "../lib/orchestration/context";
 import { reconcileThrottleState } from "../lib/billing/cost-guardrails";
-import { sumTokensMTD } from "../lib/ai/usage-repository";
+import { sumTokensMTD, llmUsageAvailable } from "../lib/ai/usage-repository";
 
 function resolvePrevisitPortalUrl(env: NodeJS.ProcessEnv): string | null {
   return env.PREVISIT_PORTAL_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.APP_URL ?? null;
@@ -150,6 +150,13 @@ async function main() {
 }
 
 async function reconcileAiThrottles(): Promise<void> {
+  // If the LlmUsage table isn't present yet (the pre-`db push` window), usage
+  // sums are 0 for "no data" — reconciling would compute usedTokensMTD=0 and
+  // un-throttle every legitimately-capped practice. Skip until the table lands.
+  if (!llmUsageAvailable()) {
+    console.log("[scheduler] ai-throttle reconcile skipped — LlmUsage table absent");
+    return;
+  }
   // Reach the PracticeSubscription delegate defensively — same pattern as
   // cost-guardrails, since it may not be in older generated clients.
   const subs = (prisma as unknown as Record<string, any>)["practiceSubscription"];

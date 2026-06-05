@@ -148,6 +148,37 @@ describe("OpenRouterModelClient — credit fallback + classification", () => {
     expect(typeof seen[0].latencyMs).toBe("number");
   });
 
+  it("reports token usage from the final usage frame on a streaming call", async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"hel"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":9}}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        for (const chunk of sse) controller.enqueue(enc.encode(chunk));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, body: stream }) as unknown as Response),
+    );
+    const seen: Array<{ tokensIn: number; tokensOut: number }> = [];
+    const client = new OpenRouterModelClient({
+      apiKey: "test-key",
+      timeoutMs: 5000,
+      onUsage: (u) => seen.push(u),
+    });
+    const out: string[] = [];
+    for await (const c of client.stream!("hi")) out.push(c);
+    expect(out.join("")).toBe("hello");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ tokensIn: 20, tokensOut: 9 });
+  });
+
   it.each([
     [401, "unauthorized"],
     [429, "rate_limited"],

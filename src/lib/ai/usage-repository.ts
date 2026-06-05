@@ -35,6 +35,16 @@ function llmUsageDelegate(): LlmUsageDelegate | undefined {
 }
 
 /**
+ * Whether the LlmUsage table exists in this generated client (it's created at
+ * deploy via `prisma db push`). Callers that treat a 0 token-sum as "no usage"
+ * MUST check this first — 0-because-the-table-is-absent is not the same as
+ * 0-because-unused, and conflating them un-throttles capped practices.
+ */
+export function llmUsageAvailable(): boolean {
+  return llmUsageDelegate() !== undefined;
+}
+
+/**
  * Persist one usage row. Best-effort and append-only: it logs the structured
  * usage line (so an aggregator sees it even pre-migration) and never throws
  * into the model call path — a telemetry write must not fail a clinical call.

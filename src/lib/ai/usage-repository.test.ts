@@ -22,6 +22,7 @@ import {
   persistLlmUsage,
   sumTokensMTD,
   sumTokensSince,
+  llmUsageAvailable,
 } from "./usage-repository";
 
 beforeEach(() => {
@@ -60,5 +61,9 @@ describe("usage-repository", () => {
     const total = await sumTokensMTD("org1");
     expect(total).toBe(150);
     expect(aggregate.mock.calls[0][0].where.createdAt?.gte).toBeInstanceOf(Date);
+  });
+
+  it("llmUsageAvailable is true when the delegate is present", () => {
+    expect(llmUsageAvailable()).toBe(true);
   });
 });

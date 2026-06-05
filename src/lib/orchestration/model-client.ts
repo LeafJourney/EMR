@@ -513,6 +513,11 @@ export class OpenRouterModelClient implements ModelClient {
     };
     armTimer();
 
+    const t0 = Date.now();
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let outputChars = 0;
+
     try {
       let response: Response;
       try {
@@ -526,6 +531,9 @@ export class OpenRouterModelClient implements ModelClient {
             max_tokens: requestedMaxTokens,
             temperature: requestedTemperature,
             stream: true,
+            // Ask OpenRouter to emit a final usage frame so streamed calls are
+            // recorded in LlmUsage (otherwise they'd undercount spend to zero).
+            stream_options: { include_usage: true },
           }),
         });
       } catch (err) {
@@ -582,10 +590,16 @@ export class OpenRouterModelClient implements ModelClient {
             try {
               const parsed = JSON.parse(payload) as {
                 choices?: Array<{ delta?: { content?: string } }>;
+                usage?: { prompt_tokens?: number; completion_tokens?: number };
               };
+              if (parsed.usage) {
+                tokensIn = parsed.usage.prompt_tokens ?? tokensIn;
+                tokensOut = parsed.usage.completion_tokens ?? tokensOut;
+              }
               const delta = parsed.choices?.[0]?.delta?.content;
               if (typeof delta === "string" && delta.length > 0) {
                 sawContent = true;
+                outputChars += delta.length;
                 yield delta;
               }
             } catch {
@@ -606,6 +620,16 @@ export class OpenRouterModelClient implements ModelClient {
           requestedMaxTokens,
         });
       }
+
+      // Record usage symmetric with _call. If the provider omitted the usage
+      // frame, fall back to a chars/4 estimate so a streamed call is never
+      // silently recorded as zero-cost.
+      this.onUsage?.({
+        model,
+        tokensIn: tokensIn || Math.ceil(prompt.length / 4),
+        tokensOut: tokensOut || Math.ceil(outputChars / 4),
+        latencyMs: Date.now() - t0,
+      });
     } finally {
       clearTimeout(timer);
       options?.signal?.removeEventListener("abort", onCallerAbort);
