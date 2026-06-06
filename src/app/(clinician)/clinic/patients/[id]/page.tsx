@@ -82,6 +82,8 @@ import { AlertsButton } from "./alerts-button";
 import { CindySays } from "./chart-kit";
 import { sexColorKey, SEX_BUBBLE_CLASSES } from "@/lib/clinical/chart-bubbles";
 import { CINDY_PREFIX } from "@/lib/clinical/cindy-says";
+import { RecordsTab, type ChartDoc } from "./records-tab";
+import { ImagesTab } from "./images-tab";
 
 function cleanMarkdownSummary(md: string): string {
   if (!md) return "";
@@ -99,6 +101,19 @@ function cleanMarkdownSummary(md: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+/** Flatten a Prisma document row into the plain ChartDoc the Records /
+ *  Images client tabs consume (EMR-862..865, 899..902). */
+function toChartDoc(d: any): ChartDoc {
+  return {
+    id: d.id,
+    name: d.originalName || "Untitled document",
+    kind: d.kind ?? "unclassified",
+    mimeType: d.mimeType ?? "",
+    createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : new Date().toISOString(),
+    tags: Array.isArray(d.tags) ? d.tags : [],
+  };
+}
+
 /* ── Types ────────────────────────────────────────────────────── */
 
 interface PageProps {
@@ -905,8 +920,12 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           moduleFlags={moduleFlags}
         />
       )}
-      {tab === "records" && <RecordsTab documents={recordDocs} patientId={params.id} />}
-      {tab === "images" && <ImagesTab documents={imageDocs} patientId={params.id} />}
+      {tab === "records" && (
+        <RecordsTab documents={recordDocs.map(toChartDoc)} patientId={params.id} />
+      )}
+      {tab === "images" && (
+        <ImagesTab documents={imageDocs.map(toChartDoc)} patientId={params.id} />
+      )}
       {tab === "labs" && (
         <LabsTab
           labDocuments={labDocs}
@@ -940,6 +959,8 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           memories={patientMemories}
           observations={clinicalObservations}
           patientFirstName={patient.firstName}
+          patientId={params.id}
+          moduleFlags={moduleFlags}
         />
       )}
       {tab === "timeline" && (
@@ -954,6 +975,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           currentUserId={user.id}
           patientFirstName={patient.firstName}
           patientLastName={patient.lastName}
+          patientId={params.id}
         />
       )}
       {tab === "rx" && (
@@ -1393,209 +1415,6 @@ function ScreeningReminders({
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Records tab
-   ═══════════════════════════════════════════════════════════════════ */
-
-function RecordsTab({ documents, patientId }: { documents: any[]; patientId: string }) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-display text-xl text-text tracking-tight">
-          Records
-        </h2>
-      </div>
-
-      {documents.length === 0 ? (
-        <EmptyState
-          title="No records on file yet"
-          description="Upload clinical documents, diagnoses, letters, and other records to build this patient's chart."
-        />
-      ) : (
-        <div className="grid gap-3">
-          {documents.map((doc) => (
-            <Card key={doc.id} tone="raised" className="card-hover">
-              <CardContent className="pt-5 pb-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <Badge
-                        tone={
-                          doc.kind === "unclassified"
-                            ? "neutral"
-                            : doc.kind === "diagnosis"
-                              ? "warning"
-                              : doc.kind === "letter"
-                                ? "info"
-                                : "accent"
-                        }
-                      >
-                        {doc.kind}
-                      </Badge>
-                      {doc.aiClassified ? (
-                        <Badge tone="success">AI classified</Badge>
-                      ) : doc.needsReview ? (
-                        <Badge tone="warning">Needs review</Badge>
-                      ) : (
-                        <Badge tone="neutral">Pending</Badge>
-                      )}
-                    </div>
-                    <a
-                      href={`/clinic/patients/${patientId}/documents/${doc.id}/view`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-text truncate block hover:underline"
-                    >
-                      {doc.originalName}
-                    </a>
-                    <p className="text-xs text-text-muted mt-0.5">
-                      {doc.mimeType} &middot; {formatFileSize(doc.sizeBytes)}
-                    </p>
-                    {doc.tags.length > 0 && (
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        {doc.tags.map((tag: string) => (
-                          <span
-                            key={tag}
-                            className="text-[10px] text-text-subtle bg-surface-muted px-2 py-0.5 rounded-full"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <a
-                      href={`/clinic/patients/${patientId}/documents/${doc.id}/view`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="secondary" size="sm">View</Button>
-                    </a>
-                    <div className="text-xs text-text-subtle tabular-nums text-right">
-                      <span className="font-display">{formatDate(doc.createdAt)}</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <Card tone="outlined" className="mt-4">
-        <CardContent className="pt-5 pb-5">
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Upload a document</p>
-          <ClinicianUploadForm patientId={patientId} />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   Images tab
-   ═══════════════════════════════════════════════════════════════════ */
-
-function ImagesTab({ documents, patientId }: { documents: any[]; patientId: string }) {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-display text-xl text-text tracking-tight">
-          Images
-        </h2>
-      </div>
-
-      {documents.length === 0 ? (
-        <EmptyState
-          title="No images uploaded"
-          description="Medical images, X-rays, photos, and scans will appear here once uploaded."
-        />
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {documents.map((doc) => (
-            <a
-              key={doc.id}
-              href={`/clinic/patients/${patientId}/documents/${doc.id}/view`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block"
-            >
-            <Card tone="raised" className="card-hover overflow-hidden">
-              <div className="aspect-square bg-surface-muted flex flex-col items-center justify-center p-4 rounded-t-xl">
-                <svg
-                  width="40"
-                  height="40"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="text-text-subtle mb-2"
-                >
-                  <rect
-                    x="3"
-                    y="3"
-                    width="18"
-                    height="18"
-                    rx="3"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                  />
-                  <circle cx="8.5" cy="8.5" r="2" stroke="currentColor" strokeWidth="1.2" />
-                  <path
-                    d="M3 16l4.5-4.5a2 2 0 012.8 0L15 16"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M14 15l1.5-1.5a2 2 0 012.8 0L21 16"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <p className="text-[11px] text-text-subtle text-center truncate max-w-full">
-                  {doc.mimeType}
-                </p>
-              </div>
-              <CardContent className="pt-3 pb-3">
-                <p className="text-sm font-medium text-text truncate">
-                  {doc.originalName}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">
-                  {formatFileSize(doc.sizeBytes)} &middot;{" "}
-                  <span className="font-display">{formatDate(doc.createdAt)}</span>
-                </p>
-              </CardContent>
-            </Card>
-            </a>
-          ))}
-        </div>
-      )}
-
-      <Card tone="outlined" className="mt-4">
-        <CardContent className="pt-5 pb-5">
-          <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-3">Upload an image</p>
-          <ClinicianUploadForm patientId={patientId} />
-        </CardContent>
-      </Card>
-
-      {/* DICOM viewer scaffold (EMR-014) */}
-      <div className="mt-6">
-        <div className="flex items-baseline justify-between mb-3">
-          <h3 className="font-display text-lg text-text tracking-tight">
-            DICOM Viewer
-          </h3>
-          <span className="text-[11px] text-text-subtle">
-            Scaffold · synthetic frames
-          </span>
-        </div>
-        <DicomViewer />
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    Labs tab
