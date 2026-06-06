@@ -75,7 +75,13 @@ import { InlineDemographicsCard } from "./inline-demographics-card";
 import { RxTab } from "./rx-tab";
 import { FloatingActionMenu } from "./floating-action-menu";
 import { serializeRegimen, serializeDoseLog } from "./rx-serialize";
-import { resolveModuleFlags } from "@/lib/clinical/module-opt-in";
+import { resolveModuleFlags, type ModuleFlags } from "@/lib/clinical/module-opt-in";
+import { CurrentMedicationsCard } from "./current-medications-card";
+import { ScreeningsPanel } from "./screenings-panel";
+import { AlertsButton } from "./alerts-button";
+import { CindySays } from "./chart-kit";
+import { sexColorKey, SEX_BUBBLE_CLASSES } from "@/lib/clinical/chart-bubbles";
+import { CINDY_PREFIX } from "@/lib/clinical/cindy-says";
 
 function cleanMarkdownSummary(md: string): string {
   if (!md) return "";
@@ -625,12 +631,16 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         <CardContent className="pt-8 pb-8">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="flex items-start gap-6 flex-1 min-w-[320px]">
-              <PatientAvatar
-                patientId={patient.id}
-                firstName={patient.firstName}
-                lastName={patient.lastName}
-                initialPhotoUrl={intake.photoUrl ?? null}
-              />
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                <PatientAvatar
+                  patientId={patient.id}
+                  firstName={patient.firstName}
+                  lastName={patient.lastName}
+                  initialPhotoUrl={intake.photoUrl ?? null}
+                />
+                {/* EMR-851: chart alerts & reminders under the monogram */}
+                <AlertsButton patientId={patient.id} />
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-2">
                   <Eyebrow>Patient chart</Eyebrow>
@@ -892,6 +902,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           pastConditions={pastConditions}
           pastSurgeries={pastSurgeries}
           canEditDemographics={canEditSection(user, "notes")}
+          moduleFlags={moduleFlags}
         />
       )}
       {tab === "records" && <RecordsTab documents={recordDocs} patientId={params.id} />}
@@ -984,6 +995,7 @@ function DemographicsTab({
   pastConditions,
   pastSurgeries,
   canEditDemographics,
+  moduleFlags,
 }: {
   patient: any;
   medications: any[];
@@ -992,6 +1004,7 @@ function DemographicsTab({
   pastConditions: any[];
   pastSurgeries: any[];
   canEditDemographics: boolean;
+  moduleFlags: ModuleFlags;
 }) {
   const dob = patient.dateOfBirth ? new Date(patient.dateOfBirth) : null;
   const age = dob
@@ -1021,9 +1034,17 @@ function DemographicsTab({
         <h2 className="font-display text-xl text-text tracking-tight">
           Demographics
         </h2>
+        {/* EMR-849: bigger bubbles; "Adult" coloured by sex (pink ♀ / blue ♂) */}
         <div className="flex items-center gap-2">
-          <AgeBandBadge band={ageBand} age={age} />
-          <Badge tone="accent">Medical Life Profile</Badge>
+          <span
+            className={`inline-flex items-center gap-1 px-3.5 py-1.5 text-[13px] font-semibold rounded-full border ${SEX_BUBBLE_CLASSES[sexColorKey(typeof sex === "string" ? sex : null)]}`}
+          >
+            {ageBand}
+            {age != null ? ` ${age}y` : ""}
+          </span>
+          <span className="inline-flex items-center px-3.5 py-1.5 text-[13px] font-semibold rounded-full border bg-accent-soft text-accent border-accent/20">
+            Medical Life Profile
+          </span>
         </div>
       </div>
 
@@ -1078,7 +1099,24 @@ function DemographicsTab({
           on Esc; errors surface via the project toast system. */}
       <Card tone="raised">
         <CardHeader>
-          <CardTitle className="text-base">Patient details</CardTitle>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-base">Identity &amp; contact</CardTitle>
+            {/* EMR-848: each subsection opens its own editable detail page */}
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={`/clinic/patients/${patient.id}/demographics/identity`}
+                className="text-[11px] px-2 py-0.5 rounded-md border border-border text-accent hover:bg-accent-soft transition-colors"
+              >
+                Identity ↗
+              </Link>
+              <Link
+                href={`/clinic/patients/${patient.id}/demographics/contact`}
+                className="text-[11px] px-2 py-0.5 rounded-md border border-border text-accent hover:bg-accent-soft transition-colors"
+              >
+                Contact ↗
+              </Link>
+            </div>
+          </div>
           <CardDescription>
             {canEditDemographics
               ? "Click any field to edit. Press Enter to save, Esc to cancel."
@@ -1119,7 +1157,13 @@ function DemographicsTab({
               <DemoField label="Sex" value={sex} />
               <DemoField label="Race / Ethnicity" value={race} />
               <DemoField label="Marital status" value={maritalStatus} />
-              <DemoField label="Patient ID" value={patient.id.slice(0, 12).toUpperCase()} mono />
+              {/* EMR-850: SSN on identity + "Patient ID" -> "Patient Life #" */}
+              <DemoField
+                label="SSN"
+                value={formatDemographicValue(intake.ssn, "Not recorded")}
+                mono
+              />
+              <DemoField label="Patient Life #" value={patient.id.slice(0, 12).toUpperCase()} mono />
               {emergencyContact && (
                 <DemoField label="Emergency contact" value={emergencyContact} />
               )}
@@ -1136,7 +1180,7 @@ function DemographicsTab({
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <span className="text-[color:var(--warning)]">&#9888;</span>
-            Alerts & Allergies
+            Alerts
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1154,7 +1198,15 @@ function DemographicsTab({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <Card tone="raised">
           <CardHeader>
-            <CardTitle className="text-base">Insurance</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">Insurance</CardTitle>
+              <Link
+                href={`/clinic/patients/${patient.id}/demographics/insurance`}
+                className="text-[11px] px-2 py-0.5 rounded-md border border-border text-accent hover:bg-accent-soft transition-colors"
+              >
+                Open ↗
+              </Link>
+            </div>
             <CardDescription>Coverage information</CardDescription>
           </CardHeader>
           <CardContent>
@@ -1182,41 +1234,71 @@ function DemographicsTab({
         initialPSH={psh}
       />
 
-      <MedicationsManager
+      {/* EMR-852: Current Medications merged into the chart with class
+          bubbles, click/right-click actions, scroll, and a pop-out that
+          embeds the full medication manager. */}
+      <CurrentMedicationsCard
         patientId={patient.id}
         patientName={`${patient.firstName} ${patient.lastName}`}
-        patientDOB={patient.dateOfBirth}
+        patientDOB={
+          patient.dateOfBirth ? new Date(patient.dateOfBirth).toISOString() : null
+        }
         medications={medications}
+        moduleFlags={moduleFlags}
       />
 
 
-      {/* Clinical notes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Presenting Concerns</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-text-muted leading-relaxed">
-              {patient.presentingConcerns || "Not yet documented."}
+      {/* EMR-854: Presenting Concerns + Treatment Goals merged into a
+          Clinical Decision Support card; Treatment Goals is AI-driven
+          ("Cindy suggests"). */}
+      <Card tone="raised" className="border-l-4 border-l-accent">
+        <CardHeader>
+          <CardTitle className="text-base">Clinical Decision Support</CardTitle>
+          <CardDescription>Care-plan concerns &amp; goals</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-1">
+              Presenting Concerns
             </p>
-          </CardContent>
-        </Card>
-
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Treatment Goals</CardTitle>
-          </CardHeader>
-          <CardContent>
             <p className="text-sm text-text-muted leading-relaxed">
-              {patient.treatmentGoals || "Not yet documented."}
+              {patient.presentingConcerns ||
+                "Repeat / acute issues, recent medication changes, and pending specialist appointments surface here."}
             </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-text-subtle mb-1.5">
+              Treatment Goals
+            </p>
+            <CindySays
+              analysis={{
+                voice: "suggests",
+                prefix: CINDY_PREFIX.suggests,
+                bullets: patient.treatmentGoals
+                  ? [patient.treatmentGoals]
+                  : [
+                      "Confirm the maintenance regimen is meeting the patient's primary symptom goal before escalating dose.",
+                      "Track the patient-reported outcome weekly to verify the plan trends the right way.",
+                    ],
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* USPSTF preventive screenings due */}
-      <ScreeningReminders age={age} sex={typeof sex === "string" ? sex : null} />
+      {/* EMR-855: colour-coded preventative screenings (green up-to-date /
+          red due) with USPSTF search, drill-in result popups, and RPM/CCM
+          device categories. Sits below Insurance + Current Medications. */}
+      <ScreeningsPanel
+        patientId={patient.id}
+        screenings={dueScreenings(age, typeof sex === "string" ? sex : null).map((s) => ({
+          id: s.id,
+          label: s.label,
+          emoji: s.emoji,
+          grade: s.grade,
+          frequency: s.frequency,
+        }))}
+      />
 
       {/* Something special about this patient */}
       {uniqueThing && (
