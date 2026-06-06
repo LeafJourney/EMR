@@ -1,11 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
 
@@ -323,46 +329,74 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
                 </p>
               ) : (
                 day.appointments.map((appt) => (
-                  <div
-                    key={appt.id}
-                    className="rounded-lg border border-border/60 bg-surface p-2.5 hover:border-accent/40 transition-colors"
-                  >
-                    <div className="flex items-start gap-2">
-                      <Avatar
-                        firstName={appt.patient.firstName}
-                        lastName={appt.patient.lastName}
-                        size="sm"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-text truncate">
-                          {appt.patient.firstName} {appt.patient.lastName}
-                        </p>
-                        <p className="text-[10px] text-text-subtle tabular-nums">
-                          {formatTime(new Date(appt.startAt))}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 mt-2 flex-wrap">
-                      <Badge
-                        tone={MODALITY_TONE[appt.modality] ?? "neutral"}
-                        className="text-[9px]"
-                      >
-                        {MODALITY_LABEL[appt.modality] ?? appt.modality}
-                      </Badge>
-                      <Badge
-                        tone={STATUS_TONE[appt.status] ?? "neutral"}
-                        className="text-[9px]"
-                      >
-                        {appt.status}
-                      </Badge>
-                    </div>
-                  </div>
+                  <AppointmentCard key={appt.id} appt={appt} />
                 ))
               )}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-927 — Appointment card with a right-click context menu. The "Schedule"
+// item navigates to /clinic/schedule?patientId=<id> so the operator lands on
+// the clinic scheduler scoped to that patient. Reuses the shared
+// `useContextMenu` hook already used by the patients roster.
+// ---------------------------------------------------------------------------
+
+function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
+  const router = useRouter();
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      label: `Schedule ${appt.patient.firstName} ${appt.patient.lastName}`,
+      icon: ContextMenuIcons.Calendar,
+      onSelect: (close) => {
+        router.push(`/clinic/schedule?patientId=${appt.patient.id}`);
+        close();
+      },
+    },
+  ];
+  const { triggerProps, menu } = useContextMenu(menuItems);
+
+  return (
+    <div
+      {...triggerProps}
+      className="rounded-lg border border-border/60 bg-surface p-2.5 hover:border-accent/40 transition-colors"
+    >
+      <div className="flex items-start gap-2">
+        <Avatar
+          firstName={appt.patient.firstName}
+          lastName={appt.patient.lastName}
+          size="sm"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-text truncate">
+            {appt.patient.firstName} {appt.patient.lastName}
+          </p>
+          <p className="text-[10px] text-text-subtle tabular-nums">
+            {formatTime(new Date(appt.startAt))}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 mt-2 flex-wrap">
+        <Badge
+          tone={MODALITY_TONE[appt.modality] ?? "neutral"}
+          className="text-[9px]"
+        >
+          {MODALITY_LABEL[appt.modality] ?? appt.modality}
+        </Badge>
+        <Badge
+          tone={STATUS_TONE[appt.status] ?? "neutral"}
+          className="text-[9px]"
+        >
+          {appt.status}
+        </Badge>
+      </div>
+      {menu}
     </div>
   );
 }

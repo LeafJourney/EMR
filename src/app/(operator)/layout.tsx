@@ -142,7 +142,7 @@ export default async function OperatorLayout({
       icon: "dollar",
       items: [
         { label: "Overview", href: "/ops/billing" },
-        { label: "Scrub", href: "/ops/scrub" },
+        { label: "Scrub and Auths", href: "/ops/scrub" },
         { label: "Denials", href: "/ops/denials", badge: denialsBadge },
         { label: "Aging", href: "/ops/aging", badge: agingBadge },
         { label: "Eligibility", href: "/ops/eligibility" },
