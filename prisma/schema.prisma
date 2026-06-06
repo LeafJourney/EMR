@@ -4327,7 +4327,15 @@ model PracticeConfiguration {
   physicianShellTemplateId  String?
   patientShellTemplateId    String?
   migrationProfileId        String?
+  // EMR-409 — pointer to the practice's regulatory profile. Kept alongside the
+  // open `regulatoryFlags` JSON: the id binds the config to a versioned
+  // RegulatoryProfile record, the flags carry inline overrides.
+  regulatoryProfileId       String?
   regulatoryFlags           Json                        @default("{}")
+  // EMR-418 — wizard resume pointer. The 15-step onboarding controller persists
+  // the step the admin last completed so a draft can be resumed where it was
+  // left off. Null on a fresh draft; never set once published.
+  currentStep               Int?
   status                    PracticeConfigurationStatus @default(draft)
   version                   Int                         @default(1)
   publishedAt               DateTime?
@@ -4337,6 +4345,13 @@ model PracticeConfiguration {
 
   @@index([practiceId, status])
   @@index([organizationId])
+  // EMR-409 — the controller dashboard lists recently-touched configs by
+  // status (e.g. "drafts in progress"); this composite covers that sort.
+  @@index([status, updatedAt])
+  // EMR-436 — at most one published config per practice. Enforced in app code
+  // inside the publish transaction AND, defense-in-depth, by a partial unique
+  // index added in the accompanying migration (Prisma can't express a WHERE
+  // predicate on @@unique, so the partial index lives in migration.sql).
 }
 
 model PracticeConfigurationVersion {
@@ -5481,4 +5496,274 @@ model SupplyOrderAuditEntry {
   actorUser User?       @relation("SupplyOrderAuditActor", fields: [actorUserId], references: [id])
 
   @@index([orderId, createdAt])
+}
+
+// --------------------------------------------------------------
+// EMR-974 — Agent Fleet per-agent enable/disable (persisted)
+// --------------------------------------------------------------
+//
+// The mission-control "Agent Fleet" tab lets provider/staff turn any AI agent
+// on or off for their org. Before this model the toggle lived only in browser
+// localStorage (see ops/mission-control client) — ephemeral and not honored by
+// the orchestration runner. This table is the durable per-org/per-agent flag.
+//
+// Resolution semantics (see src/lib/db/agent-settings.ts): the ABSENCE of a row
+// means "enabled" (agents ship on by default). A row with `enabled = false`
+// disables that agent for the org. The orchestration runner is expected to skip
+// a disabled agent gracefully rather than error — preserving harness integrity.
+// Wiring the runner to honor this flag lives in src/lib/orchestration (separate
+// track); this model + the accessors + the API are the persistence/contract layer.
+//
+// Bare scalar FKs (no @relation back-refs) to match PracticeConfiguration /
+// ControllerAuditLog and keep the change isolated from the Organization model.
+model AgentSetting {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Stable agent identifier as registered in src/lib/agents (e.g. "intake",
+  /// "supplyReorderAgent"). Free-form so new agents need no enum migration.
+  agentName      String
+  enabled        Boolean  @default(true)
+  /// User who last flipped the toggle (for the audit trail / "changed by").
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, agentName])
+  @@index([organizationId])
+}
+
+// --------------------------------------------------------------
+// EMR-960 — Owner default approve/reject decisions per workflow / job type
+// --------------------------------------------------------------
+
+enum ApprovalDecisionScope {
+  agent
+  workflow
+}
+
+enum ApprovalDecision {
+  approve
+  reject
+}
+
+// A persisted rule that tells the approval gate what to do with matching jobs
+// instead of parking them in the Needs-Approval queue. Owners mark a workflow
+// or job type as defaulted-approve or defaulted-reject; the runner applies the
+// decision automatically (with a per-job audit entry). Disabled rows are kept
+// for history without taking effect. Precedence (workflow over agent) lives in
+// src/lib/db/approval-defaults-logic.ts. Runner integration is a separate track.
+model DefaultApprovalDecision {
+  id             String                @id @default(cuid())
+  organizationId String
+  scopeType      ApprovalDecisionScope
+  /// The agent name or workflow name this rule matches (per `scopeType`).
+  scopeKey       String
+  decision       ApprovalDecision
+  enabled        Boolean               @default(true)
+  /// Optional note shown on auto-decided jobs and written to the job audit.
+  note           String?
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([organizationId, scopeType, scopeKey])
+  @@index([organizationId, enabled])
+}
+
+// --------------------------------------------------------------
+// EMR-625/627/628/629 — Provider Credentialing
+// --------------------------------------------------------------
+
+enum CredentialStatus {
+  pending
+  active
+  flagged
+  suspended
+  expired
+}
+
+enum CredentialVerificationSource {
+  npdb
+  oig_leie
+  sam_exclusions
+  state_license_board
+  dea
+  abms_board_certification
+  education
+  work_history
+}
+
+enum CredentialVerificationStatus {
+  pending
+  verified
+  flagged
+  failed
+}
+
+enum PayerEnrollmentStatus {
+  not_started
+  in_progress
+  submitted
+  approved
+  denied
+  revalidation
+  terminated
+}
+
+enum ProviderExclusionSource {
+  oig_leie
+  sam_exclusions
+  state_license_board
+}
+
+enum ProviderExclusionStatus {
+  active
+  cleared
+  reinstated
+}
+
+// EMR-625 — Provider credentialing profile: the system of record for a
+// provider's credentialing identity and the rolled-up expiration dates that the
+// re-credentialing scheduler (EMR-627) and continuous monitor (EMR-629) scan.
+// One row per provider. Verification detail lives in CredentialVerification.
+model ProviderCredential {
+  id                   String           @id @default(cuid())
+  organizationId       String
+  /// FK to Provider.id (bare scalar, matching the schema's FK-light convention
+  /// for late-added cross-cutting tables). Unique: one profile per provider.
+  providerId           String           @unique
+  npi                  String?
+  deaNumber            String?
+  deaExpiresAt         DateTime?
+  licenseNumber        String?
+  licenseState         String?
+  licenseExpiresAt     DateTime?
+  malpracticeCarrier   String?
+  malpracticeExpiresAt DateTime?
+  boardCertification   String?
+  boardCertExpiresAt   DateTime?
+  caqhId               String?
+  status               CredentialStatus @default(pending)
+  /// When the current credentialing cycle was completed/approved.
+  credentialedAt       DateTime?
+  /// When the provider is next due for re-credentialing (typically +3y).
+  nextRecredentialAt   DateTime?
+  notes                String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  verifications CredentialVerification[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, nextRecredentialAt])
+}
+
+// EMR-625 — One primary-source verification attempt against one source. Status
+// flips pending → verified/flagged/failed as the source resolves.
+model CredentialVerification {
+  id                   String                       @id @default(cuid())
+  providerCredentialId String
+  source               CredentialVerificationSource
+  status               CredentialVerificationStatus @default(pending)
+  /// Structured source response (license #, expiry, sanction detail, etc.).
+  result               Json?
+  verifiedAt           DateTime?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+
+  credential ProviderCredential @relation(fields: [providerCredentialId], references: [id], onDelete: Cascade)
+
+  @@index([providerCredentialId, source])
+  @@index([status])
+}
+
+// EMR-628 — Enrollment of one provider with one payer. Status tracks the
+// pending → submitted → approved/denied lifecycle plus periodic revalidation.
+model PayerEnrollment {
+  id                String                @id @default(cuid())
+  organizationId    String
+  providerId        String
+  /// Payer identifier — free-form (payer name or external payer id) so this
+  /// works before a Payer master table exists.
+  payerKey          String
+  payerName         String?
+  status            PayerEnrollmentStatus @default(not_started)
+  /// Group/roster membership reference if the provider bills under a group.
+  rosterId          String?
+  effectiveAt       DateTime?
+  submittedAt       DateTime?
+  decidedAt         DateTime?
+  revalidationDueAt DateTime?
+  notes             String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([providerId, payerKey])
+  @@index([organizationId, status])
+}
+
+// EMR-629 — A hit from continuous OIG/SAM/license monitoring. One row per match;
+// `status = active` triggers the lockout/alert workflow until reviewed.
+model ProviderExclusion {
+  id                String                  @id @default(cuid())
+  organizationId    String
+  providerId        String
+  source            ProviderExclusionSource
+  status            ProviderExclusionStatus @default(active)
+  exclusionDate     DateTime?
+  reinstatementDate DateTime?
+  /// Raw match detail from the source for compliance review.
+  details           Json?
+  /// Set when a human resolves the hit (cleared/reinstated).
+  reviewedAt        DateTime?
+  reviewedById      String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([organizationId, status])
+  @@index([providerId, status])
+}
+
+// --------------------------------------------------------------
+// EMR-456 — Migration import job runner (idempotent, resumable)
+// --------------------------------------------------------------
+
+enum MigrationJobStatus {
+  queued
+  running
+  completed_with_errors
+  completed
+  failed
+  cancelled
+}
+
+// One import run for a MigrationProfile. The actual row-by-row execution lives
+// in src/lib/migration (separate track); this row is the durable job ledger the
+// API and admin UI poll. `idempotencyKey` lets a re-enqueue of the same source
+// be a no-op; `rows*` counters drive the progress UI; the job id is the tag
+// stamped on every imported record for traceability/rollback.
+model MigrationJob {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  migrationProfileId String
+  configurationId    String?
+  sourceType         String?
+  status             MigrationJobStatus @default(queued)
+  /// Dedup key (e.g. hash of the source file) — re-enqueue with the same key
+  /// returns the existing job instead of starting a duplicate import.
+  idempotencyKey     String?
+  rowsTotal          Int                @default(0)
+  rowsCompleted      Int                @default(0)
+  rowsFailed         Int                @default(0)
+  /// Terminal error summary when status = failed.
+  error              String?
+  createdById        String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([migrationProfileId, idempotencyKey])
+  @@index([organizationId, status])
+  @@index([migrationProfileId])
 }
