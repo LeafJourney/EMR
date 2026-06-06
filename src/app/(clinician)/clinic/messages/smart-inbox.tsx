@@ -845,6 +845,8 @@ interface ThreadRowProps {
   isSelected: boolean;
   isPinned: boolean;
   childVariants: ReturnType<typeof listStaggerChild>;
+  /** EMR-657 — active meds for the hover tooltip on the patient avatar. */
+  meds: PatientMed[];
   onSelect: () => void;
   onTogglePin: () => void;
   onMarkRead: () => void;
@@ -858,6 +860,7 @@ function ThreadInboxRow({
   isSelected,
   isPinned,
   childVariants,
+  meds,
   onSelect,
   onTogglePin,
   onMarkRead,
@@ -905,6 +908,20 @@ function ThreadInboxRow({
         )}
       >
         <div className="flex items-start gap-3">
+          {/* EMR-657 — avatar with meds tooltip; click navigates to chart */}
+          <MedsTooltip meds={meds}>
+            <Link
+              href={`/clinic/patients/${t.patientId}`}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Open chart for ${t.patientName}`}
+            >
+              <Avatar
+                firstName={t.patientName.split(" ")[0] ?? ""}
+                lastName={t.patientName.split(" ")[1] ?? ""}
+                size="sm"
+              />
+            </Link>
+          </MedsTooltip>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -940,10 +957,15 @@ function ThreadInboxRow({
                     <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .013 2.371c-.125.612-.413 1.27-.978 1.834a.5.5 0 0 1-.707 0L5.95 11.756 1.854 15.85a.5.5 0 1 1-.708-.707L5.243 11.05 2.475 8.28a.5.5 0 0 1 0-.706c.565-.565 1.222-.853 1.834-.978a5.93 5.93 0 0 1 2.372.013l3.134-3.134a2.97 2.97 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z" />
                   </svg>
                 </span>
+                {/* EMR-657 — clicking name opens the patient chart */}
                 <PatientHoverCard patientId={t.patientId}>
-                  <p className="text-sm font-semibold text-text truncate cursor-default">
+                  <Link
+                    href={`/clinic/patients/${t.patientId}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm font-semibold text-text truncate hover:text-accent hover:underline transition-colors"
+                  >
                     {t.patientName}
-                  </p>
+                  </Link>
                 </PatientHoverCard>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -1525,6 +1547,7 @@ export function SmartInboxView({
                       isSelected={isSelected}
                       isPinned={isPinned}
                       childVariants={childVariants}
+                      meds={patientMeds[t.patientId] ?? []}
                       onSelect={() => setSelectedThreadId(t.threadId)}
                       onTogglePin={() => togglePinned(t.threadId)}
                       onMarkRead={() => {
