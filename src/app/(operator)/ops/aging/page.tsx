@@ -9,11 +9,8 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
-import { formatDate } from "@/lib/utils/format";
 import { formatMoney } from "@/lib/domain/billing";
 import {
   ageClaims,
@@ -23,6 +20,8 @@ import {
   type AgingBucket,
 } from "@/lib/billing/aging";
 import { AgingFilters, RECOVERABLE_OPTIONS } from "./aging-filters";
+import { LeafNerdAnalytics, type LeafNerdBucket } from "./leafnerd-analytics";
+import { Worklist, type WorklistRow } from "./worklist";
 
 export const metadata = { title: "Aging Workbench" };
 
@@ -149,10 +148,50 @@ export default async function AgingPage({
     label: BUCKET_LABELS[b],
   }));
 
-  // Build patient lookup
-  const patientMap = Object.fromEntries(
-    claims.map((c) => [c.id, c.patient]),
-  );
+  // Build a lookup of the raw claim (patient + lifecycle dates) keyed by id.
+  // The aging library doesn't carry submittedAt/deniedAt, so the worklist
+  // island pulls those from here to reconstruct the A/R audit timeline.
+  const claimMap = Object.fromEntries(claims.map((c) => [c.id, c]));
+
+  // Serialized worklist rows for the client island (EMR-972 / EMR-976).
+  // No Date objects cross the boundary — everything is numbers / ISO strings.
+  const worklistRows: WorklistRow[] = filtered.map((entry) => {
+    const claim = claimMap[entry.id];
+    const patient = claim?.patient ?? null;
+    return {
+      id: entry.id,
+      ageDays: entry.ageDays,
+      bucket: entry.bucket,
+      bucketColor: BUCKET_COLORS[entry.bucket],
+      balanceCents: entry.balanceCents,
+      insuranceBalanceCents: entry.insuranceBalanceCents,
+      patientBalanceCents: entry.patientBalanceCents,
+      payerName: entry.payerName,
+      status: entry.status,
+      score: recoverabilityScore(entry),
+      serviceDate: entry.serviceDate.toISOString(),
+      submittedAt: claim?.submittedAt ? claim.submittedAt.toISOString() : null,
+      deniedAt: claim?.deniedAt ? claim.deniedAt.toISOString() : null,
+      denialReason: claim?.denialReason ?? null,
+      patient: patient
+        ? {
+            id: patient.id,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+          }
+        : null,
+    };
+  });
+
+  // Serialized bucket totals for the LeafNerd analytics popup (EMR-946).
+  const leafNerdBuckets: LeafNerdBucket[] = BUCKET_ORDER.map((b) => ({
+    key: b,
+    label: BUCKET_LABELS[b],
+    color: BUCKET_COLORS[b],
+    total: totals.byBucket[b].total,
+    insurance: totals.byBucket[b].insurance,
+    patient: totals.byBucket[b].patient,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -200,8 +239,23 @@ export default async function AgingPage({
       <Card tone="raised" className="mb-8">
         <CardHeader>
           <Eyebrow className="mb-1">{FOCUS_TITLES[focus]}</Eyebrow>
-          <CardTitle className="text-base">Aging buckets</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Aging buckets</CardTitle>
+            {/* EMR-946 — feather button opens the LeafNerd analytics popup. */}
+            <LeafNerdAnalytics buckets={leafNerdBuckets} />
+          </div>
           <CardDescription>{FOCUS_DESCRIPTIONS[focus]}</CardDescription>
+          {/* EMR-954 — A/R legend moved up here, beneath the description. */}
+          <div className="flex items-center gap-4 mt-2 text-[11px]">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-accent/60" />
+              <span className="text-text-muted">Insurance A/R</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm bg-[color:var(--warning)]/60" />
+              <span className="text-text-muted">Patient A/R</span>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -264,16 +318,6 @@ export default async function AgingPage({
               );
             })}
           </div>
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border/60 text-[11px]">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm bg-accent/60" />
-              <span className="text-text-muted">Insurance A/R</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm bg-[color:var(--warning)]/60" />
-              <span className="text-text-muted">Patient A/R</span>
-            </div>
-          </div>
         </CardContent>
       </Card>
 
@@ -290,79 +334,14 @@ export default async function AgingPage({
         <Eyebrow>Worklist {activeDays && `· ${BUCKET_LABELS[activeDays]}`}</Eyebrow>
       </div>
 
-      {filtered.length === 0 ? (
+      {worklistRows.length === 0 ? (
         <EmptyState
           title="Nothing in this bucket"
           description="A clean A/R is the goal. Pick a different filter or revisit later."
         />
       ) : (
-        <div className="space-y-2">
-          {filtered.map((entry) => {
-            const patient = patientMap[entry.id];
-            const score = recoverabilityScore(entry);
-            return (
-              <Card key={entry.id} tone="raised">
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-4">
-                    {patient && (
-                      <Avatar
-                        firstName={patient.firstName}
-                        lastName={patient.lastName}
-                        size="sm"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        {patient && (
-                          <Link
-                            href={`/clinic/patients/${patient.id}/billing`}
-                            className="text-sm font-medium text-text hover:text-accent transition-colors"
-                          >
-                            {patient.firstName} {patient.lastName}
-                          </Link>
-                        )}
-                        <span
-                          className="inline-block h-1.5 w-1.5 rounded-full"
-                          style={{ backgroundColor: BUCKET_COLORS[entry.bucket] }}
-                        />
-                        <span className="text-[11px] text-text-subtle">
-                          {entry.ageDays}d · {entry.payerName ?? "Self-pay"}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-text-subtle">
-                        DOS {formatDate(entry.serviceDate)} ·{" "}
-                        <span className="capitalize">{entry.status}</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      {/* Insurance vs patient breakdown */}
-                      <div className="text-right">
-                        {entry.insuranceBalanceCents > 0 && (
-                          <p className="text-xs text-accent tabular-nums">
-                            Ins: {formatMoney(entry.insuranceBalanceCents)}
-                          </p>
-                        )}
-                        {entry.patientBalanceCents > 0 && (
-                          <p className="text-xs text-[color:var(--warning)] tabular-nums">
-                            Pt: {formatMoney(entry.patientBalanceCents)}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right w-24">
-                        <p className="font-display text-base text-text tabular-nums">
-                          {formatMoney(entry.balanceCents)}
-                        </p>
-                        <p className="text-[10px] text-text-subtle">
-                          {score}% recoverable
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        /* EMR-972 (restyled boxes) + EMR-976 (expandable audit timeline) */
+        <Worklist rows={worklistRows} />
       )}
     </PageShell>
   );

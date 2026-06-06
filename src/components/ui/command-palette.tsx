@@ -170,7 +170,7 @@ export const OPERATOR_COMMANDS: CommandDef[] = [
   { id: "o-command", label: "Command Center (clinic)", icon: "◉", href: "/clinic/command", group: "Navigate", roles: ["operator"], keywords: ["bridge", "clinic"] },
 
   { id: "o-billing", label: "Billing hub", icon: "$", href: "/ops/billing", group: "Billing", roles: ["operator"], keywords: ["billing", "rcm"] },
-  { id: "o-scrub", label: "Scrub claims", icon: "$", href: "/ops/scrub", group: "Billing", roles: ["operator"], keywords: ["scrub", "claims", "clean"] },
+  { id: "o-scrub", label: "Scrub and Auths", icon: "$", href: "/ops/scrub", group: "Billing", roles: ["operator"], keywords: ["scrub", "claims", "clean", "auth", "authorization", "prior auth"] },
   { id: "o-denials", label: "Work denials", icon: "$", href: "/ops/denials", group: "Billing", roles: ["operator"], keywords: ["denials", "deny", "work"] },
   { id: "o-aging", label: "Aging buckets", icon: "$", href: "/ops/aging", group: "Billing", roles: ["operator"], keywords: ["aging", "ar", "receivable"] },
   { id: "o-billing-agents", label: "Billing agents", icon: "$", href: "/ops/billing-agents", group: "Billing", roles: ["operator"], keywords: ["agents", "fleet", "rcm"] },

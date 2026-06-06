@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils/cn";
 import { formatDate, formatMoney } from "@/lib/utils/format";
+import { DenialActionForm } from "./denial-action-form";
 
 // ───────────────────────────────────────── Serialized row shapes
 
@@ -885,6 +886,12 @@ function DenialDetail({ claim }: { claim: SerializedClaim }) {
           ))}
         </ol>
       )}
+
+      {/* EMR-980 — Take action on this denied claim */}
+      <DenialActionForm
+        claimId={claim.id}
+        patientName={`${claim.patient.firstName} ${claim.patient.lastName}`}
+      />
     </div>
   );
 }
