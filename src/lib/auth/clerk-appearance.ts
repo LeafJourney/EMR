@@ -1,4 +1,13 @@
-import type { Appearance } from "@clerk/types";
+export type Appearance = {
+  variables?: Record<string, string | number>;
+  elements?: Record<string, string>;
+  layout?: {
+    socialButtonsPlacement?: "top" | "bottom";
+    socialButtonsVariant?: "blockButton" | "iconButton";
+    logoPlacement?: "inside" | "outside" | "none";
+    unsafe_disableDevelopmentModeWarnings?: boolean;
+  };
+};
 
 /**
  * Brand the Clerk UI to the Leafmart design system.
@@ -22,10 +31,10 @@ import type { Appearance } from "@clerk/types";
  */
 
 const variables: NonNullable<Appearance["variables"]> = {
-  colorPrimary: "#2E5A44",
-  colorDanger: "#B3261E",
-  colorSuccess: "#2E5A44",
-  borderRadius: "0.625rem",
+  colorPrimary: "var(--accent)",
+  colorDanger: "var(--danger)",
+  colorSuccess: "var(--success)",
+  borderRadius: "0.75rem",
   fontFamily: "var(--font-sans), Inter, system-ui, sans-serif",
   fontFamilyButtons: "var(--font-sans), Inter, system-ui, sans-serif",
   fontSize: "0.9375rem",
@@ -36,43 +45,43 @@ const variables: NonNullable<Appearance["variables"]> = {
 // mode automatically.
 const sharedElements: NonNullable<Appearance["elements"]> = {
   socialButtonsBlockButton:
-    "border border-border bg-surface hover:bg-bg text-text rounded-lg h-11 font-medium normal-case transition-colors",
+    "border border-border bg-surface/60 hover:bg-bg-deep text-text rounded-xl h-11 font-medium normal-case transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm",
   socialButtonsBlockButtonText: "text-text font-medium",
 
   dividerLine: "bg-border",
-  dividerText: "text-text-subtle text-xs uppercase tracking-wide",
+  dividerText: "text-text-subtle text-xs uppercase tracking-wide font-medium",
 
-  formFieldLabel: "text-text-muted text-sm font-medium",
+  formFieldLabel: "text-text-muted text-xs font-semibold uppercase tracking-wider mb-1.5",
   formFieldInput:
-    "bg-bg border border-border text-text rounded-lg h-11 px-3 placeholder:text-text-subtle focus:border-accent focus:ring-2 focus:ring-accent/20 focus:outline-none transition-colors",
+    "bg-bg/40 border border-border text-text rounded-xl h-11 px-3.5 placeholder:text-text-subtle focus:border-accent focus:ring-1 focus:ring-accent/20 focus:bg-surface focus:outline-none transition-all duration-200",
   formFieldInputShowPasswordButton: "text-text-muted hover:text-text",
-  formFieldErrorText: "text-danger text-sm",
-  formFieldSuccessText: "text-success text-sm",
+  formFieldErrorText: "text-danger text-sm mt-1",
+  formFieldSuccessText: "text-success text-sm mt-1",
 
   formButtonPrimary:
-    "bg-accent hover:bg-accent-hover text-accent-ink rounded-lg h-11 font-semibold normal-case text-sm shadow-sm transition-colors",
-  formButtonReset: "text-text-muted hover:text-text normal-case",
+    "bg-accent hover:bg-accent-hover text-accent-ink rounded-xl h-11 font-semibold normal-case text-sm shadow-sm hover:shadow transition-all duration-200 active:scale-[0.98]",
+  formButtonReset: "text-text-muted hover:text-text normal-case transition-colors",
 
-  otpCodeFieldInput: "border-border text-text rounded-lg",
-  formResendCodeLink: "text-accent hover:text-accent-hover font-medium",
+  otpCodeFieldInput: "border-border text-text rounded-xl focus:border-accent focus:ring-1 focus:ring-accent/20",
+  formResendCodeLink: "text-accent hover:text-accent-hover font-semibold transition-colors",
 
-  identityPreview: "bg-surface border border-border rounded-lg",
-  identityPreviewText: "text-text",
-  identityPreviewEditButton: "text-accent hover:text-accent-hover",
+  identityPreview: "bg-surface border border-border rounded-xl px-3 py-2",
+  identityPreviewText: "text-text font-medium text-xs",
+  identityPreviewEditButton: "text-accent hover:text-accent-hover font-semibold transition-colors",
 
-  footerActionText: "text-text-muted text-sm",
-  footerActionLink: "text-accent hover:text-accent-hover font-semibold",
+  footerActionText: "text-text-muted text-xs",
+  footerActionLink: "text-accent hover:text-accent-hover font-semibold transition-colors",
 
   alertText: "text-text",
   spinner: "text-accent",
 
   // Account widgets (UserButton / UserProfile) inherit the same palette.
-  userButtonAvatarBox: "ring-1 ring-border",
+  userButtonAvatarBox: "ring-1 ring-border shadow-sm hover:ring-accent transition-all duration-200",
   userButtonPopoverCard:
-    "bg-surface-raised border border-border shadow-lg rounded-xl",
-  userButtonPopoverActionButton: "text-text hover:bg-bg",
+    "bg-surface-raised border border-border shadow-xl rounded-2xl p-2",
+  userButtonPopoverActionButton: "text-text hover:bg-bg-deep rounded-lg transition-colors py-2 px-3",
   avatarBox: "rounded-full",
-  badge: "bg-accent-soft text-accent-strong",
+  badge: "bg-accent-soft text-accent border border-accent/15",
 };
 
 export const clerkBaseAppearance: Appearance = {
