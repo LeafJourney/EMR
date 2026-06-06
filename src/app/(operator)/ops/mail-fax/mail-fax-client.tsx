@@ -2,22 +2,26 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { 
-  Send, 
-  Trash2, 
-  Plus, 
-  Check, 
-  FileText, 
-  FileCheck, 
-  AlertTriangle, 
-  FolderOpen, 
-  RotateCcw, 
-  X, 
-  Upload, 
-  Eye, 
+import {
+  Send,
+  Trash2,
+  Plus,
+  Check,
+  FileText,
+  AlertTriangle,
+  RotateCcw,
+  X,
+  Upload,
+  Eye,
   EyeOff,
   ChevronRight,
-  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
+  Paperclip,
+  Pencil,
+  CheckCircle2,
+  ScanLine,
   ExternalLink
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -27,14 +31,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
-import { 
-  crossCheckCoverage, 
-  summarizeCrossCheck, 
-  type CoverageOnFile, 
-  type CrossCheckResult, 
-  type DocumentSource, 
-  type DocumentType 
+import {
+  crossCheckCoverage,
+  summarizeCrossCheck,
+  type CoverageOnFile,
+  type CrossCheckResult,
+  type DocumentSource,
+  type DocumentType
 } from "@/lib/billing/mail-fax-ocr";
+import { KAISER_SAMPLE_CARD } from "./sample-docs";
 
 // ---------------------------------------------------------------------------
 // Prop interfaces
@@ -54,8 +59,13 @@ interface ScanRow {
   patientMrn: string;
   rawOcr: string;
   coverages: CoverageOnFile[];
+  /** EMR-986: actual scanned file (data-URI / sample URL) for full-size preview. */
+  documentUrl: string;
+  /** EMR-986: file format, drives which preview renderer is used. */
+  documentType: "pdf" | "jpg" | "docx";
 }
 
+// EMR-934: outbox identifier is rendered as "{method} – {docType} – sent {date}, {time}".
 interface OutboxItem {
   id: string;
   sentAt: string;
@@ -63,7 +73,23 @@ interface OutboxItem {
   subject: string;
   status: "sent" | "delivered" | "failed";
   method: "fax" | "email";
+  /** EMR-934: human-readable document kind sent in this transmission. */
+  docType: string;
 }
+
+// EMR-977: chart-document categories a routed inbound document can be filed under.
+const CHART_DOC_CATEGORIES = [
+  "Insurance card",
+  "EOB / remittance",
+  "Denial letter",
+  "Prior auth approval",
+  "Lab result",
+  "Imaging report",
+  "Referral",
+  "Consent form",
+  "Correspondence",
+  "Other",
+] as const;
 
 interface DeletedItem {
   id: string;
@@ -71,6 +97,7 @@ interface DeletedItem {
   patientName: string;
   originalName: string;
   rawOcr: string;
+  docType: string;
 }
 
 const SOURCE_LABEL: Record<DocumentSource, string> = {
@@ -87,19 +114,41 @@ const DOC_TYPE_LABEL: Record<DocumentType, string> = {
   unknown: "Unknown",
 };
 
+// EMR-981: exact match = green, mismatches/errors = red, NEW coverage = blue (info).
 function tonForResult(result: CrossCheckResult) {
   if (result.isExactMatch) return "success" as const;
   if (result.mismatches.length > 0) return "danger" as const;
-  if (result.isNewCoverage) return "warning" as const;
+  if (result.isNewCoverage) return "info" as const;
   return "neutral" as const;
 }
 
+// EMR-981: high = green (success), medium = yellow (warning), low = ORANGE.
+// Badge has no orange tone, so low-confidence is rendered as a local <span>
+// (see ConfidenceBadge below) instead of a Badge.
 function tonForConfidence(confidence: CrossCheckResult["confidence"]) {
   return confidence === "high"
     ? ("success" as const)
-    : confidence === "medium"
-      ? ("warning" as const)
-      : ("danger" as const);
+    : ("warning" as const);
+}
+
+// EMR-934: outbox row identifier — "{method} – {docType} – sent {date}, {time}".
+function outboxIdentifier(item: OutboxItem): string {
+  const d = new Date(item.sentAt);
+  const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${item.method.toUpperCase()} – ${item.docType} – sent ${date}, ${time}`;
+}
+
+// EMR-981: confidence chip — Badge for high/medium, local orange span for low.
+function ConfidenceBadge({ confidence }: { confidence: CrossCheckResult["confidence"] }) {
+  if (confidence === "low") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full border tracking-wide bg-orange-100 text-orange-700 border-orange-200">
+        low confidence
+      </span>
+    );
+  }
+  return <Badge tone={tonForConfidence(confidence)}>{confidence} confidence</Badge>;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +163,7 @@ const INITIAL_OUTBOX: OutboxItem[] = [
     subject: "Medical Records Release — Maya Reyes",
     status: "delivered",
     method: "fax",
+    docType: "Medical records release",
   },
   {
     id: "outbound-002",
@@ -122,7 +172,18 @@ const INITIAL_OUTBOX: OutboxItem[] = [
     subject: "Prior Authorization Appeal — Claim #CLM-88710",
     status: "sent",
     method: "email",
-  }
+    docType: "PA appeal",
+  },
+  {
+    // EMR-938: >90 days old — auto-archived, hidden from the main outbox list.
+    id: "outbound-archived-001",
+    sentAt: "2026-01-04T09:00:00Z",
+    recipient: "records@valleyclinic.org",
+    subject: "Chart Summary — Jonas Reiter",
+    status: "delivered",
+    method: "email",
+    docType: "Chart summary",
+  },
 ];
 
 const INITIAL_DELETED: DeletedItem[] = [
@@ -132,7 +193,17 @@ const INITIAL_DELETED: DeletedItem[] = [
     patientName: "John Doe",
     originalName: "Unknown_Document_Scan.pdf",
     rawOcr: "No readable insurance details found in this blurred fax page.",
-  }
+    docType: "Unknown",
+  },
+  {
+    // EMR-948: deleted >30 days ago — outside the recovery window, hidden.
+    id: "scan-deleted-old",
+    deletedAt: "2026-04-20T10:00:00Z",
+    patientName: "Priya Anand",
+    originalName: "Old_Duplicate_Fax.pdf",
+    rawOcr: "Duplicate of an already-filed EOB; removed during cleanup.",
+    docType: "EOB",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -147,38 +218,67 @@ export function MailFaxClient({
   initialScans: ScanRow[];
 }) {
   const [activeTab, setActiveTab] = useState<"inbox" | "outbox">("inbox");
-  
+
+  // EMR-948: full-screen "Deleted items" view toggle (shares live state).
+  const [view, setView] = useState<"main" | "deleted">("main");
+
   // Inbox lists, Outbox lists, Deleted lists
   const [scans, setScans] = useState<ScanRow[]>(initialScans);
   const [outbox, setOutbox] = useState<OutboxItem[]>(INITIAL_OUTBOX);
   const [deletedItems, setDeletedItems] = useState<DeletedItem[]>(INITIAL_DELETED);
-  
+
   // Active Filter based on clickable Stat Cards
   const [selectedFilter, setSelectedFilter] = useState<"all" | "flagged" | "exact" | "low">("all");
-  
-  // OCR expanded row states
+
+  // OCR expanded row states (document preview)
   const [expandedOCRId, setExpandedOCRId] = useState<string | null>(null);
-  
+
+  // EMR-970: per-card collapse. A card id present here is COLLAPSED.
+  const [collapsedCardIds, setCollapsedCardIds] = useState<Set<string>>(new Set());
+
+  // EMR-938: show the small archived-outbox affordance.
+  const [showArchived, setShowArchived] = useState(false);
+
   // Dialog controls
   const [composeOpen, setComposeOpen] = useState(false);
-  const [trashOpen, setTrashOpen] = useState(false);
-  
+
   // Scan Simulation progress
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
-  
+
   // Compose form inputs
   const [recipient, setRecipient] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [method, setMethod] = useState<"fax" | "email">("fax");
+  const [composeDocType, setComposeDocType] = useState("");
+  const [attachmentName, setAttachmentName] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
-  // Map patientName to DB patient ID (e.g. Maya Castillo -> Maya Reyes, or fallback to first patient)
-  const getPatientId = (patientName: string) => {
-    const firstName = patientName.split(" ")[0].toLowerCase();
-    const match = dbPatients.find(p => p.firstName.toLowerCase() === firstName);
-    return match?.id ?? dbPatients[0]?.id ?? "placeholder-id";
+  // EMR-977: Edit/Route modal state.
+  const [editScanId, setEditScanId] = useState<string | null>(null);
+  const [editPatientQuery, setEditPatientQuery] = useState("");
+  const [editDob, setEditDob] = useState("");
+  const [editCategory, setEditCategory] = useState<string>(CHART_DOC_CATEGORIES[0]);
+  const [editDocDate, setEditDocDate] = useState("");
+
+  // Resolve a DB patient id from a scanned patient name. Returns null when there
+  // is no CONFIDENT match (EMR-983: do NOT fall back to dbPatients[0]).
+  const resolvePatientId = (patientName: string): string | null => {
+    const parts = patientName.trim().toLowerCase().split(/\s+/);
+    const firstName = parts[0] ?? "";
+    const lastName = parts.length > 1 ? parts[parts.length - 1] : "";
+    // Strongest signal: first + last both match.
+    const full = dbPatients.find(
+      (p) =>
+        p.firstName.toLowerCase() === firstName &&
+        p.lastName.toLowerCase() === lastName
+    );
+    if (full) return full.id;
+    // Fall back to a unique first-name match only.
+    const byFirst = dbPatients.filter((p) => p.firstName.toLowerCase() === firstName);
+    if (byFirst.length === 1) return byFirst[0].id;
+    return null;
   };
 
   // Run cross check over scanned list
@@ -214,6 +314,32 @@ export function MailFaxClient({
     return reviewed;
   }, [reviewed, selectedFilter]);
 
+  // EMR-938: 90-day retention — split outbox into active vs archived.
+  const NOW = Date.now();
+  const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+  const activeOutbox = useMemo(
+    () => outbox.filter((o) => NOW - new Date(o.sentAt).getTime() <= NINETY_DAYS_MS),
+    [outbox, NOW, NINETY_DAYS_MS]
+  );
+  const archivedOutbox = useMemo(
+    () => outbox.filter((o) => NOW - new Date(o.sentAt).getTime() > NINETY_DAYS_MS),
+    [outbox, NOW, NINETY_DAYS_MS]
+  );
+
+  // EMR-948: deleted items within the last 30 days, oldest-first (chronological).
+  const recentDeleted = useMemo(
+    () =>
+      deletedItems
+        .filter((d) => NOW - new Date(d.deletedAt).getTime() <= THIRTY_DAYS_MS)
+        .sort((a, b) => new Date(a.deletedAt).getTime() - new Date(b.deletedAt).getTime()),
+    [deletedItems, NOW, THIRTY_DAYS_MS]
+  );
+
+  // EMR-934 / EMR-970: short document-kind label derived from the cross-check.
+  const docTypeLabel = (result: CrossCheckResult) => DOC_TYPE_LABEL[result.documentType];
+
   // Handle Scanning Simulation
   const handleScanSimulation = () => {
     setScanning(true);
@@ -238,7 +364,9 @@ export function MailFaxClient({
                 memberId: "K99881100",
                 groupNumber: "CA-992"
               }
-            ]
+            ],
+            documentUrl: KAISER_SAMPLE_CARD,
+            documentType: "jpg",
           };
           setScans((prevScans) => [newRecord, ...prevScans]);
           triggerToast("Document upload scanned successfully!");
@@ -249,20 +377,95 @@ export function MailFaxClient({
     }, 300);
   };
 
+  // EMR-948: real file-input fallback for the Scan action. Reads the chosen file
+  // as a data-URI so the actual document renders in the preview (no upload).
+  const handleScanFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+      const documentType: ScanRow["documentType"] =
+        ext === "pdf" ? "pdf" : ext === "docx" ? "docx" : "jpg";
+      const newRecord: ScanRow = {
+        id: `scan-${Date.now()}`,
+        receivedAt: new Date().toISOString(),
+        source: "portal-upload",
+        patientName: "Unmatched Patient",
+        patientMrn: "MLN-NEW",
+        rawOcr: `Uploaded file: ${file.name}\n(Awaiting OCR — no text extracted yet.)`,
+        coverages: [],
+        documentUrl: dataUrl,
+        documentType,
+      };
+      setScans((prev) => [newRecord, ...prev]);
+      triggerToast(`Scanned "${file.name}" into the inbox.`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // EMR-977: Approve = optimistically file the doc into the chart, remove from inbox.
+  const handleApprove = (scan: ScanRow, result: CrossCheckResult) => {
+    setScans((prev) => prev.filter((s) => s.id !== scan.id));
+    const filedDate = new Date(scan.receivedAt).toLocaleDateString();
+    triggerToast(
+      `Filed "${docTypeLabel(result)}" into ${scan.patientName}'s chart (${filedDate}).`
+    );
+  };
+
+  // EMR-977: open the Edit/Route modal pre-filled from the scan.
+  const openEditModal = (scan: ScanRow, result: CrossCheckResult) => {
+    setEditScanId(scan.id);
+    setEditPatientQuery(scan.patientName);
+    setEditDob("");
+    const matchedCategory =
+      CHART_DOC_CATEGORIES.find(
+        (c) => c.toLowerCase() === docTypeLabel(result).toLowerCase()
+      ) ?? CHART_DOC_CATEGORIES[0];
+    setEditCategory(matchedCategory);
+    setEditDocDate(new Date(scan.receivedAt).toISOString().slice(0, 10));
+  };
+
+  // EMR-977: Route = apply the edits optimistically + toast + remove from inbox.
+  const handleRouteEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editScanId) return;
+    const target = scans.find((s) => s.id === editScanId);
+    setScans((prev) => prev.filter((s) => s.id !== editScanId));
+    setEditScanId(null);
+    triggerToast(
+      `Routed ${editPatientQuery || target?.patientName || "document"} → ${editCategory}` +
+        (editDocDate ? ` (${editDocDate})` : "")
+    );
+  };
+
+  // EMR-970: toggle a single card's collapsed state.
+  const toggleCardCollapse = (id: string) => {
+    setCollapsedCardIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Soft Delete Action
-  const handleDeleteScan = (id: string, name: string, ocr: string) => {
-    setScans((prev) => prev.filter((s) => s.id !== id));
+  const handleDeleteScan = (scan: ScanRow, docType: string) => {
+    setScans((prev) => prev.filter((s) => s.id !== scan.id));
     setDeletedItems((prev) => [
       {
-        id,
+        id: scan.id,
         deletedAt: new Date().toISOString(),
-        patientName: name,
-        originalName: `deleted_scan_${id}.pdf`,
-        rawOcr: ocr,
+        patientName: scan.patientName,
+        originalName: `deleted_scan_${scan.id}.${scan.documentType}`,
+        rawOcr: scan.rawOcr,
+        docType,
       },
       ...prev,
     ]);
-    triggerToast(`Document for ${name} moved to Deleted Items.`);
+    triggerToast(`Document for ${scan.patientName} moved to Deleted Items.`);
   };
 
   // Recover soft-deleted items
@@ -275,7 +478,9 @@ export function MailFaxClient({
       patientName: item.patientName,
       patientMrn: "MLN-X9002",
       rawOcr: item.rawOcr,
-      coverages: []
+      coverages: [],
+      documentUrl: KAISER_SAMPLE_CARD,
+      documentType: "jpg",
     };
     setScans((prev) => [recoveredRecord, ...prev]);
     triggerToast(`Document for ${item.patientName} recovered to Inbox.`);
@@ -299,6 +504,7 @@ export function MailFaxClient({
       subject,
       status: "sent",
       method,
+      docType: composeDocType.trim() || "Document",
     };
 
     setOutbox((prev) => [newItem, ...prev]);
@@ -306,6 +512,8 @@ export function MailFaxClient({
     setRecipient("");
     setSubject("");
     setBody("");
+    setComposeDocType("");
+    setAttachmentName(null);
     triggerToast(`Document successfully queue-sent via ${method.toUpperCase()}!`);
   };
 
@@ -324,6 +532,76 @@ export function MailFaxClient({
         </div>
       )}
 
+      {view === "deleted" ? (
+        /* EMR-948: full-screen Deleted items view (last 30 days, chronological). */
+        <div className="space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <button
+                type="button"
+                onClick={() => setView("main")}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-subtle hover:text-text transition-colors mb-2"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to inbox
+              </button>
+              <h1 className="text-2xl font-semibold text-text tracking-tight">Deleted items</h1>
+              <p className="text-sm text-text-subtle mt-1">
+                Soft-deleted documents from the last 30 days. Recover them to the inbox or remove permanently.
+              </p>
+            </div>
+          </div>
+
+          {recentDeleted.length === 0 ? (
+            <EmptyState
+              title="No recently deleted documents"
+              description="Items deleted in the last 30 days appear here."
+            />
+          ) : (
+            <div className="space-y-3">
+              {recentDeleted.map((item) => (
+                <Card key={item.id} tone="raised">
+                  <CardContent className="py-4 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-lg bg-surface-muted flex items-center justify-center shrink-0 border border-border">
+                        <FileText className="w-4 h-4 text-text-subtle" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-text">{item.patientName}</p>
+                        <p className="text-xs text-text-subtle mt-0.5">
+                          {item.docType} · {item.originalName}
+                        </p>
+                        <p className="text-[11px] text-text-subtle mt-0.5 tabular-nums">
+                          Deleted {new Date(item.deletedAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleRecover(item)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-accent-soft text-accent text-xs font-semibold hover:bg-accent-soft/80 transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Recover
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePermanentDelete(item.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-danger text-xs font-semibold hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Permanently delete
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Header and top commands */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -333,26 +611,7 @@ export function MailFaxClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Action buttons */}
-          <button
-            type="button"
-            onClick={handleScanSimulation}
-            disabled={scanning}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text shadow-sm"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            {scanning ? `Scanning (${scanProgress}%)` : "Scan Inbound"}
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setTrashOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text-subtle hover:text-text shadow-sm"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Deleted Items ({deletedItems.length})
-          </button>
-
+          {/* Scan + Deleted items moved above the stat tiles (EMR-948). */}
           <button
             type="button"
             onClick={() => setComposeOpen(true)}
@@ -398,13 +657,48 @@ export function MailFaxClient({
               : "border-transparent text-text-subtle hover:text-text"
           )}
         >
-          Outbox ({outbox.length})
+          Outbox ({activeOutbox.length})
         </button>
       </div>
 
       {/* Tab Panels */}
       {activeTab === "inbox" ? (
         <>
+          {/* EMR-948: Scan (left) + Deleted items (right) directly above the
+              "Flagged for review" stat tile. Scan offers a real file input as
+              well as the existing simulation. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleScanSimulation}
+                disabled={scanning}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text shadow-sm disabled:opacity-60"
+              >
+                <ScanLine className="w-3.5 h-3.5" />
+                {scanning ? `Scanning (${scanProgress}%)` : "Scan"}
+              </button>
+              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text-subtle hover:text-text shadow-sm cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                Upload file…
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.docx"
+                  onChange={handleScanFile}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => setView("deleted")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text-subtle hover:text-text shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Deleted items ({recentDeleted.length})
+            </button>
+          </div>
+
           {/* Stat Filters Row */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <button 
@@ -473,16 +767,30 @@ export function MailFaxClient({
             <div className="space-y-4">
               {filteredScans.map((scan) => {
                 const { result } = scan;
-                const patientId = getPatientId(scan.patientName);
+                // EMR-983/970: reliably matched DB id, or null when not confident.
+                const patientId = resolvePatientId(scan.patientName);
                 const isExpanded = expandedOCRId === scan.id;
+                const isCollapsed = collapsedCardIds.has(scan.id); // EMR-970
+                const typeLabel = docTypeLabel(result);
 
                 return (
                   <Card key={scan.id} tone="raised" className="overflow-hidden">
                     <CardHeader className="pb-3 border-b border-border/50">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                        <div className="min-w-0">
                           <CardTitle className="flex items-center gap-2 text-base">
-                            <span className="font-semibold text-text">{scan.patientName}</span>
+                            {/* EMR-970: patient name links to the chart (reliable id). */}
+                            {patientId ? (
+                              <Link
+                                href={`/clinic/patients/${patientId}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="font-semibold text-text hover:text-accent hover:underline"
+                              >
+                                {scan.patientName}
+                              </Link>
+                            ) : (
+                              <span className="font-semibold text-text">{scan.patientName}</span>
+                            )}
                             {/* EMR-981 Rename MRN bubble to MLN */}
                             <Badge tone="neutral" className="font-mono bg-surface-muted border-border font-semibold">
                               MLN: {scan.patientMrn.replace("MRN-", "")}
@@ -490,20 +798,33 @@ export function MailFaxClient({
                           </CardTitle>
                           <CardDescription className="text-xs text-text-subtle mt-0.5">
                             {SOURCE_LABEL[scan.source]} ·{" "}
-                            {DOC_TYPE_LABEL[result.documentType]} · received{" "}
+                            {typeLabel} · received{" "}
                             {new Date(scan.receivedAt).toLocaleString()}
                           </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge tone={tonForConfidence(result.confidence)}>
-                            {result.confidence} confidence
-                          </Badge>
+                          {/* EMR-981: confidence chip (low = orange span). */}
+                          <ConfidenceBadge confidence={result.confidence} />
                           <Badge tone={tonForResult(result)}>
                             {summarizeCrossCheck(result)}
                           </Badge>
+                          {/* EMR-970: collapse / expand the whole card. */}
                           <button
                             type="button"
-                            onClick={() => handleDeleteScan(scan.id, scan.patientName, scan.rawOcr)}
+                            onClick={() => toggleCardCollapse(scan.id)}
+                            title={isCollapsed ? "Expand" : "Collapse"}
+                            aria-expanded={!isCollapsed}
+                            className="p-1 rounded text-text-subtle hover:text-text hover:bg-surface-muted transition-colors"
+                          >
+                            {isCollapsed ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronUp className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteScan(scan, typeLabel)}
                             title="Move to Deleted Items"
                             className="p-1 rounded text-text-subtle hover:text-danger hover:bg-red-50 transition-colors"
                           >
@@ -512,26 +833,67 @@ export function MailFaxClient({
                         </div>
                       </div>
                     </CardHeader>
-                    
+
+                    {/* EMR-970: collapsed cards hide everything below the header. */}
+                    {!isCollapsed && (
                     <CardContent className="pt-4">
+                      {/* EMR-977: per-document Approve / Edit / Delete actions. */}
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(scan, result)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-ink hover:bg-accent/90 transition-colors text-xs font-semibold shadow-sm"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Approve &amp; file
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(scan, result)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-raised transition-colors text-xs font-semibold text-text"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit / Route
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteScan(scan, typeLabel)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-red-50 hover:text-danger transition-colors text-xs font-semibold text-text-subtle"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </div>
+
                       {/* Grid cards for extracted info */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Extracted block with Add Insurance action */}
+                        {/* Extracted block with Insurance action */}
                         <div className="rounded-xl border border-border bg-surface-muted/50 p-4">
                           <div className="flex items-center justify-between mb-3">
                             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-text-subtle">
                               Extracted Scan Data
                             </p>
-                            {/* EMR-983: Add Insurance button on Extracted section */}
-                            <Link
-                              href={`/clinic/patients/${patientId}`}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
-                            >
-                              <Plus className="w-3 h-3" />
-                              Add Insurance to Chart
-                            </Link>
+                            {/* EMR-983: link to the patient's manual insurance-entry
+                                surface; disabled when there is no confident match. */}
+                            {patientId ? (
+                              <Link
+                                href={`/clinic/patients/${patientId}/billing#insurance`}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+                              >
+                                <Plus className="w-3 h-3" />
+                                Insurance
+                              </Link>
+                            ) : (
+                              <span
+                                title="No confident patient match — open the chart manually to add insurance."
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-text-subtle/60 cursor-not-allowed"
+                              >
+                                <Plus className="w-3 h-3" />
+                                Insurance
+                              </span>
+                            )}
                           </div>
-                          
+
                           <ul className="text-xs space-y-2 tabular-nums">
                             {[
                               { label: "Payer", value: result.extracted.payerName },
@@ -618,42 +980,52 @@ export function MailFaxClient({
 
                         {isExpanded && (
                           <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
-                            {/* Left Pane: High-fidelity document mock */}
-                            <div className="rounded-xl border border-border bg-white p-6 shadow-sm relative min-h-[220px] overflow-hidden flex flex-col justify-between">
-                              {/* Page watermarks/decoration */}
-                              <div className="absolute top-0 right-0 w-24 h-24 bg-surface-muted/20 rounded-bl-full flex items-center justify-center border-l border-b border-border/10">
-                                <span className="font-mono text-[9px] text-text-subtle tracking-wider uppercase rotate-45 select-none opacity-40">SCANNED</span>
+                            {/* EMR-986: Left Pane renders the ACTUAL full-size
+                                document (image / pdf / docx) — not a mock. */}
+                            <div className="rounded-xl border border-border bg-white shadow-sm relative min-h-[260px] overflow-hidden flex flex-col">
+                              <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-surface-muted/50 shrink-0">
+                                <span className="text-[10px] uppercase tracking-wider text-text-subtle font-bold flex items-center gap-1.5">
+                                  <FileText className="w-3.5 h-3.5" />
+                                  Original document · {scan.documentType.toUpperCase()}
+                                </span>
+                                <a
+                                  href={scan.documentUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent hover:underline"
+                                >
+                                  Open <ExternalLink className="w-3 h-3" />
+                                </a>
                               </div>
-                              <div>
-                                <div className="flex items-center justify-between border-b pb-3 mb-4">
-                                  <div>
-                                    <h4 className="font-serif text-sm font-semibold tracking-wider text-slate-800 uppercase">HEALTH INSURANCE CARD</h4>
-                                    <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase">OFFICIAL DOCUMENT</p>
+                              <div className="flex-1 min-h-[220px] bg-slate-50">
+                                {scan.documentType === "jpg" ? (
+                                  <img
+                                    src={scan.documentUrl}
+                                    alt={`Scanned document for ${scan.patientName}`}
+                                    className="w-full h-full max-h-[360px] object-contain"
+                                  />
+                                ) : scan.documentType === "pdf" ? (
+                                  <iframe
+                                    src={scan.documentUrl}
+                                    title={`Scanned document for ${scan.patientName}`}
+                                    className="w-full h-[360px] border-0"
+                                  />
+                                ) : (
+                                  // docx (and any other) — no inline renderer, offer download.
+                                  <div className="h-full flex flex-col items-center justify-center gap-2 p-6 text-center">
+                                    <FileText className="w-8 h-8 text-text-subtle" />
+                                    <p className="text-xs text-text-subtle">
+                                      No inline preview for {scan.documentType.toUpperCase()} files.
+                                    </p>
+                                    <a
+                                      href={scan.documentUrl}
+                                      download
+                                      className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+                                    >
+                                      Download document <ExternalLink className="w-3 h-3" />
+                                    </a>
                                   </div>
-                                  <FileText className="w-6 h-6 text-slate-400" />
-                                </div>
-                                <div className="space-y-2.5 font-mono text-[10px] text-slate-700 leading-normal">
-                                  <div className="flex justify-between border-b border-slate-100 pb-1">
-                                    <span className="text-slate-400 uppercase text-[9px]">Carrier</span>
-                                    <span className="font-semibold">{result.extracted.payerName ?? "AETNA HEALTH"}</span>
-                                  </div>
-                                  <div className="flex justify-between border-b border-slate-100 pb-1">
-                                    <span className="text-slate-400 uppercase text-[9px]">Member ID</span>
-                                    <span className="font-semibold">{result.extracted.memberId ?? "W123456789"}</span>
-                                  </div>
-                                  <div className="flex justify-between border-b border-slate-100 pb-1">
-                                    <span className="text-slate-400 uppercase text-[9px]">Group #</span>
-                                    <span className="font-semibold">{result.extracted.groupNumber ?? "0042-ABC"}</span>
-                                  </div>
-                                  <div className="flex justify-between border-b border-slate-100 pb-1">
-                                    <span className="text-slate-400 uppercase text-[9px]">Subscriber</span>
-                                    <span className="font-semibold">{scan.patientName}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="border-t pt-3 mt-4 flex items-center justify-between text-[9px] font-mono text-slate-400">
-                                <span>ORIGINAL SCAN: {scan.source.toUpperCase()}</span>
-                                <span>REF: {scan.id}</span>
+                                )}
                               </div>
                             </div>
 
@@ -671,6 +1043,7 @@ export function MailFaxClient({
                         )}
                       </div>
                     </CardContent>
+                    )}
                   </Card>
                 );
               })}
@@ -682,17 +1055,17 @@ export function MailFaxClient({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text">Chronological Outbound Transmissions</h3>
-            <span className="text-xs text-text-subtle">{outbox.length} messages sent</span>
+            <span className="text-xs text-text-subtle">{activeOutbox.length} messages sent</span>
           </div>
 
-          {outbox.length === 0 ? (
+          {activeOutbox.length === 0 ? (
             <EmptyState
               title="No outbound faxes or emails"
               description="Click 'Compose Outbound' to transmit documents."
             />
           ) : (
             <div className="space-y-3">
-              {outbox.map((item) => (
+              {activeOutbox.map((item) => (
                 <Card key={item.id} className="hover:border-accent/40 transition-colors">
                   <CardContent className="py-4">
                     <div className="flex items-start justify-between gap-4">
@@ -702,18 +1075,19 @@ export function MailFaxClient({
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-text">{item.subject}</p>
-                          <p className="text-xs text-text-subtle mt-0.5">
-                            To: <span className="font-medium text-text">{item.recipient}</span> · via {item.method.toUpperCase()}
+                          {/* EMR-934: "{method} – {docType} – sent {date}, {time}" */}
+                          <p className="text-xs text-text-subtle mt-0.5 tabular-nums">
+                            {outboxIdentifier(item)}
+                          </p>
+                          <p className="text-[11px] text-text-subtle mt-0.5">
+                            To: <span className="font-medium text-text">{item.recipient}</span>
                           </p>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-[10px] text-text-subtle tabular-nums block">
-                          {new Date(item.sentAt).toLocaleString()}
-                        </span>
-                        <Badge 
-                          tone={item.status === "delivered" ? "success" : "info"} 
-                          className="mt-1.5 text-[9px]"
+                        <Badge
+                          tone={item.status === "delivered" ? "success" : "info"}
+                          className="text-[9px]"
                         >
                           {item.status.toUpperCase()}
                         </Badge>
@@ -724,7 +1098,40 @@ export function MailFaxClient({
               ))}
             </div>
           )}
+
+          {/* EMR-938: 90-day retention — archived items hidden behind an affordance. */}
+          {archivedOutbox.length > 0 && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowArchived((s) => !s)}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-subtle hover:text-text transition-colors"
+              >
+                {showArchived ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                Archived ({archivedOutbox.length})
+                <span className="font-normal text-text-subtle">· older than 90 days</span>
+              </button>
+              {showArchived && (
+                <div className="space-y-2 mt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {archivedOutbox.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-border bg-surface-muted/30 px-4 py-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-text truncate">{item.subject}</p>
+                        <p className="text-[11px] text-text-subtle tabular-nums">{outboxIdentifier(item)}</p>
+                      </div>
+                      <Badge tone="neutral" className="text-[9px] shrink-0">ARCHIVED</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
+      )}
+      </>
       )}
 
       {/* COMPOSE MODAL */}
@@ -773,14 +1180,25 @@ export function MailFaxClient({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-text-subtle uppercase">Subject / Description</label>
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. Medical Records Release form"
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text-subtle uppercase">Subject / Description</label>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="e.g. Medical Records Release form"
+                required
+              />
+            </div>
+            {/* EMR-934: document type recorded on the outbox identifier. */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-text-subtle uppercase">Document Type</label>
+              <Input
+                value={composeDocType}
+                onChange={(e) => setComposeDocType(e.target.value)}
+                placeholder="e.g. Records release, PA appeal"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -794,12 +1212,38 @@ export function MailFaxClient({
             />
           </div>
 
+          {/* EMR-938: real file input bound to state (shows the attached filename). */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-text-subtle uppercase block">Attachment File</label>
-            <div className="border border-dashed border-border rounded-lg p-4 text-center text-xs text-text-subtle bg-surface-muted/50 hover:bg-surface-muted transition-colors cursor-pointer flex flex-col items-center gap-1.5">
-              <Upload className="w-4 h-4 text-text-subtle" />
-              <span>Select Medical PDF, EOB, or scan card</span>
-            </div>
+            <label className="border border-dashed border-border rounded-lg p-4 text-center text-xs text-text-subtle bg-surface-muted/50 hover:bg-surface-muted transition-colors cursor-pointer flex flex-col items-center gap-1.5">
+              {attachmentName ? (
+                <>
+                  <Paperclip className="w-4 h-4 text-accent" />
+                  <span className="text-text font-medium break-all">{attachmentName}</span>
+                  <span className="text-[10px] text-text-subtle">Click to replace</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 text-text-subtle" />
+                  <span>Select Medical PDF, EOB, or scan card</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.docx"
+                onChange={(e) => setAttachmentName(e.target.files?.[0]?.name ?? null)}
+                className="sr-only"
+              />
+            </label>
+            {attachmentName && (
+              <button
+                type="button"
+                onClick={() => setAttachmentName(null)}
+                className="text-[11px] text-text-subtle hover:text-danger font-semibold inline-flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Remove attachment
+              </button>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-border">
@@ -810,70 +1254,81 @@ export function MailFaxClient({
             >
               Cancel
             </button>
+            {/* EMR-938: clear Send action. */}
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-lg bg-accent text-accent-ink hover:bg-accent/90 transition-colors text-xs font-semibold"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-accent-ink hover:bg-accent/90 transition-colors text-xs font-semibold"
             >
-              Send Transmission
+              <Send className="w-3.5 h-3.5" />
+              Send
             </button>
           </div>
         </form>
       </ModalShell>
 
-      {/* DELETED ITEMS MODAL */}
+      {/* EMR-977: Edit / Route modal — change patient, category, doc date. */}
       <ModalShell
-        open={trashOpen}
-        onClose={() => setTrashOpen(false)}
-        title="Deleted Items Drawer"
-        description="Items here are temporarily kept for 30 days and can be recovered."
+        open={editScanId !== null}
+        onClose={() => setEditScanId(null)}
+        maxWidth="max-w-md"
+        title="Edit & route document"
+        description="Confirm the patient and file this document into the chart."
       >
-        <div className="px-6 py-5 space-y-3">
-          {deletedItems.length === 0 ? (
-            <p className="text-sm text-text-muted text-center py-6 italic">Deleted items is currently empty.</p>
-          ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {deletedItems.map((item) => (
-                <div key={item.id} className="rounded-lg border border-border bg-surface-muted/30 p-3.5 flex flex-col justify-between gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold text-text">{item.patientName}</p>
-                      <p className="text-[10px] text-text-subtle mt-0.5">{item.originalName}</p>
-                      <span className="text-[9px] text-text-subtle">Deleted: {new Date(item.deletedAt).toLocaleString()}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleRecover(item)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent-soft text-accent text-[10px] font-semibold hover:bg-accent-soft/80 transition-colors"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Recover
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePermanentDelete(item.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 text-danger text-[10px] font-semibold hover:bg-red-100 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                        Purge
-                      </button>
-                    </div>
-                  </div>
-                </div>
+        <form onSubmit={handleRouteEdit} className="space-y-4 px-6 py-5">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-subtle uppercase">Patient name or DOB</label>
+            <Input
+              value={editPatientQuery}
+              onChange={(e) => setEditPatientQuery(e.target.value)}
+              placeholder="Search patient by name"
+            />
+            <Input
+              value={editDob}
+              onChange={(e) => setEditDob(e.target.value)}
+              type="date"
+              className="mt-2"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-subtle uppercase">Chart document category</label>
+            <select
+              value={editCategory}
+              onChange={(e) => setEditCategory(e.target.value)}
+              className="w-full text-sm rounded-md border border-border bg-surface p-2.5 text-text focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              {CHART_DOC_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
               ))}
-            </div>
-          )}
-          
-          <div className="flex justify-end pt-3 border-t border-border">
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-text-subtle uppercase">Document date</label>
+            <Input
+              value={editDocDate}
+              onChange={(e) => setEditDocDate(e.target.value)}
+              type="date"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border">
             <button
               type="button"
-              onClick={() => setTrashOpen(false)}
-              className="px-4 py-1.5 rounded-lg bg-text text-background text-xs font-semibold"
+              onClick={() => setEditScanId(null)}
+              className="px-3 py-1.5 rounded-lg border hover:bg-surface-raised transition-colors text-xs font-semibold"
             >
-              Close
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-accent-ink hover:bg-accent/90 transition-colors text-xs font-semibold"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+              Route
             </button>
           </div>
-        </div>
+        </form>
       </ModalShell>
     </div>
   );

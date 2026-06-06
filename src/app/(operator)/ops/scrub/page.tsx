@@ -2,26 +2,22 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
   scrubClaim,
   countBySeverity,
   isClaimSubmittable,
 } from "@/lib/billing/scrub";
 import { formatMoney } from "@/lib/domain/billing";
+import { listPortalAdapters } from "@/lib/billing/prior-auth-adapters";
 import {
   ScrubWorkbench,
   type SerializedScrubClaim,
   type HistoricalClaim,
+  type TopIssue,
+  type PaEngineOption,
 } from "./scrub-workbench";
 
-export const metadata = { title: "Claim Scrub Workbench" };
+// EMR-944 — page renamed to "Scrub and Auths" (in-scope: header + metadata).
+export const metadata = { title: "Scrub and Auths" };
 
 // ---------------------------------------------------------------------------
 // Page
@@ -95,9 +91,24 @@ export default async function ScrubWorkbenchPage() {
       ruleCounts[i.ruleCode] = (ruleCounts[i.ruleCode] ?? 0) + 1;
     }
   }
-  const topIssues = Object.entries(ruleCounts)
+  // EMR-979 — serialize "top issues this week" for the interactive client
+  // shell. The bubbles become buttons that filter the review list.
+  const topIssues: TopIssue[] = Object.entries(ruleCounts)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
+    .slice(0, 5)
+    .map(([ruleCode, count]) => ({
+      ruleCode,
+      count,
+      label: humanizeRuleCode(ruleCode),
+    }));
+
+  // EMR-952 — engine/plug-in options for the Prior Authorization hub, sourced
+  // from the adapter registry so the 4 new engines auto-appear.
+  const paEngines: PaEngineOption[] = listPortalAdapters().map((a) => ({
+    id: a.id,
+    displayName: a.displayName,
+    supportedPayers: [...a.supportedPayers],
+  }));
 
   // ── EMR-975 — wider historical / chronological set for the search modal.
   // Org-scoped, bounded at 200, across every lifecycle status so staff can
@@ -181,50 +192,23 @@ export default async function ScrubWorkbenchPage() {
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
+      {/* EMR-944 — page renamed to "Scrub and Auths". */}
       <PageHeader
         eyebrow="Practice management"
-        title="Claim scrub workbench"
-        description="Every claim is checked against payer + coding rules. Plain language issues, structured detail, suggested fixes."
+        title="Scrub and Auths"
+        description="Every claim is checked against payer + coding rules. Plain language issues, structured detail, suggested fixes. Submit prior authorizations from one hub."
       />
 
+      {/* EMR-979 — "Top issues this week" now lives inside the client shell so
+          its count bubbles can filter the review list. */}
       <ScrubWorkbench
         scrubbed={serializedScrubbed}
         historical={historical}
         tiles={tiles}
+        topIssues={topIssues}
+        paEngines={paEngines}
         defaultSectionTitle="Claims requiring review"
-      >
-        {/* Top issues — server-rendered, slotted between tiles and the list */}
-        {topIssues.length > 0 && (
-          <Card tone="raised" className="mb-8">
-            <CardHeader>
-              <CardTitle className="text-base">Top issues this week</CardTitle>
-              <CardDescription>
-                Fixing root causes upstream prevents these from coming back.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {topIssues.map(([ruleCode, count]) => (
-                  <div
-                    key={ruleCode}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] text-text-subtle">
-                        {ruleCode}
-                      </span>
-                      <span className="text-sm text-text">
-                        {humanizeRuleCode(ruleCode)}
-                      </span>
-                    </div>
-                    <Badge tone="warning">{count} occurrences</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </ScrubWorkbench>
+      />
     </PageShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useClerk } from "@clerk/nextjs";
+import { useClerk, useAuth } from "@clerk/nextjs";
 import type { Role } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +32,12 @@ import {
 
 const STORAGE_KEY_LAST_ACTIVE = "lj.session.lastActiveAt";
 const STORAGE_KEY_SESSION_START = "lj.session.startedAt";
+// The Clerk session id the stored clocks belong to. Without this, a stale
+// startedAt/lastActiveAt from a PREVIOUS sign-in (or a different user on this
+// browser) bleeds into a fresh login and instantly force-signs-out the new
+// session ("log in → immediately bounced"). We re-stamp both clocks whenever
+// the live session id doesn't match what's stored.
+const STORAGE_KEY_SESSION_ID = "lj.session.id";
 
 // Don't write to localStorage more than once every 2s, even if the user
 // is hammering the mouse. Cheap throttle that keeps the storage event
@@ -85,11 +91,30 @@ function writeNumber(key: string, value: number): void {
   }
 }
 
+function readString(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeString(key: string, value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // no-op (see writeNumber)
+  }
+}
+
 function clearKeys(): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(STORAGE_KEY_LAST_ACTIVE);
     window.localStorage.removeItem(STORAGE_KEY_SESSION_START);
+    window.localStorage.removeItem(STORAGE_KEY_SESSION_ID);
   } catch {
     // no-op
   }
@@ -97,6 +122,7 @@ function clearKeys(): void {
 
 export function IdleTimeoutGuard({ roles }: IdleTimeoutGuardProps) {
   const { signOut } = useClerk();
+  const { sessionId } = useAuth();
   const idleLimitMs = React.useMemo(() => idleLimitForRoles(roles), [roles]);
 
   // lastActivityAt drives the idle clock; sessionStartedAt drives the
@@ -116,21 +142,40 @@ export function IdleTimeoutGuard({ roles }: IdleTimeoutGuardProps) {
   } | null>(null);
   const signingOutRef = React.useRef(false);
 
-  // ── Bootstrapping: pull existing timestamps from storage so reloads
-  // and cross-tab activity carry over. If sessionStartedAt isn't stored
-  // yet we stamp it now — the first authenticated page-load defines the
-  // absolute clock's origin.
+  // ── Bootstrapping, keyed to the live Clerk session.
+  //
+  // Same session id as what's stored (a reload or another tab of the SAME
+  // login) → carry the existing clocks so activity and the absolute origin
+  // survive a refresh. Different/absent session id (a fresh login, or a new
+  // user on this browser) → start BOTH clocks from now and overwrite storage,
+  // so a stale clock from a previous session can never instant-sign-out the
+  // new one. Runs once `sessionId` is known and again if it ever changes.
   React.useEffect(() => {
-    const storedActivity = readNumber(STORAGE_KEY_LAST_ACTIVE);
-    if (storedActivity !== null) lastActivityRef.current = storedActivity;
+    if (!sessionId) return; // wait until Clerk reports the active session
 
-    const storedStart = readNumber(STORAGE_KEY_SESSION_START);
-    if (storedStart !== null) {
-      sessionStartRef.current = storedStart;
-    } else {
-      writeNumber(STORAGE_KEY_SESSION_START, sessionStartRef.current);
+    if (readString(STORAGE_KEY_SESSION_ID) === sessionId) {
+      const storedActivity = readNumber(STORAGE_KEY_LAST_ACTIVE);
+      if (storedActivity !== null) lastActivityRef.current = storedActivity;
+      const storedStart = readNumber(STORAGE_KEY_SESSION_START);
+      if (storedStart !== null) {
+        sessionStartRef.current = storedStart;
+      } else {
+        writeNumber(STORAGE_KEY_SESSION_START, sessionStartRef.current);
+      }
+      return;
     }
-  }, []);
+
+    // Fresh / changed session — reset both clocks to now.
+    const now = nowMs();
+    lastActivityRef.current = now;
+    sessionStartRef.current = now;
+    lastWriteRef.current = now;
+    signingOutRef.current = false;
+    setWarning(null);
+    writeString(STORAGE_KEY_SESSION_ID, sessionId);
+    writeNumber(STORAGE_KEY_SESSION_START, now);
+    writeNumber(STORAGE_KEY_LAST_ACTIVE, now);
+  }, [sessionId]);
 
   const recordActivity = React.useCallback(() => {
     const now = nowMs();

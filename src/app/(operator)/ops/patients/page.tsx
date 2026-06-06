@@ -56,6 +56,8 @@ export default async function OpsPatientsPage({
     updatedAt: p.updatedAt.toISOString(),
     createdAt: p.createdAt.toISOString(),
     intakeProgress: estimateIntakeProgress(p),
+    // EMR-955 — serialize DOB for the compact age label (no Date over the wire).
+    dateOfBirth: p.dateOfBirth ? p.dateOfBirth.toISOString() : null,
   }));
 
   return (

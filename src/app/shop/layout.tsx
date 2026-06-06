@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { StoreCartProvider } from "@/components/store/cart";
+import { CompareTrayProvider, CompareTrayBar } from "@/components/store/compare-tray";
 import { ShopTopBar } from "@/components/store/ShopTopBar";
 import { ShopDepartmentBar } from "@/components/store/ShopDepartmentBar";
 import { SiteFooter } from "@/components/marketing/SiteFooter";
@@ -17,12 +18,16 @@ export const metadata: Metadata = {
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   return (
     <StoreCartProvider>
-      <div className="min-h-screen bg-bg">
-        <ShopTopBar />
-        <ShopDepartmentBar />
-        <main id="main-content">{children}</main>
-        <SiteFooter />
-      </div>
+      <CompareTrayProvider>
+        <div className="min-h-screen bg-bg">
+          <ShopTopBar />
+          <ShopDepartmentBar />
+          <main id="main-content">{children}</main>
+          <SiteFooter />
+          {/* EMR-375 — storefront-wide compare tray (max 3) */}
+          <CompareTrayBar />
+        </div>
+      </CompareTrayProvider>
     </StoreCartProvider>
   );
 }
