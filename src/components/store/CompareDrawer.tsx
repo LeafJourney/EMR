@@ -8,37 +8,12 @@
 // Used on the PDP and at checkout.
 
 import * as React from "react";
-import Link from "next/link";
-import { X, Scale, Check, Minus } from "lucide-react";
+import { X, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StarRating } from "./StarRating";
-import { formatUSD } from "./cart";
+import { CompareTable } from "./CompareTable";
 import type { CompareItem } from "./compare-item";
 
 export type { CompareItem } from "./compare-item";
-
-const ROWS: Array<{ label: string; render: (item: CompareItem) => React.ReactNode }> = [
-  { label: "Price", render: (i) => formatUSD(i.price) },
-  { label: "Rating", render: (i) => <StarRating rating={i.averageRating} reviewCount={i.reviewCount} /> },
-  { label: "Format", render: (i) => i.format },
-  { label: "THC", render: (i) => (i.thcContent != null ? `${i.thcContent} mg/mL` : "—") },
-  { label: "CBD", render: (i) => (i.cbdContent != null ? `${i.cbdContent} mg/mL` : "—") },
-  { label: "Onset", render: (i) => i.onsetTime ?? "—" },
-  { label: "Duration", render: (i) => i.duration ?? "—" },
-  {
-    label: "Beginner friendly",
-    render: (i) => <BoolCell value={i.beginnerFriendly} />,
-  },
-  { label: "Lab verified", render: (i) => <BoolCell value={i.labVerified} /> },
-];
-
-function BoolCell({ value }: { value: boolean }) {
-  return value ? (
-    <Check width={16} height={16} className="text-accent" />
-  ) : (
-    <Minus width={16} height={16} className="text-text-subtle" />
-  );
-}
 
 export function CompareDrawer({
   base,
@@ -101,40 +76,7 @@ export function CompareDrawer({
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
-                <thead>
-                  <tr>
-                    <th className="w-28 p-2 text-left align-bottom" />
-                    {items.map((item, idx) => (
-                      <th key={item.slug} className="min-w-[120px] p-2 text-left align-bottom">
-                        <span className="block text-[11px] uppercase tracking-wide text-text-subtle">
-                          {idx === 0 ? "This item" : item.brand}
-                        </span>
-                        <Link
-                          href={`/shop/products/${item.slug}`}
-                          className="mt-1 block font-medium text-text hover:text-accent"
-                        >
-                          {item.name}
-                        </Link>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {ROWS.map((row) => (
-                    <tr key={row.label} className="border-t border-border/70">
-                      <th className="p-2 text-left text-[12px] font-medium text-text-subtle">{row.label}</th>
-                      {items.map((item) => (
-                        <td key={item.slug} className="p-2 text-text">
-                          {row.render(item)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <CompareTable items={items} />
           </div>
         </div>
       )}

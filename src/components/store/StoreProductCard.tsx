@@ -6,7 +6,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Check, Sparkles } from "lucide-react";
+import { Plus, Check, Sparkles, Scale } from "lucide-react";
 import type { MarketplaceProduct } from "@/lib/marketplace/types";
 import { FORMAT_LABELS } from "@/lib/marketplace/types";
 import { resolveDistributor } from "@/lib/leafmart/distributors";
@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { StarRating } from "./StarRating";
 import { DistributorBadge } from "./DistributorBadge";
 import { useStoreCart, formatUSD } from "./cart";
+import { useCompareTray } from "./compare-tray";
+import { toCompareItem } from "./compare-item";
 
 function Silhouette({ product }: { product: MarketplaceProduct }) {
   const bg = product.bgColor ?? "var(--accent-soft)";
@@ -36,8 +38,12 @@ function Silhouette({ product }: { product: MarketplaceProduct }) {
 
 export function StoreProductCard({ product }: { product: MarketplaceProduct }) {
   const { add } = useStoreCart();
+  const compare = useCompareTray();
   const [added, setAdded] = React.useState(false);
   const distributor = resolveDistributor({ firstPartyOnly: product.clinicianPick });
+
+  const comparing = compare.has(product.slug);
+  const compareBlocked = compare.isFull && !comparing;
 
   const onAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -72,6 +78,22 @@ export function StoreProductCard({ product }: { product: MarketplaceProduct }) {
         <div className="mt-2">
           <DistributorBadge distributor={distributor} />
         </div>
+
+        {/* EMR-375 — add/remove from the compare tray (max 3) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            compare.toggle(toCompareItem(product));
+          }}
+          disabled={compareBlocked}
+          aria-pressed={comparing}
+          title={compareBlocked ? `Compare up to ${compare.max} products` : undefined}
+          className="mt-2 inline-flex items-center gap-1.5 self-start rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent border-border text-text-muted hover:border-border-strong hover:text-text"
+        >
+          {comparing ? <Check width={12} height={12} /> : <Scale width={12} height={12} />}
+          {comparing ? "Comparing" : "Compare"}
+        </button>
 
         <div className="mt-auto flex items-center justify-between gap-2 pt-3">
           <div className="flex items-baseline gap-1.5">
