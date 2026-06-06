@@ -72,6 +72,10 @@ import {
 // UX inline editing — Notion / Linear-style click-to-edit on chart
 // demographics + insurance. See src/components/ui/inline-edit.tsx.
 import { InlineDemographicsCard } from "./inline-demographics-card";
+import { RxTab } from "./rx-tab";
+import { FloatingActionMenu } from "./floating-action-menu";
+import { serializeRegimen, serializeDoseLog } from "./rx-serialize";
+import { resolveModuleFlags } from "@/lib/clinical/module-opt-in";
 
 function cleanMarkdownSummary(md: string): string {
   if (!md) return "";
@@ -554,6 +558,43 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
   const headerIntake = (patient.intakeAnswers ?? {}) as Record<string, any>;
   const headerSex = headerIntake.sex ?? headerIntake.gender ?? "F";
 
+  /* ── Rx tab data (EMR-873..882) ─────────────────────────────
+   * Module gating, serialized regimens/dose-logs, interaction
+   * checks and daily cannabinoid totals — all derived from data
+   * already fetched above. */
+  const moduleFlags = resolveModuleFlags({
+    hasCannabisFormulary: cannabisProducts.length > 0,
+    hasCannabisRegimen: dosingRegimens.length > 0,
+  });
+  const rxRegimens = dosingRegimens.map(serializeRegimen);
+  const rxDoseLogs = recentDoseLogs.map(serializeDoseLog);
+  const rxInteractions = (() => {
+    const medNames = patientMedications.map((m: any) => m.name);
+    const cset = new Set<string>();
+    for (const r of activeRegimens) {
+      const p = (r as any).product;
+      if (p?.thcConcentration > 0) cset.add("THC");
+      if (p?.cbdConcentration > 0) cset.add("CBD");
+      if (p?.cbnConcentration > 0) cset.add("CBN");
+      if (p?.cbgConcentration > 0) cset.add("CBG");
+    }
+    return checkInteractions(medNames, Array.from(cset)).map((i) => ({
+      drug: i.drug,
+      cannabinoid: i.cannabinoid,
+      severity: i.severity,
+      mechanism: i.mechanism,
+      recommendation: i.recommendation,
+    }));
+  })();
+  const rxTotalThc = activeRegimens.reduce(
+    (s: number, r: any) => s + (r.calculatedThcMgPerDay ?? 0),
+    0,
+  );
+  const rxTotalCbd = activeRegimens.reduce(
+    (s: number, r: any) => s + (r.calculatedCbdMgPerDay ?? 0),
+    0,
+  );
+
   return (
     <PageShell maxWidth="max-w-[1280px]">
       <BirthdayBanner isBirthday={isBirthday} firstName={patient.firstName} />
@@ -905,18 +946,28 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         />
       )}
       {tab === "rx" && (
-        <CannabisRxTab
-          regimens={dosingRegimens}
-          doseLogs={recentDoseLogs}
-          products={cannabisProducts}
-          medications={patientMedications}
+        <RxTab
           patientId={params.id}
+          moduleFlags={moduleFlags}
+          regimens={rxRegimens}
+          doseLogs={rxDoseLogs}
+          interactions={rxInteractions}
+          totalThcPerDay={rxTotalThc}
+          totalCbdPerDay={rxTotalCbd}
         />
       )}
       {/* tab === "billing" is intercepted by the redirect at the top of
           the page (EMR-178). The standalone Financial Cockpit owns
           billing rendering. */}
       </ChartFrame>
+
+      {/* EMR-877: floating "+" quick-action menu, fixed bottom-right on
+          every chart tab (Rx / quick note / contact patient). */}
+      <FloatingActionMenu
+        patientId={params.id}
+        patientName={`${patient.firstName} ${patient.lastName}`}
+        patientPhone={patient.phone}
+      />
     </PageShell>
   );
 }

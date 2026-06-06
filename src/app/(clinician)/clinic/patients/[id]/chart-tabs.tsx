@@ -28,7 +28,7 @@ const TABS = [
   { key: "private_notes", label: "Private notes", dot: "bg-danger", group: "Clinical" },
   { key: "labs", label: "Labs", dot: "bg-[color:var(--success)]", group: "Clinical" },
   { key: "images", label: "Images", dot: "bg-[color:var(--info)]", group: "Clinical" },
-  { key: "rx", label: "Cannabis Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
+  { key: "rx", label: "Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
   { key: "records", label: "Records", dot: "bg-accent", group: "Documents" },
   { key: "correspondence", label: "Correspondence", dot: "bg-[color:var(--info)]", group: "Documents" },
   // EMR-178 — Billing tab is a deep-link to the standalone Financial
