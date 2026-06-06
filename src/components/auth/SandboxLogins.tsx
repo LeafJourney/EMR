@@ -33,9 +33,9 @@ const PERSONAS: Persona[] = [
     cardClass: "border-peach-deep/10 hover:border-peach-deep/30 hover:bg-peach/10",
   },
   {
-    name: "Sarah Thompson",
-    role: "Operator / Admin",
-    email: "sarah.thompson@demo.health",
+    name: "Avery Hale",
+    role: "Practice Owner / Operator",
+    email: "owner@demo.health",
     redirect: "/post-sign-in",
     icon: Landmark,
     badgeClass: "bg-rose/20 text-text-soft border-rose-deep/30",
