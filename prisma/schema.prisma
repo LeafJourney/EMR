@@ -654,18 +654,18 @@ model CodingSuggestion {
 }
 
 model VisitCompletion {
-  id              String   @id @default(cuid())
-  noteId          String   @unique
-  organizationId  String
-  patientId       String
-  releasedById    String
-  releasedAt      DateTime @default(now())
-  payload         Json
+  id             String   @id @default(cuid())
+  noteId         String   @unique
+  organizationId String
+  patientId      String
+  releasedById   String
+  releasedAt     DateTime @default(now())
+  payload        Json
 
-  note            Note         @relation(fields: [noteId], references: [id], onDelete: Cascade)
-  releasedBy      User         @relation("VisitCompletionReleaseUser", fields: [releasedById], references: [id])
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  patient         Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  note         Note         @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  releasedBy   User         @relation("VisitCompletionReleaseUser", fields: [releasedById], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([noteId])
   @@index([organizationId])
@@ -904,6 +904,89 @@ model ClearinghouseSubmission {
 
   @@index([claimId, submittedAt])
   @@index([primaryAdjudicationId])
+}
+
+enum ClearinghouseAcknowledgmentType {
+  ack_999
+  ack_277ca
+}
+
+enum ClearinghouseAcknowledgmentStatus {
+  accepted
+  accepted_with_errors
+  rejected
+  pending
+  unknown
+}
+
+model ClearinghouseAcknowledgment {
+  id                 String                            @id @default(cuid())
+  organizationId     String
+  submissionId       String?
+  claimId            String?
+  type               ClearinghouseAcknowledgmentType
+  status             ClearinghouseAcknowledgmentStatus
+  acceptedClaimCount Int                               @default(0)
+  rejectedClaimCount Int                               @default(0)
+  rawPayload         Json?
+  receivedAt         DateTime                          @default(now())
+  createdAt          DateTime                          @default(now())
+
+  @@index([organizationId, receivedAt])
+  @@index([submissionId])
+  @@index([claimId])
+}
+
+enum ClearinghouseClaimStatus {
+  pending
+  accepted
+  rejected
+  paid
+  denied
+  unknown
+}
+
+model ClearinghouseClaimStatusInquiry {
+  id              String                   @id @default(cuid())
+  organizationId  String
+  claimId         String
+  payerName       String
+  status          ClearinghouseClaimStatus @default(pending)
+  requestPayload  Json                     @default("{}")
+  responsePayload Json?
+  requestedAt     DateTime                 @default(now())
+  respondedAt     DateTime?
+  createdAt       DateTime                 @default(now())
+
+  @@index([organizationId, requestedAt])
+  @@index([claimId, requestedAt])
+  @@index([status, requestedAt])
+}
+
+enum EraIngestionStatus {
+  received
+  parsed
+  posted
+  exception
+}
+
+model EraIngestion {
+  id              String             @id @default(cuid())
+  organizationId  String
+  eraFileId       String?
+  payerName       String?
+  status          EraIngestionStatus @default(received)
+  rawPayload      String?
+  parsedPayload   Json?
+  exceptionReason String?
+  receivedAt      DateTime           @default(now())
+  postedAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([organizationId, receivedAt])
+  @@index([eraFileId])
+  @@index([status, receivedAt])
 }
 
 enum AdjudicationClaimStatus {
@@ -1760,8 +1843,8 @@ model Appointment {
   notes      String?
   createdAt  DateTime          @default(now())
 
-  patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  provider Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  provider  Provider?  @relation(fields: [providerId], references: [id], onDelete: SetNull)
   encounter Encounter?
 
   @@index([providerId, startAt])
@@ -4342,16 +4425,16 @@ model PracticeConfiguration {
   publishedBy               String?
   createdAt                 DateTime                    @default(now())
   updatedAt                 DateTime                    @updatedAt
+  // EMR-436 — at most one published config per practice. Enforced in app code
+  // inside the publish transaction AND, defense-in-depth, by a partial unique
+  // index added in the accompanying migration (Prisma can't express a WHERE
+  // predicate on @@unique, so the partial index lives in migration.sql).
 
   @@index([practiceId, status])
   @@index([organizationId])
   // EMR-409 — the controller dashboard lists recently-touched configs by
   // status (e.g. "drafts in progress"); this composite covers that sort.
   @@index([status, updatedAt])
-  // EMR-436 — at most one published config per practice. Enforced in app code
-  // inside the publish transaction AND, defense-in-depth, by a partial unique
-  // index added in the accompanying migration (Prisma can't express a WHERE
-  // predicate on @@unique, so the partial index lives in migration.sql).
 }
 
 model PracticeConfigurationVersion {
@@ -5085,15 +5168,15 @@ model KioskHandoffToken {
 // --------------------------------------------------------------
 
 model KioskLobbySubmission {
-  id             String    @id @default(cuid())
-  patientId      String
-  organizationId String
-  kind           String // "intake" | "consent"
-  payload        Json
-  status         String    @default("pending") // pending | accepted | rejected
+  id               String    @id @default(cuid())
+  patientId        String
+  organizationId   String
+  kind             String // "intake" | "consent"
+  payload          Json
+  status           String    @default("pending") // pending | accepted | rejected
   reviewedByUserId String?
-  reviewedAt     DateTime?
-  createdAt      DateTime  @default(now())
+  reviewedAt       DateTime?
+  createdAt        DateTime  @default(now())
 
   @@index([organizationId, status])
   @@index([patientId, kind])
@@ -5649,8 +5732,8 @@ model ProviderCredential {
   /// When the provider is next due for re-credentialing (typically +3y).
   nextRecredentialAt   DateTime?
   notes                String?
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   verifications CredentialVerification[]
 
