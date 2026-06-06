@@ -65,7 +65,7 @@
 
 generated_at: 2026-06-04
 generated_against: sprint-ln-9
-total_routes: 231
+total_routes: 240
 
 routes:
 
@@ -1597,3 +1597,57 @@ routes:
     owner: marketplace
     review_due: 2026-07-31
     notes: "EMR-002 dispensary shop checkout flow."
+
+  agent-settings:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-974 — Agent Fleet enable/disable API. Org governance required."
+
+  approval-defaults:
+    methods: [GET, POST, DELETE]
+    auth: required
+    owner: platform-security
+    notes: "EMR-960 — owner default approve/reject decisions API. Org governance required."
+
+  credentialing:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-625/627/628/629 — provider credentialing API. Org governance required."
+
+  credentialing/[providerId]:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-625 — single provider credential profile. Org governance required."
+
+  dev/login:
+    methods: [GET]
+    auth: establishes_auth
+    owner: platform-security
+    notes: "Development bypass login. Disabled in production."
+
+  leafnerd/enqueue:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "Leafnerd demo enqueuing agent jobs."
+
+  leafnerd/job-action:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "Governed AgentJob lifecycle endpoint for LeafNerd Agent Workbench."
+
+  migration-jobs:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-456 — migration import job ledger API."
+
+  migration-jobs/[id]:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-456 — single migration job status."
