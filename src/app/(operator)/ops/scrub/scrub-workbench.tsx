@@ -485,6 +485,14 @@ function ClaimRow({
   highlightRule?: string | null;
 }) {
   const { counts, submittable } = claim;
+  // EMR-978 — red badge when a claim nears (or passes) the payer's timely-filing
+  // window. 90-day window as a conservative default; ≤30 days left is urgent.
+  const FILING_WINDOW_DAYS = 90;
+  const daysSinceService = Math.floor(
+    (Date.now() - new Date(claim.serviceDateIso).getTime()) / 86_400_000,
+  );
+  const filingDaysLeft = FILING_WINDOW_DAYS - daysSinceService;
+  const filingUrgent = filingDaysLeft <= 30;
   // EMR-979 — when filtering by root cause, float the matching issue(s) up.
   const issues = highlightRule
     ? claim.issues
@@ -533,6 +541,11 @@ function ClaimRow({
               {formatMoney(claim.billedAmountCents)}
             </p>
             <div className="flex items-center gap-1 mt-1">
+              {filingUrgent && (
+                <Badge tone="danger" className="text-[9px] font-semibold">
+                  {filingDaysLeft <= 0 ? "Filing lapsed" : `Filing: ${filingDaysLeft}d`}
+                </Badge>
+              )}
               {counts.error > 0 && (
                 <Badge tone="danger" className="text-[9px] font-semibold">
                   {counts.error} error
