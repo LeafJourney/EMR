@@ -55,6 +55,9 @@ export type SerializedAppointment = {
   modality: string;
   providerId: string | null;
   patient: { id: string; firstName: string; lastName: string };
+  // EMR-207 — no-show risk (null for already-resolved visits or low risk we don't surface).
+  riskTier: "low" | "medium" | "high" | null;
+  riskProbability: number | null;
 };
 
 export type SerializedProvider = {
@@ -395,9 +398,38 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         >
           {appt.status}
         </Badge>
+        <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
       </div>
       {menu}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-207 — No-show risk pill. Surfaces the predicted no-show probability for
+// medium/high-risk upcoming visits so the front desk knows where to spend an
+// extra reminder. Low risk is intentionally silent to keep the board calm.
+// ---------------------------------------------------------------------------
+
+function NoShowRiskBadge({
+  tier,
+  probability,
+}: {
+  tier: "low" | "medium" | "high" | null;
+  probability: number | null;
+}) {
+  if (tier === null || tier === "low" || probability === null) return null;
+  const pct = Math.round(probability * 100);
+  const tone = tier === "high" ? "danger" : "warning";
+  const label = tier === "high" ? "High no-show risk" : "Elevated no-show risk";
+  return (
+    <Badge
+      tone={tone}
+      className="text-[9px]"
+      title={`${label} — ${pct}% predicted. Consider an extra reminder or live confirm.`}
+    >
+      ⚠ {pct}%
+    </Badge>
   );
 }
 
