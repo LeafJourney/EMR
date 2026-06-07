@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, Children, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Send,
@@ -209,6 +209,59 @@ const INITIAL_DELETED: DeletedItem[] = [
 // ---------------------------------------------------------------------------
 // Client component logic
 // ---------------------------------------------------------------------------
+
+// EMR-970 — resizable document/OCR split pane. Stacks on mobile; on lg+ a
+// draggable divider lets the operator widen either the scan or the OCR text.
+// Takes exactly two children (left = document, right = OCR).
+function OcrSplitView({ children }: { children: ReactNode }) {
+  const panes = Children.toArray(children);
+  const left = panes[0] ?? null;
+  const right = panes[1] ?? null;
+  const [pct, setPct] = useState(50);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  function startDrag() {
+    function move(ev: PointerEvent) {
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const next = ((ev.clientX - rect.left) / rect.width) * 100;
+      setPct(Math.min(78, Math.max(22, next)));
+    }
+    function up() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  return (
+    <div className="mt-3 animate-in fade-in slide-in-from-top-2 duration-200">
+      {/* Mobile: stacked */}
+      <div className="grid grid-cols-1 gap-4 lg:hidden">
+        {left}
+        {right}
+      </div>
+      {/* Desktop: resizable split */}
+      <div ref={containerRef} className="hidden lg:flex items-stretch">
+        <div style={{ width: `${pct}%` }} className="min-w-0">
+          {left}
+        </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Drag to resize document and OCR panes"
+          onPointerDown={startDrag}
+          className="mx-1.5 w-1.5 shrink-0 cursor-col-resize self-stretch rounded-full bg-border hover:bg-accent/60 transition-colors"
+        />
+        <div style={{ width: `${100 - pct}%` }} className="min-w-0">
+          {right}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function MailFaxClient({
   dbPatients,
@@ -1014,7 +1067,7 @@ export function MailFaxClient({
                         </button>
 
                         {isExpanded && (
-                          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <OcrSplitView>
                             {/* EMR-986: Left Pane renders the ACTUAL full-size
                                 document (image / pdf / docx) — not a mock. */}
                             <div className="rounded-xl border border-border bg-white shadow-sm relative min-h-[260px] overflow-hidden flex flex-col">
@@ -1074,7 +1127,7 @@ export function MailFaxClient({
                                 {scan.rawOcr}
                               </pre>
                             </div>
-                          </div>
+                          </OcrSplitView>
                         )}
                       </div>
                     </CardContent>
