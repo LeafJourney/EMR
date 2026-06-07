@@ -33,6 +33,7 @@ export function PracticeInvitePanel({
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [okMsg, setOkMsg] = React.useState<string | null>(null);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,6 +57,14 @@ export function PracticeInvitePanel({
     const res = await revokeInvitation(id);
     if (res.ok) router.refresh();
     else setError(res.message);
+  }
+
+  function copyLink(token: string, id: string) {
+    const url = `${window.location.origin}/invite/accept/${token}`;
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1800);
+    });
   }
 
   return (
@@ -125,13 +134,22 @@ export function PracticeInvitePanel({
                     {new Date(inv.invitedAt).toLocaleDateString()}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => revoke(inv.id)}
-                  className="shrink-0 text-[12px] text-text-muted hover:text-rose-deep transition-colors"
-                >
-                  Revoke
-                </button>
+                <div className="shrink-0 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => copyLink(inv.token, inv.id)}
+                    className="text-[12px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    {copiedId === inv.id ? "Link copied ✓" : "Copy link"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => revoke(inv.id)}
+                    className="text-[12px] text-text-muted hover:text-rose-deep transition-colors"
+                  >
+                    Revoke
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

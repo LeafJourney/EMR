@@ -598,6 +598,7 @@ export interface PracticeInvitation {
   email: string;
   role: string;
   status: string;
+  token: string;
   invitedAt: string;
   expiresAt: string | null;
 }
@@ -618,6 +619,7 @@ export async function loadPracticeInvitations(
         email: true,
         role: true,
         status: true,
+        token: true,
         invitedAt: true,
         expiresAt: true,
       },
@@ -627,6 +629,7 @@ export async function loadPracticeInvitations(
       email: i.email,
       role: i.role,
       status: i.status,
+      token: i.token,
       invitedAt: i.invitedAt.toISOString(),
       expiresAt: i.expiresAt ? i.expiresAt.toISOString() : null,
     }));
