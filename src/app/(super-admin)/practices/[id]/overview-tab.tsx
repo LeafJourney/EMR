@@ -8,9 +8,10 @@ import { money } from "@/lib/ui/format";
 import type { PracticeCardData } from "../types";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
 import { derivePracticeLifecycle } from "../lifecycle";
-import { loadPracticeRoster } from "../loaders";
+import { loadPracticeRoster, loadPracticeInvitations } from "../loaders";
 import { PracticeActivation } from "./practice-activation";
 import { PracticePeoplePanel } from "./practice-people-panel";
+import { PracticeInvitePanel } from "./practice-invite-panel";
 import { PracticeSpecialtyCoverage } from "./practice-specialty-coverage";
 import { PracticeAiReview } from "./practice-ai-review";
 import { PracticeLifecycleActions } from "./practice-lifecycle-actions";
@@ -90,7 +91,10 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
     npi: practice.npi,
     launch: practice.launch,
   });
-  const roster = await loadPracticeRoster(practice.organizationId);
+  const [roster, invitations] = await Promise.all([
+    loadPracticeRoster(practice.organizationId),
+    loadPracticeInvitations(practice.organizationId),
+  ]);
 
   return (
     <div className="grid gap-8">
@@ -99,6 +103,12 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
 
       {/* People & role coverage — who's here, who still needs inviting. */}
       <PracticePeoplePanel roster={roster} />
+
+      {/* Team invitations — create / revoke real pending invites. */}
+      <PracticeInvitePanel
+        organizationId={practice.organizationId}
+        invitations={invitations}
+      />
 
       {/* Specialty-template coverage — what machine this practice is becoming. */}
       <PracticeSpecialtyCoverage practice={practice} />

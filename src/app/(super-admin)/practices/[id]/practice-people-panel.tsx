@@ -51,18 +51,6 @@ function PersonChip({ person }: { person: PracticeStakeholder }) {
   );
 }
 
-function InviteChip({ label }: { label: string }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border text-[12px] text-text-muted px-2.5 py-1"
-      title="Team invitations are coming soon"
-    >
-      {label}
-      <span className="text-[10px] uppercase tracking-wide">soon</span>
-    </span>
-  );
-}
-
 export function PracticePeoplePanel({
   roster,
 }: {
@@ -125,9 +113,6 @@ export function PracticePeoplePanel({
                 ))}
               </ul>
             )}
-            <div className="mt-auto pt-1">
-              <InviteChip label={group.inviteLabel} />
-            </div>
           </div>
         ))}
       </div>

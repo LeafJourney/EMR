@@ -2901,6 +2901,31 @@ model CaregiverInvite {
 }
 
 // --------------------------------------------------------------
+// Team / staff invitations (practice lifecycle)
+// Standalone + additive: plain-string ids (organizationId, invitedById,
+// acceptedByUserId) with NO @relation, so this touches no existing model.
+// --------------------------------------------------------------
+model OrgInvitation {
+  id               String    @id @default(cuid())
+  organizationId   String
+  email            String
+  role             Role
+  status           String    @default("pending") // pending | accepted | revoked | expired
+  token            String    @unique @default(cuid())
+  invitedById      String
+  acceptedByUserId String?
+  invitedAt        DateTime  @default(now())
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([email])
+}
+
+// --------------------------------------------------------------
 // Satisfaction Survey
 // --------------------------------------------------------------
 

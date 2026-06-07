@@ -593,6 +593,50 @@ export async function loadPracticeRoster(
   }));
 }
 
+export interface PracticeInvitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  invitedAt: string;
+  expiresAt: string | null;
+}
+
+/**
+ * Pending team invitations for a practice's organization (OrgInvitation model).
+ * Powers the invite panel — real pending invites, never fabricated.
+ */
+export async function loadPracticeInvitations(
+  organizationId: string,
+): Promise<PracticeInvitation[]> {
+  try {
+    const invites = await prisma.orgInvitation.findMany({
+      where: { organizationId, status: "pending" },
+      orderBy: { invitedAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        invitedAt: true,
+        expiresAt: true,
+      },
+    });
+    return invites.map((i) => ({
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: i.status,
+      invitedAt: i.invitedAt.toISOString(),
+      expiresAt: i.expiresAt ? i.expiresAt.toISOString() : null,
+    }));
+  } catch {
+    // The OrgInvitation table may not be migrated in every environment yet —
+    // the detail page must still render. Soft-fail to an empty list.
+    return [];
+  }
+}
+
 /**
  * Lists every Provider in a practice with the joined User for name/email
  * display. Sorted active-first, then newest. Used by the Providers tab.
