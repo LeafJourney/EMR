@@ -532,6 +532,32 @@ export async function loadPracticeOverview(
 }
 
 /**
+ * Full membership roster for a practice's organization, with the joined User
+ * for name/email. Powers the People & role-coverage panel — unlike the
+ * overview's officeManagers (limited to admin/operator/owner), this returns
+ * EVERY role so coverage gaps (missing owner/admin/provider) are visible.
+ */
+export async function loadPracticeRoster(
+  organizationId: string,
+): Promise<PracticeStakeholder[]> {
+  const memberships = await prisma.membership.findMany({
+    where: { organizationId },
+    select: {
+      userId: true,
+      role: true,
+      user: { select: { firstName: true, lastName: true, email: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return memberships.map((m) => ({
+    userId: m.userId,
+    name: `${m.user.firstName} ${m.user.lastName}`.trim() || m.user.email,
+    email: m.user.email,
+    role: m.role,
+  }));
+}
+
+/**
  * Lists every Provider in a practice with the joined User for name/email
  * display. Sorted active-first, then newest. Used by the Providers tab.
  */

@@ -8,7 +8,9 @@ import { money } from "@/lib/ui/format";
 import type { PracticeCardData } from "../types";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
 import { derivePracticeLifecycle } from "../lifecycle";
+import { loadPracticeRoster } from "../loaders";
 import { PracticeActivation } from "./practice-activation";
+import { PracticePeoplePanel } from "./practice-people-panel";
 
 function formatDollars(cents: number): string {
   return money(cents, { abbreviate: true });
@@ -77,16 +79,20 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function OverviewTab({ practice }: { practice: PracticeCardData }) {
+export async function OverviewTab({ practice }: { practice: PracticeCardData }) {
   const specialtyLabel = humanizeSpecialty(practice.specialty);
   const careModelLabel = humanizeCareModel(practice.careModel);
   const location = [practice.city, practice.state].filter(Boolean).join(", ");
   const lifecycle = derivePracticeLifecycle(practice);
+  const roster = await loadPracticeRoster(practice.organizationId);
 
   return (
     <div className="grid gap-8">
       {/* Activation layer — the gate between creation pipeline and operations. */}
       <PracticeActivation practice={practice} lifecycle={lifecycle} />
+
+      {/* People & role coverage — who's here, who still needs inviting. */}
+      <PracticePeoplePanel roster={roster} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
