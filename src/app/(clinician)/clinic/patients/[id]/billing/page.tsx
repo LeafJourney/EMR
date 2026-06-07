@@ -570,6 +570,12 @@ export default async function PatientBillingPage({ params }: PageProps) {
                       <p className="text-[11px] text-text-subtle">
                         {statement.deliveryMethod}
                       </p>
+                      <Link
+                        href={`/clinic/patients/${params.id}/billing/invoice/${statement.id}`}
+                        className="text-[11px] text-accent hover:text-accent-strong mt-1 inline-block"
+                      >
+                        View invoice →
+                      </Link>
                     </div>
                   </div>
                   {statement.plainLanguageSummary && (
