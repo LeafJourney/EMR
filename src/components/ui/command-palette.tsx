@@ -141,6 +141,8 @@ export const CLINICIAN_COMMANDS: CommandDef[] = [
   { id: "c-go-providers", label: "Providers directory", icon: "☷", href: "/clinic/providers", group: "Navigate", roles: ["clinician"], keywords: ["directory", "colleagues"] },
   { id: "c-go-research", label: "Research feed", icon: "✦", href: "/clinic/research", group: "Navigate", roles: ["clinician"], keywords: ["pubmed", "papers"] },
   { id: "c-go-library", label: "Education library", icon: "❦", href: "/clinic/library", group: "Navigate", roles: ["clinician"], keywords: ["leaflet", "library", "handouts"] },
+  { id: "c-go-followup-cadence", label: "Follow-up cadence", icon: "↻", href: "/clinic/scheduling/follow-up", group: "Navigate", roles: ["clinician"], keywords: ["cadence", "follow up", "interval", "recall", "EMR-208"] },
+  { id: "c-go-slot-recommender", label: "Smart slot recommender", icon: "◷", href: "/clinic/scheduling/recommend", group: "Navigate", roles: ["clinician"], keywords: ["slot", "recommend", "scheduling", "availability", "EMR-209"] },
   { id: "c-go-audit", label: "Open audit trail", icon: "❒", href: "/clinic/audit-trail", group: "Navigate", roles: ["clinician"], keywords: ["history", "log", "audit"] },
 
   // Legacy "Actions" — kept under a tighter set of keywords so they don't drown

@@ -14,7 +14,7 @@
  * and feeds buildReminderPlan() output onto the AgentJob queue.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,25 +30,13 @@ import {
   type ReminderChannel,
 } from "@/lib/scheduling/reminders";
 import type { RiskTier } from "@/lib/scheduling/no-show-model";
+import { saveReminderPrefs } from "./reminder-actions";
 
 const LABEL_CLASS =
   "block text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle mb-1.5";
 const INPUT_CLASS =
   "flex w-full rounded-xl border border-border-strong bg-white px-3 h-11 text-sm text-text " +
   "focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
-
-function storageKey(orgId: string) {
-  return `reminder-prefs:${orgId}:v1`;
-}
-
-const DEFAULT_PREFS: ChannelPrefs = {
-  smsOptIn: true,
-  emailOptIn: true,
-  pushOptIn: true,
-  quietHours: { startHour: 21, endHour: 8 },
-  timezone: "America/Los_Angeles",
-  preferredChannel: "sms",
-};
 
 const CHANNEL_LABEL: Record<ReminderChannel, string> = {
   sms: "SMS",
@@ -67,42 +55,33 @@ const TIMEZONES = [
   "Pacific/Honolulu",
 ];
 
-export function ReminderPreferencesForm({ organizationId }: { organizationId: string }) {
-  const key = storageKey(organizationId);
-  const [prefs, setPrefs] = useState<ChannelPrefs>(DEFAULT_PREFS);
-  const [quietEnabled, setQuietEnabled] = useState(true);
+export function ReminderPreferencesForm({ initialPrefs }: { initialPrefs: ChannelPrefs }) {
+  const [prefs, setPrefs] = useState<ChannelPrefs>(initialPrefs);
+  const [quietEnabled, setQuietEnabled] = useState(initialPrefs.quietHours !== null);
   const [previewTier, setPreviewTier] = useState<RiskTier>("medium");
   const [justSaved, setJustSaved] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw) as ChannelPrefs;
-        setPrefs({ ...DEFAULT_PREFS, ...parsed });
-        setQuietEnabled(parsed.quietHours !== null);
-      }
-    } catch {
-      /* corrupt / private mode — keep defaults */
-    }
-  }, [key]);
+  const [saving, setSaving] = useState(false);
 
   function update<K extends keyof ChannelPrefs>(field: K, value: ChannelPrefs[K]) {
     setPrefs((p) => ({ ...p, [field]: value }));
   }
 
-  function save() {
+  async function save() {
+    setSaving(true);
     const payload: ChannelPrefs = {
       ...prefs,
       quietHours: quietEnabled ? prefs.quietHours ?? { startHour: 21, endHour: 8 } : null,
     };
     try {
-      window.localStorage.setItem(key, JSON.stringify(payload));
+      const saved = await saveReminderPrefs(payload);
+      setPrefs(saved);
+      setQuietEnabled(saved.quietHours !== null);
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2500);
     } catch {
-      /* quota / private mode — non-fatal */
+      /* non-fatal — button returns to idle so the user can retry */
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -263,16 +242,15 @@ export function ReminderPreferencesForm({ organizationId }: { organizationId: st
         </div>
 
         <div className="flex items-center gap-3">
-          <Button type="button" onClick={save}>
-            {justSaved ? "Saved ✓" : "Save reminder settings"}
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : justSaved ? "Saved ✓" : "Save reminder settings"}
           </Button>
         </div>
 
         <p className="text-[11px] leading-relaxed text-text-subtle rounded-lg bg-surface-muted/60 border border-border/60 px-3 py-2">
-          <span className="font-semibold">Interim storage notice:</span> these
-          preferences save to this browser&apos;s localStorage only (no schema
-          change). Production wires them to a per-organization settings row and
-          enqueues the previewed jobs onto the reminder workers.
+          Saved to your provider communication profile (server-side). The previewed
+          jobs are what the reminder workers enqueue per appointment; higher
+          no-show risk adds extra touches automatically.
         </p>
       </CardContent>
     </Card>

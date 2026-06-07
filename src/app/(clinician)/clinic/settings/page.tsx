@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { CuresCredentialsForm } from "./cures-credentials-form";
 import { ReminderPreferencesForm } from "./reminder-preferences-form";
+import { loadReminderPrefs } from "./reminder-actions";
 import {
   BurnoutGuardrailsForm,
   type SerializedDayLoad,
@@ -25,6 +26,9 @@ export default async function ClinicSettingsPage() {
   const user = await requireUser();
   const providerName = `${user.firstName} ${user.lastName}`.trim() || "Provider";
   const organizationId = user.organizationId!;
+
+  // EMR-211 — load reminder prefs from the per-user communication profile.
+  const reminderPrefs = await loadReminderPrefs(user.id);
 
   // EMR-214 — load the provider's last-14-day appointment load for the index.
   const provider = await prisma.provider.findFirst({
@@ -54,7 +58,7 @@ export default async function ClinicSettingsPage() {
         description={`Signed in as ${providerName}. Manage your scheduling and prescribing preferences below.`}
       />
       <div className="space-y-6">
-        <ReminderPreferencesForm organizationId={organizationId} />
+        <ReminderPreferencesForm initialPrefs={reminderPrefs} />
         {provider && (
           <BurnoutGuardrailsForm providerId={provider.id} fortnight={fortnight} />
         )}
