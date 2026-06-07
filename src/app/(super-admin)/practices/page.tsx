@@ -19,6 +19,8 @@ import { loadPracticeLandingCards } from "./loaders";
 import { PracticeCard } from "./practice-card";
 import { PublishedBanner } from "./published-banner";
 import { money } from "@/lib/ui/format";
+import type { PracticeCardData } from "./types";
+import { derivePracticeLifecycle, type PracticeLifecycle } from "./lifecycle";
 
 export const metadata: Metadata = {
   title: "Practices — Leafjourney",
@@ -36,8 +38,23 @@ export default async function PracticesLandingPage({
   const justPublished = params.published === "1";
   const practices = await loadPracticeLandingCards();
 
-  const published = practices.filter((p) => p.publishedAt);
-  const drafts = practices.filter((p) => !p.publishedAt);
+  // Section by derived lifecycle so active practices never become a junk
+  // drawer — creation pipeline (in-creation / needs-review) is kept distinct
+  // from operational (active) and history (archived).
+  const withLifecycle = practices.map((p) => ({
+    practice: p,
+    lifecycle: derivePracticeLifecycle(p),
+  }));
+  const active = withLifecycle.filter((x) => x.lifecycle.stage === "active");
+  const needsReview = withLifecycle.filter(
+    (x) => x.lifecycle.stage === "needs_review",
+  );
+  const inCreation = withLifecycle.filter((x) =>
+    ["draft", "onboarding", "ready_for_invites", "ready_for_activation"].includes(
+      x.lifecycle.stage,
+    ),
+  );
+  const archived = withLifecycle.filter((x) => x.lifecycle.stage === "archived");
 
   const totalProviders = practices.reduce(
     (sum, p) => sum + p.kpi.activeProviderCount,
@@ -73,7 +90,7 @@ export default async function PracticesLandingPage({
           <SummaryStat
             label="Practices"
             value={String(practices.length)}
-            sub={`${published.length} live · ${drafts.length} draft`}
+            sub={`${active.length} active · ${inCreation.length} in setup · ${needsReview.length} need review`}
           />
           <SummaryStat
             label="Active providers"
@@ -115,33 +132,34 @@ export default async function PracticesLandingPage({
         </Card>
       ) : (
         <div className="space-y-8">
-          {published.length > 0 && (
-            <section>
-              <SectionHeader
-                title="Live practices"
-                count={published.length}
-              />
-              <div className="grid gap-3">
-                {published.map((p) => (
-                  <PracticeCard key={p.configId ?? p.organizationId} practice={p} />
-                ))}
-              </div>
-            </section>
+          {active.length > 0 && (
+            <PracticeSection
+              title="Active practices"
+              hint="Live and operational"
+              items={active}
+            />
           )}
-
-          {drafts.length > 0 && (
-            <section>
-              <SectionHeader
-                title="In flight"
-                count={drafts.length}
-                hint="Drafts and pending publishes"
-              />
-              <div className="grid gap-3">
-                {drafts.map((p) => (
-                  <PracticeCard key={p.configId ?? p.organizationId} practice={p} />
-                ))}
-              </div>
-            </section>
+          {needsReview.length > 0 && (
+            <PracticeSection
+              title="Needs review"
+              hint="Blockers to resolve before activation"
+              items={needsReview}
+              tone="warning"
+            />
+          )}
+          {inCreation.length > 0 && (
+            <PracticeSection
+              title="In creation"
+              hint="Drafts and in-progress onboarding"
+              items={inCreation}
+            />
+          )}
+          {archived.length > 0 && (
+            <PracticeSection
+              title="Archived"
+              hint="Retained for history"
+              items={archived}
+            />
           )}
         </div>
       )}
@@ -175,18 +193,57 @@ function SectionHeader({
   title,
   count,
   hint,
+  tone,
 }: {
   title: string;
   count: number;
   hint?: string;
+  tone?: "warning";
 }) {
   return (
     <div className="flex items-baseline justify-between mb-3">
-      <h2 className="font-display text-lg text-text tracking-tight">
+      <h2 className="font-display text-lg text-text tracking-tight flex items-center gap-2">
+        {tone === "warning" && (
+          <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+        )}
         {title}{" "}
-        <span className="text-text-muted text-sm font-normal">({count})</span>
+        <span
+          className={
+            tone === "warning"
+              ? "text-amber-600 text-sm font-normal"
+              : "text-text-muted text-sm font-normal"
+          }
+        >
+          ({count})
+        </span>
       </h2>
       {hint && <span className="text-[12px] text-text-muted">{hint}</span>}
     </div>
+  );
+}
+
+function PracticeSection({
+  title,
+  hint,
+  items,
+  tone,
+}: {
+  title: string;
+  hint?: string;
+  items: { practice: PracticeCardData; lifecycle: PracticeLifecycle }[];
+  tone?: "warning";
+}) {
+  return (
+    <section>
+      <SectionHeader title={title} count={items.length} hint={hint} tone={tone} />
+      <div className="grid gap-3">
+        {items.map((x) => (
+          <PracticeCard
+            key={x.practice.configId ?? x.practice.organizationId}
+            practice={x.practice}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
