@@ -11,6 +11,8 @@ import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import { formatDate, formatRelative } from "@/lib/utils/format";
 import { getPatientFinancialSummary, formatMoney } from "@/lib/domain/billing";
 import { CollectPaymentForm } from "./collect-payment-form";
+import { PaymentPlanForm } from "./payment-plan-form";
+import { EventLog, type EventLogItem } from "./event-log";
 
 interface PageProps {
   params: { id: string };
@@ -74,6 +76,29 @@ export default async function PatientBillingPage({ params }: PageProps) {
       take: 20,
     }),
   ]);
+
+  // Pre-format events for the collapsible client log (EMR-910) so the client
+  // component never imports the billing/prisma layer.
+  const eventItems: EventLogItem[] = events.map((event) => {
+    const positive =
+      event.amountCents > 0 &&
+      (event.type === "patient_payment" || event.type === "insurance_paid");
+    return {
+      id: event.id,
+      description: event.description,
+      amountLabel:
+        event.amountCents !== 0
+          ? `${event.amountCents > 0 ? "+" : ""}${formatMoney(event.amountCents)}`
+          : "",
+      amountClass: positive
+        ? "text-success"
+        : event.amountCents < 0
+          ? "text-text-muted"
+          : "text-text",
+      meta: `${formatRelative(event.occurredAt)} · ${event.type.replace(/_/g, " ")}`,
+      color: eventColor(event.type),
+    };
+  });
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
@@ -471,14 +496,10 @@ export default async function PatientBillingPage({ params }: PageProps) {
                 )}
               </div>
             ) : (
-              <div className="text-center py-4">
-                <p className="text-sm text-text-muted mb-3">
-                  Offer a payment plan to break large balances into manageable installments.
-                </p>
-                <Button variant="secondary" size="sm" disabled>
-                  Enroll in payment plan
-                </Button>
-              </div>
+              <PaymentPlanForm
+                patientId={params.id}
+                outstandingCents={summary.currentDueCents}
+              />
             )}
           </CardContent>
         </Card>
@@ -575,49 +596,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
         <Eyebrow className="mb-4">Financial event log</Eyebrow>
         <Card tone="raised">
           <CardContent className="pt-6 pb-6">
-            {events.length === 0 ? (
-              <p className="text-sm text-text-muted text-center py-4">
-                No financial events recorded.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {events.map((event) => (
-                  <li
-                    key={event.id}
-                    className="flex items-start gap-3 text-sm"
-                  >
-                    <span
-                      className="mt-1.5 h-2 w-2 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: eventColor(event.type),
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <p className="text-text">{event.description}</p>
-                        {event.amountCents !== 0 && (
-                          <span
-                            className={`tabular-nums text-sm font-medium ${
-                              event.amountCents > 0 && (event.type === "patient_payment" || event.type === "insurance_paid")
-                                ? "text-success"
-                                : event.amountCents < 0
-                                  ? "text-text-muted"
-                                  : "text-text"
-                            }`}
-                          >
-                            {event.amountCents > 0 ? "+" : ""}
-                            {formatMoney(event.amountCents)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-text-subtle mt-0.5">
-                        {formatRelative(event.occurredAt)} · {event.type.replace(/_/g, " ")}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <EventLog events={eventItems} />
           </CardContent>
         </Card>
       </div>
