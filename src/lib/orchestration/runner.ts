@@ -4,12 +4,15 @@ import { agentRegistry } from "@/lib/agents";
 import type { Agent, ApprovalPolicy } from "./types";
 import { StepExecutionGraph } from "./step-graph";
 import {
+  applyDefaultDecision,
   claimNextJob,
+  markCancelled,
   markFailed,
   markNeedsApproval,
   markRunning,
   markSucceeded,
 } from "./queue";
+import type { ResolvedDecision } from "@/lib/db/approval-defaults-logic";
 
 // ---------------------------------------------------------------------------
 // Agent Harness V3 Runner
@@ -56,6 +59,21 @@ export async function runJob(job: AgentJob, workerId: string): Promise<void> {
   const agent = (agentRegistry as Record<string, Agent<any, any>>)[job.agentName];
   if (!agent) {
     await markFailed(job.id, `Unknown agent: ${job.agentName}`, [], false);
+    return;
+  }
+
+  // EMR-974 — honor the Agent Fleet on/off switch before doing any work.
+  // Disabling an agent is an operator choice, not an error, so a disabled
+  // agent's claimed job is cancelled (terminal, no retry) and never executed.
+  // Fail-open: an org with no setting row keeps the agent running. Dynamic
+  // import keeps the server-only accessor out of any client bundle that pulls
+  // the orchestration barrel.
+  const { isAgentEnabled } = await import("@/lib/db/agent-settings");
+  if (!(await isAgentEnabled(job.organizationId, job.agentName))) {
+    await markCancelled(
+      job.id,
+      `Skipped: agent "${job.agentName}" is disabled for this organization`,
+    );
     return;
   }
 
@@ -148,10 +166,52 @@ export async function runJob(job: AgentJob, workerId: string): Promise<void> {
 
     // ── Approval routing ──────────────────────────────
     const policy = normalizeApproval(agent.requiresApproval);
-    if (needsApproval(policy, job.requiresApproval, overallConfidence)) {
-      await markNeedsApproval(job.id, output, drainLogs());
+    const mustApprove = needsApproval(policy, job.requiresApproval, overallConfidence);
+
+    // EMR-960 — when a job would queue for human sign-off, first honor any
+    // owner-configured default approve/reject decision for this org's agent or
+    // workflow. A match auto-applies the decision (with a per-job audit entry);
+    // no match falls through to the normal Needs-Approval queue. Resolution
+    // failures are swallowed so the job still queues safely.
+    let resolved: ResolvedDecision | null = null;
+    if (mustApprove && job.organizationId) {
+      try {
+        const { resolveDefaultDecisionForOrg } = await import("@/lib/db/approval-defaults");
+        resolved = await resolveDefaultDecisionForOrg(job.organizationId, {
+          agentName: job.agentName,
+          workflowName: job.workflowName,
+        });
+        if (resolved) {
+          ctx.log(
+            "info",
+            `Auto-${resolved.decision} via default rule (${resolved.rule.scopeType}:${resolved.rule.scopeKey})`,
+          );
+        }
+      } catch (e) {
+        ctx.log(
+          "warn",
+          `approval-default resolution failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    const finalLogs = drainLogs();
+    if (!mustApprove) {
+      await markSucceeded(job.id, output, finalLogs);
+    } else if (resolved) {
+      await applyDefaultDecision(
+        {
+          id: job.id,
+          organizationId: job.organizationId,
+          agentName: job.agentName,
+          workflowName: job.workflowName,
+        },
+        resolved,
+        output,
+        finalLogs,
+      );
     } else {
-      await markSucceeded(job.id, output, drainLogs());
+      await markNeedsApproval(job.id, output, finalLogs);
     }
 
     // ── Persist reasoning trace (best-effort) ─────────

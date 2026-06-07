@@ -1851,6 +1851,11 @@ model AgentJob {
   // Filters org + status IN [...] + completedAt > 24h, orders by
   // completedAt desc. Index audit pass 2 2026-05-10.
   @@index([organizationId, status, completedAt])
+  // EMR-951 — Mission Control "All Jobs" tab filters by status and orders
+  // chronologically by createdAt; claimNextJob also orders pending jobs by
+  // createdAt ASC. The (status, runAfter) index covers the claim WHERE but not
+  // the createdAt sort, so add a dedicated covering index.
+  @@index([status, createdAt])
 }
 
 // --------------------------------------------------------------
