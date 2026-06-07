@@ -891,6 +891,7 @@ function DenialDetail({ claim }: { claim: SerializedClaim }) {
       <DenialActionForm
         claimId={claim.id}
         patientName={`${claim.patient.firstName} ${claim.patient.lastName}`}
+        claimBalanceCents={Math.max(0, claim.billedAmountCents - claim.paidAmountCents)}
       />
     </div>
   );
