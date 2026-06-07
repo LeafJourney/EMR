@@ -51,6 +51,13 @@ export type PracticeCardData = {
     blockers: string[];
     goLiveAt: string | null;
   } | null;
+  specialtyCoverage?: {
+    workflows: boolean;
+    charting: boolean;
+    roles: boolean;
+    physicianShell: boolean;
+    patientShell: boolean;
+  };
   officeManagers: PracticeStakeholder[];
   leadProviders: PracticeStakeholder[];
   kpi: PracticeKpi;

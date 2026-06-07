@@ -11,6 +11,8 @@ import { derivePracticeLifecycle } from "../lifecycle";
 import { loadPracticeRoster } from "../loaders";
 import { PracticeActivation } from "./practice-activation";
 import { PracticePeoplePanel } from "./practice-people-panel";
+import { PracticeSpecialtyCoverage } from "./practice-specialty-coverage";
+import { PracticeAiReview } from "./practice-ai-review";
 import { PracticeLifecycleActions } from "./practice-lifecycle-actions";
 
 function formatDollars(cents: number): string {
@@ -97,6 +99,12 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
 
       {/* People & role coverage — who's here, who still needs inviting. */}
       <PracticePeoplePanel roster={roster} />
+
+      {/* Specialty-template coverage — what machine this practice is becoming. */}
+      <PracticeSpecialtyCoverage practice={practice} />
+
+      {/* AI setup review — scaffolded (rule-based preview today, AI-ready). */}
+      <PracticeAiReview lifecycle={lifecycle} />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
