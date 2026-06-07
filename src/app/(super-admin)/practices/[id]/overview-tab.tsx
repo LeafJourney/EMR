@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/ui/format";
 import type { PracticeCardData } from "../types";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
+import { derivePracticeLifecycle } from "../lifecycle";
+import { PracticeActivation } from "./practice-activation";
 
 function formatDollars(cents: number): string {
   return money(cents, { abbreviate: true });
@@ -79,9 +81,13 @@ export function OverviewTab({ practice }: { practice: PracticeCardData }) {
   const specialtyLabel = humanizeSpecialty(practice.specialty);
   const careModelLabel = humanizeCareModel(practice.careModel);
   const location = [practice.city, practice.state].filter(Boolean).join(", ");
+  const lifecycle = derivePracticeLifecycle(practice);
 
   return (
     <div className="grid gap-8">
+      {/* Activation layer — the gate between creation pipeline and operations. */}
+      <PracticeActivation practice={practice} lifecycle={lifecycle} />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           label="Active providers"
