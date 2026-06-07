@@ -43,6 +43,14 @@ export type PracticeCardData = {
   status: string;
   publishedAt: string | null;
   updatedAt: string | null;
+  // EMR — real-readiness enrichment (detail page only; optional so the list
+  // loader needn't populate it).
+  npi?: string | null;
+  launch?: {
+    readinessScore: number;
+    blockers: string[];
+    goLiveAt: string | null;
+  } | null;
   officeManagers: PracticeStakeholder[];
   leadProviders: PracticeStakeholder[];
   kpi: PracticeKpi;

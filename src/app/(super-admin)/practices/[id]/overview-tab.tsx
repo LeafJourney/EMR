@@ -83,7 +83,10 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
   const specialtyLabel = humanizeSpecialty(practice.specialty);
   const careModelLabel = humanizeCareModel(practice.careModel);
   const location = [practice.city, practice.state].filter(Boolean).join(", ");
-  const lifecycle = derivePracticeLifecycle(practice);
+  const lifecycle = derivePracticeLifecycle(practice, {
+    npi: practice.npi,
+    launch: practice.launch,
+  });
   const roster = await loadPracticeRoster(practice.organizationId);
 
   return (

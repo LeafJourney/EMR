@@ -404,6 +404,7 @@ export async function loadPracticeOverview(
     encounterCount,
     encountersLast30,
     patientCount,
+    launchStatus,
   ] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: orgId },
@@ -415,6 +416,7 @@ export async function loadPracticeOverview(
         brandName: true,
         primaryContactName: true,
         primaryContactEmail: true,
+        npi: true,
       },
     }),
     config.practiceId
@@ -424,6 +426,7 @@ export async function loadPracticeOverview(
             id: true,
             organizationId: true,
             name: true,
+            npi: true,
             city: true,
             state: true,
             timeZone: true,
@@ -472,6 +475,10 @@ export async function loadPracticeOverview(
       where: { organizationId: orgId, createdAt: { gte: since30 } },
     }),
     prisma.patient.count({ where: { organizationId: orgId, deletedAt: null } }),
+    prisma.practiceLaunchStatus.findUnique({
+      where: { organizationId: orgId },
+      select: { readinessScore: true, blockers: true, goLiveAt: true },
+    }),
   ]);
 
   if (!org) return null;
@@ -525,6 +532,18 @@ export async function loadPracticeOverview(
     status: String(config.status),
     publishedAt: config.publishedAt ? config.publishedAt.toISOString() : null,
     updatedAt: config.updatedAt ? config.updatedAt.toISOString() : null,
+    npi: practice?.npi ?? org.npi ?? null,
+    launch: launchStatus
+      ? {
+          readinessScore: launchStatus.readinessScore,
+          blockers: Array.isArray(launchStatus.blockers)
+            ? (launchStatus.blockers as string[])
+            : [],
+          goLiveAt: launchStatus.goLiveAt
+            ? launchStatus.goLiveAt.toISOString()
+            : null,
+        }
+      : null,
     officeManagers: officeManagers.slice(0, 3),
     leadProviders: leadProviders.slice(0, 4),
     kpi,
