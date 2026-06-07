@@ -651,8 +651,10 @@ export default async function ClinicHomePage() {
             />
             <StatusDot
               color="var(--text-subtle)"
+              pulse={activeThreads > 0}
               count={activeThreads}
               label="Threads"
+              href="/clinic/messages"
             />
           </div>
 
