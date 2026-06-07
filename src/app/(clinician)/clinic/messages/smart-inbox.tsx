@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, type ChangeEvent, type KeyboardEvent } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -693,6 +693,11 @@ function InlineReplyCompose({
   const [state, formAction] = useFormState(sendReply, null);
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // EMR-659 — file picker for attachments. Files are encoded into the message
+  // body as [Attached: filename.ext] markers (consistent with the ATTACHMENT_RE
+  // heuristic in page.tsx) until a real MessageAttachment model lands.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 
   // EMR-657 — restore saved draft on mount; save on every keystroke.
   const [text, setText] = useState<string>(() => {
@@ -703,7 +708,7 @@ function InlineReplyCompose({
 
   // EMR-659 — toolbar actions
   const insertMemoTemplate = () => {
-    setText((prev) => (prev.startsWith(MEMO_TEMPLATE) ? prev : MEMO_TEMPLATE + prev));
+    setText((prev: string) => (prev.startsWith(MEMO_TEMPLATE) ? prev : MEMO_TEMPLATE + prev));
     // Defer focus so the prepend is visible before caret moves.
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
@@ -711,6 +716,21 @@ function InlineReplyCompose({
     if (!patientId) return;
     router.push(`/clinic/patients/${patientId}/prescribe?thread=${threadId}`);
   };
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const incoming = Array.from(e.target.files ?? []) as File[];
+    const existingNames = new Set(attachedFiles.map((f: File) => f.name));
+    setAttachedFiles([...attachedFiles, ...incoming.filter((f: File) => !existingNames.has(f.name))]);
+    e.target.value = "";
+  };
+  const removeAttachedFile = (name: string) => {
+    setAttachedFiles(attachedFiles.filter((f: File) => f.name !== name));
+  };
+
+  // body value sent to the server: message text + one [Attached: …] line per file.
+  const bodyToSend =
+    attachedFiles.length > 0
+      ? `${text}\n\n${attachedFiles.map((f: File) => `[Attached: ${f.name}]`).join("\n")}`
+      : text;
 
   // Persist draft on every change.
   useEffect(() => {
@@ -721,16 +741,17 @@ function InlineReplyCompose({
     }
   }, [threadId, text]);
 
-  // Clear draft + form after successful send.
+  // Clear draft + attachments + form after successful send.
   useEffect(() => {
     if (state?.ok) {
       formRef.current?.reset();
       setText("");
+      setAttachedFiles([]);
       localStorage.removeItem(DRAFT_KEY(threadId));
     }
   }, [state, threadId]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "/") {
       setShowSlashCommands(true);
     } else if (e.key === "Escape") {
@@ -739,7 +760,7 @@ function InlineReplyCompose({
   };
 
   const insertCommand = (cmd: string) => {
-    setText((prev) => prev.replace(/\/$/, "") + cmd);
+    setText((prev: string) => prev.replace(/\/$/, "") + cmd);
     setShowSlashCommands(false);
   };
 
@@ -753,14 +774,28 @@ function InlineReplyCompose({
           <button type="button" onClick={() => insertCommand("Memo: Please follow up in 2 weeks. ")} className="w-full text-left px-2 py-1.5 text-sm hover:bg-surface-muted rounded-md">/memo (Quick Note)</button>
         </div>
       )}
+      {/* Hidden file input — triggered by the Attach button below. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,.pdf,.doc,.docx,.txt,.csv"
+        className="sr-only"
+        onChange={handleFileChange}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
       <form
         ref={formRef}
         action={formAction}
         className="flex flex-col gap-2"
       >
         <input type="hidden" name="threadId" value={threadId} />
-        {/* EMR-659 — per-thread tool row. Rx links to the patient's prescribe
-            page; Memo prepends an internal-memo template to the reply body. */}
+        {/* body is ferried via hidden input so attachment markers are included
+            without changing the server-action contract. The textarea is
+            uncontrolled-by-name; its value is purely for the local UI state. */}
+        <input type="hidden" name="body" value={bodyToSend} />
+        {/* EMR-659 — per-thread tool row: Rx, Memo, Attach. */}
         <div className="flex items-center gap-1 -mb-1">
           <button
             type="button"
@@ -783,21 +818,51 @@ function InlineReplyCompose({
             <MemoIcon />
             <span className="hidden sm:inline">Memo</span>
           </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach a file"
+            aria-label="Attach a file"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-text hover:bg-surface-muted transition-colors"
+          >
+            <PaperclipIcon />
+            <span className="hidden sm:inline">Attach</span>
+          </button>
         </div>
+        {/* Attached file pills — shown when at least one file is queued. */}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {attachedFiles.map((f: File) => (
+              <span
+                key={f.name}
+                className="inline-flex items-center gap-1 rounded-full bg-surface-muted border border-border px-2 py-0.5 text-[11px] text-text-muted max-w-[200px]"
+              >
+                <PaperclipIcon className="shrink-0 opacity-60" />
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachedFile(f.name)}
+                  aria-label={`Remove ${f.name}`}
+                  className="shrink-0 ml-0.5 rounded-full hover:text-danger transition-colors"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <Textarea
               ref={textareaRef}
-              name="body"
               rows={2}
               value={text}
-              onChange={(e) => {
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
                 setText(e.target.value);
                 if (!e.target.value.includes("/")) setShowSlashCommands(false);
               }}
               onKeyDown={handleKeyDown}
               placeholder="Type your reply... (Type '/' for quick inserts)"
-              required
               className="resize-none"
             />
           </div>
