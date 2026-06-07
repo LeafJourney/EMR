@@ -11,6 +11,7 @@ import { derivePracticeLifecycle } from "../lifecycle";
 import { loadPracticeRoster } from "../loaders";
 import { PracticeActivation } from "./practice-activation";
 import { PracticePeoplePanel } from "./practice-people-panel";
+import { PracticeLifecycleActions } from "./practice-lifecycle-actions";
 
 function formatDollars(cents: number): string {
   return money(cents, { abbreviate: true });
@@ -233,6 +234,18 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
           )}
         </div>
       </div>
+
+      {/* Lifecycle actions — archive-first; empty drafts framed as discard. */}
+      <PracticeLifecycleActions
+        configId={practice.configId}
+        practiceName={practice.practiceName}
+        stage={lifecycle.stage}
+        isEmpty={
+          practice.kpi.patientCount === 0 &&
+          practice.kpi.claimCount === 0 &&
+          practice.kpi.encounterCount === 0
+        }
+      />
     </div>
   );
 }
