@@ -84,7 +84,7 @@ import { sexColorKey, SEX_BUBBLE_CLASSES } from "@/lib/clinical/chart-bubbles";
 import { CINDY_PREFIX } from "@/lib/clinical/cindy-says";
 import { RecordsTab, type ChartDoc } from "./records-tab";
 import { ImagesTab } from "./images-tab";
-import { LsvTab } from "./lsv-tab";
+import { LsvTab, type LsvLabMarker } from "./lsv-tab";
 import { NotesTab } from "./notes-tab";
 import { PrivateNotesButton } from "./private-notes-button";
 
@@ -192,6 +192,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     patientClaims,
     pastConditions,
     pastSurgeries,
+    labResults,
   ] = await Promise.all([
     prisma.patient.findFirst({
       where: {
@@ -313,6 +314,20 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     prisma.pastSurgery.findMany({
       where: { patientId: params.id, deletedAt: null },
       orderBy: { createdAt: "asc" },
+    }),
+    // EMR-871: structured lab results (panels/markers with reference ranges +
+    // abnormal flags) — drives the real Labs subtab in LSV, not just uploaded
+    // lab PDFs. Ascending by receivedAt so per-marker trend series are chrono.
+    prisma.labResult.findMany({
+      where: { patientId: params.id, organizationId: user.organizationId! },
+      orderBy: { receivedAt: "asc" },
+      select: {
+        id: true,
+        panelName: true,
+        receivedAt: true,
+        results: true,
+        abnormalFlag: true,
+      },
     }),
   ]);
 
@@ -942,6 +957,13 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         <LsvTab
           patientId={params.id}
           labDocs={labDocs.map(toChartDoc)}
+          labResults={labResults.map((r) => ({
+            id: r.id,
+            panelName: r.panelName,
+            receivedAt: new Date(r.receivedAt).toISOString(),
+            results: (r.results ?? {}) as unknown as Record<string, LsvLabMarker>,
+            abnormalFlag: r.abnormalFlag,
+          }))}
           assessments={assessmentResponses.map((r: any) => ({
             slug: r.assessment.slug,
             title: r.assessment.title,
