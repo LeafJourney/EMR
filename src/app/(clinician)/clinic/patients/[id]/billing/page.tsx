@@ -13,6 +13,7 @@ import { getPatientFinancialSummary, formatMoney } from "@/lib/domain/billing";
 import { CollectPaymentForm } from "./collect-payment-form";
 import { PaymentPlanForm } from "./payment-plan-form";
 import { EventLog, type EventLogItem } from "./event-log";
+import { InsuranceVerify } from "./insurance-verify";
 
 interface PageProps {
   params: { id: string };
@@ -184,6 +185,30 @@ export default async function PatientBillingPage({ params }: PageProps) {
                   value={formatMoney(summary.overdueCents)}
                   tone={summary.overdueCents > 0 ? "danger" : "neutral"}
                 />
+              </div>
+              {/* EMR-905 — accepted payment method pills */}
+              <div className="mt-5 flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] text-text-subtle uppercase tracking-wider mr-1">
+                  Accepted
+                </span>
+                {[
+                  { m: "Card", on: paymentMethods.length > 0 },
+                  { m: "ACH", on: false },
+                  { m: "Cash", on: false },
+                  { m: "Check", on: false },
+                ].map(({ m, on }) => (
+                  <span
+                    key={m}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                      on
+                        ? "bg-success/10 text-success border-success/20"
+                        : "bg-surface-muted text-text-muted border-border"
+                    }`}
+                  >
+                    {m}
+                    {on ? " · on file" : ""}
+                  </span>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -429,6 +454,20 @@ export default async function PatientBillingPage({ params }: PageProps) {
                     </div>
                   </div>
                 )}
+                <div className="pt-1">
+                  <InsuranceVerify
+                    payerName={coverage.payerName}
+                    planName={coverage.planName}
+                    memberId={coverage.memberId}
+                    eligibilityStatus={coverage.eligibilityStatus}
+                    practiceName="This practice"
+                    lastCheckedLabel={
+                      coverage.eligibilityLastCheckedAt
+                        ? `Last verified ${formatRelative(coverage.eligibilityLastCheckedAt)}`
+                        : "Not yet verified"
+                    }
+                  />
+                </div>
               </div>
             ) : (
               <p className="text-sm text-text-muted">
