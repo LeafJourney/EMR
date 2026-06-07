@@ -25,6 +25,7 @@ import {
   CollapsibleSection,
   FeatherTrend,
   CindySays,
+  useChartLedger,
 } from "./chart-kit";
 import type { ChartDoc } from "./records-tab";
 import { ASSESSMENTS, interpretScore } from "@/lib/clinical/assessment-catalog";
@@ -259,7 +260,47 @@ function AssessmentScores({ bySlug }: { bySlug: Map<string, LsvAssessment[]> }) 
 
 /* ── EMR-871: labs subtab ────────────────────────────────────────────── */
 
+function LsvIconBtn({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-surface-muted text-sm"
+    >
+      {children}
+    </button>
+  );
+}
+
 function LabsSubtab({ patientId, labDocs }: { patientId: string; labDocs: ChartDoc[] }) {
+  // EMR-869: tile actions (print / download / return-to-queue) must be live,
+  // not static glyphs. Return-to-queue records to the chart ledger.
+  const { record } = useChartLedger(patientId);
+  const viewUrl = (id: string) => `/clinic/patients/${patientId}/documents/${id}/view`;
+
+  function download(d: ChartDoc) {
+    const a = document.createElement("a");
+    a.href = viewUrl(d.id);
+    a.download = d.name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   return (
     <div className="space-y-4">
       {/* Lab documents (cleaned tiles) */}
@@ -270,17 +311,32 @@ function LabsSubtab({ patientId, labDocs }: { patientId: string; labDocs: ChartD
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <a
-                    href={`/clinic/patients/${patientId}/documents/${d.id}/view`}
+                    href={viewUrl(d.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm font-medium text-text hover:text-accent truncate"
                   >
                     {d.name}
                   </a>
-                  <div className="flex gap-1 text-text-subtle text-sm">
-                    <span title="Send">✉️</span>
-                    <span title="Print">🖨️</span>
-                    <span title="Save">💾</span>
+                  <div className="flex gap-1 text-text-subtle shrink-0">
+                    <LsvIconBtn label="Print" onClick={() => window.open(viewUrl(d.id), "_blank")}>
+                      🖨️
+                    </LsvIconBtn>
+                    <LsvIconBtn label="Download" onClick={() => download(d)}>
+                      ⬇️
+                    </LsvIconBtn>
+                    <LsvIconBtn
+                      label="Return to queue"
+                      onClick={() =>
+                        record({
+                          kind: "note",
+                          source: "Labs",
+                          subject: `Returned “${d.name}” to the lab review queue`,
+                        })
+                      }
+                    >
+                      ↩︎
+                    </LsvIconBtn>
                   </div>
                 </div>
                 <p className="text-sm font-semibold text-text tabular-nums text-right mt-2">
