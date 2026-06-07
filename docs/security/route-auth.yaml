@@ -192,6 +192,18 @@ routes:
     notes: "implementation_admin via withAdminMutation (EMR-728). Earlier 2026-05-12 entry noted middleware coarse-gating; the route is now self-gated too."
     rate_limit_bucket: admin.config.apply_specialty
 
+  configs/[id]/versions:
+    methods: [GET]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-471 — published version history list. requireImplementationAdmin."
+
+  configs/[id]/versions/diff:
+    methods: [GET]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-471 — side-by-side snapshot diff (from/to). requireImplementationAdmin."
+
   configs/by-practice/[practiceId]:
     methods: [GET]
     auth: required
@@ -202,6 +214,12 @@ routes:
     methods: [GET, POST]
     auth: required
     owner: onboarding-controller
+
+  connectors/csv:
+    methods: [POST]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-457 — CSV source connector. requireImplementationAdmin; parses + maps rows and stages them into a MigrationJob."
 
   migration-profiles:
     methods: [POST]
@@ -779,11 +797,23 @@ routes:
     owner: scribe
     notes: "EMR-070 scaffold. Uses requireUser. Accepts an audio blob and returns a SOAP-structured transcript."
 
+  cron/breach-watch:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-633 — HIPAA broad-PHI-access breach watch. Bearer CRON_SECRET check, prod-only. Scans patient.phi_accessed audit events, opens compliance tasks."
+
   cron/credential-check:
     methods: [POST]
     auth: cron
     owner: platform-security
     notes: "EMR-068 scaffold. Bearer CRON_SECRET check, prod-only. Weekly NPPES/DEA license verification sweep."
+
+  cron/migration-runner:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-456 — drains/resumes queued MigrationJob imports in checkpointed batches. Bearer CRON_SECRET check, prod-only."
 
   cron/erx-ddi-sync:
     methods: [POST]
@@ -1651,3 +1681,15 @@ routes:
     auth: required
     owner: platform-security
     notes: "EMR-456 — single migration job status."
+
+  agents/metrics:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-940/969 — Agent Fleet status tiles + per-agent summary. Org governance required (read-only)."
+
+  saas/usage:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-724 — per-org LLM token-usage roll-up over a trailing window. Org governance required (read-only)."

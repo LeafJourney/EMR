@@ -163,6 +163,9 @@ model Organization {
   // admin tooling; absent for orgs that haven't onboarded billing yet.
   practiceSubscription PracticeSubscription?
 
+  // EMR-724 — AI broker token-usage ledger (append-only).
+  llmUsage LlmUsage[]
+
   // EMR-787 — Practice Manager Agent v1 (clinical / office supplies).
   // PARALLEL to `cannabisProducts` / `supplyProducts` (those are dispensary
   // domain). These are the gloves-and-gowns side of the practice.
@@ -5326,6 +5329,42 @@ model PracticeSubscription {
   @@index([tier])
 }
 
+// EMR-724 — SaaS billing & AI brokering usage ledger.
+//
+// Append-only row written by the AI broker (src/lib/ai/broker) on every
+// upstream model call — success AND failure — so token accounting, per-org
+// cost dashboards (EMR-724), and anomaly detection have a durable feed. The
+// broker logged this shape to stdout only until this model landed; persisting
+// it is what turns "monitoring model token consumption per organization" on.
+model LlmUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Coarse billing bucket (charting | billing | messaging | research |
+  /// background | patient_facing | uncategorized). Mirrors AGENT_BUCKETS.
+  agentBucket    String
+  /// Stable agent identifier for telemetry (e.g. "charting.note-summarize").
+  agentName      String
+  /// Effective model the broker resolved for the call.
+  model          String
+  tokensIn       Int      @default(0)
+  tokensOut      Int      @default(0)
+  /// Estimated cost in micro-cents (1e-8 USD) — integer to avoid float drift.
+  /// Null until a price book is wired; token counts are the v1 source of truth.
+  costMicroCents Int?
+  latencyMs      Int      @default(0)
+  /// false when the upstream call failed (errorCode set).
+  ok             Boolean  @default(true)
+  errorCode      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Per-org cost dashboard: filter by org, window by createdAt.
+  @@index([organizationId, createdAt])
+  // Per-bucket roll-ups within an org.
+  @@index([organizationId, agentBucket])
+}
+
 model PastMedicalCondition {
   id        String    @id @default(cuid())
   patientId String
@@ -5760,6 +5799,15 @@ model MigrationJob {
   rowsTotal          Int                @default(0)
   rowsCompleted      Int                @default(0)
   rowsFailed         Int                @default(0)
+  /// Staged source rows to import, written by a source connector (e.g. the CSV
+  /// connector, EMR-457) at enqueue. The runner (EMR-456) reads this, resumes
+  /// from `rowsCompleted`, and processes the remainder. Shape:
+  /// { category: string, rows: Array<Record<string, unknown>> }. Null for jobs
+  /// whose source is streamed/fetched by a future connector instead of staged.
+  sourcePayload      Json?
+  /// Per-run summary the runner writes on completion (per-category counts +
+  /// the first few row errors). Drives the admin import report.
+  result             Json?
   /// Terminal error summary when status = failed.
   error              String?
   createdById        String?
