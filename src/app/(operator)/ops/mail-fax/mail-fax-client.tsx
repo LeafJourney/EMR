@@ -230,6 +230,9 @@ export function MailFaxClient({
   // Active Filter based on clickable Stat Cards
   const [selectedFilter, setSelectedFilter] = useState<"all" | "flagged" | "exact" | "low">("all");
 
+  // EMR-966 — filter inbox documents by source (Fax / Mail / Upload).
+  const [sourceFilter, setSourceFilter] = useState<"all" | "fax" | "mail" | "portal-upload">("all");
+
   // OCR expanded row states (document preview)
   const [expandedOCRId, setExpandedOCRId] = useState<string | null>(null);
 
@@ -299,20 +302,22 @@ export function MailFaxClient({
   ).length;
   const exactMatchesCount = reviewed.filter((r) => r.result.isExactMatch).length;
 
-  // Filter reviewed list based on active filter tab
+  // Filter reviewed list by the active stat-card filter AND document source.
   const filteredScans = useMemo(() => {
-    if (selectedFilter === "all") return reviewed;
+    let list = reviewed;
     if (selectedFilter === "flagged") {
-      return reviewed.filter((r) => r.result.mismatches.length > 0 || r.result.isNewCoverage);
+      list = list.filter((r) => r.result.mismatches.length > 0 || r.result.isNewCoverage);
+    } else if (selectedFilter === "exact") {
+      list = list.filter((r) => r.result.isExactMatch);
+    } else if (selectedFilter === "low") {
+      list = list.filter((r) => r.result.confidence === "low");
     }
-    if (selectedFilter === "exact") {
-      return reviewed.filter((r) => r.result.isExactMatch);
+    // EMR-966 — filter by document source (Fax / Mail / Upload).
+    if (sourceFilter !== "all") {
+      list = list.filter((r) => r.source === sourceFilter);
     }
-    if (selectedFilter === "low") {
-      return reviewed.filter((r) => r.result.confidence === "low");
-    }
-    return reviewed;
-  }, [reviewed, selectedFilter]);
+    return list;
+  }, [reviewed, selectedFilter, sourceFilter]);
 
   // EMR-938: 90-day retention — split outbox into active vs archived.
   const NOW = Date.now();
@@ -605,7 +610,7 @@ export function MailFaxClient({
       {/* Header and top commands */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Inbox & Outbox</h1>
+          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Processing Center</h1>
           <p className="text-sm text-text-subtle mt-1">
             Inbound mail packets, faxes, and portal uploads are OCR'd, parsed, and cross-checked.
           </p>
@@ -660,6 +665,36 @@ export function MailFaxClient({
           Outbox ({activeOutbox.length})
         </button>
       </div>
+
+      {/* EMR-966 — filter inbox by document source */}
+      {activeTab === "inbox" && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-wider text-text-subtle mr-1">
+            Source
+          </span>
+          {([
+            { key: "all", label: "All" },
+            { key: "fax", label: "Fax" },
+            { key: "mail", label: "Mail" },
+            { key: "portal-upload", label: "Upload" },
+          ] as const).map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setSourceFilter(s.key)}
+              aria-pressed={sourceFilter === s.key}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors",
+                sourceFilter === s.key
+                  ? "bg-accent text-accent-ink border-accent"
+                  : "bg-surface-muted text-text-muted border-border hover:bg-surface-raised",
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab Panels */}
       {activeTab === "inbox" ? (
