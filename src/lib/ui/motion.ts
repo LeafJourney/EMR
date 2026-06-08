@@ -125,7 +125,13 @@ export function modalSpring(reduce: boolean): MotionProps {
     initial: { opacity: 0, scale: 0.96, y: 8 },
     animate: { opacity: 1, scale: 1, y: 0 },
     exit: { opacity: 0, scale: 0.98, y: 4 },
-    transition: SPRING_MODAL,
+    // Spring the transform (scale/y) for a touch of physicality, but tween
+    // OPACITY on a short curve — a spring on opacity lingers at intermediate
+    // values and reads as a washed-out, half-faded modal while it settles.
+    transition: {
+      ...SPRING_MODAL,
+      opacity: { duration: DURATION.quick, ease: EASE_PREMIUM },
+    },
   };
 }
 

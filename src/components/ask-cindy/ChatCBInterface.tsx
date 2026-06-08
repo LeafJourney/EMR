@@ -68,7 +68,7 @@ export function ChatCBInterface() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-[88px] right-6 z-40 h-14 w-14 rounded-full bg-accent text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+        className="fixed bottom-[88px] right-6 z-[85] h-14 w-14 rounded-full bg-accent text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
         aria-label="Open ChatCB"
       >
         <Bot size={24} />
@@ -82,14 +82,14 @@ export function ChatCBInterface() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsOpen(false)}
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 md:hidden"
+              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[84] md:hidden"
             />
             <motion.div
               initial={{ x: "100%", opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 right-0 z-50 w-full md:w-[400px] bg-surface border-l border-border shadow-2xl flex flex-col"
+              className="fixed inset-y-0 right-0 z-[85] w-full md:w-[400px] bg-surface border-l border-border shadow-2xl flex flex-col"
             >
               <header className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface/80 backdrop-blur-md">
                 <div className="flex items-center gap-3">
