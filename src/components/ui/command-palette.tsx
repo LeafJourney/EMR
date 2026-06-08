@@ -168,6 +168,7 @@ export const OPERATOR_COMMANDS: CommandDef[] = [
   { id: "o-overview", label: "Overview", icon: "○", href: "/ops", group: "Navigate", roles: ["operator"], keywords: ["home", "dashboard"] },
   { id: "o-mission", label: "Mission Control", icon: "◉", href: "/ops/mission-control", group: "Navigate", roles: ["operator"], keywords: ["agents", "fleet"] },
   { id: "o-schedule", label: "Schedule", icon: "◷", href: "/ops/schedule", group: "Navigate", roles: ["operator"], keywords: ["calendar", "appts"] },
+  { id: "o-noshow-defense", label: "No-show defense", icon: "⚠", href: "/ops/no-show-defense", group: "Navigate", roles: ["operator"], keywords: ["no-show", "noshow", "risk", "reminders", "at-risk", "defense"] },
   { id: "o-patients", label: "Patients", icon: "☷", href: "/ops/patients", group: "Navigate", roles: ["operator"], keywords: ["roster"] },
   { id: "o-command", label: "Command Center (clinic)", icon: "◉", href: "/clinic/command", group: "Navigate", roles: ["operator"], keywords: ["bridge", "clinic"] },
 
