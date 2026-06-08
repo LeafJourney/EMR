@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { logCorrespondence } from "./actions";
-import { formatDate } from "@/lib/utils/format";
+import { formatDateOnly } from "@/lib/utils/format";
 
 interface HeaderContactProps {
   patientId: string;
@@ -191,7 +191,7 @@ export function HeaderContact({
   return (
     <div className="flex items-center gap-2 flex-wrap mt-3">
       <span className="text-xs text-text-subtle">
-        DOB {dateOfBirth ? formatDate(new Date(dateOfBirth)) : "Not on file"}
+        DOB {dateOfBirth ? formatDateOnly(dateOfBirth) : "Not on file"}
       </span>
       <span className="text-xs text-text-subtle">&middot;</span>
       {email ? (

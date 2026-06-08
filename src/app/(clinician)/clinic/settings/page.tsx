@@ -8,6 +8,7 @@ import {
   BurnoutGuardrailsForm,
   type SerializedDayLoad,
 } from "./burnout-guardrails-form";
+import { KioskLaunchCard } from "./kiosk-launch-card";
 
 export const metadata = { title: "Provider settings" };
 
@@ -63,6 +64,7 @@ export default async function ClinicSettingsPage() {
           <BurnoutGuardrailsForm providerId={provider.id} fortnight={fortnight} />
         )}
         <CuresCredentialsForm userId={user.id} />
+        <KioskLaunchCard />
       </div>
     </PageShell>
   );

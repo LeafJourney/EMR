@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
+import { formatModality } from "@/lib/utils/format";
 import { Eyebrow } from "@/components/ui/ornament";
 import {
   rescheduleAppointmentAction,
@@ -76,7 +77,7 @@ export function ScheduleCalendar({
     message: string;
   } | null>(null);
 
-  const weekStart = React.useMemo(() => new Date(weekStartIso), [weekStartIso]);
+  const weekStart = React.useMemo(() => parseLocalDateOnly(weekStartIso), [weekStartIso]);
   const dayStart = React.useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -166,13 +167,16 @@ export function ScheduleCalendar({
     });
   };
 
-  const formatDayHeader = (d: Date): string => {
-    const month = d.toLocaleDateString("en-US", { timeZone, month: "short" });
-    const dayNum = d.toLocaleDateString("en-US", { timeZone, day: "numeric" });
-    const year = d.toLocaleDateString("en-US", { timeZone, year: "numeric" });
-    const weekday = d.toLocaleDateString("en-US", { timeZone, weekday: "long" });
-    return `${month} ${dayNum} – ${year} (${weekday})`;
-  };
+  // d is a local calendar date (see parseLocalDateOnly) — format it directly so
+  // the header reads "Sunday, Jun 7, 2026" rather than the malformed
+  // "Jun 6 – 2026 (…)" the old range-style string produced.
+  const formatDayHeader = (d: Date): string =>
+    d.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
 
   const formatWeekRange = (start: Date): string => {
     const end = addDays(start, 6);
@@ -622,7 +626,7 @@ function ListView({ appointments }: { appointments: AppointmentDTO[] }) {
                   <Badge tone={statusTone(a.status)} className="text-[10px]">
                     {a.status}
                   </Badge>
-                  <span className="text-[11px] text-text-subtle">{a.modality}</span>
+                  <span className="text-[11px] text-text-subtle">{formatModality(a.modality)}</span>
                 </li>
               ))}
             </ul>
@@ -889,6 +893,7 @@ function ScheduleModal({
                                   month: "short",
                                   day: "numeric",
                                   year: "numeric",
+                                  timeZone: "UTC",
                                 })
                               : "N/A"}
                           </div>
@@ -998,6 +1003,16 @@ function findAppt(
     list.find((a) => new Date(a.startAtIso).getTime() === slotStart.getTime()) ??
     null
   );
+}
+
+// weekStartIso is a UTC ISO string but represents a *calendar date* (the week's
+// Sunday). `new Date(iso)` reads it as UTC midnight, which in a negative-offset
+// browser renders one day earlier — shifting every column's date number back a
+// day (the "SUNDAY 6 / MONDAY 7" mislabel). Parse the date part as LOCAL
+// midnight so day numbers, labels, and appointment placement all agree.
+function parseLocalDateOnly(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
 }
 
 function addDays(d: Date, n: number): Date {
