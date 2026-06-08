@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -36,6 +37,9 @@ const MODALITY_TONE: Record<string, "accent" | "info" | "neutral"> = {
   video: "info",
   phone: "neutral",
 };
+
+// EMR-919 — stable display order for the clickable modality KPI chips.
+const MODALITY_ORDER = ["in_person", "video", "phone"];
 
 const STATUS_TONE: Record<
   string,
@@ -107,6 +111,8 @@ export function ScheduleClient({
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null,
   );
+  // EMR-919 / EMR-930 — modality filter driven by the clickable KPI chips.
+  const [selectedModality, setSelectedModality] = useState<string | null>(null);
 
   const selectedProvider = useMemo(
     () => providers.find((p) => p.id === selectedProviderId) ?? null,
@@ -115,17 +121,26 @@ export function ScheduleClient({
 
   const totalThisWeek = appointments.length;
 
-  // When a provider is selected, restrict the day buckets to that provider so
-  // the Week View grid reflects only their schedule.
+  // Modality counts across the loaded window — power the KPI chips.
+  const modalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const a of appointments) counts[a.modality] = (counts[a.modality] ?? 0) + 1;
+    return counts;
+  }, [appointments]);
+
+  // Restrict the day buckets by the active provider + modality filters so the
+  // Week View grid reflects only the matching schedule.
   const visibleDays = useMemo(() => {
-    if (!selectedProviderId) return days;
+    if (!selectedProviderId && !selectedModality) return days;
     return days.map((d) => ({
       ...d,
       appointments: d.appointments.filter(
-        (a) => a.providerId === selectedProviderId,
+        (a) =>
+          (!selectedProviderId || a.providerId === selectedProviderId) &&
+          (!selectedModality || a.modality === selectedModality),
       ),
     }));
-  }, [days, selectedProviderId]);
+  }, [days, selectedProviderId, selectedModality]);
 
   // Snapshot stats for the selected provider, computed from loaded data.
   const snapshot = useMemo(() => {
@@ -176,6 +191,41 @@ export function ScheduleClient({
           />
         </div>
       </div>
+
+      {/* EMR-919 — clickable modality KPI chips that filter the calendar on click. */}
+      {totalThisWeek > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {MODALITY_ORDER.filter((m) => modalityCounts[m]).map((m) => {
+            const active = selectedModality === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedModality(active ? null : m)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  active
+                    ? "border-accent/50 bg-accent/10 text-accent"
+                    : "border-border text-text-muted hover:border-border-strong",
+                )}
+              >
+                {MODALITY_LABEL[m] ?? m}:{" "}
+                <span className="tabular-nums">{modalityCounts[m]}</span>
+              </button>
+            );
+          })}
+          {selectedModality && (
+            <button
+              type="button"
+              onClick={() => setSelectedModality(null)}
+              className="text-[11px] text-accent hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Week View box — either the full grid, or the provider snapshot. */}
       {selectedProvider && snapshot ? (
@@ -377,9 +427,13 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           size="sm"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-text truncate">
+          {/* EMR-923 — patient name links through to the chart home page. */}
+          <Link
+            href={`/clinic/patients/${appt.patient.id}`}
+            className="block text-xs font-medium text-text truncate hover:text-accent hover:underline"
+          >
             {appt.patient.firstName} {appt.patient.lastName}
-          </p>
+          </Link>
           <p className="text-[10px] text-text-subtle tabular-nums">
             {formatTime(new Date(appt.startAt))}
           </p>
@@ -399,6 +453,16 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           {appt.status}
         </Badge>
         <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
+        {/* EMR-920 — inline insurance-eligibility helper tag on upcoming visits. */}
+        {(appt.status === "requested" || appt.status === "confirmed") && (
+          <Badge
+            tone="info"
+            className="text-[9px]"
+            title="Insurance eligibility not yet verified for this visit."
+          >
+            ⊕ Verify insurance
+          </Badge>
+        )}
       </div>
       {menu}
     </div>
