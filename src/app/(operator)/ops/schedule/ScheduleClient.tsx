@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
+import { setPatientStatus } from "../patients/actions";
 
 // ---------------------------------------------------------------------------
 // EMR-936 — Clickable "Providers this week" cards → provider snapshot in the
@@ -369,6 +370,17 @@ function PatientStatusBubble({ status }: { status: string }) {
 
 function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
   const router = useRouter();
+  const [, startStatusChange] = useTransition();
+
+  // EMR-939 — change the patient's lifecycle status from the schedule board,
+  // reusing the roster's setPatientStatus action; refresh to reflect the bubble.
+  function changeStatus(status: string, close: () => void) {
+    close();
+    startStatusChange(async () => {
+      await setPatientStatus(appt.patient.id, status);
+      router.refresh();
+    });
+  }
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -378,6 +390,16 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         router.push(`/clinic/schedule?patientId=${appt.patient.id}`);
         close();
       },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Change status",
+      icon: ContextMenuIcons.Check,
+      subItems: [
+        { label: "Mark active", onSelect: (close: () => void) => changeStatus("active", close) },
+        { label: "Mark prospect", onSelect: (close: () => void) => changeStatus("prospect", close) },
+        { label: "Mark inactive", onSelect: (close: () => void) => changeStatus("inactive", close) },
+      ],
     },
   ];
   const { triggerProps, menu } = useContextMenu(menuItems);
