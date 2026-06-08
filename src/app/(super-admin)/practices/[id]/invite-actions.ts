@@ -16,8 +16,11 @@ import { logControllerAction } from "@/lib/auth/audit-stub";
 import { homeForRoles } from "@/lib/rbac/roles";
 import type { Role } from "@prisma/client";
 import { INVITABLE_ROLES } from "../types";
+import { sendEmail } from "@/lib/email/resend";
 
-export type InviteResult = { ok: true; id: string } | { ok: false; message: string };
+export type InviteResult =
+  | { ok: true; id: string; emailed?: boolean }
+  | { ok: false; message: string };
 
 function authorized(roles: string[]): boolean {
   return roles.includes("super_admin") || roles.includes("implementation_admin");
@@ -66,13 +69,44 @@ export async function inviteToPractice(input: {
     reason: `Invited ${email} as ${input.role}`,
   });
 
-  // TODO(invite-email): send a real invitation email. For now log the accept
-  // link so it's recoverable; the invite panel also surfaces a "Copy link".
+  // Best-effort invitation email. The invite is already created — email never
+  // blocks it. sendEmail returns no-api-key when RESEND_API_KEY is unset, in
+  // which case we fall back to the logged link + the panel's "Copy link".
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  console.info(`[invite] ${email} -> ${base}/invite/accept/${inv.token}`);
+  const acceptUrl = `${base}/invite/accept/${inv.token}`;
+  const org = await prisma.organization.findUnique({
+    where: { id: input.organizationId },
+    select: { name: true },
+  });
+  const orgName = org?.name ?? "a practice";
+  const escOrg = orgName.replace(
+    /[&<>]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!,
+  );
+  const roleLabel = input.role.replace(/_/g, " ");
+
+  const sent = await sendEmail({
+    to: [email],
+    subject: `You're invited to join ${orgName} on Leafjourney`,
+    text:
+      `You've been invited to join ${orgName} as ${roleLabel} on Leafjourney.\n\n` +
+      `Accept your invitation:\n${acceptUrl}\n\n` +
+      `This link expires in 14 days. If you weren't expecting this, you can ignore it.`,
+    html:
+      `<p>You've been invited to join <strong>${escOrg}</strong> as ${roleLabel} on Leafjourney.</p>` +
+      `<p><a href="${acceptUrl}">Accept your invitation</a></p>` +
+      `<p style="color:#888;font-size:12px">This link expires in 14 days. If you weren't expecting this, you can ignore it.</p>`,
+    tags: [{ name: "type", value: "practice-invite" }],
+  });
+  const emailed = sent.ok;
+  if (!emailed) {
+    // No key configured or send failed — the invite still exists; the accept
+    // link is logged and available via "Copy link" in the panel.
+    console.info(`[invite] email not sent (${sent.reason}); link: ${acceptUrl}`);
+  }
 
   revalidatePath("/practices");
-  return { ok: true, id: inv.id };
+  return { ok: true, id: inv.id, emailed };
 }
 
 export async function revokeInvitation(invitationId: string): Promise<InviteResult> {

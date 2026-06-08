@@ -43,7 +43,11 @@ export function PracticeInvitePanel({
     const res = await inviteToPractice({ organizationId, email, role });
     setBusy(false);
     if (res.ok) {
-      setOkMsg(`Invitation created for ${email.trim()}.`);
+      setOkMsg(
+        res.emailed
+          ? `Invitation email sent to ${email.trim()}.`
+          : `Invitation created for ${email.trim()} — share it with “Copy link” below.`,
+      );
       setEmail("");
       router.refresh();
     } else {
