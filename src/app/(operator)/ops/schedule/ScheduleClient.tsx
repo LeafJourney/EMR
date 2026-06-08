@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +55,7 @@ export type SerializedAppointment = {
   status: string;
   modality: string;
   providerId: string | null;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; firstName: string; lastName: string; status: string };
   // EMR-207 — no-show risk (null for already-resolved visits or low risk we don't surface).
   riskTier: "low" | "medium" | "high" | null;
   riskProbability: number | null;
@@ -343,6 +344,22 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
   );
 }
 
+// EMR-943 — color-coded patient status bubble (active/inactive/prospect).
+const PATIENT_STATUS_TONE: Record<string, "success" | "accent" | "neutral" | "warning"> = {
+  active: "success",
+  prospect: "accent",
+  inactive: "neutral",
+};
+
+function PatientStatusBubble({ status }: { status: string }) {
+  const tone = PATIENT_STATUS_TONE[status.toLowerCase()] ?? "warning";
+  return (
+    <Badge tone={tone} className="text-[9px] capitalize">
+      {status}
+    </Badge>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // EMR-927 — Appointment card with a right-click context menu. The "Schedule"
 // item navigates to /clinic/schedule?patientId=<id> so the operator lands on
@@ -377,9 +394,14 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           size="sm"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-text truncate">
+          {/* EMR-923 — patient name links to the chart */}
+          <Link
+            href={`/clinic/patients/${appt.patient.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block text-xs font-medium text-text hover:text-accent transition-colors truncate"
+          >
             {appt.patient.firstName} {appt.patient.lastName}
-          </p>
+          </Link>
           <p className="text-[10px] text-text-subtle tabular-nums">
             {formatTime(new Date(appt.startAt))}
           </p>
@@ -398,6 +420,8 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         >
           {appt.status}
         </Badge>
+        {/* EMR-943 — color-coded patient status bubble */}
+        <PatientStatusBubble status={appt.patient.status} />
         <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
       </div>
       {menu}

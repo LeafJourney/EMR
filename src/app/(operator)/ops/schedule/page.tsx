@@ -196,7 +196,7 @@ export default async function SchedulePage({
         startAt: { gte: start, lt: end },
       },
       include: {
-        patient: { select: { firstName: true, lastName: true, id: true } },
+        patient: { select: { firstName: true, lastName: true, id: true, status: true } },
         provider: {
           include: {
             user: { select: { firstName: true, lastName: true } },
@@ -329,7 +329,7 @@ type ApptRow = {
   status: string;
   modality: string;
   providerId: string | null;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; firstName: string; lastName: string; status: string };
 };
 
 function serializeAppointment(
@@ -346,6 +346,7 @@ function serializeAppointment(
       id: a.patient.id,
       firstName: a.patient.firstName,
       lastName: a.patient.lastName,
+      status: a.patient.status,
     },
     riskTier: risk?.tier ?? null,
     riskProbability: risk?.probability ?? null,
