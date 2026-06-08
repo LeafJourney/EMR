@@ -5,10 +5,12 @@ import { logCorrespondence } from "./actions";
 
 // EMR-829 — DOB shown as MM-DD-YYYY under the patient name (local format; the
 // shared formatDate stays "Mon D, YYYY" everywhere else it's used).
+// DOB is stored as UTC midnight, so read the UTC components to avoid the
+// timezone off-by-one day (golden-path fix).
 function dobMMDDYYYY(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${m}-${day}-${d.getFullYear()}`;
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${m}-${day}-${d.getUTCFullYear()}`;
 }
 
 interface HeaderContactProps {

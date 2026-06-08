@@ -226,7 +226,7 @@ export function BriefingConsole({
 }) {
   const [result, setResult] = useState<BriefingResult | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [isStartingVisit, setIsStartingVisit] = useState(false);
+  const [isStartingVisit, startStartVisitTransition] = useTransition();
   const [simulatedSteps, setSimulatedSteps] = useState<BriefingStep[]>([]);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -627,8 +627,7 @@ export function BriefingConsole({
                   size="sm"
                   disabled={isStartingVisit}
                   onClick={() => {
-                    setIsStartingVisit(true);
-                    startTransition(async () => {
+                    startStartVisitTransition(async () => {
                       try {
                         await startVisitWithBriefing(
                           patientId,
@@ -639,7 +638,6 @@ export function BriefingConsole({
                           err instanceof Error &&
                           !err.message.includes("NEXT_REDIRECT")
                         ) {
-                          setIsStartingVisit(false);
                           alert("Failed to start visit: " + err.message);
                         }
                       }

@@ -191,7 +191,7 @@ test.describe("LeafNerd hardening — /leafnerd SPA", () => {
     // An assistant reply arrives — either the live/stub analytics reply or the
     // graceful offline fallback. Either is a valid "chat returned a response".
     await expect(
-      panel.getByText(/active patients|couldn't reach the intelligence/i),
+      panel.locator(".ln-msg.bot").getByText(/active patients|couldn't reach the intelligence/i).first(),
     ).toBeVisible({ timeout: 20_000 });
 
     // The thinking indicator clears once the reply lands.

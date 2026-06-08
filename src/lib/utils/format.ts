@@ -10,6 +10,64 @@ export function formatDate(date: Date | string | null | undefined): string {
   });
 }
 
+/**
+ * Formats a calendar-date-only value (e.g. a date of birth) WITHOUT shifting
+ * it across timezones. DOB and similar fields are stored at UTC midnight, so
+ * rendering them with the runtime's local timezone rolls the day back one in
+ * negative-offset zones (the off-by-one DOB bug). Always read date-only fields
+ * in UTC so every surface — server or client — agrees on the stored date.
+ *
+ * Use for birth dates and other true calendar dates. NEVER use for timestamps
+ * (createdAt, appointment times) — those are real instants and want a real
+ * timezone; use `formatDate` for those.
+ */
+export function formatDateOnly(date: Date | string | null | undefined): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Formats a timestamp's DATE in a specific timezone. Use for real instants
+ * (appointments) that must render in the clinic's/patient's local zone rather
+ * than the server's UTC clock.
+ */
+export function formatDateInZone(
+  date: Date | string | null | undefined,
+  timeZone: string,
+): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  });
+}
+
+/** Formats a timestamp's TIME-of-day in a specific timezone. */
+export function formatTimeInZone(
+  date: Date | string | null | undefined,
+  timeZone: string,
+): string {
+  if (!date) return "—";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+}
+
 export function formatRelative(date: Date | string | null | undefined): string {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
@@ -56,6 +114,44 @@ export function initials(firstName: string, lastName: string): string {
 
 export function fullName(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim();
+}
+
+/** Human label for a visit modality enum — never render the raw "in_person". */
+export function formatModality(modality: string): string {
+  switch (modality) {
+    case "in_person":
+    case "in-person":
+      return "In-person";
+    case "video":
+      return "Video";
+    case "phone":
+      return "Phone";
+    case "telehealth":
+      return "Telehealth";
+    default:
+      return modality.replace(/_/g, "-");
+  }
+}
+
+/** Modality phrase with the correct indefinite article ("an in-person", "a video"). */
+export function modalityPhrase(modality: string): string {
+  const label = formatModality(modality).toLowerCase();
+  return /^[aeiou]/i.test(label) ? `an ${label}` : `a ${label}`;
+}
+
+/**
+ * Provider display name with the person's name FIRST and credentials/specialty
+ * after — "Dr. Lena Okafor, MD, Integrative Oncology" — instead of the
+ * title-prefixed "MD, Integrative Oncology Dr. Lena Okafor".
+ */
+export function formatProviderName(provider: {
+  name?: string | null;
+  title?: string | null;
+}): string {
+  const name = (provider.name ?? "").trim();
+  const title = (provider.title ?? "").trim();
+  if (name && title) return `${name}, ${title}`;
+  return name || title || "Your care team";
 }
 
 export function clamp(n: number, min: number, max: number): number {
