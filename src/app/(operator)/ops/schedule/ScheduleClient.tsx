@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
+import { rescheduleAppointment } from "./actions";
 
 // ---------------------------------------------------------------------------
 // EMR-936 — Clickable "Providers this week" cards → provider snapshot in the
@@ -328,67 +329,226 @@ const BASE_COLS: Record<number, string> = {
   7: "grid-cols-7",
 };
 
+// EMR-921 / EMR-578 — drag-to-reschedule week board. Each appointment card is
+// draggable; each day column is a drop target. Dropping a card on another day
+// optimistically moves it (re-grouped + re-sorted instantly), calls the
+// rescheduleAppointment server action, and reverts on failure. EMR-577 adds a
+// right-click "New visit" menu on each day's empty space.
 function WeekGrid({ days }: { days: DayBucket[] }) {
-  // Span up to 7 columns; shorter windows (e.g. "Today") use fewer.
+  const router = useRouter();
+  const [, startReschedule] = useTransition();
+  // Optimistic day overrides while a reschedule is in flight: apptId -> day iso.
+  const [moves, setMoves] = useState<Record<string, string>>({});
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverIso, setDragOverIso] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-group every appointment by its effective day (optimistic move applied)
+  // so a dropped card jumps columns instantly and re-sorts by start time.
+  const displayDays = useMemo(() => {
+    const flat: { appt: SerializedAppointment; originIso: string }[] = [];
+    for (const d of days) for (const a of d.appointments) flat.push({ appt: a, originIso: d.iso });
+    return days.map((d) => ({
+      ...d,
+      appointments: flat
+        .filter(({ appt, originIso }) => (moves[appt.id] ?? originIso) === d.iso)
+        .map(({ appt }) => appt)
+        .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    }));
+  }, [days, moves]);
+
   const cols = Math.min(7, Math.max(1, days.length));
+
+  function originOf(id: string): string | undefined {
+    return moves[id] ?? days.find((d) => d.appointments.some((a) => a.id === id))?.iso;
+  }
+
+  function handleDrop(targetIso: string) {
+    const id = draggingId;
+    setDragOverIso(null);
+    setDraggingId(null);
+    if (!id) return;
+    const from = originOf(id);
+    if (!from || from === targetIso) return;
+
+    setMoves((m) => ({ ...m, [id]: targetIso }));
+    setPending((p) => new Set(p).add(id));
+    setError(null);
+    startReschedule(async () => {
+      const res = await rescheduleAppointment(id, targetIso);
+      setPending((p) => {
+        const n = new Set(p);
+        n.delete(id);
+        return n;
+      });
+      if (!res.ok) {
+        setMoves((m) => {
+          const n = { ...m };
+          delete n[id];
+          return n;
+        });
+        setError(res.error);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
   return (
-    <div className={cn("grid grid-cols-1 gap-3", LG_COLS[cols])}>
-      {days.map((day) => {
-        const date = new Date(day.iso);
-        const isToday = day.isToday;
-        return (
-          <div
+    <div>
+      {error && (
+        <div className="mb-3 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">
+          {error}
+        </div>
+      )}
+      <div className={cn("grid grid-cols-1 gap-3", LG_COLS[cols])}>
+        {displayDays.map((day) => (
+          <DayColumn
             key={day.iso}
+            day={day}
+            isDropTarget={dragOverIso === day.iso}
+            pending={pending}
+            onDragOverColumn={() => setDragOverIso(day.iso)}
+            onDragLeaveColumn={() => setDragOverIso((cur) => (cur === day.iso ? null : cur))}
+            onDropColumn={() => handleDrop(day.iso)}
+            onCardDragStart={(id) => setDraggingId(id)}
+            onCardDragEnd={() => {
+              setDraggingId(null);
+              setDragOverIso(null);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// One week-view day column: droppable target + draggable appointment cards +
+// a right-click "New visit" menu on empty space (EMR-577).
+function DayColumn({
+  day,
+  isDropTarget,
+  pending,
+  onDragOverColumn,
+  onDragLeaveColumn,
+  onDropColumn,
+  onCardDragStart,
+  onCardDragEnd,
+}: {
+  day: DayBucket;
+  isDropTarget: boolean;
+  pending: Set<string>;
+  onDragOverColumn: () => void;
+  onDragLeaveColumn: () => void;
+  onDropColumn: () => void;
+  onCardDragStart: (id: string) => void;
+  onCardDragEnd: () => void;
+}) {
+  const router = useRouter();
+  const date = new Date(day.iso);
+  const isToday = day.isToday;
+
+  // EMR-577 — right-click empty day space to start a new visit on that day.
+  const newVisitMenu: ContextMenuItem[] = [
+    {
+      label: `New visit · ${formatDayLabel(date)} ${formatDayNumber(date)}`,
+      icon: ContextMenuIcons.Calendar,
+      onSelect: (close) => {
+        router.push(`/clinic/scheduling/book?date=${day.iso.slice(0, 10)}`);
+        close();
+      },
+    },
+  ];
+  const { triggerProps, menu } = useContextMenu(newVisitMenu);
+
+  return (
+    <div
+      className={cn(
+        "bg-surface-raised rounded-xl border overflow-hidden flex flex-col transition-all",
+        isToday ? "border-accent/50 shadow-md" : "border-border",
+        isDropTarget && "ring-2 ring-accent ring-offset-1 border-accent",
+      )}
+    >
+      {/* Day header */}
+      <div
+        className={cn(
+          "px-4 py-3 border-b",
+          isToday ? "bg-accent/10 border-accent/20" : "bg-surface-muted/40 border-border",
+        )}
+      >
+        <div className="flex items-baseline justify-between">
+          <p
             className={cn(
-              "bg-surface-raised rounded-xl border overflow-hidden flex flex-col",
-              isToday ? "border-accent/50 shadow-md" : "border-border",
+              "text-[11px] font-medium uppercase tracking-wider",
+              isToday ? "text-accent" : "text-text-subtle",
             )}
           >
-            {/* Day header */}
-            <div
-              className={cn(
-                "px-4 py-3 border-b",
-                isToday
-                  ? "bg-accent/10 border-accent/20"
-                  : "bg-surface-muted/40 border-border",
-              )}
-            >
-              <div className="flex items-baseline justify-between">
-                <p
-                  className={cn(
-                    "text-[11px] font-medium uppercase tracking-wider",
-                    isToday ? "text-accent" : "text-text-subtle",
-                  )}
-                >
-                  {formatDayLabel(date)}
-                  {isToday && " · Today"}
-                </p>
-                <p
-                  className={cn(
-                    "font-display text-lg",
-                    isToday ? "text-accent" : "text-text",
-                  )}
-                >
-                  {formatDayNumber(date)}
-                </p>
-              </div>
-            </div>
+            {formatDayLabel(date)}
+            {isToday && " · Today"}
+          </p>
+          <p className={cn("font-display text-lg", isToday ? "text-accent" : "text-text")}>
+            {formatDayNumber(date)}
+          </p>
+        </div>
+      </div>
 
-            {/* Appointments */}
-            <div className="p-2 space-y-1.5 flex-1 min-h-[240px]">
-              {day.appointments.length === 0 ? (
-                <p className="text-[11px] text-text-subtle text-center py-4 italic">
-                  No visits
-                </p>
-              ) : (
-                day.appointments.map((appt) => (
-                  <AppointmentCard key={appt.id} appt={appt} />
-                ))
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {/* Droppable appointments area */}
+      <div
+        {...triggerProps}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          onDragOverColumn();
+        }}
+        onDragLeave={onDragLeaveColumn}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDropColumn();
+        }}
+        className={cn(
+          "p-2 space-y-1.5 flex-1 min-h-[240px] transition-colors",
+          isDropTarget && "bg-accent/5",
+        )}
+      >
+        {day.appointments.length === 0 ? (
+          <p
+            className={cn(
+              "text-[11px] text-center py-4",
+              isDropTarget ? "text-accent font-medium" : "text-text-subtle italic",
+            )}
+          >
+            {isDropTarget ? "Drop to move here" : "No visits"}
+          </p>
+        ) : (
+          day.appointments.map((appt) => {
+            const isPending = pending.has(appt.id);
+            return (
+              <div
+                key={appt.id}
+                draggable={!isPending}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", appt.id);
+                  onCardDragStart(appt.id);
+                }}
+                onDragEnd={onCardDragEnd}
+                // Right-clicks on a card open the card's own menu — don't also
+                // open this column's "new visit" menu.
+                onContextMenu={(e) => e.stopPropagation()}
+                className={cn(
+                  "cursor-grab active:cursor-grabbing",
+                  isPending && "opacity-50 pointer-events-none",
+                )}
+                title="Drag to another day to reschedule"
+              >
+                <AppointmentCard appt={appt} />
+              </div>
+            );
+          })
+        )}
+      </div>
+      {menu}
     </div>
   );
 }
@@ -430,6 +590,7 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           {/* EMR-923 — patient name links through to the chart home page. */}
           <Link
             href={`/clinic/patients/${appt.patient.id}`}
+            draggable={false}
             className="block text-xs font-medium text-text truncate hover:text-accent hover:underline"
           >
             {appt.patient.firstName} {appt.patient.lastName}
