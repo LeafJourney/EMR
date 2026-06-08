@@ -44,9 +44,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
       - key: SUPABASE_URL
@@ -102,9 +102,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: LeafNerd
 
@@ -126,9 +126,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
 
