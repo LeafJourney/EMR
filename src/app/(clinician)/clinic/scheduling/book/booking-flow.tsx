@@ -8,6 +8,7 @@ import { Input, Label, Textarea, FieldGroup } from "@/components/ui/input";
 import { Stepper as UiStepper } from "@/components/ui/stepper";
 import { cn } from "@/lib/utils/cn";
 import { confirmBookingAction, type ConfirmBookingInput } from "./actions";
+import { googleCalendarUrl } from "@/lib/scheduling/ics-export";
 
 export interface VisitTypeOption {
   id: "new_patient" | "follow_up" | "renewal" | "in_person";
@@ -449,6 +450,15 @@ function ConfirmedScreen({
   visitType: VisitTypeOption;
   slotIso: string;
 }) {
+  // EMR-388 — Google Calendar invite link alongside the iCal download.
+  const gcalUrl = googleCalendarUrl({
+    id: `appt-${confirmation.appointmentId}`,
+    title: visitType.label,
+    startsAt: slotIso,
+    endsAt: new Date(
+      new Date(slotIso).getTime() + visitType.durationMinutes * 60_000,
+    ).toISOString(),
+  });
   return (
     <Card tone="ambient">
       <CardContent className="pt-8 pb-8 text-center">
@@ -458,9 +468,12 @@ function ConfirmedScreen({
           {visitType.label} on {formatDayHeader(slotIso.slice(0, 10))} at {formatTime(slotIso)}.
           We've sent a confirmation to your secure inbox.
         </p>
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <a href={confirmation.icsDataUrl} download={confirmation.icsFileName}>
             <Button variant="primary">Add to calendar</Button>
+          </a>
+          <a href={gcalUrl} target="_blank" rel="noopener noreferrer">
+            <Button variant="secondary">Google Calendar</Button>
           </a>
           <Button variant="secondary" onClick={() => window.location.reload()}>
             Book another

@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { logCorrespondence } from "./actions";
-import { formatDate } from "@/lib/utils/format";
+
+// EMR-829 — DOB shown as MM-DD-YYYY under the patient name (local format; the
+// shared formatDate stays "Mon D, YYYY" everywhere else it's used).
+function dobMMDDYYYY(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${m}-${day}-${d.getFullYear()}`;
+}
 
 interface HeaderContactProps {
   patientId: string;
@@ -191,7 +198,7 @@ export function HeaderContact({
   return (
     <div className="flex items-center gap-2 flex-wrap mt-3">
       <span className="text-xs text-text-subtle">
-        DOB {dateOfBirth ? formatDate(new Date(dateOfBirth)) : "Not on file"}
+        DOB {dateOfBirth ? dobMMDDYYYY(new Date(dateOfBirth)) : "Not on file"}
       </span>
       <span className="text-xs text-text-subtle">&middot;</span>
       {email ? (
