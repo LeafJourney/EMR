@@ -459,8 +459,16 @@ function ConfirmedScreen({
           We've sent a confirmation to your secure inbox.
         </p>
         <div className="flex items-center justify-center gap-3">
+          {/* EMR-388 — iCal (.ics) + Google Calendar share */}
           <a href={confirmation.icsDataUrl} download={confirmation.icsFileName}>
-            <Button variant="primary">Add to calendar</Button>
+            <Button variant="primary">Add to calendar (.ics)</Button>
+          </a>
+          <a
+            href={googleCalendarUrl(slotIso, visitType.durationMinutes, visitType.label)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button variant="secondary">Google Calendar</Button>
           </a>
           <Button variant="secondary" onClick={() => window.location.reload()}>
             Book another
@@ -496,4 +504,23 @@ function formatTime(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// EMR-388 — build a Google Calendar "add event" URL from the booked slot.
+function googleCalendarUrl(
+  slotIso: string,
+  durationMinutes: number,
+  title: string,
+): string {
+  const start = new Date(slotIso);
+  const end = new Date(start.getTime() + durationMinutes * 60_000);
+  const stamp = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: title,
+    dates: `${stamp(start)}/${stamp(end)}`,
+    details: "Appointment booked via LeafJourney.",
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
