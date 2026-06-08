@@ -146,6 +146,23 @@ export function ScheduleCalendar({
     }
   };
 
+  // EMR-578 — List-view drag: drop an appointment onto a day group to move it
+  // to that day at the same time-of-day. Reuses onDrop (conflict handling).
+  const onDropToDay = (appointmentId: string, dayKey: string) => {
+    const appt = appointments.find((a) => a.id === appointmentId);
+    if (!appt) return;
+    const cur = new Date(appt.startAtIso);
+    const dayIdx = Math.round(
+      (new Date(dayKey).getTime() - new Date(weekStart.toDateString()).getTime()) /
+        86_400_000,
+    );
+    const slotIdx = Math.max(
+      0,
+      Math.round((cur.getHours() * 60 + cur.getMinutes() - FIRST_HOUR * 60) / SLOT_MIN),
+    );
+    onDrop(appointmentId, dayIdx, slotIdx);
+  };
+
   const goWeek = (delta: number) => {
     const next = addDays(weekStart, delta * 7);
     const iso = next.toISOString().slice(0, 10);
@@ -248,7 +265,9 @@ export function ScheduleCalendar({
         </div>
       )}
 
-      {view === "list" && <ListView appointments={appointments} />}
+      {view === "list" && (
+        <ListView appointments={appointments} onDropToDay={onDropToDay} />
+      )}
       {view === "week" && (
         <WeekGrid
           weekStart={weekStart}
@@ -580,7 +599,16 @@ function DayGrid({
 
 // ── List view ───────────────────────────────────────────────────
 
-function ListView({ appointments }: { appointments: AppointmentDTO[] }) {
+function ListView({
+  appointments,
+  onDropToDay,
+}: {
+  appointments: AppointmentDTO[];
+  // EMR-578 — drop an appointment onto a day group to reschedule it there.
+  onDropToDay?: (appointmentId: string, dayKey: string) => void;
+}) {
+  const [dragOverDay, setDragOverDay] = React.useState<string | null>(null);
+
   if (appointments.length === 0) {
     return (
       <Card>
@@ -600,35 +628,67 @@ function ListView({ appointments }: { appointments: AppointmentDTO[] }) {
   return (
     <div className="space-y-4">
       {Array.from(groups.entries()).map(([dayKey, list]) => (
-        <Card key={dayKey}>
+        <Card
+          key={dayKey}
+          className={cn(
+            "transition-colors",
+            dragOverDay === dayKey && "ring-2 ring-accent/50 border-accent/40",
+          )}
+          onDragOver={(e) => {
+            if (!onDropToDay) return;
+            e.preventDefault();
+            setDragOverDay(dayKey);
+          }}
+          onDragLeave={() => setDragOverDay((d) => (d === dayKey ? null : d))}
+          onDrop={(e) => {
+            if (!onDropToDay) return;
+            e.preventDefault();
+            setDragOverDay(null);
+            const apptId = e.dataTransfer.getData("text/appt-id");
+            if (apptId) onDropToDay(apptId, dayKey);
+          }}
+        >
           <CardContent className="pt-4">
             <p className="text-[11px] uppercase tracking-wider text-text-subtle font-medium mb-3">
               {dayKey}
             </p>
             <ul className="divide-y divide-border/60">
-              {list.map((a) => (
-                <li key={a.id} className="py-2 flex items-center gap-3">
-                  <span className="text-xs font-mono tabular-nums text-text-subtle w-16 shrink-0">
-                    {formatTime(a.startAtIso)}
-                  </span>
-                  {a.patientName.includes("System CalendarBlock") ? (
-                    <span className="flex-1 text-sm font-semibold text-text-subtle">
-                      {a.notes?.replace(/\[CalendarBlock:.*?\]/, "").trim() || "Blocked Time"}
+              {list.map((a) => {
+                const isBlock = a.patientName.includes("System CalendarBlock");
+                return (
+                  <li
+                    key={a.id}
+                    draggable={!isBlock && !!onDropToDay}
+                    onDragStart={(e) =>
+                      e.dataTransfer.setData("text/appt-id", a.id)
+                    }
+                    className={cn(
+                      "py-2 flex items-center gap-3",
+                      !isBlock && onDropToDay && "cursor-grab active:cursor-grabbing",
+                    )}
+                  >
+                    <span className="text-xs font-mono tabular-nums text-text-subtle w-16 shrink-0">
+                      {formatTime(a.startAtIso)}
                     </span>
-                  ) : (
-                    <Link
-                      href={`/clinic/patients/${a.patientId}`}
-                      className="flex-1 min-w-0 text-sm text-text hover:text-accent truncate"
-                    >
-                      {a.patientName}
-                    </Link>
-                  )}
-                  <Badge tone={statusTone(a.status)} className="text-[10px]">
-                    {a.status}
-                  </Badge>
-                  <span className="text-[11px] text-text-subtle">{formatModality(a.modality)}</span>
-                </li>
-              ))}
+                    {isBlock ? (
+                      <span className="flex-1 text-sm font-semibold text-text-subtle">
+                        {a.notes?.replace(/\[CalendarBlock:.*?\]/, "").trim() || "Blocked Time"}
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/clinic/patients/${a.patientId}`}
+                        className="flex-1 min-w-0 text-sm text-text hover:text-accent truncate"
+                      >
+                        {a.patientName}
+                      </Link>
+                    )}
+                    <Badge tone={statusTone(a.status)} className="text-[10px]">
+                      {a.status}
+                    </Badge>
+                    <span className="text-[11px] text-text-subtle">{formatModality(a.modality)}</span>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>
