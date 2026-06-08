@@ -228,6 +228,7 @@ export default async function OperatorLayout({
       pillar: "system",
       icon: "settings",
       items: [
+        { label: "Team & roles", href: "/ops/team" },
         { label: "AI Config", href: "/ops/settings/ai-config" },
         { label: "Webhooks", href: "/ops/webhooks" },
         { label: "API keys", href: "/ops/api-keys" },
