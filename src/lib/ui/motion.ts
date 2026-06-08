@@ -130,7 +130,7 @@ export function modalSpring(reduce: boolean): MotionProps {
     // values and reads as a washed-out, half-faded modal while it settles.
     transition: {
       ...SPRING_MODAL,
-      opacity: { duration: DURATION.quick, ease: EASE_PREMIUM },
+      opacity: { type: "tween", duration: DURATION.quick, ease: EASE_PREMIUM },
     },
   };
 }
