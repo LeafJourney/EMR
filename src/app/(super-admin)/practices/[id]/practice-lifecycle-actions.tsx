@@ -16,6 +16,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { PracticeLifecycleStage } from "../lifecycle";
+import { discardDraftPractice } from "./discard-action";
 
 export function PracticeLifecycleActions({
   configId,
@@ -48,6 +49,18 @@ export function PracticeLifecycleActions({
     setError(null);
     setSubmitting(true);
     try {
+      if (mode === "discard") {
+        // True hard-delete — empty drafts only. The action re-verifies emptiness
+        // server-side before deleting.
+        const res = await discardDraftPractice(configId);
+        if (res.ok) {
+          router.push("/practices");
+          return;
+        }
+        setError(res.message);
+        return;
+      }
+      // Archive (activity / live) — reuse the existing endpoint.
       const res = await fetch(
         `/api/configs/${encodeURIComponent(configId)}/archive`,
         { method: "POST" },
@@ -115,7 +128,7 @@ export function PracticeLifecycleActions({
               </h3>
               <p className="text-[13px] text-text-muted mt-1.5">
                 {mode === "discard"
-                  ? `“${practiceName}” will be removed from your active workspace. This draft has no real activity, so nothing operational is lost.`
+                  ? `“${practiceName}” will be permanently deleted. This draft has no patients, claims, or encounters, so nothing operational is lost — but this can’t be undone.`
                   : `“${practiceName}” will move to Archived. Its history and data are preserved and it can be restored — but it leaves active operations.`}
               </p>
             </div>

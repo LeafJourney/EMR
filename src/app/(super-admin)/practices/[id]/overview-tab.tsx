@@ -113,8 +113,14 @@ export async function OverviewTab({ practice }: { practice: PracticeCardData }) 
       {/* Specialty-template coverage — what machine this practice is becoming. */}
       <PracticeSpecialtyCoverage practice={practice} />
 
-      {/* AI setup review — scaffolded (rule-based preview today, AI-ready). */}
-      <PracticeAiReview lifecycle={lifecycle} />
+      {/* AI setup review — real model client on demand, rule-based fallback. */}
+      <PracticeAiReview
+        organizationId={practice.organizationId}
+        practiceName={practice.practiceName}
+        specialty={practice.specialty}
+        careModel={practice.careModel}
+        lifecycle={lifecycle}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
