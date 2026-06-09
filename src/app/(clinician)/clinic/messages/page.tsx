@@ -220,9 +220,8 @@ export default async function ClinicMessagesPage({
   // We cast to a narrow interface for the detection loop only; the final
   // filtered arrays keep the `any[]` inference so they stay assignable to
   // the ThreadMessageData[] prop expected by SmartInboxView.
-  type ThrSlice = { threadId: string; messages: { body: string; createdAt: string }[] };
   const resolvedThreadIds = new Set<string>();
-  for (const t of threadMessages as ThrSlice[]) {
+  for (const t of threadMessages) {
     const msgs = [...t.messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const last = msgs[msgs.length - 1];
     if (last && isResolvedMarker(last.body)) resolvedThreadIds.add(t.threadId);
@@ -230,7 +229,7 @@ export default async function ClinicMessagesPage({
 
   const activeTriaged = triaged.filter((t) => !resolvedThreadIds.has(t.threadId));
   const activeThreadMessages: typeof threadMessages = [];
-  for (const t of threadMessages as ThrSlice[]) {
+  for (const t of threadMessages) {
     if (!resolvedThreadIds.has(t.threadId)) activeThreadMessages.push(t);
   }
 
