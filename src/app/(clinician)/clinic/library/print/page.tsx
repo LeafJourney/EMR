@@ -66,7 +66,7 @@ export default async function LibraryPrintPage() {
             </div>
           </div>
           <div style={{ textAlign: "right", fontSize: "10pt", color: "#444" }}>
-            <div><strong style={{ color: "#111" }}>{user?.name ?? "Clinician"}</strong></div>
+            <div><strong style={{ color: "#111" }}>{user ? `${user.firstName} ${user.lastName}`.trim() : "Clinician"}</strong></div>
             <div style={{ marginTop: 4 }}>Printed {printedAt}</div>
           </div>
         </header>
