@@ -163,6 +163,9 @@ model Organization {
   // admin tooling; absent for orgs that haven't onboarded billing yet.
   practiceSubscription PracticeSubscription?
 
+  // EMR-724 — AI broker token-usage ledger (append-only).
+  llmUsage LlmUsage[]
+
   // EMR-787 — Practice Manager Agent v1 (clinical / office supplies).
   // PARALLEL to `cannabisProducts` / `supplyProducts` (those are dispensary
   // domain). These are the gloves-and-gowns side of the practice.
@@ -1373,6 +1376,9 @@ model MessageThread {
   triageSafetyFlags Json? // string[] of red-flag symptoms
   triageSummary     String? // 1-2 sentence AI summary of the thread
   triagedAt         DateTime?
+  // EMR-808 — durable resolve state, replaces the in-body RESOLVED_SENTINEL hack.
+  resolvedAt        DateTime?
+  resolvedById      String? // clinician who resolved; plain audit column (no relation)
 
   patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   messages Message[]
@@ -1388,16 +1394,42 @@ enum MessageStatus {
   read
 }
 
+// Transport channel for a message. `portal` = in-app secure message the patient
+// reads in their portal (delivered on save). The rest are real external channels.
+enum MessageChannel {
+  portal
+  email
+  sms
+  fax
+  phone
+}
+
+// Truthful delivery state, distinct from MessageStatus (which only tracks
+// draft/sent/read for the thread UI). `delivered` = portal in-app OR an external
+// provider returned ok. `failed` = an external send was attempted and errored
+// (stays visible + retryable). `recorded` = an internal record only, with no
+// external transmission (call log, fax-disabled, or the honest no-provider /
+// dev-mock fallback). See src/lib/messaging/deliver.ts.
+enum MessageDelivery {
+  recorded
+  delivered
+  failed
+}
+
 model Message {
-  id           String        @id @default(cuid())
-  threadId     String
-  senderUserId String? // null when agent-drafted
-  senderAgent  String? // agent name:version if AI-drafted
-  status       MessageStatus @default(draft)
-  body         String
-  aiDrafted    Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  sentAt       DateTime?
+  id             String          @id @default(cuid())
+  threadId       String
+  senderUserId   String? // null when agent-drafted
+  senderAgent    String? // agent name:version if AI-drafted
+  status         MessageStatus   @default(draft)
+  channel        MessageChannel  @default(portal)
+  delivery       MessageDelivery @default(recorded)
+  deliveryDetail String? // provider id (resend/twilio) OR failure reason / "simulated …"
+  recipient      String? // email/phone for external channels; null for portal (patient via thread)
+  body           String
+  aiDrafted      Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  sentAt         DateTime?
 
   thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   sender User?         @relation("MessageSender", fields: [senderUserId], references: [id])
@@ -1780,6 +1812,23 @@ enum TaskStatus {
   cancelled
 }
 
+// EMR-1079 — task category, so the unified staff worklist (/ops/tasks) can
+// facet by the kind of work, matching the Back-Office Operations Audit's
+// "filterable by type". Nullable: existing rows and unclassified creators fall
+// into the "Unspecified" bucket until set.
+enum TaskKind {
+  verify_benefits
+  obtain_auth
+  refill
+  recall
+  message_reply
+  records_request
+  billing_followup
+  clinical_review
+  patient_task
+  other
+}
+
 model Task {
   id             String     @id @default(cuid())
   organizationId String
@@ -1787,6 +1836,7 @@ model Task {
   title          String
   description    String?
   status         TaskStatus @default(open)
+  kind           TaskKind?
   assigneeRole   Role?
   assigneeUserId String?
   dueAt          DateTime?
@@ -1801,6 +1851,8 @@ model Task {
   // Filters by patientId+status, orders by dueAt — covered by this composite.
   // Index audit 2026-05-09.
   @@index([patientId, status, dueAt])
+  // EMR-1079 — worklist owner/type facet (groupBy assigneeRole/kind).
+  @@index([organizationId, kind])
 }
 
 // --------------------------------------------------------------
@@ -1851,6 +1903,11 @@ model AgentJob {
   // Filters org + status IN [...] + completedAt > 24h, orders by
   // completedAt desc. Index audit pass 2 2026-05-10.
   @@index([organizationId, status, completedAt])
+  // EMR-951 — Mission Control "All Jobs" tab filters by status and orders
+  // chronologically by createdAt; claimNextJob also orders pending jobs by
+  // createdAt ASC. The (status, runAfter) index covers the claim WHERE but not
+  // the createdAt sort, so add a dedicated covering index.
+  @@index([status, createdAt])
 }
 
 // --------------------------------------------------------------
@@ -2898,6 +2955,31 @@ model CaregiverInvite {
 
   @@index([patientId, status])
   @@index([caregiverEmail])
+}
+
+// --------------------------------------------------------------
+// Team / staff invitations (practice lifecycle)
+// Standalone + additive: plain-string ids (organizationId, invitedById,
+// acceptedByUserId) with NO @relation, so this touches no existing model.
+// --------------------------------------------------------------
+model OrgInvitation {
+  id               String    @id @default(cuid())
+  organizationId   String
+  email            String
+  role             Role
+  status           String    @default("pending") // pending | accepted | revoked | expired
+  token            String    @unique @default(cuid())
+  invitedById      String
+  acceptedByUserId String?
+  invitedAt        DateTime  @default(now())
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([email])
 }
 
 // --------------------------------------------------------------
@@ -5321,6 +5403,42 @@ model PracticeSubscription {
   @@index([tier])
 }
 
+// EMR-724 — SaaS billing & AI brokering usage ledger.
+//
+// Append-only row written by the AI broker (src/lib/ai/broker) on every
+// upstream model call — success AND failure — so token accounting, per-org
+// cost dashboards (EMR-724), and anomaly detection have a durable feed. The
+// broker logged this shape to stdout only until this model landed; persisting
+// it is what turns "monitoring model token consumption per organization" on.
+model LlmUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Coarse billing bucket (charting | billing | messaging | research |
+  /// background | patient_facing | uncategorized). Mirrors AGENT_BUCKETS.
+  agentBucket    String
+  /// Stable agent identifier for telemetry (e.g. "charting.note-summarize").
+  agentName      String
+  /// Effective model the broker resolved for the call.
+  model          String
+  tokensIn       Int      @default(0)
+  tokensOut      Int      @default(0)
+  /// Estimated cost in micro-cents (1e-8 USD) — integer to avoid float drift.
+  /// Null until a price book is wired; token counts are the v1 source of truth.
+  costMicroCents Int?
+  latencyMs      Int      @default(0)
+  /// false when the upstream call failed (errorCode set).
+  ok             Boolean  @default(true)
+  errorCode      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Per-org cost dashboard: filter by org, window by createdAt.
+  @@index([organizationId, createdAt])
+  // Per-bucket roll-ups within an org.
+  @@index([organizationId, agentBucket])
+}
+
 model PastMedicalCondition {
   id        String    @id @default(cuid())
   patientId String
@@ -5755,6 +5873,15 @@ model MigrationJob {
   rowsTotal          Int                @default(0)
   rowsCompleted      Int                @default(0)
   rowsFailed         Int                @default(0)
+  /// Staged source rows to import, written by a source connector (e.g. the CSV
+  /// connector, EMR-457) at enqueue. The runner (EMR-456) reads this, resumes
+  /// from `rowsCompleted`, and processes the remainder. Shape:
+  /// { category: string, rows: Array<Record<string, unknown>> }. Null for jobs
+  /// whose source is streamed/fetched by a future connector instead of staged.
+  sourcePayload      Json?
+  /// Per-run summary the runner writes on completion (per-category counts +
+  /// the first few row errors). Drives the admin import report.
+  result             Json?
   /// Terminal error summary when status = failed.
   error              String?
   createdById        String?

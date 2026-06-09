@@ -200,6 +200,7 @@ export const staleClaimMonitorAgent: Agent<
           title: `Stale claim [stale-${f.category}] ${f.claimNumber ?? f.claimId.slice(0, 8)} — ${f.payerName ?? "payer"}`,
           description: `${f.recommendedAction}\n\nClaim id: ${f.claimId}\nCategory: ${f.category}\nDays waited: ${f.daysWaited}\nSLA days: ${f.slaDays}\n\n[Created by staleClaimMonitor agent]`,
           status: "open",
+          kind: "billing_followup",
           assigneeRole: "operator",
           dueAt: new Date(Date.now() + 2 * 86_400_000),
         },

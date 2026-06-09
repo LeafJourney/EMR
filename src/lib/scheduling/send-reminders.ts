@@ -182,6 +182,89 @@ export async function sendDueAppointmentReminders(
   return { sent, skipped, details };
 }
 
+// EMR-808 — operator-triggered, single-appointment reminder for the No-Show
+// Defense Cockpit. Sends immediately (no tick window / already-sent gating) and
+// reports a TRUTHFUL outcome: "delivered" only when a real provider (Twilio)
+// handled it, "recorded" when the dev mock simulated it, "failed" on error.
+export interface ManualReminderResult {
+  ok: boolean;
+  delivery: "delivered" | "recorded" | "failed";
+  detail: string;
+  adapter?: "twilio" | "mock";
+}
+
+export async function sendManualAppointmentReminder(opts: {
+  appointmentId: string;
+  organizationId: string;
+  actorUserId?: string | null;
+  now?: Date;
+}): Promise<ManualReminderResult> {
+  const now = opts.now ?? new Date();
+  const appt = await prisma.appointment.findFirst({
+    where: { id: opts.appointmentId, patient: { organizationId: opts.organizationId } },
+    include: {
+      patient: { select: { id: true, firstName: true, phone: true, organizationId: true } },
+      provider: { include: { user: true } },
+    },
+  });
+  if (!appt) return { ok: false, delivery: "failed", detail: "Appointment not found." };
+
+  const phone = normalizePhone(appt.patient.phone);
+  if (!phone) {
+    return { ok: false, delivery: "recorded", detail: "No valid phone number on file — nothing sent." };
+  }
+
+  // Manual sends aren't gated to the exact 7/2/1-day ticks; choose the closest
+  // sensible template for how far out the visit is.
+  const msUntil = appt.startAt.getTime() - now.getTime();
+  const offset: ReminderOffset =
+    msUntil <= 36 * 60 * 60_000 ? "1day" : msUntil <= 4 * 24 * 60 * 60_000 ? "2day" : "7day";
+
+  const providerName = appt.provider?.user
+    ? `${appt.provider.title ?? "Provider"} ${appt.provider.user.firstName} ${appt.provider.user.lastName}`.trim()
+    : "your care team";
+
+  const body = renderAppointmentReminder(offset, {
+    patientFirstName: appt.patient.firstName,
+    providerName,
+    appointmentAt: appt.startAt,
+    modality: appt.modality,
+  });
+
+  const res = await getSmsAdapter().send({
+    to: phone,
+    body,
+    context: { appointmentId: appt.id, patientId: appt.patient.id, reminderType: offset, manual: true },
+  });
+
+  if (!res.ok) {
+    logger.warn({ event: "cockpit.reminder.failed", appointmentId: appt.id, error: res.error });
+    return { ok: false, delivery: "failed", detail: res.error ?? "SMS send failed.", adapter: res.adapter };
+  }
+
+  // Audit regardless of adapter (mock sends are part of the demo trail).
+  await prisma.auditLog.create({
+    data: {
+      organizationId: appt.patient.organizationId,
+      actorUserId: opts.actorUserId ?? null,
+      action: "sms.appointment.reminder.manual",
+      subjectType: "Appointment",
+      subjectId: appt.id,
+      metadata: { reminderType: offset, messageId: res.messageId, adapter: res.adapter, manual: true } as any,
+    },
+  });
+
+  if (res.adapter === "mock") {
+    return {
+      ok: true,
+      delivery: "recorded",
+      detail: "Simulated — no SMS provider configured (set Twilio env to deliver).",
+      adapter: "mock",
+    };
+  }
+  return { ok: true, delivery: "delivered", detail: "Reminder delivered.", adapter: "twilio" };
+}
+
 async function alreadySent(
   appointmentId: string,
   reminderType: ReminderOffset,

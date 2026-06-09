@@ -5,7 +5,7 @@ import { PatientSectionNav } from "@/components/shell/PatientSectionNav";
 import { Eyebrow } from "@/components/ui/ornament";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MedicationWalletCard } from "../medications/wallet-card";
-import { formatDate } from "@/lib/utils/format";
+import { formatDate, formatDateOnly } from "@/lib/utils/format";
 
 /**
  * Medication wallet card — EMR-112
@@ -108,7 +108,7 @@ export default async function WalletCardPage() {
     dosage: m.dosage,
   }));
 
-  const dob = patient.dateOfBirth ? formatDate(patient.dateOfBirth) : null;
+  const dob = patient.dateOfBirth ? formatDateOnly(patient.dateOfBirth) : null;
   const fullName = `${patient.firstName} ${patient.lastName}`.trim();
 
   return (

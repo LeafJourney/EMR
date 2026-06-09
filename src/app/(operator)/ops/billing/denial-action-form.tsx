@@ -33,17 +33,23 @@ const DEPARTMENTS = [
 export function DenialActionForm({
   claimId,
   patientName,
+  claimBalanceCents = 0,
 }: {
   claimId: string;
   patientName: string;
+  /** Outstanding balance — bounds the write-off / adjustment slider (EMR-980). */
+  claimBalanceCents?: number;
 }) {
   const [open, setOpen] = React.useState(false);
   const [actionType, setActionType] = React.useState<ActionType>("respond");
   const [department, setDepartment] = React.useState(DEPARTMENTS[0]);
   const [justification, setJustification] = React.useState("");
+  const [adjustCents, setAdjustCents] = React.useState(0);
   const [pending, startTransition] = React.useTransition();
   const [result, setResult] = React.useState<TakeActionResult | null>(null);
 
+  // The amount slider applies to money-moving actions, not a pure refute.
+  const showAmount = actionType !== "refute" && claimBalanceCents > 0;
   const canSend = justification.trim().length > 0 && !pending;
 
   function submit() {
@@ -52,11 +58,22 @@ export function DenialActionForm({
     fd.set("claimId", claimId);
     fd.set("actionType", actionType);
     fd.set("department", department);
-    fd.set("justification", justification.trim());
+    // Fold the slider amount into the justification so it lands in the
+    // append-only audit note + chart correspondence (the action records the
+    // justification text); also send it as a discrete field.
+    const amountPrefix =
+      showAmount && adjustCents > 0
+        ? `[${actionType === "adjust" ? "Write-off" : "Adjustment"}: $${(adjustCents / 100).toFixed(2)} of $${(claimBalanceCents / 100).toFixed(2)} balance] `
+        : "";
+    fd.set("justification", amountPrefix + justification.trim());
+    fd.set("adjustCents", String(showAmount ? adjustCents : 0));
     startTransition(async () => {
       const res = await takeDenialAction(null, fd);
       setResult(res);
-      if (res.ok) setJustification("");
+      if (res.ok) {
+        setJustification("");
+        setAdjustCents(0);
+      }
     });
   }
 
@@ -101,6 +118,53 @@ export function DenialActionForm({
           </button>
         ))}
       </div>
+
+      {/* EMR-980 — write-off / adjustment amount slider */}
+      {showAmount && (
+        <div className="mb-3">
+          <div className="flex items-baseline justify-between mb-1">
+            <label className="text-xs text-text-muted">
+              {actionType === "adjust" ? "Write-off amount" : "Adjust claim charge"}
+            </label>
+            <span className="text-sm tabular-nums font-medium text-text">
+              ${(adjustCents / 100).toFixed(2)}
+              <span className="text-text-subtle">
+                {" "}
+                / ${(claimBalanceCents / 100).toFixed(2)}
+              </span>
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={claimBalanceCents}
+            step={100}
+            value={adjustCents}
+            onChange={(e) => setAdjustCents(Number(e.target.value))}
+            aria-label={actionType === "adjust" ? "Write-off amount" : "Adjustment amount"}
+            className="w-full accent-[color:var(--accent)]"
+          />
+          <div className="flex justify-between text-[10px] text-text-subtle mt-0.5">
+            <button type="button" onClick={() => setAdjustCents(0)} className="hover:text-text">
+              $0
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjustCents(Math.round(claimBalanceCents / 2))}
+              className="hover:text-text"
+            >
+              50%
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdjustCents(claimBalanceCents)}
+              className="hover:text-text"
+            >
+              Full balance
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Insurance department routing */}
       <label className="block text-xs text-text-muted mb-1">

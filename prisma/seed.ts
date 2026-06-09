@@ -1481,6 +1481,57 @@ async function main() {
     },
   });
 
+  // Non-clinical staff (Back-Office Operations Audit §7). A real front-desk /
+  // MA / office-manager team so /ops/team is populated and the P0 guarantee is
+  // demonstrable: none of these roles carries `notes.edit`, so none can author
+  // or sign a clinical note — clinical authoring is a permission, not a default.
+  await prisma.user.upsert({
+    where: { email: "frontdesk@demo.health" },
+    update: { passwordHash },
+    create: {
+      email: "frontdesk@demo.health",
+      passwordHash,
+      firstName: "Robin",
+      lastName: "Vance",
+      // Front Desk / Scheduler: demographics + billing only.
+      memberships: {
+        create: { organizationId: org.id, role: Role.front_office },
+      },
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "ma@demo.health" },
+    update: { passwordHash },
+    create: {
+      email: "ma@demo.health",
+      passwordHash,
+      firstName: "Sam",
+      lastName: "Ortiz",
+      // Medical Assistant / Biller: rooming + read-notes-to-code + billing.
+      memberships: {
+        create: { organizationId: org.id, role: Role.back_office },
+      },
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "office@demo.health" },
+    update: { passwordHash },
+    create: {
+      email: "office@demo.health",
+      passwordHash,
+      firstName: "Jordan",
+      lastName: "Lee",
+      // Office Manager: all ops, read-only chart, NO chart authoring. Distinct
+      // from owner@demo.health (practice_owner), who is an owner-as-provider
+      // and therefore does carry clinical authority.
+      memberships: {
+        create: { organizationId: org.id, role: Role.operator },
+      },
+    },
+  });
+
   // ------------------------------------------------------------------
   // Patient 1 — Maya Reyes (active, richest record)
   // ------------------------------------------------------------------
@@ -1967,6 +2018,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Upload current medication list",
+      kind: "patient_task",
       description:
         "Patient needs to provide a list of all current medications including OTC supplements.",
       status: TaskStatus.open,
@@ -1980,6 +2032,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Complete sleep quality assessment",
+      kind: "patient_task",
       description: "Complete the Pittsburgh Sleep Quality Index questionnaire.",
       status: TaskStatus.open,
       assigneeRole: Role.patient,
@@ -1992,6 +2045,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Review initial intake form",
+      kind: "clinical_review",
       description: "Clinician to review Maya's completed intake answers.",
       status: TaskStatus.done,
       assigneeRole: Role.clinician,
@@ -2005,6 +2059,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Classify uploaded sleep diary image",
+      kind: "other",
       description: "AI document organizer should classify Sleep_Diary_Photo.jpg.",
       status: TaskStatus.done,
       assigneeRole: Role.system,
@@ -2017,6 +2072,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Follow up on lab results interpretation",
+      kind: "clinical_review",
       description:
         "Waiting for oncology team to provide interpretation of CBC results before next visit.",
       status: TaskStatus.snoozed,
@@ -2297,6 +2353,7 @@ async function main() {
       organizationId: org.id,
       patientId: sarah.id,
       title: "Complete your intake",
+      kind: "records_request",
       description:
         "Please finish filling out your intake form so we can prepare for your first consultation.",
       status: TaskStatus.open,
@@ -4462,6 +4519,9 @@ async function main() {
   console.log("Seed complete.");
   console.log("  Owner:     owner@demo.health            / Longbeach2026!");
   console.log("  Clinician: clinician@demo.health        / Longbeach2026!");
+  console.log("  Front Desk:frontdesk@demo.health        / Longbeach2026!");
+  console.log("  MA/Biller: ma@demo.health               / Longbeach2026!");
+  console.log("  Office Mgr:office@demo.health            / Longbeach2026!");
   console.log("  Patient 1: patient@demo.health (Maya)   / Longbeach2026!");
   console.log("  Patient 2: james.chen@demo.health       / Longbeach2026!");
   console.log("  Patient 3: sarah.thompson@demo.health   / Longbeach2026!");

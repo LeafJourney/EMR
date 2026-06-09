@@ -232,6 +232,40 @@ export function requirePermission(
 }
 
 /**
+ * Ordered list of every permission key, for surfaces that enumerate the
+ * full matrix (e.g. the read-only role/permission viewer at /ops/team).
+ * Kept as an explicit literal so the display order is intentional rather
+ * than dependent on Set iteration order.
+ */
+export const ALL_PERMISSIONS: readonly Permission[] = [
+  "patient.demographics.read",
+  "patient.demographics.edit",
+  "billing.read",
+  "billing.edit",
+  "notes.read",
+  "notes.objective.document",
+  "notes.edit",
+  "clinical_history.read",
+  "sensitive_diagnoses.read",
+  "prescriptions.read",
+  "prescriptions.write",
+  "labs.read",
+  "labs.sign",
+  "notes.cosign_required",
+  "chart.privacy.manage",
+] as const;
+
+/**
+ * The default permission grants for a single role — the matrix "floor"
+ * (chart privacy can still subtract on a per-patient basis). Drives the
+ * read-only permission viewer so the UI can never drift from enforcement:
+ * both read from the same `PERMISSIONS` source of truth.
+ */
+export function permissionsForRole(role: Role): Permission[] {
+  return ALL_PERMISSIONS.filter((p) => PERMISSIONS[role]?.has(p));
+}
+
+/**
  * Can this user document the Objective / vitals section of a note? True for
  * full note editors (clinician, mid-level, owner — via `notes.edit`) and for
  * rooming staff (MAs) who carry only the scoped `notes.objective.document`

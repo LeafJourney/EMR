@@ -5,10 +5,12 @@ import { logCorrespondence } from "./actions";
 
 // EMR-829 — DOB shown as MM-DD-YYYY under the patient name (local format; the
 // shared formatDate stays "Mon D, YYYY" everywhere else it's used).
+// DOB is stored as UTC midnight, so read the UTC components to avoid the
+// timezone off-by-one day (golden-path fix).
 function dobMMDDYYYY(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${m}-${day}-${d.getFullYear()}`;
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${m}-${day}-${d.getUTCFullYear()}`;
 }
 
 interface HeaderContactProps {
@@ -154,14 +156,23 @@ export function HeaderContact({
     }
     setEmailSending(true);
     try {
-      await logCorrespondence(patientId, "email", subject, message, attachments);
+      const res = await logCorrespondence(patientId, "email", subject, message, attachments);
+      // Honest outcome — distinguish a real external delivery from a chart
+      // record that did not go out (EMR-808).
+      if (res.delivery === "delivered") {
+        alert(`Email delivered to ${patientName}.`);
+      } else if (res.delivery === "failed") {
+        alert(`Email could not be delivered (${res.detail ?? "send failed"}). It's saved to the chart so you can retry.`);
+      } else {
+        alert(res.detail ?? "Recorded to the chart — not delivered externally.");
+      }
       setSubject("");
       setMessage("");
       setAttachments([]);
       setEmailOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Failed to send correspondence.");
+      alert("Could not record the correspondence. Please try again.");
     } finally {
       setEmailSending(false);
     }
@@ -178,6 +189,7 @@ export function HeaderContact({
     try {
       const text = callTranscript.join("\n");
       await logCorrespondence(patientId, "call", "", text);
+      alert("Call logged to correspondence.");
       setPhoneOpen(false);
       setCallTranscript([]);
       setCallTimer(0);

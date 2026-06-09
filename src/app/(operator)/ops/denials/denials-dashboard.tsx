@@ -350,6 +350,13 @@ export function DenialsDashboard({
     });
   }, [rows, categoryFilter, urgencyFilter, payerFilter, dateFilter]);
 
+  // EMR-962 — claims Cindy has triaged with a recommended action that aren't
+  // high-urgency fire-drills: ready for a clinician's quick sign-off.
+  const readyForSignoff = useMemo(
+    () => rows.filter((r) => r.urgency !== "high" && r.suggestedActionLabel.trim().length > 0),
+    [rows],
+  );
+
   const anyFilterActive =
     !!categoryFilter || !!urgencyFilter || !!payerFilter || !!dateFilter;
 
@@ -691,6 +698,9 @@ export function DenialsDashboard({
         </span>
       </div>
 
+      {/* ── Reviewed by Cindy — ready for sign-off (EMR-962) ───────────── */}
+      {readyForSignoff.length > 0 && <ReviewedSignoffBin rows={readyForSignoff} />}
+
       {/* ── Worklist ───────────────────────────────────────────────────── */}
       <div id="denial-worklist" ref={worklistRef} className="scroll-mt-6">
         {filtered.length === 0 ? (
@@ -759,6 +769,77 @@ export function DenialsDashboard({
         totalDenials={totalDenials}
       />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-962 — Reviewed status bin: AI-triaged denials awaiting clinician sign-off
+// ---------------------------------------------------------------------------
+
+function ReviewedSignoffBin({ rows }: { rows: DenialRow[] }) {
+  const [open, setOpen] = useState(false);
+  const [signed, setSigned] = useState<Set<string>>(new Set());
+  const pending = rows.filter((r) => !signed.has(r.id));
+
+  return (
+    <div className="mb-6 rounded-xl border border-success/30 bg-success/[0.04]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3"
+      >
+        <span className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-success" />
+          <span className="text-sm font-semibold text-text">
+            Reviewed by Cindy — ready for sign-off
+          </span>
+          <Badge tone="success" className="text-[10px]">
+            {pending.length}
+          </Badge>
+        </span>
+        <ChevronDown
+          className={cn("w-4 h-4 text-text-subtle transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {pending.length === 0 ? (
+            <p className="text-xs text-text-muted py-2">
+              All caught up — nothing awaiting sign-off.
+            </p>
+          ) : (
+            pending.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-text truncate">
+                    {r.patientFirstName} {r.patientLastName}
+                  </p>
+                  <p className="text-[11px] text-text-subtle truncate">
+                    {r.payerName ?? "No payer"} · {r.claimNumber ?? "No CLM #"} · {r.billedLabel}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge tone="accent" className="text-[10px]">
+                    {r.suggestedActionLabel}
+                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => setSigned((s) => new Set(s).add(r.id))}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-md bg-success/10 text-success border border-success/20 hover:bg-success/20 transition-colors"
+                  >
+                    Sign off
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

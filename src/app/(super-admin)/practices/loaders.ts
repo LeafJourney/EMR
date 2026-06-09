@@ -366,6 +366,11 @@ export async function loadPracticeOverview(
         selectedSpecialtyVersion: true,
         careModel: true,
         enabledModalities: true,
+        workflowTemplateIds: true,
+        chartingTemplateIds: true,
+        rolePermissionTemplateIds: true,
+        physicianShellTemplateId: true,
+        patientShellTemplateId: true,
         status: true,
         publishedAt: true,
         updatedAt: true,
@@ -382,6 +387,11 @@ export async function loadPracticeOverview(
         selectedSpecialtyVersion: true,
         careModel: true,
         enabledModalities: true,
+        workflowTemplateIds: true,
+        chartingTemplateIds: true,
+        rolePermissionTemplateIds: true,
+        physicianShellTemplateId: true,
+        patientShellTemplateId: true,
         status: true,
         publishedAt: true,
         updatedAt: true,
@@ -404,6 +414,7 @@ export async function loadPracticeOverview(
     encounterCount,
     encountersLast30,
     patientCount,
+    launchStatus,
   ] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: orgId },
@@ -415,6 +426,7 @@ export async function loadPracticeOverview(
         brandName: true,
         primaryContactName: true,
         primaryContactEmail: true,
+        npi: true,
       },
     }),
     config.practiceId
@@ -424,6 +436,7 @@ export async function loadPracticeOverview(
             id: true,
             organizationId: true,
             name: true,
+            npi: true,
             city: true,
             state: true,
             timeZone: true,
@@ -472,6 +485,10 @@ export async function loadPracticeOverview(
       where: { organizationId: orgId, createdAt: { gte: since30 } },
     }),
     prisma.patient.count({ where: { organizationId: orgId, deletedAt: null } }),
+    prisma.practiceLaunchStatus.findUnique({
+      where: { organizationId: orgId },
+      select: { readinessScore: true, blockers: true, goLiveAt: true },
+    }),
   ]);
 
   if (!org) return null;
@@ -522,13 +539,105 @@ export async function loadPracticeOverview(
     specialtyVersion: config.selectedSpecialtyVersion ?? null,
     careModel: config.careModel ?? null,
     enabledModalities: config.enabledModalities ?? [],
+    specialtyCoverage: {
+      workflows: (config.workflowTemplateIds ?? []).length > 0,
+      charting: (config.chartingTemplateIds ?? []).length > 0,
+      roles: (config.rolePermissionTemplateIds ?? []).length > 0,
+      physicianShell: !!config.physicianShellTemplateId,
+      patientShell: !!config.patientShellTemplateId,
+    },
     status: String(config.status),
     publishedAt: config.publishedAt ? config.publishedAt.toISOString() : null,
     updatedAt: config.updatedAt ? config.updatedAt.toISOString() : null,
+    npi: practice?.npi ?? org.npi ?? null,
+    launch: launchStatus
+      ? {
+          readinessScore: launchStatus.readinessScore,
+          blockers: Array.isArray(launchStatus.blockers)
+            ? (launchStatus.blockers as string[])
+            : [],
+          goLiveAt: launchStatus.goLiveAt
+            ? launchStatus.goLiveAt.toISOString()
+            : null,
+        }
+      : null,
     officeManagers: officeManagers.slice(0, 3),
     leadProviders: leadProviders.slice(0, 4),
     kpi,
   };
+}
+
+/**
+ * Full membership roster for a practice's organization, with the joined User
+ * for name/email. Powers the People & role-coverage panel — unlike the
+ * overview's officeManagers (limited to admin/operator/owner), this returns
+ * EVERY role so coverage gaps (missing owner/admin/provider) are visible.
+ */
+export async function loadPracticeRoster(
+  organizationId: string,
+): Promise<PracticeStakeholder[]> {
+  const memberships = await prisma.membership.findMany({
+    where: { organizationId },
+    select: {
+      userId: true,
+      role: true,
+      user: { select: { firstName: true, lastName: true, email: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return memberships.map((m) => ({
+    userId: m.userId,
+    name: `${m.user.firstName} ${m.user.lastName}`.trim() || m.user.email,
+    email: m.user.email,
+    role: m.role,
+  }));
+}
+
+export interface PracticeInvitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  token: string;
+  invitedAt: string;
+  expiresAt: string | null;
+}
+
+/**
+ * Pending team invitations for a practice's organization (OrgInvitation model).
+ * Powers the invite panel — real pending invites, never fabricated.
+ */
+export async function loadPracticeInvitations(
+  organizationId: string,
+): Promise<PracticeInvitation[]> {
+  try {
+    const invites = await prisma.orgInvitation.findMany({
+      where: { organizationId, status: "pending" },
+      orderBy: { invitedAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        token: true,
+        invitedAt: true,
+        expiresAt: true,
+      },
+    });
+    return invites.map((i) => ({
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: i.status,
+      token: i.token,
+      invitedAt: i.invitedAt.toISOString(),
+      expiresAt: i.expiresAt ? i.expiresAt.toISOString() : null,
+    }));
+  } catch {
+    // The OrgInvitation table may not be migrated in every environment yet —
+    // the detail page must still render. Soft-fail to an empty list.
+    return [];
+  }
 }
 
 /**

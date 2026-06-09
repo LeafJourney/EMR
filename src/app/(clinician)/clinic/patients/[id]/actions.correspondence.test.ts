@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const hoisted = vi.hoisted(() => {
   const mockPrisma = {
     patient: { findFirst: vi.fn() },
-    messageThread: { create: vi.fn() },
+    messageThread: { create: vi.fn(), update: vi.fn() },
     message: { create: vi.fn() },
+    auditLog: { create: vi.fn() },
     document: { create: vi.fn() },
   };
   const mockUser = {
@@ -49,9 +50,11 @@ const { mockPrisma } = hoisted;
 
 function resetAll() {
   vi.clearAllMocks();
-  mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1" });
+  mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1", email: null, phone: null });
   mockPrisma.messageThread.create.mockResolvedValue({ id: "thread_1" });
+  mockPrisma.messageThread.update.mockResolvedValue({});
   mockPrisma.message.create.mockResolvedValue({ id: "message_1" });
+  mockPrisma.auditLog.create.mockResolvedValue({});
 }
 
 describe("logCorrespondence", () => {
@@ -68,10 +71,13 @@ describe("logCorrespondence", () => {
     ]);
 
     expect(mockPrisma.document.create).not.toHaveBeenCalled();
-    expect(mockPrisma.message.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        body: expect.stringContaining("instructions.pdf"),
+    expect(mockPrisma.message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          body: expect.stringContaining("instructions.pdf"),
+          channel: "email",
+        }),
       }),
-    });
+    );
   });
 });

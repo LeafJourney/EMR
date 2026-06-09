@@ -469,8 +469,9 @@ function ConfirmedScreen({
           We've sent a confirmation to your secure inbox.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
+          {/* EMR-388 — iCal (.ics) + Google Calendar share */}
           <a href={confirmation.icsDataUrl} download={confirmation.icsFileName}>
-            <Button variant="primary">Add to calendar</Button>
+            <Button variant="primary">Add to calendar (.ics)</Button>
           </a>
           <a href={gcalUrl} target="_blank" rel="noopener noreferrer">
             <Button variant="secondary">Google Calendar</Button>

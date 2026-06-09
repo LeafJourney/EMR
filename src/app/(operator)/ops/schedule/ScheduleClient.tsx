@@ -15,7 +15,12 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
-import { rescheduleAppointment } from "./actions";
+import { setPatientStatus } from "../patients/actions";
+import {
+  confirmAppointment,
+  declineAppointment,
+  rescheduleAppointment,
+} from "./actions";
 
 // ---------------------------------------------------------------------------
 // EMR-936 — Clickable "Providers this week" cards → provider snapshot in the
@@ -59,7 +64,7 @@ export type SerializedAppointment = {
   status: string;
   modality: string;
   providerId: string | null;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; firstName: string; lastName: string; status: string };
   // EMR-207 — no-show risk (null for already-resolved visits or low risk we don't surface).
   riskTier: "low" | "medium" | "high" | null;
   riskProbability: number | null;
@@ -553,6 +558,22 @@ function DayColumn({
   );
 }
 
+// EMR-943 — color-coded patient status bubble (active/inactive/prospect).
+const PATIENT_STATUS_TONE: Record<string, "success" | "accent" | "neutral" | "warning"> = {
+  active: "success",
+  prospect: "accent",
+  inactive: "neutral",
+};
+
+function PatientStatusBubble({ status }: { status: string }) {
+  const tone = PATIENT_STATUS_TONE[status.toLowerCase()] ?? "warning";
+  return (
+    <Badge tone={tone} className="text-[9px] capitalize">
+      {status}
+    </Badge>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // EMR-927 — Appointment card with a right-click context menu. The "Schedule"
 // item navigates to /clinic/schedule?patientId=<id> so the operator lands on
@@ -562,6 +583,31 @@ function DayColumn({
 
 function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
   const router = useRouter();
+  const [, startStatusChange] = useTransition();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // EMR-939 — change the patient's lifecycle status from the schedule board,
+  // reusing the roster's setPatientStatus action; refresh to reflect the bubble.
+  function changeStatus(status: string, close: () => void) {
+    close();
+    startStatusChange(async () => {
+      await setPatientStatus(appt.patient.id, status);
+      router.refresh();
+    });
+  }
+
+  // EMR-1085 — action a patient-requested booking right from the card.
+  function runStatusChange(
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+  ) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Could not update the appointment.");
+      else router.refresh();
+    });
+  }
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -572,7 +618,34 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         close();
       },
     },
+    { divider: true, label: "" },
+    {
+      label: "Change status",
+      icon: ContextMenuIcons.Check,
+      subItems: [
+        { label: "Mark active", onSelect: (close: () => void) => changeStatus("active", close) },
+        { label: "Mark prospect", onSelect: (close: () => void) => changeStatus("prospect", close) },
+        { label: "Mark inactive", onSelect: (close: () => void) => changeStatus("inactive", close) },
+      ],
+    },
   ];
+  // Only a still-requested booking can be confirmed or declined.
+  if (appt.status === "requested") {
+    menuItems.push(
+      {
+        label: "Confirm appointment",
+        icon: ContextMenuIcons.Check,
+        onSelect: () =>
+          runStatusChange(() => confirmAppointment({ appointmentId: appt.id })),
+      },
+      {
+        label: "Decline request",
+        danger: true,
+        onSelect: () =>
+          runStatusChange(() => declineAppointment({ appointmentId: appt.id })),
+      },
+    );
+  }
   const { triggerProps, menu } = useContextMenu(menuItems);
 
   return (
@@ -591,6 +664,7 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           <Link
             href={`/clinic/patients/${appt.patient.id}`}
             draggable={false}
+            onClick={(e) => e.stopPropagation()}
             className="block text-xs font-medium text-text truncate hover:text-accent hover:underline"
           >
             {appt.patient.firstName} {appt.patient.lastName}
@@ -613,18 +687,49 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         >
           {appt.status}
         </Badge>
+        {/* EMR-943 — color-coded patient status bubble */}
+        <PatientStatusBubble status={appt.patient.status} />
         <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
         {/* EMR-920 — inline insurance-eligibility helper tag on upcoming visits. */}
         {(appt.status === "requested" || appt.status === "confirmed") && (
-          <Badge
-            tone="info"
-            className="text-[9px]"
-            title="Insurance eligibility not yet verified for this visit."
+          <Link
+            href="/ops/eligibility"
+            className="inline-flex"
+            title="Check insurance eligibility for this visit."
           >
-            ⊕ Verify insurance
-          </Badge>
+            <Badge tone="info" className="text-[9px] hover:bg-blue-100">
+              ⊕ Verify insurance
+            </Badge>
+          </Link>
         )}
       </div>
+
+      {/* EMR-1085 — confirm/decline a patient-requested booking inline. */}
+      {appt.status === "requested" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => confirmAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => declineAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md px-2 py-0.5 text-[10px] font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+          >
+            Decline
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-[10px] text-danger">{error}</p>}
       {menu}
     </div>
   );

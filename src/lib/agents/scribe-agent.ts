@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
 import { ensureConsentDisclaimerBlock } from "@/lib/clinical/ai-consent-disclaimer";
+import { modalityPhrase } from "@/lib/utils/format";
 import { startReasoning } from "./memory/agent-reasoning";
 import { formatPersonaForPrompt, resolvePersona } from "./persona";
 import {
@@ -504,7 +505,7 @@ Non-negotiable safety rules (these OVERRIDE every other guideline):
           heading: "Summary",
           body:
             parsed.summary ??
-            `${patient.firstName} ${patient.lastName} presented for a ${encounter.modality} visit. ${encounter.reason ?? ""}`.trim(),
+            `${patient.firstName} ${patient.lastName} presented for ${modalityPhrase(encounter.modality)} visit. ${encounter.reason ?? ""}`.trim(),
         },
         {
           type: "findings" as const,
@@ -549,7 +550,7 @@ Non-negotiable safety rules (these OVERRIDE every other guideline):
         {
           type: "summary" as const,
           heading: "Summary",
-          body: `${patient.firstName} ${patient.lastName} presented for a ${encounter.modality} visit. ${encounter.reason ?? ""}`.trim(),
+          body: `${patient.firstName} ${patient.lastName} presented for ${modalityPhrase(encounter.modality)} visit. ${encounter.reason ?? ""}`.trim(),
         },
         {
           type: "findings" as const,

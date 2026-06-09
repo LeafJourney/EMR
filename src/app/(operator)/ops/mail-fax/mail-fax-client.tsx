@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, Children, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Send,
@@ -210,6 +210,59 @@ const INITIAL_DELETED: DeletedItem[] = [
 // Client component logic
 // ---------------------------------------------------------------------------
 
+// EMR-970 — resizable document/OCR split pane. Stacks on mobile; on lg+ a
+// draggable divider lets the operator widen either the scan or the OCR text.
+// Takes exactly two children (left = document, right = OCR).
+function OcrSplitView({ children }: { children: ReactNode }) {
+  const panes = Children.toArray(children);
+  const left = panes[0] ?? null;
+  const right = panes[1] ?? null;
+  const [pct, setPct] = useState(50);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  function startDrag() {
+    function move(ev: PointerEvent) {
+      const el = containerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const next = ((ev.clientX - rect.left) / rect.width) * 100;
+      setPct(Math.min(78, Math.max(22, next)));
+    }
+    function up() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  return (
+    <div className="mt-3 animate-in fade-in slide-in-from-top-2 duration-200">
+      {/* Mobile: stacked */}
+      <div className="grid grid-cols-1 gap-4 lg:hidden">
+        {left}
+        {right}
+      </div>
+      {/* Desktop: resizable split */}
+      <div ref={containerRef} className="hidden lg:flex items-stretch">
+        <div style={{ width: `${pct}%` }} className="min-w-0">
+          {left}
+        </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Drag to resize document and OCR panes"
+          onPointerDown={startDrag}
+          className="mx-1.5 w-1.5 shrink-0 cursor-col-resize self-stretch rounded-full bg-border hover:bg-accent/60 transition-colors"
+        />
+        <div style={{ width: `${100 - pct}%` }} className="min-w-0">
+          {right}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MailFaxClient({
   dbPatients,
   initialScans,
@@ -229,6 +282,9 @@ export function MailFaxClient({
 
   // Active Filter based on clickable Stat Cards
   const [selectedFilter, setSelectedFilter] = useState<"all" | "flagged" | "exact" | "low">("all");
+
+  // EMR-966 — filter inbox documents by source (Fax / Mail / Upload).
+  const [sourceFilter, setSourceFilter] = useState<"all" | "fax" | "mail" | "portal-upload">("all");
 
   // OCR expanded row states (document preview)
   const [expandedOCRId, setExpandedOCRId] = useState<string | null>(null);
@@ -299,20 +355,22 @@ export function MailFaxClient({
   ).length;
   const exactMatchesCount = reviewed.filter((r) => r.result.isExactMatch).length;
 
-  // Filter reviewed list based on active filter tab
+  // Filter reviewed list by the active stat-card filter AND document source.
   const filteredScans = useMemo(() => {
-    if (selectedFilter === "all") return reviewed;
+    let list = reviewed;
     if (selectedFilter === "flagged") {
-      return reviewed.filter((r) => r.result.mismatches.length > 0 || r.result.isNewCoverage);
+      list = list.filter((r) => r.result.mismatches.length > 0 || r.result.isNewCoverage);
+    } else if (selectedFilter === "exact") {
+      list = list.filter((r) => r.result.isExactMatch);
+    } else if (selectedFilter === "low") {
+      list = list.filter((r) => r.result.confidence === "low");
     }
-    if (selectedFilter === "exact") {
-      return reviewed.filter((r) => r.result.isExactMatch);
+    // EMR-966 — filter by document source (Fax / Mail / Upload).
+    if (sourceFilter !== "all") {
+      list = list.filter((r) => r.source === sourceFilter);
     }
-    if (selectedFilter === "low") {
-      return reviewed.filter((r) => r.result.confidence === "low");
-    }
-    return reviewed;
-  }, [reviewed, selectedFilter]);
+    return list;
+  }, [reviewed, selectedFilter, sourceFilter]);
 
   // EMR-938: 90-day retention — split outbox into active vs archived.
   const NOW = Date.now();
@@ -605,7 +663,7 @@ export function MailFaxClient({
       {/* Header and top commands */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Inbox & Outbox</h1>
+          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Processing Center</h1>
           <p className="text-sm text-text-subtle mt-1">
             Inbound mail packets, faxes, and portal uploads are OCR'd, parsed, and cross-checked.
           </p>
@@ -660,6 +718,36 @@ export function MailFaxClient({
           Outbox ({activeOutbox.length})
         </button>
       </div>
+
+      {/* EMR-966 — filter inbox by document source */}
+      {activeTab === "inbox" && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-wider text-text-subtle mr-1">
+            Source
+          </span>
+          {([
+            { key: "all", label: "All" },
+            { key: "fax", label: "Fax" },
+            { key: "mail", label: "Mail" },
+            { key: "portal-upload", label: "Upload" },
+          ] as const).map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setSourceFilter(s.key)}
+              aria-pressed={sourceFilter === s.key}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors",
+                sourceFilter === s.key
+                  ? "bg-accent text-accent-ink border-accent"
+                  : "bg-surface-muted text-text-muted border-border hover:bg-surface-raised",
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab Panels */}
       {activeTab === "inbox" ? (
@@ -979,7 +1067,7 @@ export function MailFaxClient({
                         </button>
 
                         {isExpanded && (
-                          <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <OcrSplitView>
                             {/* EMR-986: Left Pane renders the ACTUAL full-size
                                 document (image / pdf / docx) — not a mock. */}
                             <div className="rounded-xl border border-border bg-white shadow-sm relative min-h-[260px] overflow-hidden flex flex-col">
@@ -1039,7 +1127,7 @@ export function MailFaxClient({
                                 {scan.rawOcr}
                               </pre>
                             </div>
-                          </div>
+                          </OcrSplitView>
                         )}
                       </div>
                     </CardContent>

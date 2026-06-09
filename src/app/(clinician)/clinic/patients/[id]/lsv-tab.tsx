@@ -25,10 +25,10 @@ import {
   CollapsibleSection,
   FeatherTrend,
   CindySays,
+  useChartLedger,
 } from "./chart-kit";
 import type { ChartDoc } from "./records-tab";
 import { ASSESSMENTS, interpretScore } from "@/lib/clinical/assessment-catalog";
-import { LAB_PANELS } from "@/lib/clinical/lab-directory";
 import { VITALS, VITAL_SOURCES } from "@/lib/clinical/vitals-catalog";
 import { cindyTrend, cindyListSummary } from "@/lib/clinical/cindy-says";
 import {
@@ -44,16 +44,36 @@ export interface LsvAssessment {
   submittedAt: string;
 }
 
+/** One marker within a LabResult.results JSON map. */
+export interface LsvLabMarker {
+  value: number;
+  unit?: string;
+  refLow?: number;
+  refHigh?: number;
+  abnormal: boolean;
+}
+
+/** A structured lab result row (EMR-871) — mirrors the LabResult model. */
+export interface LsvLabResult {
+  id: string;
+  panelName: string;
+  receivedAt: string;
+  results: Record<string, LsvLabMarker>;
+  abnormalFlag: boolean;
+}
+
 type Subtab = "overview" | "assessments" | "labs" | "vitals";
 
 export function LsvTab({
   patientId,
   assessments,
   labDocs,
+  labResults,
 }: {
   patientId: string;
   assessments: LsvAssessment[];
   labDocs: ChartDoc[];
+  labResults: LsvLabResult[];
 }) {
   const [subtab, setSubtab] = React.useState<Subtab>("overview");
 
@@ -110,7 +130,9 @@ export function LsvTab({
         <Overview assessments={assessments} labDocs={labDocs} />
       )}
       {subtab === "assessments" && <AssessmentScores bySlug={bySlug} />}
-      {subtab === "labs" && <LabsSubtab patientId={patientId} labDocs={labDocs} />}
+      {subtab === "labs" && (
+        <LabsSubtab patientId={patientId} labDocs={labDocs} labResults={labResults} />
+      )}
       {subtab === "vitals" && <VitalsSubtab />}
     </div>
   );
@@ -259,7 +281,65 @@ function AssessmentScores({ bySlug }: { bySlug: Map<string, LsvAssessment[]> }) 
 
 /* ── EMR-871: labs subtab ────────────────────────────────────────────── */
 
-function LabsSubtab({ patientId, labDocs }: { patientId: string; labDocs: ChartDoc[] }) {
+function LsvIconBtn({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-surface-muted text-sm"
+    >
+      {children}
+    </button>
+  );
+}
+
+function LabsSubtab({
+  patientId,
+  labDocs,
+  labResults,
+}: {
+  patientId: string;
+  labDocs: ChartDoc[];
+  labResults: LsvLabResult[];
+}) {
+  // EMR-869: tile actions (print / download / return-to-queue) must be live,
+  // not static glyphs. Return-to-queue records to the chart ledger.
+  const { record } = useChartLedger(patientId);
+  // EMR-871: group structured results by panel (rows already chrono-ascending).
+  const byPanel = React.useMemo(() => {
+    const m = new Map<string, LsvLabResult[]>();
+    for (const r of labResults) {
+      const arr = m.get(r.panelName) ?? [];
+      arr.push(r);
+      m.set(r.panelName, arr);
+    }
+    return [...m.entries()];
+  }, [labResults]);
+  const viewUrl = (id: string) => `/clinic/patients/${patientId}/documents/${id}/view`;
+
+  function download(d: ChartDoc) {
+    const a = document.createElement("a");
+    a.href = viewUrl(d.id);
+    a.download = d.name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   return (
     <div className="space-y-4">
       {/* Lab documents (cleaned tiles) */}
@@ -270,17 +350,32 @@ function LabsSubtab({ patientId, labDocs }: { patientId: string; labDocs: ChartD
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-start justify-between gap-2">
                   <a
-                    href={`/clinic/patients/${patientId}/documents/${d.id}/view`}
+                    href={viewUrl(d.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm font-medium text-text hover:text-accent truncate"
                   >
                     {d.name}
                   </a>
-                  <div className="flex gap-1 text-text-subtle text-sm">
-                    <span title="Send">✉️</span>
-                    <span title="Print">🖨️</span>
-                    <span title="Save">💾</span>
+                  <div className="flex gap-1 text-text-subtle shrink-0">
+                    <LsvIconBtn label="Print" onClick={() => window.open(viewUrl(d.id), "_blank")}>
+                      🖨️
+                    </LsvIconBtn>
+                    <LsvIconBtn label="Download" onClick={() => download(d)}>
+                      ⬇️
+                    </LsvIconBtn>
+                    <LsvIconBtn
+                      label="Return to queue"
+                      onClick={() =>
+                        record({
+                          kind: "note",
+                          source: "Labs",
+                          subject: `Returned “${d.name}” to the lab review queue`,
+                        })
+                      }
+                    >
+                      ↩︎
+                    </LsvIconBtn>
                   </div>
                 </div>
                 <p className="text-sm font-semibold text-text tabular-nums text-right mt-2">
@@ -292,41 +387,73 @@ function LabsSubtab({ patientId, labDocs }: { patientId: string; labDocs: ChartD
         </div>
       )}
 
-      {/* Panel taxonomy with normal/abnormal + Feather */}
-      <div className="space-y-2">
-        {LAB_PANELS.map((panel) => (
-          <CollapsibleSection
-            key={panel.key}
-            title={
-              <span className="flex items-center gap-2">
-                {panel.emoji} {panel.title}
-              </span>
-            }
-            meta={panel.source}
-            right={
-              <FeatherTrend
-                label={panel.title}
-                series={[]}
-                analysis={cindyTrend({ label: panel.title, values: [] })}
-              />
-            }
-            defaultOpen={false}
-          >
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {panel.components.map((c) => (
-                <Bubble key={c.name} tone="normal">
-                  {c.name}
-                  {c.unit ? ` (${c.unit})` : ""}
-                </Bubble>
-              ))}
-            </div>
-            <p className="text-[11px] text-text-subtle mt-2">
-              Results from {panel.source}. Click a result to split-pane the
-              original report; normal = green, abnormal = red.
-            </p>
-          </CollapsibleSection>
-        ))}
-      </div>
+      {/* EMR-871: real structured results — grouped by panel, abnormal in red,
+          per-marker trends from the historical series. */}
+      {byPanel.length > 0 ? (
+        <div className="space-y-2">
+          {byPanel.map(([panelName, rows]) => {
+            const latest = rows[rows.length - 1];
+            const markers = Object.keys(latest.results);
+            return (
+              <CollapsibleSection
+                key={panelName}
+                title={<span className="flex items-center gap-2">🧪 {panelName}</span>}
+                meta={new Date(latest.receivedAt).toLocaleDateString()}
+                right={
+                  <Bubble tone={latest.abnormalFlag ? "severe" : "normal"}>
+                    {latest.abnormalFlag ? "Abnormal" : "Normal"}
+                  </Bubble>
+                }
+                defaultOpen={latest.abnormalFlag}
+              >
+                <ul className="divide-y divide-border/50 pt-1">
+                  {markers.map((name) => {
+                    const m = latest.results[name];
+                    const series = rows
+                      .map((r) => r.results[name]?.value)
+                      .filter((v): v is number => typeof v === "number");
+                    const ref =
+                      m.refLow != null && m.refHigh != null
+                        ? `${m.refLow}–${m.refHigh}${m.unit ? ` ${m.unit}` : ""}`
+                        : null;
+                    return (
+                      <li
+                        key={name}
+                        className="flex items-center justify-between gap-2 py-1.5 text-sm"
+                      >
+                        <span className="text-text">{name}</span>
+                        <span className="flex items-center gap-2">
+                          <Bubble tone={m.abnormal ? "severe" : "normal"}>
+                            {m.value}
+                            {m.unit ? ` ${m.unit}` : ""}
+                          </Bubble>
+                          {ref && (
+                            <span className="text-[11px] text-text-subtle tabular-nums">
+                              ref {ref}
+                            </span>
+                          )}
+                          {series.length >= 2 && (
+                            <FeatherTrend
+                              label={name}
+                              series={series}
+                              analysis={cindyTrend({ label: name, values: series, unit: m.unit })}
+                            />
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </CollapsibleSection>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          title="No structured lab results yet"
+          description="Quest/LabCorp results post here with reference ranges, abnormal flags (red), and per-marker trends."
+        />
+      )}
     </div>
   );
 }

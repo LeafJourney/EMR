@@ -495,6 +495,25 @@ function item(
   };
 }
 
+// Per-action description (used as the button's accessible name + tooltip).
+// Previously every action shared ONE generic string, so a screen reader could
+// not tell Approve from Remove — the highest-stakes control in the product.
+const ACTION_DISPOSITION_COPY: Record<VisitCompletionProposedActionType, string> = {
+  order_review: "Stage this order for review. Nothing is ordered until you Release Care Plan.",
+  approve:
+    "Stage this card as approved. You still confirm it before Release Care Plan finalizes anything.",
+  remove: "Remove this card from the release — it will not be acted on.",
+  edit: "Edit this card's details before confirming.",
+  defer: "Defer this card for later without rejecting it.",
+  send_to_staff: "Stage a front-desk hand-off — created only when you Release Care Plan.",
+  send_to_patient: "Stage a patient message — sent only when you Release Care Plan.",
+  text_scheduling_link: "Stage a scheduling-link text — sent only when you Release Care Plan.",
+  print: "Stage a printout — generated only when you Release Care Plan.",
+  coding_review: "Stage coding for review. Nothing is submitted until you Release Care Plan.",
+  create_staff_task: "Stage a staff task — created only when you Release Care Plan.",
+  view_checks: "View the safety checks behind this card.",
+};
+
 function action(
   id: string,
   label: string,
@@ -509,6 +528,7 @@ function action(
     requiresPhysicianApproval: true,
     sideEffect: "none",
     placeholderCopy:
+      ACTION_DISPOSITION_COPY[proposedActionType] ??
       "Physician review required. This control stages the card disposition; Release Care Plan is the only action that creates reviewed tasks, drafts, and audit records.",
   };
 }

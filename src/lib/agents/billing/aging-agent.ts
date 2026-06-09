@@ -97,6 +97,7 @@ export const agingAgent: Agent<z.infer<typeof input>, z.infer<typeof output>> = 
           title: `A/R follow-up: ${patient.firstName} ${patient.lastName} (${entry.ageDays}d)`,
           description: `Open balance: ${formatMoney(entry.balanceCents)}\nPayer: ${entry.payerName ?? "Self-pay"}\nStatus: ${entry.status}\nInsurance owes: ${formatMoney(entry.insuranceBalanceCents)}\nPatient owes: ${formatMoney(entry.patientBalanceCents)}\nRecoverability: ${recoverabilityScore(entry)}%\n\n[Created by aging agent]`,
           status: "open",
+          kind: "billing_followup",
           assigneeRole: "operator",
           dueAt: new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000),
         },

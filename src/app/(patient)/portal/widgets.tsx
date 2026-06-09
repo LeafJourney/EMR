@@ -16,7 +16,8 @@ import { BadgeShowcase } from "@/components/portal/badge-showcase";
 import { isLocalDemoUserId } from "@/lib/auth/local-demo";
 import { buildLocalDemoPortalPatient, LOCAL_DEMO_PLANT_HEALTH } from "@/lib/domain/patient-portal-demo";
 import { computePlantHealth, STAGE_LABELS } from "@/lib/domain/plant-health";
-import { formatDate, formatRelative } from "@/lib/utils/format";
+import { formatDate, formatRelative, formatDateInZone, formatTimeInZone } from "@/lib/utils/format";
+import { greetingForTimeZone, DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
 import { applyFreezeTokenAction } from "@/app/(patient)/portal/apply-freeze-action";
 import { withTimeout } from "@/lib/utils/with-timeout";
 import { PWASyncNextVisit, PWASyncTasks, PWASyncStreak } from "@/components/portal/pwa-sync";
@@ -29,14 +30,6 @@ import { BirthdayBadge } from "@/components/patient/birthday-badge";
 const PATIENT_QUERY_TIMEOUT_MS = 5_000;
 const PLANT_HEALTH_TIMEOUT_MS = 2_000;
 
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 5) return "Still up";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 21) return "Good evening";
-  return "Hello";
-}
 
 // Health grade algorithm: A-F based on outcomes, intake, visits, adherence
 function computeHealthGrade(data: {
@@ -145,10 +138,12 @@ export async function HeroGreetingWidget({ userId }: { userId: string }) {
   const patient = await fetchPatientData(userId, {
     dailyStreak: true,
     freezeTokens: { where: { isUsed: false } },
+    organization: { select: { timeZone: true } },
   });
 
   if (!patient) return null;
 
+  const timeZone = patient.organization?.timeZone || DEFAULT_TIME_ZONE;
   const todayStr = new Date().toISOString().split("T")[0];
   const currentStreak = patient.dailyStreak?.currentStreak ?? 0;
   const longestStreak = patient.dailyStreak?.longestStreak ?? 0;
@@ -171,6 +166,7 @@ export async function HeroGreetingWidget({ userId }: { userId: string }) {
               weekday: "long",
               month: "long",
               day: "numeric",
+              timeZone,
             })}
           </Eyebrow>
           <StreakFlame 
@@ -187,7 +183,7 @@ export async function HeroGreetingWidget({ userId }: { userId: string }) {
         </div>
         <h1 className="font-display text-2xl sm:text-3xl md:text-4xl leading-[1.1] tracking-tight text-text flex items-center gap-2 flex-wrap">
           <span>
-            {greeting()},{" "}
+            {greetingForTimeZone(timeZone)},{" "}
             <span className="italic text-accent">{patient.firstName}</span>.
           </span>
           <BirthdayBadge dateOfBirth={patient.dateOfBirth} />
@@ -436,9 +432,12 @@ export async function CannabisNextVisitMoodWidget({ userId }: { userId: string }
     },
     chartSummary: true,
     outcomeLogs: { orderBy: { loggedAt: "asc" }, take: 100 },
+    organization: { select: { timeZone: true } },
   });
 
   if (!patient) return null;
+
+  const timeZone = patient.organization?.timeZone || DEFAULT_TIME_ZONE;
 
   const totalThcPerDay = patient.dosingRegimens.reduce(
     (sum: number, r: any) => sum + (r.calculatedThcMgPerDay ?? (r.calculatedThcMgPerDose ?? 0) * r.frequencyPerDay),
@@ -526,7 +525,7 @@ export async function CannabisNextVisitMoodWidget({ userId }: { userId: string }
           {nextVisit ? (
             <>
               <p className="font-display text-xl text-text tracking-tight">
-                {formatDate(nextVisit.scheduledFor)}
+                {formatDateInZone(nextVisit.scheduledFor, timeZone)}
               </p>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge tone={nextVisit.modality === "video" ? "info" : "accent"}>
@@ -535,7 +534,7 @@ export async function CannabisNextVisitMoodWidget({ userId }: { userId: string }
               </div>
               {nextVisit.scheduledFor && (
                 <p className="text-sm text-text-muted mt-2">
-                  {new Date(nextVisit.scheduledFor).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  {formatTimeInZone(nextVisit.scheduledFor, timeZone)}
                   {" · "}{formatRelative(nextVisit.scheduledFor)}
                 </p>
               )}

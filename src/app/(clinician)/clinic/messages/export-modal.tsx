@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { exportThread } from "./actions";
 
 export type ExportableMessage = {
   id: string;
@@ -31,6 +32,7 @@ export type ExportableMessage = {
 interface Props {
   open: boolean;
   onClose: () => void;
+  threadId: string;
   patientName: string;
   subject: string;
   messages: ExportableMessage[];
@@ -41,9 +43,9 @@ type Channel = "pdf" | "print" | "email" | "text" | "fax";
 const CHANNELS: { key: Channel; label: string; helper: string }[] = [
   { key: "pdf", label: "Save as PDF", helper: "Download a chart-ready PDF." },
   { key: "print", label: "Print", helper: "Send directly to a printer." },
-  { key: "email", label: "Email", helper: "Email a read-only copy." },
-  { key: "text", label: "Text (read-only link)", helper: "SMS a HIPAA link." },
-  { key: "fax", label: "Fax", helper: "Queue an outbound fax." },
+  { key: "email", label: "Email", helper: "Email the transcript (real send when a mail provider is configured)." },
+  { key: "text", label: "Text (portal notice)", helper: "SMS a secure portal-login notice — never PHI." },
+  { key: "fax", label: "Fax", helper: "Not yet configured — records the export only." },
 ];
 
 function toDateInputValue(iso: string): string {
@@ -53,10 +55,12 @@ function toDateInputValue(iso: string): string {
 export function ExportModal({
   open,
   onClose,
+  threadId,
   patientName,
   subject,
   messages,
 }: Props) {
+  const [sending, setSending] = useState(false);
   const sorted = useMemo(
     () => [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [messages],
@@ -90,7 +94,7 @@ export function ExportModal({
     return d >= from && d <= to;
   });
 
-  function handleExport() {
+  async function handleExport() {
     if (channel === "pdf" || channel === "print") {
       const win = window.open("", "_blank", "noopener,width=720,height=900");
       if (!win) {
@@ -139,14 +143,29 @@ export function ExportModal({
       return;
     }
 
-    // EMR-664 owns the outbound send pipeline; surface a clear TODO so QA
-    // doesn't think this silently dropped.
-    window.alert(
-      `Queued ${inRange.length} message${
-        inRange.length === 1 ? "" : "s"
-      } for ${channel} delivery to ${destination}. (EMR-664 will wire the actual send.)`,
-    );
-    onClose();
+    // EMR-808 — real send (email/text) or honest recorded-only (fax / no
+    // provider). The server action audits the export and returns the truthful
+    // delivery outcome.
+    setSending(true);
+    try {
+      const res = await exportThread({
+        threadId,
+        channel,
+        destination: destination.trim(),
+        from,
+        to,
+      });
+      if (!res.ok) {
+        window.alert(res.error);
+        return;
+      }
+      window.alert(res.detail);
+      onClose();
+    } catch {
+      window.alert("Could not export the thread. Please try again.");
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -243,12 +262,14 @@ export function ExportModal({
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button size="sm" onClick={handleExport}>
-            {channel === "pdf"
-              ? "Save as PDF"
-              : channel === "print"
-                ? "Print"
-                : "Send"}
+          <Button size="sm" onClick={handleExport} disabled={sending}>
+            {sending
+              ? "Sending…"
+              : channel === "pdf"
+                ? "Save as PDF"
+                : channel === "print"
+                  ? "Print"
+                  : "Send"}
           </Button>
         </div>
       </div>

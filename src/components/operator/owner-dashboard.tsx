@@ -147,9 +147,12 @@ export function OwnerDashboard({ snapshot, hasPracticeManagerAgent = true }: Own
   // day-by-day series at this layer (the upstream snapshot collapses to two
   // 7-day buckets) so we anchor a smooth ramp between the two so the trend
   // direction reads visually without inventing fake mid-week values.
+  // Chart in dollars, not cents — otherwise the axis shows cent-magnitude
+  // numbers (e.g. 62,800 for $628) that read wrong and clip. The KPI card
+  // below still shows the precise formatted dollar figure.
   const revenueSpark = sparkBetween(
-    snapshot.revenuePriorWeekCents,
-    snapshot.revenueThisWeekCents,
+    Math.round(snapshot.revenuePriorWeekCents / 100),
+    Math.round(snapshot.revenueThisWeekCents / 100),
   );
   const patientsSpark = sparkBetween(
     snapshot.newPatientsPriorWeek,
