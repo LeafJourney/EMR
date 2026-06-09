@@ -39,22 +39,69 @@ export function extractNoteSection(blocks: unknown, type: string): string {
   return block?.body?.trim() ?? "";
 }
 
-/** Extract action items from plan text (lines starting with - or •) */
+/**
+ * Extract action items from the signed plan text. Prefers explicit bullet
+ * lines, but falls back to splitting prose into sentences — otherwise a plan
+ * written as a single paragraph (the common case) yields NO items and the
+ * caller substitutes a generic "Continue current care plan" that can directly
+ * contradict the documented changes.
+ */
 export function extractActionItems(planText: string): string[] {
   if (!planText) return [];
-  return planText
-    .split("\n")
-    .map((line) => line.replace(/^[\s\-•*]+/, "").trim())
-    .filter((line) => line.length > 5 && line.length < 200);
+  const hasBullets = /(^|\n)\s*[-•*]/.test(planText);
+  const lines = planText
+    .split(/\n+/)
+    .map((line) => line.replace(/^[\s\-•*\d.)]+/, "").trim())
+    .filter(Boolean);
+  const candidates = hasBullets
+    ? lines
+    : lines
+        .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+        .map((s) => s.trim())
+        .filter(Boolean);
+  return candidates.filter((s) => s.length > 5 && s.length <= 200).slice(0, 6);
+}
+
+/** Human label for a visit modality enum (never leak the raw "in_person"). */
+export function formatVisitModality(modality: string): string {
+  switch (modality) {
+    case "video":
+      return "video";
+    case "phone":
+      return "phone";
+    case "in_person":
+    case "in-person":
+      return "in-person";
+    default:
+      return modality.replace(/_/g, "-");
+  }
+}
+
+/** Modality phrase with the correct indefinite article ("an in-person", "a video"). */
+function visitModalityPhrase(modality: string): string {
+  const label = formatVisitModality(modality);
+  return /^[aeiou]/i.test(label) ? `an ${label}` : `a ${label}`;
+}
+
+/**
+ * Patient-facing copy must never leak un-interpolated template placeholders
+ * like "[visit type: history & physical]". Strip bracketed tokens and collapse
+ * whitespace; return null if nothing meaningful is left.
+ */
+export function sanitizeReason(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  const cleaned = reason.replace(/\[[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 /** Build a deterministic narrative from visit data */
 export function buildDeterministicNarrative(data: LeafletData): string {
   const parts: string[] = [];
 
+  const reason = sanitizeReason(data.visit.reason);
   parts.push(
-    `Today ${data.patientName.split(" ")[0]} had a ${data.visit.modality.replace("_", "-")} visit` +
-    (data.visit.reason ? ` for ${data.visit.reason.toLowerCase()}` : "") +
+    `Today ${data.patientName.split(" ")[0]} had ${visitModalityPhrase(data.visit.modality)} visit` +
+    (reason ? ` for ${reason.toLowerCase()}` : "") +
     "."
   );
 

@@ -43,6 +43,21 @@ export type PracticeCardData = {
   status: string;
   publishedAt: string | null;
   updatedAt: string | null;
+  // EMR — real-readiness enrichment (detail page only; optional so the list
+  // loader needn't populate it).
+  npi?: string | null;
+  launch?: {
+    readinessScore: number;
+    blockers: string[];
+    goLiveAt: string | null;
+  } | null;
+  specialtyCoverage?: {
+    workflows: boolean;
+    charting: boolean;
+    roles: boolean;
+    physicianShell: boolean;
+    patientShell: boolean;
+  };
   officeManagers: PracticeStakeholder[];
   leadProviders: PracticeStakeholder[];
   kpi: PracticeKpi;
@@ -76,3 +91,15 @@ export function humanizeCareModel(value: string | null | undefined): string {
   if (!value) return "—";
   return value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
+
+/** Roles a super-admin can invite into a practice (subset of the Role enum).
+ *  Lives here (not in the "use server" actions file, which may only export
+ *  async functions) so both the server action and the client form can use it. */
+export const INVITABLE_ROLES = [
+  "practice_owner",
+  "practice_admin",
+  "clinician",
+  "midlevel",
+  "front_office",
+  "back_office",
+] as const;

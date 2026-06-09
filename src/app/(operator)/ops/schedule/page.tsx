@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
+import { computeAppointmentRisk } from "@/lib/scheduling/appointment-risk";
+import type { RiskTier } from "@/lib/scheduling/no-show-model";
 import {
   ScheduleClient,
   type SerializedAppointment,
@@ -149,18 +151,18 @@ function isoOf(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// EMR-579 — schedule header date as a clean MM-DD-YYYY label.
+function mmddyyyy(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${m}-${day}-${d.getFullYear()}`;
+}
+
 function rangeSpanLabel(start: Date, end: Date): string {
   // end is exclusive; show the inclusive last day.
   const lastDay = addDays(end, -1);
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  if (isSameDay(start, lastDay)) {
-    return start.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-  }
-  return `${start.toLocaleDateString("en-US", opts)} – ${lastDay.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`;
+  if (isSameDay(start, lastDay)) return mmddyyyy(start);
+  return `${mmddyyyy(start)} – ${mmddyyyy(lastDay)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +213,41 @@ export default async function SchedulePage({
     }),
   ]);
 
+  // EMR-207 — no-show risk per appointment, derived from each patient's prior
+  // visit history. One extra query loads all appointments for the patients in
+  // the window; risk is then computed in-memory (engine is a pure function).
+  const patientIds = Array.from(new Set(appointments.map((a) => a.patientId)));
+  const priorRows = patientIds.length
+    ? await prisma.appointment.findMany({
+        where: { patientId: { in: patientIds } },
+        select: { patientId: true, status: true, startAt: true },
+      })
+    : [];
+  const priorsByPatient = new Map<string, { status: string; startAt: Date }[]>();
+  for (const r of priorRows) {
+    const list = priorsByPatient.get(r.patientId) ?? [];
+    list.push({ status: r.status, startAt: r.startAt });
+    priorsByPatient.set(r.patientId, list);
+  }
+  const riskByAppointment = new Map<string, { tier: RiskTier; probability: number }>();
+  for (const a of appointments) {
+    // Don't flag visits that have already resolved — risk is only actionable
+    // for upcoming, not-yet-terminal appointments.
+    if (a.status === "completed" || a.status === "cancelled" || a.status === "no_show") {
+      continue;
+    }
+    const prediction = computeAppointmentRisk({
+      startAt: a.startAt,
+      bookedAt: a.createdAt,
+      modality: a.modality,
+      priorVisits: priorsByPatient.get(a.patientId) ?? [],
+    });
+    riskByAppointment.set(a.id, {
+      tier: prediction.tier,
+      probability: prediction.probability,
+    });
+  }
+
   // Day buckets that span the resolved window (1+ days).
   const dayCount = Math.max(
     1,
@@ -223,12 +260,13 @@ export default async function SchedulePage({
       isToday: isSameDay(d, now),
       appointments: appointments
         .filter((a) => isSameDay(a.startAt, d))
-        .map(serializeAppointment),
+        .map((a) => serializeAppointment(a, riskByAppointment.get(a.id))),
     };
   });
 
-  const serializedAppointments: SerializedAppointment[] =
-    appointments.map(serializeAppointment);
+  const serializedAppointments: SerializedAppointment[] = appointments.map((a) =>
+    serializeAppointment(a, riskByAppointment.get(a.id)),
+  );
 
   const serializedProviders: SerializedProvider[] = providers.map((p) => ({
     id: p.id,
@@ -294,7 +332,10 @@ type ApptRow = {
   patient: { id: string; firstName: string; lastName: string };
 };
 
-function serializeAppointment(a: ApptRow): SerializedAppointment {
+function serializeAppointment(
+  a: ApptRow,
+  risk?: { tier: RiskTier; probability: number },
+): SerializedAppointment {
   return {
     id: a.id,
     startAt: a.startAt.toISOString(),
@@ -306,6 +347,8 @@ function serializeAppointment(a: ApptRow): SerializedAppointment {
       firstName: a.patient.firstName,
       lastName: a.patient.lastName,
     },
+    riskTier: risk?.tier ?? null,
+    riskProbability: risk?.probability ?? null,
   };
 }
 

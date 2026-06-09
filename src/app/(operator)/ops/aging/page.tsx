@@ -207,6 +207,7 @@ export default async function AgingPage({
           label="Total A/R"
           value={formatMoney(totals.total)}
           hint={`${aged.length} open balances`}
+          tooltip="Total accounts receivable — all open insurance and patient balances awaiting collection."
           href={focusHref("all", searchParams)}
           active={focus === "all"}
         />
@@ -215,6 +216,7 @@ export default async function AgingPage({
           value={formatMoney(totals.insurance)}
           tone="accent"
           hint={`${totals.total > 0 ? Math.round((totals.insurance / totals.total) * 100) : 0}% of total`}
+          tooltip="Balances awaiting payer adjudication or payment — not yet the patient's responsibility."
           href={focusHref("insurance", searchParams)}
           active={focus === "insurance"}
         />
@@ -223,6 +225,7 @@ export default async function AgingPage({
           value={formatMoney(totals.patient)}
           tone="warning"
           hint={`${totals.total > 0 ? Math.round((totals.patient / totals.total) * 100) : 0}% of total`}
+          tooltip="Balances that are the patient's responsibility after insurance — statements and collections target these."
           href={focusHref("patient", searchParams)}
           active={focus === "patient"}
         />
@@ -230,6 +233,7 @@ export default async function AgingPage({
           label="Days in A/R"
           value={dar.toString()}
           hint="average across open claims"
+          tooltip="Average age in days of open claims (days sales outstanding). Lower is healthier — the industry target is under 40 days."
           href={focusHref("days", searchParams)}
           active={focus === "days"}
         />
@@ -402,6 +406,7 @@ function StatCard({
   value,
   tone = "neutral",
   hint,
+  tooltip,
   href,
   active = false,
 }: {
@@ -409,6 +414,8 @@ function StatCard({
   value: string;
   tone?: "neutral" | "success" | "warning" | "danger" | "accent";
   hint?: string;
+  /** EMR-945 — info-icon explanation of what this metric represents. */
+  tooltip?: string;
   href?: string;
   active?: boolean;
 }) {
@@ -431,11 +438,20 @@ function StatCard({
           {value}
         </p>
         <p
-          className={`text-xs mt-1 ${
+          className={`text-xs mt-1 flex items-center gap-1 ${
             active ? "text-accent font-medium" : "text-text-muted"
           }`}
         >
           {label}
+          {tooltip && (
+            <span
+              title={tooltip}
+              aria-label={tooltip}
+              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-border text-[8px] font-semibold text-text-subtle cursor-help"
+            >
+              i
+            </span>
+          )}
         </p>
         {hint && <p className="text-[10px] text-text-subtle mt-1">{hint}</p>}
       </CardContent>

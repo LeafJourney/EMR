@@ -107,7 +107,19 @@ export function Step15Publish({ draft, goBack }: WizardStepProps) {
       );
 
       if (res.ok) {
-        router.push("/practices?published=1");
+        // Land on the practice we just created — its detail page is the
+        // "practice has been born" moment (?published=1 triggers the
+        // celebratory hero state there). The publish response is the full
+        // PracticeConfiguration; /practices/[id] keys on its `id` (configId).
+        // Fall back to the fleet list only if the id is somehow absent.
+        const published = (await res.json().catch(() => null)) as
+          | { id?: string }
+          | null;
+        router.push(
+          published?.id
+            ? `/practices/${published.id}?published=1`
+            : "/practices?published=1",
+        );
         return;
       }
 

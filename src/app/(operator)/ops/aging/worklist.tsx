@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { formatDate } from "@/lib/utils/format";
-import { formatMoney } from "@/lib/domain/billing";
+import { formatMoney } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getLocalDayBounds, sameLocalDay } from "./timezone";
+import {
+  getLocalDayBounds,
+  sameLocalDay,
+  greetingForTimeZone,
+  zonedTimeToUtc,
+  getZonedParts,
+} from "./timezone";
 
 describe("Timezone bounds utility", () => {
   it("computes bounds for America/New_York", () => {
@@ -37,5 +43,46 @@ describe("Timezone bounds utility", () => {
 
     expect(sameLocalDay(dateA, dateB, tz)).toBe(true);
     expect(sameLocalDay(dateA, dateC, tz)).toBe(false);
+  });
+});
+
+describe("greetingForTimeZone", () => {
+  it("uses the clinic's local hour, not the server's UTC clock", () => {
+    // 2026-06-08T04:30:00Z is the bug scenario: server UTC reads hour 4
+    // ("Still up") and date Jun 8, while in LA it is still Jun 7, 9:30 PM.
+    const instant = new Date("2026-06-08T04:30:00Z");
+    const la = greetingForTimeZone("America/Los_Angeles", instant);
+    expect(la).not.toBe("Still up"); // the bug: this used to fire mid-evening
+    expect(la).toBe("Hello"); // 9:30 PM bucket
+    // The same instant in UTC really is the small hours → "Still up".
+    expect(greetingForTimeZone("UTC", instant)).toBe("Still up");
+  });
+
+  it("returns the right bucket across the day in one zone", () => {
+    const tz = "America/Los_Angeles";
+    expect(greetingForTimeZone(tz, new Date("2026-06-07T15:00:00Z"))).toBe("Good morning"); // 8 AM
+    expect(greetingForTimeZone(tz, new Date("2026-06-07T21:00:00Z"))).toBe("Good afternoon"); // 2 PM
+  });
+});
+
+describe("zonedTimeToUtc", () => {
+  it("stores an 11:00 clinic-local slot as the correct UTC instant", () => {
+    // 11:00 in LA (PDT, UTC-7) on Jun 10 2026 → 18:00 UTC. The old code parsed
+    // the bare string in the server's zone and stored 11:00 UTC (= 4:00 AM PDT).
+    const utc = zonedTimeToUtc("America/Los_Angeles", {
+      year: 2026,
+      month: 6,
+      day: 10,
+      hour: 11,
+      minute: 0,
+    });
+    expect(utc.toISOString()).toBe("2026-06-10T18:00:00.000Z");
+  });
+
+  it("round-trips through getZonedParts", () => {
+    const tz = "America/New_York";
+    const utc = zonedTimeToUtc(tz, { year: 2026, month: 3, day: 2, hour: 14, minute: 30 });
+    const parts = getZonedParts(tz, utc);
+    expect(parts).toMatchObject({ year: 2026, month: 3, day: 2, hour: 14, minute: 30 });
   });
 });

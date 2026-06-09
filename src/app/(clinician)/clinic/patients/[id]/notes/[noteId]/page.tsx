@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatDate } from "@/lib/utils/format";
+import { formatDate, formatModality } from "@/lib/utils/format";
 import { NoteEditor } from "./note-editor";
 import { StaffObjectiveEditor } from "./staff-objective-editor";
 import { NoteCommentsPanel } from "@/components/collaboration/note-comments-panel";
@@ -159,7 +159,7 @@ export default async function NoteDetailPage({ params }: PageProps) {
       <PageHeader
         eyebrow="Clinical note"
         title={`Note — ${formatDate(note.createdAt)}`}
-        description={`${patient.firstName} ${patient.lastName} · ${note.encounter.modality} visit`}
+        description={`${patient.firstName} ${patient.lastName} · ${formatModality(note.encounter.modality)} visit`}
         actions={
           <div className="flex items-center gap-2">
             {/* ux/print-stylesheets-clinical — single-note SOAP printout */}

@@ -124,7 +124,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
           <p className="text-text-muted mb-8 max-w-md mx-auto">
             Get instant, evidence-based answers cited directly from over 11,000 peer-reviewed clinical studies.
           </p>
-          <Link href="/education">
+          <Link href="/education#chatcb">
             <Button size="lg" className="rounded-full px-8">
               Open ChatCB
             </Button>

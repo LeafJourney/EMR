@@ -9,6 +9,7 @@ import {
   syncEncounterScheduleForAppointment,
 } from "@/lib/domain/ensure-encounter";
 import type { AppointmentType } from "@/lib/domain/scheduling";
+import { zonedTimeToUtc, DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
 
 interface BookAppointmentInput {
   patientId: string;
@@ -33,6 +34,7 @@ export type BookAppointmentResult =
 async function getOwnedPatient(userId: string, patientId: string) {
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, userId, deletedAt: null },
+    include: { organization: { select: { timeZone: true } } },
   });
   if (!patient) throw new Error("Patient not found or unauthorized.");
   return patient;
@@ -44,10 +46,23 @@ export async function bookAppointment(
   const user = await requireUser();
   const patient = await getOwnedPatient(user.id, input.patientId);
 
-  const startAt = new Date(`${input.slotDate}T${input.slotStartTime}:00`);
-  if (Number.isNaN(startAt.getTime())) {
+  // Interpret the chosen slot in the CLINIC's timezone, then store the correct
+  // UTC instant. Previously `new Date("...T11:00:00")` was parsed in the
+  // server's timezone (UTC in prod), so an 11:00 AM booking was stored as
+  // 11:00 UTC and shown back to the patient as 4:00 AM.
+  const timeZone = patient.organization?.timeZone || DEFAULT_TIME_ZONE;
+  const [bYear, bMonth, bDay] = input.slotDate.split("-").map(Number);
+  const [bHour, bMinute] = input.slotStartTime.split(":").map(Number);
+  if ([bYear, bMonth, bDay, bHour, bMinute].some((n) => Number.isNaN(n))) {
     return { ok: false, error: "Invalid appointment time." };
   }
+  const startAt = zonedTimeToUtc(timeZone, {
+    year: bYear,
+    month: bMonth,
+    day: bDay,
+    hour: bHour,
+    minute: bMinute,
+  });
   if (startAt.getTime() < Date.now()) {
     return { ok: false, error: "Choose a time in the future." };
   }
@@ -167,6 +182,9 @@ export async function rescheduleAppointment(
       id: parsed.data.appointmentId,
       patient: { userId: user.id, deletedAt: null },
     },
+    include: {
+      patient: { select: { organization: { select: { timeZone: true } } } },
+    },
   });
   if (!appt) return { ok: false, error: "Appointment not found." };
 
@@ -174,7 +192,17 @@ export async function rescheduleAppointment(
     return { ok: false, error: "This appointment can no longer be rescheduled." };
   }
 
-  const newStart = new Date(`${parsed.data.slotDate}T${parsed.data.slotStartTime}:00`);
+  // Interpret the new slot in the clinic's timezone (see bookAppointment).
+  const timeZone = appt.patient.organization?.timeZone || DEFAULT_TIME_ZONE;
+  const [rYear, rMonth, rDay] = parsed.data.slotDate.split("-").map(Number);
+  const [rHour, rMinute] = parsed.data.slotStartTime.split(":").map(Number);
+  const newStart = zonedTimeToUtc(timeZone, {
+    year: rYear,
+    month: rMonth,
+    day: rDay,
+    hour: rHour,
+    minute: rMinute,
+  });
   if (Number.isNaN(newStart.getTime())) {
     return { ok: false, error: "Invalid target time." };
   }

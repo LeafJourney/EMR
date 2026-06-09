@@ -101,6 +101,7 @@ export const refillReminderAgent: Agent<
               title: `Refill reminder: ${regimen.product?.name ?? "your cannabis medicine"}`,
               description: `You have approximately ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} of ${regimen.product?.name ?? "your medicine"} left. Tap to request a refill so you don't run out.\n\n[regimenId: ${regimen.id}]`,
               status: "open",
+              kind: "refill",
               assigneeRole: "patient",
               dueAt: new Date(
                 Date.now() +

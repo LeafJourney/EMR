@@ -22,6 +22,15 @@ interface PatientSearchResult {
   lastVisit: string | null;
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Format a Date as a `datetime-local` input value (local wall-clock). */
+function toLocalDateTimeValue(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 function getAge(dobStr: string | null) {
   if (!dobStr) return null;
   const dob = new Date(dobStr);
@@ -140,6 +149,16 @@ export function NewVisitModal({ children }: { children: React.ReactNode }) {
       const startAt = new Date(date);
       if (Number.isNaN(startAt.getTime())) {
         setSubmitError("Please enter a valid date and time.");
+        return;
+      }
+      // Native datetime-local lets you type a 6-digit year (e.g. "202602"),
+      // which parses to a valid-but-absurd Date. Reject anything outside a
+      // sane window so a mistyped year can't silently book a visit in the year
+      // 202602.
+      const earliest = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const latest = new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000);
+      if (startAt < earliest || startAt > latest) {
+        setSubmitError("Please choose a date and time within the next two years.");
         return;
       }
       const endAt = new Date(startAt.getTime() + 30 * 60 * 1000); // Default 30-min duration
@@ -344,6 +363,8 @@ export function NewVisitModal({ children }: { children: React.ReactNode }) {
                   required
                   type="datetime-local"
                   value={date}
+                  min={toLocalDateTimeValue(new Date())}
+                  max={toLocalDateTimeValue(new Date(Date.now() + 2 * 365 * 24 * 60 * 60 * 1000))}
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
                 />
