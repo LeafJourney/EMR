@@ -1243,7 +1243,7 @@ export function SmartInboxView({
   );
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    function onKey(e: globalThis.KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       const inField =
         !!target &&
