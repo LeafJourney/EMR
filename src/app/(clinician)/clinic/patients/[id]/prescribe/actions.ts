@@ -23,6 +23,10 @@ const schema = z.object({
   refills: z.coerce.number().int().min(0).max(12),
   timingInstructions: z.string().max(500).optional(),
   diagnosisCodes: z.string().optional(), // JSON-encoded array of {code, label}
+  // EMR-1099 (M3): pharmacy routing target. The form requires a selection
+  // before "Sign & send"; optional here so legacy callers keep working.
+  pharmacyId: z.string().max(100).optional(),
+  pharmacyName: z.string().max(200).optional(),
   noteToPatient: z.string().max(2000).optional(),
   noteToPharmacy: z.string().max(2000).optional(),
   interactionAcknowledged: z.string().optional(), // "true" if acknowledged
@@ -61,6 +65,8 @@ export async function createPrescriptionAction(
     refills: formData.get("refills"),
     timingInstructions: formData.get("timingInstructions") || undefined,
     diagnosisCodes: formData.get("diagnosisCodes") || undefined,
+    pharmacyId: formData.get("pharmacyId") || undefined,
+    pharmacyName: formData.get("pharmacyName") || undefined,
     noteToPatient: formData.get("noteToPatient") || undefined,
     noteToPharmacy: formData.get("noteToPharmacy") || undefined,
     interactionAcknowledged: formData.get("interactionAcknowledged") || undefined,
@@ -96,6 +102,8 @@ export async function createPrescriptionAction(
     refills,
     timingInstructions,
     diagnosisCodes,
+    pharmacyId,
+    pharmacyName,
     noteToPatient,
     noteToPharmacy,
     interactionAcknowledged,
@@ -348,6 +356,10 @@ export async function createPrescriptionAction(
         clinicianNotes: structuredNotes,
         active: true,
         contraindicationOverride,
+        // EMR-1099 (M3): persist the routing target instead of silently
+        // dropping the hidden pharmacyId/pharmacyName inputs.
+        pharmacyId: pharmacyId || null,
+        pharmacyName: pharmacyName || null,
       },
     });
 

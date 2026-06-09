@@ -94,6 +94,34 @@ interface CoSignerOption {
   label: string;
 }
 
+// EMR-1098 (M2) — initial values mapped from a saved CannabisRecommendation
+// (built server-side in ./page.tsx#buildRecommendationPrefill). `summary` is
+// the raw recommendation text shown in the "Pre-filled" note.
+export interface RecommendationPrefill {
+  id: string;
+  createdAt: string; // ISO
+  productType: string;
+  dose: string | null;
+  unit: string | null;
+  frequencyPerDay: number | null;
+  timingInstructions: string | null;
+  summary: {
+    productType: string;
+    cannabinoidRatio: string;
+    startingDoseMg: string;
+    deliveryMethod: string;
+    frequency: string;
+  };
+}
+
+// EMR-1099 (M4) — ICD-10 option for the diagnosis picker. `fromChart` marks
+// codes pulled from the patient's documented problem list.
+export interface DiagnosisOption {
+  code: string;
+  label: string;
+  fromChart: boolean;
+}
+
 export interface PrescribeFormV2Props {
   patientId: string;
   patientFirstName: string;
@@ -110,6 +138,8 @@ export interface PrescribeFormV2Props {
   medications: Medication[];
   contraindicationMatches?: ContraindicationMatch[];
   eligibleCoSigners?: CoSignerOption[];
+  recommendationPrefill?: RecommendationPrefill | null;
+  diagnosisOptions?: DiagnosisOption[];
 }
 
 /* ── Constants ──────────────────────────────────────────────── */
@@ -136,6 +166,10 @@ const FREQUENCY_PRESETS: Array<{ label: string; perDay: number }> = [
   { label: "As needed (PRN)", perDay: 1 },
 ];
 const DAYS_SUPPLY_PRESETS = ["30", "60", "90"];
+
+// EMR-1098 (M2) — flat list of the Type dropdown's preset values, used to
+// decide whether a recommendation prefill lands in preset or free-text mode.
+const TYPE_PRESET_VALUES = ADMINISTRATION_METHODS.flatMap((m) => m.examples);
 
 const FREE_TEXT = "__free__";
 
@@ -194,7 +228,18 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     medications,
     contraindicationMatches = [],
     eligibleCoSigners = [],
+    recommendationPrefill: prefill = null,
+    diagnosisOptions = [],
   } = props;
+
+  // EMR-1098 (M2) — resolve which frequency preset (if any) a prefilled
+  // doses-per-day count maps to; otherwise the field opens in free-text mode.
+  const prefillFreqLabel =
+    prefill?.frequencyPerDay != null
+      ? (FREQUENCY_PRESETS.find(
+          (f) => f.perDay === prefill.frequencyPerDay && f.label.endsWith("per day"),
+        )?.label ?? null)
+      : null;
 
   const patientName = `${patientFirstName} ${patientLastName}`.trim();
   const ledger = useChartLedger(patientId);
@@ -277,23 +322,41 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
   const hasMedication = !!selectedProductId || customProductName.trim().length > 0;
 
   // EMR-885 — Type field: MoA options + free text.
-  const [productType, setProductType] = useState("");
-  const [productTypeMode, setProductTypeMode] = useState<"preset" | "free">("preset");
+  // EMR-1098 (M2) — initial values come from the saved recommendation when
+  // the page was opened via "Apply to prescription" (?rec=…).
+  const [productType, setProductType] = useState(prefill?.productType ?? "");
+  const [productTypeMode, setProductTypeMode] = useState<"preset" | "free">(
+    prefill?.productType && !TYPE_PRESET_VALUES.includes(prefill.productType)
+      ? "free"
+      : "preset",
+  );
 
   /* ── Dosing (EMR-887) ─────────────────────────────────────── */
-  const [doseValue, setDoseValue] = useState("0.5");
-  const [doseMode, setDoseMode] = useState<"preset" | "free">("preset");
-  const [unitValue, setUnitValue] = useState("mg");
-  const [unitMode, setUnitMode] = useState<"preset" | "free">("preset");
-  const [freqLabel, setFreqLabel] = useState("1x per day");
-  const [freqMode, setFreqMode] = useState<"preset" | "free">("preset");
-  const [freqFreeText, setFreqFreeText] = useState("");
+  const [doseValue, setDoseValue] = useState(prefill?.dose ?? "0.5");
+  const [doseMode, setDoseMode] = useState<"preset" | "free">(
+    prefill?.dose && !DOSE_PRESETS.includes(prefill.dose) ? "free" : "preset",
+  );
+  const [unitValue, setUnitValue] = useState(prefill?.unit ?? "mg");
+  const [unitMode, setUnitMode] = useState<"preset" | "free">(
+    prefill?.unit && !UNIT_PRESETS.includes(prefill.unit) ? "free" : "preset",
+  );
+  const [freqLabel, setFreqLabel] = useState(prefillFreqLabel ?? "1x per day");
+  const [freqMode, setFreqMode] = useState<"preset" | "free">(
+    prefill?.frequencyPerDay != null && !prefillFreqLabel ? "free" : "preset",
+  );
+  const [freqFreeText, setFreqFreeText] = useState(
+    prefill?.frequencyPerDay != null && !prefillFreqLabel
+      ? String(prefill.frequencyPerDay)
+      : "",
+  );
   const [daysSupply, setDaysSupply] = useState("30");
   const [daysMode, setDaysMode] = useState<"preset" | "free">("preset");
   const [quantity, setQuantity] = useState("");
   const [quantityManual, setQuantityManual] = useState(false);
   const [refills, setRefills] = useState("0");
-  const [timingInstructions, setTimingInstructions] = useState("");
+  const [timingInstructions, setTimingInstructions] = useState(
+    prefill?.timingInstructions ?? "",
+  );
 
   // Resolve frequency-per-day integer for the server action.
   const frequencyPerDay = useMemo(() => {
@@ -322,6 +385,20 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
   /* ── Cannabinoids open to (EMR-886, pushed lower/secondary) ── */
   const [openCannabinoids, setOpenCannabinoids] = useState<string[]>(["THC", "CBD"]);
   const CANNABINOIDS = ["THC", "CBD", "CBDA", "CBG", "THCV", "CBDV", "CBC", "CBN", "CBGA"];
+
+  /* ── Diagnosis codes (EMR-1099 M4) ────────────────────────── */
+  // Same toggle-chip pattern as the referral form's diagnosis picker.
+  const [selectedDiagnoses, setSelectedDiagnoses] = useState<
+    { code: string; label: string }[]
+  >([]);
+
+  function toggleDiagnosis(diag: { code: string; label: string }) {
+    setSelectedDiagnoses((prev) =>
+      prev.some((d) => d.code === diag.code)
+        ? prev.filter((d) => d.code !== diag.code)
+        : [...prev, diag],
+    );
+  }
 
   /* ── Pharmacy (EMR-892) ───────────────────────────────────── */
   const [pharmacy, setPharmacy] = useState<PharmacyEntry | null>(null);
@@ -469,8 +546,11 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     parseInt(daysSupply, 10) > 0 &&
     parseFloat(quantity) > 0;
 
+  // EMR-1099 (M3): an Rx can't be signed without a routing target — the
+  // pharmacy selection now gates Sign & send.
   const blocked =
     !coreFilled ||
+    !pharmacy ||
     unresolvedRed ||
     mustAckContraindication ||
     (isControlled && !curesAcknowledged);
@@ -507,6 +587,14 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
       <input type="hidden" name="timingInstructions" value={timingInstructions} />
       <input type="hidden" name="noteToPatient" value={noteToPatient} />
       <input type="hidden" name="noteToPharmacy" value={noteToPharmacy} />
+      {/* EMR-1099 (M4): ICD-10 linkage — serialized for actions.ts#diagnosisCodes */}
+      {selectedDiagnoses.length > 0 && (
+        <input
+          type="hidden"
+          name="diagnosisCodes"
+          value={JSON.stringify(selectedDiagnoses)}
+        />
+      )}
       <input type="hidden" name="openCannabinoids" value={JSON.stringify(openCannabinoids)} />
       {pharmacy && (
         <>
@@ -584,6 +672,37 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
           <h1 className="sr-only">{heading}</h1>
         </CardContent>
       </Card>
+
+      {/* ── EMR-1098 (M2): pre-filled from AI recommendation ───── */}
+      {prefill && (
+        <Card className="rounded-2xl border-accent/30 bg-accent-soft/30 shadow-sm">
+          <CardContent className="py-3">
+            <details>
+              <summary className="text-sm font-medium text-text cursor-pointer">
+                <span aria-hidden>✨</span> Pre-filled from AI recommendation (
+                {new Date(prefill.createdAt).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+                ) — view what was applied
+              </summary>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                <PreviewRow label="Product type" value={prefill.summary.productType || "—"} />
+                <PreviewRow label="Cannabinoid ratio" value={prefill.summary.cannabinoidRatio || "—"} />
+                <PreviewRow label="Starting dose" value={prefill.summary.startingDoseMg || "—"} />
+                <PreviewRow label="Delivery method" value={prefill.summary.deliveryMethod || "—"} />
+                <PreviewRow label="Frequency" value={prefill.summary.frequency || "—"} />
+              </div>
+              <p className="text-[11px] text-text-subtle mt-3 leading-snug">
+                Type, dose, and frequency below were seeded from this saved
+                recommendation (low end of any range). Review and adjust before
+                signing — the recommendation is decision support, not an order.
+              </p>
+            </details>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── EMR-088: contraindication banner (kept, condensed) ─── */}
       {contraindicationMatches.length > 0 && (
@@ -1029,6 +1148,46 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
         </div>
       </div>
 
+      {/* ── EMR-1099 (M4): diagnosis codes (ICD-10 linkage) ────── */}
+      <Card className="rounded-2xl bg-white border-border/60 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Diagnosis codes</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-text-muted">
+            Link the ICD-10 diagnoses this prescription treats. Codes from the
+            patient&apos;s problem list are marked{" "}
+            <span className="font-medium text-accent">chart</span>.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {diagnosisOptions.map((diag) => {
+              const selected = selectedDiagnoses.some((d) => d.code === diag.code);
+              return (
+                <button
+                  key={diag.code}
+                  type="button"
+                  onClick={() => toggleDiagnosis({ code: diag.code, label: diag.label })}
+                  className={cn(
+                    "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
+                    selected
+                      ? "bg-accent/10 text-accent border-accent/30"
+                      : "bg-surface-muted text-text-muted border-border hover:border-accent/30",
+                  )}
+                >
+                  <span className="font-mono text-[10px]">{diag.code}</span>
+                  <span>{diag.label}</span>
+                  {diag.fromChart && (
+                    <Badge tone="accent" className="text-[9px] uppercase">
+                      chart
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── EMR-892: Pharmacy (moved up, next to the window) ───── */}
       <Card className="rounded-2xl bg-white border-border/60 shadow-sm">
         <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
@@ -1047,8 +1206,9 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
                 {pharmacy.address}, {pharmacy.city}
               </p>
             ) : (
-              <p className="text-sm text-text-muted mt-1">
-                Click “Pharmacy” to search and select where to send this ℞.
+              // EMR-1099 (M3): pharmacy is now required to sign & send.
+              <p className="text-sm text-danger mt-1">
+                Required — select where to send this ℞ before signing.
               </p>
             )}
           </div>
@@ -1195,6 +1355,13 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
           <SubmitButton disabled={blocked} />
         </div>
       </div>
+      {/* EMR-1099 (M3): visible hint when the pharmacy gate blocks signing */}
+      {!pharmacy && (
+        <p className="text-[11px] text-danger text-right">
+          Select a pharmacy to enable Sign &amp; send — every ℞ needs a routing
+          target.
+        </p>
+      )}
       {!previewReady && (
         <p className="text-[11px] text-text-subtle text-right">
           Fill medication, dosing, notes &amp; pharmacy to open the preview.
@@ -1231,6 +1398,15 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
             <PreviewRow label="Days supply" value={daysSupply || "—"} />
             <PreviewRow label="Refills" value={refills} />
           </div>
+          {/* EMR-1099 (M4): linked ICD-10 diagnoses */}
+          {selectedDiagnoses.length > 0 && (
+            <PreviewRow
+              label="Diagnosis codes"
+              value={selectedDiagnoses
+                .map((d) => `${d.code} ${d.label}`)
+                .join(" · ")}
+            />
+          )}
           <PreviewRow
             label="Interaction status"
             value={

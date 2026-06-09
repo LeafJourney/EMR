@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolveModelClient } from "@/lib/orchestration/model-client";
+import { logger } from "@/lib/observability/log";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -28,7 +29,10 @@ export interface Recommendation {
 }
 
 export type RecommendResult =
-  | { ok: true; recommendation: Recommendation }
+  // EMR-1098 (M1): savedId is the persisted CannabisRecommendation row — used
+  // by "Apply to prescription" to carry the recommendation into /prescribe.
+  // Null only if the audit write failed (the recommendation still displays).
+  | { ok: true; recommendation: Recommendation; savedId: string | null }
   | { ok: false; error: string };
 
 /* ── Corpus loader ──────────────────────────────────────────── */
@@ -326,5 +330,26 @@ export async function generateRecommendation(
     recommendation = buildTemplateRecommendation(concerns, matchedStudies);
   }
 
-  return { ok: true, recommendation };
+  // EMR-1098 (M1): persist the recommendation so there is a durable record of
+  // the decision support shown to the physician (it previously lived only in
+  // React state). A failed write is logged but never blocks the result.
+  let savedId: string | null = null;
+  try {
+    const saved = await prisma.cannabisRecommendation.create({
+      data: {
+        organizationId: user.organizationId!,
+        patientId,
+        createdById: user.id,
+        createdByName:
+          `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || "Provider",
+        inputContext: { concerns, goals, outcomeSummary, assessmentSummary },
+        recommendation: JSON.parse(JSON.stringify(recommendation)),
+      },
+    });
+    savedId = saved.id;
+  } catch (err) {
+    logger.error({ event: "clinic.recommend.persist_failed", err });
+  }
+
+  return { ok: true, recommendation, savedId };
 }
