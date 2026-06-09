@@ -91,7 +91,8 @@ export default async function LibraryPage() {
               <thead>
                 <tr className="border-b border-border text-left">
                   <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Terpene</th>
-                  <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Aroma Profile</th>
+                  <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Aroma profile</th>
+                  <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">Key CYP / targets</th>
                   <th className="py-2 font-medium text-text-subtle text-xs uppercase tracking-wide">Clinical effects</th>
                 </tr>
               </thead>
@@ -99,42 +100,50 @@ export default async function LibraryPage() {
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Myrcene</td>
                   <td className="py-3 pr-4 text-text-muted">Earthy, musky, herbal</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">CB1 (indirect)</td>
                   <td className="py-3 text-text-muted">Sedating, muscle relaxant, enhances THC psychoactivity (blood-brain barrier permeability)</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Limonene</td>
                   <td className="py-3 pr-4 text-text-muted">Citrus, lemon, orange</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">5-HT1A, adenosine A2A</td>
                   <td className="py-3 text-text-muted">Elevated mood, stress relief, anxiolytic, mild antidepressant</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Pinene</td>
                   <td className="py-3 pr-4 text-text-muted">Pine, sharp, sweet</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">AChE inhibitor</td>
                   <td className="py-3 text-text-muted">Alertness, memory retention (acetylcholinesterase inhibitor), bronchodilator</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Linalool</td>
                   <td className="py-3 pr-4 text-text-muted">Floral, lavender, spicy</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">GABA-A, 5-HT1A</td>
                   <td className="py-3 text-text-muted">Anxiolytic, sedative, anticonvulsant, pain relief</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Beta-Caryophyllene</td>
                   <td className="py-3 pr-4 text-text-muted">Pepper, spicy, woody</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">CB2 (full agonist)</td>
                   <td className="py-3 text-text-muted">CB2 agonist, anti-inflammatory, analgesic, gastroprotective</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Humulene</td>
+                  <td className="py-3 pr-4 text-text-muted">Hoppy, earthy, woody</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">CB1, CB2 (weak)</td>
+                  <td className="py-3 text-text-muted">Anti-inflammatory, appetite suppressant, antibacterial</td>
+                </tr>
+                <tr>
+                  <td className="py-3 pr-4 font-medium text-text">Terpinolene</td>
+                  <td className="py-3 pr-4 text-text-muted">Fresh, piney, floral, herbal</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">Limited data</td>
+                  <td className="py-3 text-text-muted">Mildly sedating, antioxidant, antibacterial, antifungal</td>
                 </tr>
                 <tr>
                   <td className="py-3 pr-4 font-medium text-text">Ocimene</td>
                   <td className="py-3 pr-4 text-text-muted">Sweet, herbal, woody</td>
-                  <td className="py-3 text-text-muted">Antiviral, decongestant, mild anti-inflammatory; often found in energetic/uplifting cultivars</td>
-                </tr>
-                <tr>
-                  <td className="py-3 pr-4 font-medium text-text">Terpinolene</td>
-                  <td className="py-3 pr-4 text-text-muted">Fresh, piney, floral, herbaceous</td>
-                  <td className="py-3 text-text-muted">Mildly sedating, antifungal, antioxidant; associated with cerebral/creative effects at low doses</td>
-                </tr>
-                <tr>
-                  <td className="py-3 pr-4 font-medium text-text">Humulene</td>
-                  <td className="py-3 pr-4 text-text-muted">Earthy, hoppy, woody</td>
-                  <td className="py-3 text-text-muted">Anti-inflammatory, appetite suppressant, antibacterial; shares terpene backbone with beta-caryophyllene</td>
+                  <td className="py-3 pr-4 font-mono text-xs text-text-muted">Limited data</td>
+                  <td className="py-3 text-text-muted">Antiviral, antifungal, anti-inflammatory, decongestant</td>
                 </tr>
               </tbody>
             </table>

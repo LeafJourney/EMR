@@ -197,6 +197,23 @@ export function InteractionBubbles({
                     </div>
                   )}
                 </div>
+                {detail.references && detail.references.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border/40">
+                    <p className="text-[10px] text-text-subtle uppercase tracking-wider mb-1">
+                      References
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detail.references.map((ref) => (
+                        <span
+                          key={ref}
+                          className="inline-block font-mono text-[10px] text-text-muted bg-surface-muted px-2 py-0.5 rounded"
+                        >
+                          {ref}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
