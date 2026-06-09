@@ -131,6 +131,10 @@ services:
         value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
 
   # Scheduler — enqueues recurring workflows every 15 minutes. Pinned to main.
   - type: cron
@@ -147,6 +151,10 @@ services:
         sync: false
       - key: PREVISIT_PORTAL_URL
         value: https://leafjourney.com
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
 
 databases:
   - name: emr-postgres
