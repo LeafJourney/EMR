@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
+import { setPatientStatus } from "../patients/actions";
 import { confirmAppointment, declineAppointment } from "./actions";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ export type SerializedAppointment = {
   status: string;
   modality: string;
   providerId: string | null;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; firstName: string; lastName: string; status: string };
   // EMR-207 — no-show risk (null for already-resolved visits or low risk we don't surface).
   riskTier: "low" | "medium" | "high" | null;
   riskProbability: number | null;
@@ -394,6 +395,22 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
   );
 }
 
+// EMR-943 — color-coded patient status bubble (active/inactive/prospect).
+const PATIENT_STATUS_TONE: Record<string, "success" | "accent" | "neutral" | "warning"> = {
+  active: "success",
+  prospect: "accent",
+  inactive: "neutral",
+};
+
+function PatientStatusBubble({ status }: { status: string }) {
+  const tone = PATIENT_STATUS_TONE[status.toLowerCase()] ?? "warning";
+  return (
+    <Badge tone={tone} className="text-[9px] capitalize">
+      {status}
+    </Badge>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // EMR-927 — Appointment card with a right-click context menu. The "Schedule"
 // item navigates to /clinic/schedule?patientId=<id> so the operator lands on
@@ -403,8 +420,19 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
 
 function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
   const router = useRouter();
+  const [, startStatusChange] = useTransition();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // EMR-939 — change the patient's lifecycle status from the schedule board,
+  // reusing the roster's setPatientStatus action; refresh to reflect the bubble.
+  function changeStatus(status: string, close: () => void) {
+    close();
+    startStatusChange(async () => {
+      await setPatientStatus(appt.patient.id, status);
+      router.refresh();
+    });
+  }
 
   // EMR-1085 — action a patient-requested booking right from the card.
   function runStatusChange(
@@ -426,6 +454,16 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         router.push(`/clinic/schedule?patientId=${appt.patient.id}`);
         close();
       },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Change status",
+      icon: ContextMenuIcons.Check,
+      subItems: [
+        { label: "Mark active", onSelect: (close: () => void) => changeStatus("active", close) },
+        { label: "Mark prospect", onSelect: (close: () => void) => changeStatus("prospect", close) },
+        { label: "Mark inactive", onSelect: (close: () => void) => changeStatus("inactive", close) },
+      ],
     },
   ];
   // Only a still-requested booking can be confirmed or declined.
@@ -462,6 +500,7 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
           {/* EMR-923 — patient name links through to the chart home page. */}
           <Link
             href={`/clinic/patients/${appt.patient.id}`}
+            onClick={(e) => e.stopPropagation()}
             className="block text-xs font-medium text-text truncate hover:text-accent hover:underline"
           >
             {appt.patient.firstName} {appt.patient.lastName}
@@ -484,6 +523,8 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         >
           {appt.status}
         </Badge>
+        {/* EMR-943 — color-coded patient status bubble */}
+        <PatientStatusBubble status={appt.patient.status} />
         <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
         {/* EMR-920 — inline insurance-eligibility helper tag on upcoming visits. */}
         {(appt.status === "requested" || appt.status === "confirmed") && (
