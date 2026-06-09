@@ -1,11 +1,12 @@
 import Link from "next/link";
-import type { Prisma, Role, TaskStatus } from "@prisma/client";
+import type { Prisma, Role, TaskKind, TaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { ROLE_LABELS } from "@/lib/rbac/roles";
 import { canManageTeam } from "@/lib/rbac/team-management";
+import { KIND_LABELS } from "./kinds";
 import { TasksBoard, type TaskRow } from "./tasks-board";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ type Search = {
   view?: string;
   owner?: string;
   due?: string;
+  kind?: string;
 };
 
 /**
@@ -56,6 +58,7 @@ export default async function TasksPage({
       ? searchParams.due
       : "all";
   const owner = searchParams.owner ?? "all";
+  const kind = searchParams.kind ?? "all";
 
   const now = new Date();
   const soonCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -84,14 +87,24 @@ export default async function TasksPage({
         ? { dueAt: { gte: now, lt: soonCutoff } }
         : {};
 
+  // Type facet: all | unspecified | a specific kind.
+  const kindWhere: Prisma.TaskWhereInput =
+    kind === "all"
+      ? {}
+      : kind === "unspecified"
+        ? { kind: null }
+        : { kind: kind as TaskKind };
+
   const where: Prisma.TaskWhereInput = {
     organizationId: orgId,
     ...statusWhere,
     ...ownerWhere,
     ...dueWhere,
+    ...kindWhere,
   };
 
-  const [tasks, activeCount, overdueCount, ownerGroups] = await Promise.all([
+  const [tasks, activeCount, overdueCount, ownerGroups, kindGroups] =
+    await Promise.all([
     prisma.task.findMany({
       where,
       select: {
@@ -99,6 +112,7 @@ export default async function TasksPage({
         title: true,
         description: true,
         status: true,
+        kind: true,
         assigneeRole: true,
         assigneeUserId: true,
         dueAt: true,
@@ -122,6 +136,12 @@ export default async function TasksPage({
     // Owner chips — which assignee roles actually have active tasks.
     prisma.task.groupBy({
       by: ["assigneeRole"],
+      where: { organizationId: orgId, status: { in: ACTIVE_STATUSES } },
+      _count: true,
+    }),
+    // Type chips — which kinds actually have active tasks.
+    prisma.task.groupBy({
+      by: ["kind"],
       where: { organizationId: orgId, status: { in: ACTIVE_STATUSES } },
       _count: true,
     }),
@@ -150,6 +170,7 @@ export default async function TasksPage({
     title: t.title,
     description: t.description,
     status: t.status,
+    kindLabel: t.kind ? KIND_LABELS[t.kind] : null,
     assigneeRole: t.assigneeRole,
     assigneeName: t.assigneeUserId ? nameById.get(t.assigneeUserId) ?? null : null,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
@@ -166,6 +187,7 @@ export default async function TasksPage({
   }));
 
   const ownerOptions = buildOwnerOptions(ownerGroups);
+  const kindOptions = buildKindOptions(kindGroups);
   const canManage = canManageTeam(user.roles) || user.roles.includes("operator");
 
   return (
@@ -207,6 +229,13 @@ export default async function TasksPage({
           search={searchParams}
         />
         <FilterRow
+          label="Type"
+          options={kindOptions}
+          param="kind"
+          active={kind}
+          search={searchParams}
+        />
+        <FilterRow
           label="Owner"
           options={ownerOptions}
           param="owner"
@@ -237,6 +266,22 @@ function buildOwnerOptions(
     opts.push({ key: g.assigneeRole, label: ROLE_LABELS[g.assigneeRole] ?? g.assigneeRole });
   }
   if (hasUnassigned) opts.push({ key: "unassigned", label: "Unassigned" });
+  return opts;
+}
+
+function buildKindOptions(
+  groups: Array<{ kind: TaskKind | null; _count: number }>,
+): Array<{ key: string; label: string }> {
+  const opts: Array<{ key: string; label: string }> = [{ key: "all", label: "All types" }];
+  let hasUnspecified = false;
+  for (const g of groups) {
+    if (g.kind === null) {
+      hasUnspecified = true;
+      continue;
+    }
+    opts.push({ key: g.kind, label: KIND_LABELS[g.kind] });
+  }
+  if (hasUnspecified) opts.push({ key: "unspecified", label: "Unspecified" });
   return opts;
 }
 

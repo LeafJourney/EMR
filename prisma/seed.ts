@@ -2018,6 +2018,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Upload current medication list",
+      kind: "patient_task",
       description:
         "Patient needs to provide a list of all current medications including OTC supplements.",
       status: TaskStatus.open,
@@ -2031,6 +2032,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Complete sleep quality assessment",
+      kind: "patient_task",
       description: "Complete the Pittsburgh Sleep Quality Index questionnaire.",
       status: TaskStatus.open,
       assigneeRole: Role.patient,
@@ -2043,6 +2045,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Review initial intake form",
+      kind: "clinical_review",
       description: "Clinician to review Maya's completed intake answers.",
       status: TaskStatus.done,
       assigneeRole: Role.clinician,
@@ -2056,6 +2059,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Classify uploaded sleep diary image",
+      kind: "other",
       description: "AI document organizer should classify Sleep_Diary_Photo.jpg.",
       status: TaskStatus.done,
       assigneeRole: Role.system,
@@ -2068,6 +2072,7 @@ async function main() {
       organizationId: org.id,
       patientId: maya.id,
       title: "Follow up on lab results interpretation",
+      kind: "clinical_review",
       description:
         "Waiting for oncology team to provide interpretation of CBC results before next visit.",
       status: TaskStatus.snoozed,
@@ -2348,6 +2353,7 @@ async function main() {
       organizationId: org.id,
       patientId: sarah.id,
       title: "Complete your intake",
+      kind: "records_request",
       description:
         "Please finish filling out your intake form so we can prepare for your first consultation.",
       status: TaskStatus.open,

@@ -15,6 +15,7 @@ export interface TaskRow {
   title: string;
   description: string | null;
   status: TaskStatus;
+  kindLabel: string | null;
   assigneeRole: Role | null;
   assigneeName: string | null;
   dueAt: string | null;
@@ -93,6 +94,7 @@ export function TasksBoard({
                 <Badge tone={STATUS_TONE[task.status]}>
                   {STATUS_LABEL[task.status]}
                 </Badge>
+                {task.kindLabel && <Badge tone="neutral">{task.kindLabel}</Badge>}
                 {task.isOverdue && <Badge tone="danger">Overdue</Badge>}
               </div>
               {task.description && (
