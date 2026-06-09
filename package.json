@@ -17,6 +17,8 @@
     "db:seed-cfo": "tsx --conditions=react-server scripts/seed-cfo.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
+    "test:golden-visit": "vitest run src/lib/domain/golden-visit-harness.test.ts",
+    "e2e:golden-visit": "playwright test e2e/golden-visit-surfaces.spec.ts",
     "test:watch": "vitest",
     "test:smoke": "tsx --conditions=react-server scripts/smoke-test.ts",
     "pm": "tsx --conditions=react-server scripts/pm-agent.ts",
@@ -62,6 +64,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@capacitor/cli": "^8.3.1",
+    "@clerk/types": "^4.101.25",
     "@playwright/test": "^1.59.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/canvas-confetti": "^1.9.0",

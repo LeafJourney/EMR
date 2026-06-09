@@ -271,10 +271,92 @@ export interface LeafnerdClinicalData {
   labs: LabRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Agent Workbench — the governed-execution surface, over the REAL AgentJob /
+// AgentReasoning tables (the orchestration harness). Read-only list + the
+// human approve/reject actions. Falls back to curated rows when the DB is empty.
+// ---------------------------------------------------------------------------
+
+export type AgentJobStatusLite =
+  | "pending" | "claimed" | "running" | "needs_approval" | "succeeded" | "failed" | "cancelled";
+
+/** Human-dispatchable lifecycle controls over a governed AgentJob. */
+export type AgentJobAction = "approve" | "reject" | "pause" | "retry" | "cancel";
+
+/** One streamed execution-log line (mirrors orchestration AgentLogEntry, client-safe). */
+export interface AgentLogLine {
+  at: string; // ISO timestamp (or human-relative for curated rows)
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
+export interface AgentReasoningSummary {
+  steps: number;
+  sources: string[];
+  confidence: number | null; // 0..1
+  summary: string | null;
+}
+
+export interface AgentJobRow {
+  id: string;
+  workflowName: string;
+  agentName: string;
+  eventName: string;
+  status: AgentJobStatusLite;
+  requiresApproval: boolean;
+  /** Human label pulled from the job input, when present. */
+  label: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  reasoning: AgentReasoningSummary | null;
+  /** Streamed execution logs (AgentJob.logs). Newest last. Empty when none. */
+  logs?: AgentLogLine[];
+  /** True when a `pending` job has been parked far in the future by a human pause. */
+  paused?: boolean;
+}
+
+/** Result of dispatching a human action against a governed job. */
+export interface AgentJobActionResult {
+  ok: boolean;
+  /** The action requested. */
+  action: AgentJobAction;
+  jobId: string;
+  /** True when a real DB row transitioned; false for curated/demo or invalid-state no-ops. */
+  applied: boolean;
+  /** True when an AuditLog row was written for this dispatch. */
+  audited: boolean;
+  /** Resulting lite status (after transition), when known. */
+  status: AgentJobStatusLite | null;
+  /** Machine-readable note when not applied (e.g. "not-found", "invalid-state"). */
+  note?: string;
+}
+
+export interface SourceFreshnessRow {
+  id: string;
+  source: string; // "Riverside Lab", "Northbay EHR", ...
+  kind: string; // "HL7v2 ORU", "FHIR R4", "Claims 837/835", "Wearable", ...
+  lastSeen: string; // human relative, e.g. "14m ago"
+  state: "ok" | "stale" | "gap";
+  recordsToday: number;
+  note: string | null;
+}
+
+export interface AgentWorkbenchData {
+  jobs: AgentJobRow[];
+  sources: SourceFreshnessRow[];
+  stats: {
+    total: number;
+    needsApproval: number;
+    succeededToday: number;
+    running: number;
+  };
+}
+
 /** Props for the top-level SPA shell component (LeafnerdApp). */
 export interface LeafnerdAppProps {
   data: LeafnerdData;
   userName?: string;
+  userRole?: string;
   /** Optional real data; surfaces fall back to internal demo data when absent. */
   claims?: ClaimAnomalyRow[];
   cohortStatusCounts?: CohortStatusCount[];
@@ -282,4 +364,6 @@ export interface LeafnerdAppProps {
   clinical?: LeafnerdClinicalData;
   /** Quality measures for the Quality surface (falls back to curated). */
   quality?: QualityMeasureRow[];
+  /** Governed-execution surface data (real AgentJob/AgentReasoning rows). */
+  agentWorkbench?: AgentWorkbenchData;
 }

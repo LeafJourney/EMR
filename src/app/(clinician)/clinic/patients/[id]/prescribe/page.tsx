@@ -2,10 +2,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
-import { Eyebrow } from "@/components/ui/ornament";
-import { Avatar } from "@/components/ui/avatar";
-import { PrescribeForm } from "./prescribe-form";
+import { PrescribeFormV2 } from "./prescribe-form-v2";
 import { checkContraindications } from "@/lib/domain/contraindications";
+import { resolveModuleFlags, scrubModuleWords } from "@/lib/clinical/module-opt-in";
 
 interface PageProps {
   params: { id: string };
@@ -65,37 +64,37 @@ export default async function PrescribePage({ params }: PageProps) {
     icd10Codes: [], // Could pull from problem list when we have one
   });
 
-  const patientAddress = [
-    patient.addressLine1,
-    patient.addressLine2,
-    patient.city,
-    patient.state,
-    patient.postalCode,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const patientState = patient.state ?? undefined;
+
+  // EMR-883 — module gating. Cannabis is on by default for LeafJourney, but
+  // when the org has opted out we scrub the word "Cannabis" from titles and
+  // gate the psilocybin medication class on its own opt-in flag (EMR-885).
+  const moduleFlags = resolveModuleFlags({
+    hasCannabisFormulary: products.length > 0,
+  });
+
+  // EMR-889 — controlled-substance prescribing surfaces the provider's DEA
+  // number. We don't have a column for it (no schema changes), so derive a
+  // stable placeholder from the user id; the settings page is where a real
+  // value would be stored interim.
+  const providerName = `${user.firstName} ${user.lastName}`.trim() || "Prescriber";
+  const deaNumber = deriveDeaPlaceholder(providerName);
 
   return (
-    <PageShell maxWidth="max-w-[960px]">
-      <div className="mb-10">
-        <Eyebrow className="mb-3">Cannabis prescription</Eyebrow>
-        <div className="flex items-center gap-5">
-          <Avatar firstName={patient.firstName} lastName={patient.lastName} size="lg" />
-          <div>
-            <h1 className="font-display text-3xl text-text tracking-tight">
-              New ℞ for {patient.firstName} {patient.lastName}
-            </h1>
-            <p className="text-[15px] text-text-muted mt-1.5 leading-relaxed">
-              Complete each section to create and send a pharmacy-grade cannabis prescription.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <PrescribeForm
+    <PageShell maxWidth="max-w-[1180px]">
+      <PrescribeFormV2
         patientId={params.id}
-        patientName={`${patient.firstName} ${patient.lastName}`}
-        patientAddress={patientAddress}
+        patientFirstName={patient.firstName}
+        patientLastName={patient.lastName}
+        patientEmail={patient.email}
+        patientPhone={patient.phone}
+        patientPhotoUrl={null}
+        patientState={patientState}
+        providerName={providerName}
+        deaNumber={deaNumber}
+        moduleFlags={moduleFlags}
+        // EMR-883 — drop "Cannabis" from the heading when the module is off.
+        heading={scrubModuleWords("New Cannabis Prescription", moduleFlags)}
         contraindicationMatches={contraindicationMatches.map((m) => ({
           id: m.contraindication.id,
           label: m.contraindication.label,
@@ -131,4 +130,17 @@ export default async function PrescribePage({ params }: PageProps) {
       />
     </PageShell>
   );
+}
+
+/**
+ * EMR-889 — interim DEA-number derivation. A real DEA number is 2 letters +
+ * 7 digits with a checksum; we synthesize a deterministic, clearly-fake value
+ * from the provider name so the controlled-substance preview has something to
+ * show until a verified DEA registration is stored.
+ */
+function deriveDeaPlaceholder(name: string): string {
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 10_000_000;
+  const first = (name[0] ?? "X").toUpperCase();
+  return `B${first}${hash.toString().padStart(7, "0")}`;
 }

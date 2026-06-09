@@ -38,6 +38,7 @@ export async function routeCDSTriggers(triggers: CDSTrigger[]) {
         title,
         description: `${trigger.description}\n\nReview chart at: /patients/${trigger.patientId}/biometrics`,
         status: "open",
+        kind: "clinical_review",
       },
     });
 

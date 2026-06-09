@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { ensureTodayEncounters } from "@/lib/domain/ensure-encounter";
 import { PageShell } from "@/components/shell/PageHeader";
 import { QueueBoard } from "./queue-board";
 import {
@@ -27,6 +28,12 @@ type RoomingContext = {
 export default async function QueueBoardPage() {
   const user = await requireUser();
   const orgId = user.organizationId!;
+
+  // Day-of backstop: make sure every confirmed appointment for today has its
+  // Encounter materialized so booked patients appear on the board (as
+  // "Scheduled") and are checkinable, even if they were confirmed before the
+  // encounter bridge existed. Idempotent and bounded to today's org.
+  await ensureTodayEncounters(orgId);
 
   const today = new Date();
   const startOfDay = new Date(

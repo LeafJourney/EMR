@@ -11,15 +11,41 @@ import type { Encounter, EncounterStatus } from "@prisma/client";
  * to preserve; the physician-workflow callers (startVisit, startVisitWithBriefing,
  * finalizeNote) only depend on these signatures, not the internals.
  *
- * Reality check: EncounterStatus is a 4-value Prisma enum
- * (scheduled | in_progress | complete | cancelled). "roomed / ready / checked_in"
- * are queue-board *view* states (src/lib/domain/queue-board.ts) that map onto a
- * persisted `scheduled` (or `in_progress`) encounter — they are NOT distinct DB
- * statuses today. Selection therefore reuses today's non-terminal encounter.
+ * Reality check: EncounterStatus is a 12-value Prisma enum. Besides the
+ * terminal states (complete | cancelled | no_show) and the bookend
+ * scheduled/in_progress, the front-desk queue board PERSISTS the intermediate
+ * flow states (checked_in | info_incomplete | ready | rooming | roomed |
+ * in_visit | wrap_up) directly onto the encounter row via
+ * `computeQueueTransition`. The physician's visit therefore must reuse ANY
+ * non-terminal encounter for today: a patient who was checked in or roomed by
+ * staff already has a live encounter (carrying rooming vitals + the MA handoff
+ * in briefingContext), so minting a new one on Start Visit would create a
+ * duplicate active encounter and orphan that handoff. (EMR — duplicate-encounter
+ * regression: the old filter was scheduled/in_progress only and silently missed
+ * every checked-in/roomed patient.)
  */
 
-/** Non-terminal encounter statuses representing an active/pending visit today. */
-export const ACTIVE_VISIT_STATUSES = ["scheduled", "in_progress"] as const;
+/** Terminal encounter statuses — a visit that is over and must NOT be resumed. */
+export const TERMINAL_VISIT_STATUSES = ["complete", "cancelled", "no_show"] as const;
+
+/**
+ * Non-terminal encounter statuses representing an active/pending visit today —
+ * every EncounterStatus that is NOT terminal. Includes the front-desk queue
+ * flow states (checked_in … roomed / wrap_up) that `computeQueueTransition`
+ * persists, so `selectActiveVisitEncounter` reuses a checked-in/roomed
+ * encounter instead of minting a duplicate when the physician starts the visit.
+ */
+export const ACTIVE_VISIT_STATUSES = [
+  "scheduled",
+  "checked_in",
+  "info_incomplete",
+  "ready",
+  "rooming",
+  "roomed",
+  "in_visit",
+  "wrap_up",
+  "in_progress",
+] as const;
 
 /** Logical visit phases callers can advance an encounter into. */
 export type VisitPhase = "in_visit" | "wrap_up" | "complete";
@@ -148,7 +174,7 @@ export async function selectActiveVisitEncounter(
     where: {
       patientId,
       organizationId,
-      status: { in: ["scheduled", "in_progress"] },
+      status: { in: [...ACTIVE_VISIT_STATUSES] },
       // "today" by either the scheduled time or the row's creation — a
       // walk-in has no scheduledFor; a pre-booked visit has no same-day
       // createdAt.
@@ -162,9 +188,11 @@ export async function selectActiveVisitEncounter(
 
   if (candidates.length === 0) return null;
 
-  // An already-started visit is THE active encounter; otherwise the earliest
-  // scheduled one for today.
-  return candidates.find((e) => e.status === "in_progress") ?? candidates[0];
+  // An already-started visit (in the physician's hands) is THE active
+  // encounter; otherwise reuse the earliest one for today regardless of which
+  // front-desk flow state it currently sits in (checked_in / rooming / roomed …).
+  const started = new Set<string>(["in_progress", "in_visit"]);
+  return candidates.find((e) => started.has(e.status)) ?? candidates[0];
 }
 
 const PHASE_TO_STATUS: Record<VisitPhase, EncounterStatus> = {

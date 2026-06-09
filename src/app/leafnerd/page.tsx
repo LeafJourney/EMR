@@ -4,29 +4,56 @@ import { prisma } from "@/lib/db/prisma";
 import { getLeafnerdData } from "@/lib/leafnerd/server-data";
 import { getLeafnerdClinicalData } from "@/lib/leafnerd/clinical-surfaces";
 import { getRealFhirResources } from "@/lib/leafnerd/fhir-real";
+import { getAgentWorkbenchData } from "@/lib/leafnerd/agent-workbench";
 import LeafnerdApp from "@/components/leafnerd/fhir-intelligence/LeafnerdApp";
 import type { ClaimAnomalyRow, CohortStatusCount } from "@/lib/leafnerd/types";
+import type { Role } from "@prisma/client";
 
 // Force dynamic so the page always reflects fresh aggregates (and never tries to
 // statically prerender DB-backed data at build time).
 export const dynamic = "force-dynamic";
+
+// Roles permitted to view the LeafNerd population-health dashboard. The access
+// check reads `AuthedUser.roles` (Clerk-backed session, derived from the user's
+// Memberships) rather than re-querying the DB — that session is the single,
+// authoritative source of truth for the signed-in user's roles.
+const LEAFNERD_ROLES: Role[] = ["leafnerd", "super_admin"];
+
+// The LeafNerd demo/tenant org. Every DB read on this page is scoped to this
+// org's id so the dashboard reflects exactly one tenant and never aggregates
+// across organizations (no cross-tenant leak). Kept in sync with the slug used
+// by the other LeafNerd server modules (src/lib/leafnerd/clinical-surfaces.ts,
+// agent-workbench.ts, fhir-real.ts).
+const LEAFNERD_DEMO_ORG_SLUG = "leafnerd-demo";
 
 export default async function LeafNerdDashboard() {
   // Access gate. ENFORCED in production: requires a signed-in user holding the
   // `leafnerd` (or `super_admin`) role — the demo identity Dr. Lena Reyes carries it.
   // Kept open in dev so local iteration never bounces to /sign-in.
   const user = await getCurrentUser().catch(() => null);
+
   if (process.env.NODE_ENV === "production") {
     if (!user) redirect("/sign-in?redirect_url=/leafnerd");
-    const memberships = await prisma.membership
-      .findMany({ where: { userId: user.id } })
-      .catch(() => [] as { role: string }[]);
-    const hasAccess = memberships.some(
-      (m: { role: string }) => m.role === "leafnerd" || m.role === "super_admin",
-    );
+    const hasAccess = user.roles.some((r) => LEAFNERD_ROLES.includes(r));
     if (!hasAccess) redirect("/forbidden");
   }
-  const userName: string | undefined = user?.firstName ?? undefined;
+  const userName: string | undefined = user
+    ? user.lastName
+      ? `Dr. ${user.lastName}`
+      : user.firstName
+    : undefined;
+
+  let userRole: string | undefined = undefined;
+  if (user && user.roles.length > 0) {
+    if (user.roles.includes("leafnerd")) {
+      userRole = "Population Health Lead";
+    } else if (user.roles.includes("super_admin")) {
+      userRole = "Super Admin";
+    } else {
+      const r = user.roles[0];
+      userRole = r.charAt(0).toUpperCase() + r.slice(1).replace("_", " ");
+    }
+  }
 
   // The analytics layer always returns a complete, believable payload (it falls
   // back to DEMO_DATA internally if any DB query fails).
@@ -35,6 +62,9 @@ export default async function LeafNerdDashboard() {
   // Real seeded clinical lists (Patients/Encounters/Observations/Conditions/Medications/Labs).
   // Never throws — falls back to curated rows internally.
   const clinical = await getLeafnerdClinicalData();
+
+  // Fetch real/fallback Agent Workbench data.
+  const agentWorkbench = await getAgentWorkbenchData();
 
   // Prepend genuinely-mapped FHIR R4 resources (built from real seeded patients via
   // platform/fhir.ts) so the FHIR Explorer leads with real data. Falls back silently.
@@ -45,65 +75,93 @@ export default async function LeafNerdDashboard() {
     /* keep the curated fhirResources */
   }
 
-  // Optional real-data overlays for the Cohort + Claims surfaces. Both are wrapped
-  // in try/catch; on any failure the surfaces use their own curated demo fallback.
-  let cohortStatusCounts: CohortStatusCount[] | undefined;
+  // Resolve the LeafNerd demo org once. EVERY DB overlay below is scoped to it by
+  // organizationId so the dashboard reads a single tenant's data and never
+  // aggregates across orgs (no cross-tenant leak). On any failure — or if the
+  // demo org can't be resolved — the overlays are skipped and the surfaces fall
+  // back to their own curated demo data.
+  let demoOrgId: string | null = null;
   try {
-    const grouped = await prisma.patient.groupBy({ by: ["status"], _count: true });
-    cohortStatusCounts = grouped.map((g) => ({
-      status: String((g as { status: unknown }).status),
-      count: typeof (g as { _count: unknown })._count === "number" ? (g as { _count: number })._count : 0,
-    }));
+    const org = await prisma.organization.findUnique({
+      where: { slug: LEAFNERD_DEMO_ORG_SLUG },
+      select: { id: true },
+    });
+    demoOrgId = org?.id ?? null;
   } catch {
-    cohortStatusCounts = undefined;
+    demoOrgId = null;
+  }
+
+  // Optional real-data overlays for the Cohort + Claims surfaces. Both are scoped
+  // to the demo org and wrapped in try/catch; on any failure the surfaces use
+  // their own curated demo fallback.
+  let cohortStatusCounts: CohortStatusCount[] | undefined;
+  if (demoOrgId) {
+    try {
+      const grouped = await prisma.patient.groupBy({
+        by: ["status"],
+        where: { organizationId: demoOrgId },
+        _count: true,
+      });
+      cohortStatusCounts = grouped.map((g) => ({
+        status: String((g as { status: unknown }).status),
+        count: typeof (g as { _count: unknown })._count === "number" ? (g as { _count: number })._count : 0,
+      }));
+    } catch {
+      cohortStatusCounts = undefined;
+    }
   }
 
   let claims: ClaimAnomalyRow[] | undefined;
-  try {
-    const rows = await prisma.claimScrubResult.findMany({
-      include: { claim: true },
-      orderBy: { scrubbedAt: "desc" },
-      take: 12,
-    });
-    claims = rows.map((row) => {
-      const r = row as unknown as {
-        id: string;
-        claimId?: string | null;
-        status?: string | null;
-        edits?: unknown;
-        scrubbedAt?: Date | null;
-        claim?: {
-          cptCodes?: unknown;
-          billedAmountCents?: number | null;
-          claimNumber?: string | null;
-        } | null;
-      };
-      const firstEdit = Array.isArray(r.edits) ? (r.edits[0] as { message?: string } | undefined) : undefined;
-      const firstCpt = Array.isArray(r.claim?.cptCodes)
-        ? ((r.claim?.cptCodes as Array<{ code?: string }>)[0]?.code as string | undefined)
-        : undefined;
-      return {
-        id: r.id,
-        claimId: r.claimId ?? undefined,
-        code: firstCpt,
-        description: firstEdit?.message ?? r.status ?? "Flagged claim",
-        amount:
-          typeof r.claim?.billedAmountCents === "number" ? r.claim!.billedAmountCents / 100 : undefined,
-        scrubbedAt: r.scrubbedAt ? r.scrubbedAt.toISOString() : undefined,
-      } satisfies ClaimAnomalyRow;
-    });
-    if (claims.length === 0) claims = undefined; // let the surface use its demo fallback
-  } catch {
-    claims = undefined;
+  if (demoOrgId) {
+    try {
+      const rows = await prisma.claimScrubResult.findMany({
+        where: { claim: { is: { organizationId: demoOrgId } } },
+        include: { claim: true },
+        orderBy: { scrubbedAt: "desc" },
+        take: 12,
+      });
+      claims = rows.map((row) => {
+        const r = row as unknown as {
+          id: string;
+          claimId?: string | null;
+          status?: string | null;
+          edits?: unknown;
+          scrubbedAt?: Date | null;
+          claim?: {
+            cptCodes?: unknown;
+            billedAmountCents?: number | null;
+            claimNumber?: string | null;
+          } | null;
+        };
+        const firstEdit = Array.isArray(r.edits) ? (r.edits[0] as { message?: string } | undefined) : undefined;
+        const firstCpt = Array.isArray(r.claim?.cptCodes)
+          ? ((r.claim?.cptCodes as Array<{ code?: string }>)[0]?.code as string | undefined)
+          : undefined;
+        return {
+          id: r.id,
+          claimId: r.claimId ?? undefined,
+          code: firstCpt,
+          description: firstEdit?.message ?? r.status ?? "Flagged claim",
+          amount:
+            typeof r.claim?.billedAmountCents === "number" ? r.claim!.billedAmountCents / 100 : undefined,
+          scrubbedAt: r.scrubbedAt ? r.scrubbedAt.toISOString() : undefined,
+        } satisfies ClaimAnomalyRow;
+      });
+      if (claims.length === 0) claims = undefined; // let the surface use its demo fallback
+    } catch {
+      claims = undefined;
+    }
   }
 
   return (
     <LeafnerdApp
       data={data}
       userName={userName}
+      userRole={userRole}
       claims={claims}
       cohortStatusCounts={cohortStatusCounts}
       clinical={clinical}
+      agentWorkbench={agentWorkbench}
     />
   );
 }

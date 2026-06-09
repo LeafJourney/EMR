@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  ensureEncounterForAppointment,
+  syncEncounterScheduleForAppointment,
+} from "@/lib/domain/ensure-encounter";
+import { CALENDAR_BLOCK_PATIENT } from "@/lib/domain/calendar-block-patient";
 
 const rescheduleSchema = z.object({
   appointmentId: z.string(),
@@ -64,6 +69,9 @@ export async function rescheduleAppointmentAction(
     data: { startAt: newStart, endAt: newEnd },
   });
 
+  // Keep a materialized (still-scheduled) Encounter aligned with the new slot.
+  await syncEncounterScheduleForAppointment(appt.id, newStart);
+
   revalidatePath("/clinic/schedule");
   return { ok: true };
 }
@@ -117,7 +125,7 @@ export async function createPatientAppointmentAction(
     }
   }
 
-  await prisma.appointment.create({
+  const appointment = await prisma.appointment.create({
     data: {
       patientId,
       providerId: provider.id,
@@ -128,6 +136,11 @@ export async function createPatientAppointmentAction(
       status: "confirmed",
     },
   });
+
+  // Materialize the visit Encounter now so the patient is immediately
+  // checkinable and shows on the queue board (idempotent via the @unique
+  // appointmentId; the queue's day-of backstop also covers this).
+  await ensureEncounterForAppointment(appointment.id);
 
   revalidatePath("/clinic/schedule");
   return { ok: true };
@@ -160,16 +173,14 @@ export async function createSpecialBlockAction(
   let patient = await prisma.patient.findFirst({
     where: {
       organizationId: user.organizationId!,
-      firstName: "System",
-      lastName: "CalendarBlock",
+      ...CALENDAR_BLOCK_PATIENT,
     },
   });
   if (!patient) {
     patient = await prisma.patient.create({
       data: {
         organizationId: user.organizationId!,
-        firstName: "System",
-        lastName: "CalendarBlock",
+        ...CALENDAR_BLOCK_PATIENT,
         status: "active",
       },
     });

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils/cn";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { formatProviderName } from "@/lib/utils/format";
 import {
   generateSlots,
   DEFAULT_AVAILABILITY,
@@ -124,7 +125,7 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId);
   const providerDisplayName = selectedProvider
-    ? `${selectedProvider.title} ${selectedProvider.name}`
+    ? formatProviderName(selectedProvider)
     : "";
 
   const dateRange = useMemo(() => generateDateRange(14), []);
@@ -184,7 +185,7 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
           action: "rescheduled",
         });
       } else {
-        await bookAppointment({
+        const res = await bookAppointment({
           patientId,
           providerId: selectedProviderId,
           slotDate: selectedDate,
@@ -192,6 +193,10 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
           appointmentType,
           modality: appointmentType === "telehealth" ? "video" : "in_person",
         });
+        if (!res.ok) {
+          setSubmitError(res.error);
+          return;
+        }
         setBookedDetails({
           date: formatDateLabel(selectedDate),
           time: `${selectedSlot.startTime} - ${selectedSlot.endTime}`,
@@ -435,7 +440,7 @@ export function BookingCalendar({ providers, patientId, upcoming }: BookingCalen
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-text truncate">
-                    {p.title} {p.name}
+                    {formatProviderName(p)}
                   </p>
                 </div>
               </div>

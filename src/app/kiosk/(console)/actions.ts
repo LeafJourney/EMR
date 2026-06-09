@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 import { computeQueueTransition } from "@/lib/domain/visit-state";
+import { ensureTodayEncounterForPatient } from "@/lib/domain/ensure-encounter";
 import { logger } from "@/lib/observability/log";
 import { appOrigin, issueHandoffToken } from "@/lib/check-in/kiosk-handoff";
 
@@ -106,6 +107,11 @@ function dayBounds(now: Date): { start: Date; end: Date } {
  * "you're already checked in" instead of "no appointment".
  */
 async function loadTodayEncounter(orgId: string, patientId: string) {
+  // Self-sufficiency: a booked patient may have no Encounter yet if no staff has
+  // opened the queue board today. Materialize it here (idempotent) so the kiosk
+  // can find and check them in without depending on the board's day-of backstop.
+  await ensureTodayEncounterForPatient(orgId, patientId);
+
   const { start, end } = dayBounds(new Date());
   return prisma.encounter.findFirst({
     where: {

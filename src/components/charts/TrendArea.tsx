@@ -27,6 +27,18 @@ export interface TrendAreaSeries {
   color?: string;
 }
 
+/**
+ * Compact Y-axis tick label. Long values like 62800 were being clipped to
+ * ",800" by the narrow axis (Back-Office Audit P4 / QA-132): abbreviate
+ * thousands/millions so the label always fits.
+ */
+function formatCompactTick(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return v.toLocaleString();
+}
+
 export interface TrendAreaProps<T extends object> {
   data: T[];
   lines: TrendAreaSeries[];
@@ -121,8 +133,9 @@ export function TrendArea<T extends object>({
           />
           <YAxis
             {...Y_AXIS_DEFAULTS}
+            width={48}
             tickFormatter={(v: number) =>
-              unit ? `${v}${unit}` : v.toLocaleString()
+              unit ? `${v}${unit}` : formatCompactTick(v)
             }
             label={
               yLabel

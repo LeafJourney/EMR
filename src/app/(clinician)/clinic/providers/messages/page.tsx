@@ -19,9 +19,14 @@ import {
 
 export const metadata = { title: "Provider Messages" };
 
-export default async function ProviderMessagesPage() {
+export default async function ProviderMessagesPage({
+  searchParams,
+}: {
+  searchParams: { userId?: string };
+}) {
   const user = await requireUser();
   const orgId = user.organizationId;
+  const initialUserId = searchParams.userId ?? null;
 
   if (!orgId) {
     return (
@@ -134,6 +139,7 @@ export default async function ProviderMessagesPage() {
         threads={decrypted}
         currentUserId={user.id}
         directory={directory}
+        initialUserId={initialUserId}
       />
     </PageShell>
   );

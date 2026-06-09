@@ -8,7 +8,7 @@ import { PdfExportButton } from "./pdf-export-button";
 import { InteractionBubbles } from "./interaction-bubbles";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isModalityEnabled } from "@/lib/modality/server";
-import { ChatCB } from "../research/chat-cb";
+import { ChatCBPanel } from "../research/chat-cb-panel";
 
 export const metadata = { title: "Clinical Library" };
 
@@ -237,10 +237,7 @@ export default async function LibraryPage() {
       {/* ChatCB — AI evidence assistant, cannabis-modality only */}
       {cannabisEnabled && (
         <div className="mb-6">
-          <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-3">
-            AI evidence assistant
-          </p>
-          <ChatCB />
+          <ChatCBPanel />
         </div>
       )}
 

@@ -23,7 +23,7 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
-import { sendReply, composeMessage, type ComposeResult } from "./actions";
+import { sendReply, composeMessage, markThreadRead, type ComposeResult } from "./actions";
 import { isResolvedMarker } from "./resolve-marker";
 import {
   bulkMarkThreadsReadAction,
@@ -64,6 +64,10 @@ interface MessageData {
   senderAgent: string | null;
   sender: { firstName: string; lastName: string } | null;
   createdAt: string;
+  // EMR-808 — truthful transport + delivery state.
+  channel: string;
+  delivery: string;
+  deliveryDetail: string | null;
 }
 
 interface ThreadMessageData {
@@ -73,6 +77,8 @@ interface ThreadMessageData {
   subject: string;
   messages: MessageData[];
   callLogs: CallLogData[];
+  /** EMR-808 — server-computed from `resolvedAt >= lastMessageAt`. */
+  isResolved: boolean;
 }
 
 interface PatientOption {
@@ -108,15 +114,54 @@ type TimelineItem =
 
 function buildTimeline(thread: ThreadMessageData): TimelineItem[] {
   const items: TimelineItem[] = [
-    ...thread.messages.map(
-      (m): TimelineItem => ({ kind: "message", ts: m.createdAt, data: m }),
-    ),
+    // Hide legacy [[RESOLVED]] sentinel rows (pre-EMR-808 resolve markers); the
+    // durable resolvedAt column now carries that state, not a chat bubble.
+    ...thread.messages
+      .filter((m) => !isResolvedMarker(m.body))
+      .map((m): TimelineItem => ({ kind: "message", ts: m.createdAt, data: m })),
     ...thread.callLogs.map(
       (c): TimelineItem => ({ kind: "call", ts: c.startedAt, data: c }),
     ),
   ];
   items.sort((a, b) => a.ts.localeCompare(b.ts));
   return items;
+}
+
+// EMR-808 — truthful per-message delivery indicator. Portal messages are
+// delivered in-app (no badge for the normal case); external channels show
+// whether they actually went out, and failed sends stay visibly flagged.
+function DeliveryBadge({
+  channel,
+  delivery,
+  detail,
+}: {
+  channel: string;
+  delivery: string;
+  detail: string | null;
+}) {
+  if (channel === "portal") return null;
+  if (delivery === "failed") {
+    return (
+      <span title={detail ?? undefined} className="text-xs font-medium text-red-600">
+        ⚠ Not delivered
+      </span>
+    );
+  }
+  if (delivery === "delivered") {
+    return (
+      <span title={detail ?? undefined} className="text-xs text-emerald-600">
+        ✓ Delivered · {channel}
+      </span>
+    );
+  }
+  if (channel === "phone") {
+    return <span className="text-xs text-text-subtle">Call logged</span>;
+  }
+  return (
+    <span title={detail ?? undefined} className="text-xs text-text-subtle">
+      Recorded · not delivered
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +483,10 @@ function ComposeModal({
   const [patientQuery, setPatientQuery] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // EMR-642 — track form edits via state so isDirty is always current when
+  // Dialog reads it (a DOM-query approach would return stale render-snapshot
+  // values for uncontrolled inputs like subject/body).
+  const [formDirty, setFormDirty] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
 
@@ -475,19 +524,7 @@ function ComposeModal({
     setDropdownOpen(true);
   }
 
-  // EMR-642 — the compose form is a true edit surface, so any progress
-  // typed by the clinician should be guarded against accidental dismissal.
-  const isDirty =
-    patientQuery.length > 0 ||
-    (formRef.current?.elements
-      ? Array.from(formRef.current.elements).some((el) => {
-          if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-            if (el.type === "hidden") return false;
-            return el.value.length > 0;
-          }
-          return false;
-        })
-      : false);
+  const isDirty = patientQuery.length > 0 || formDirty;
 
   return (
     <Dialog
@@ -509,7 +546,7 @@ function ComposeModal({
         </div>
 
         {/* Form */}
-        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4">
+        <form ref={formRef} action={formAction} className="px-6 py-5 space-y-4" onChange={() => setFormDirty(true)}>
           {selectedPatient && (
             <input type="hidden" name="patientId" value={selectedPatient.id} />
           )}
@@ -853,6 +890,8 @@ interface ThreadRowProps {
   isSelected: boolean;
   isPinned: boolean;
   childVariants: ReturnType<typeof listStaggerChild>;
+  /** EMR-657 — active meds for the hover tooltip on the patient avatar. */
+  meds: PatientMed[];
   onSelect: () => void;
   onTogglePin: () => void;
   onMarkRead: () => void;
@@ -866,6 +905,7 @@ function ThreadInboxRow({
   isSelected,
   isPinned,
   childVariants,
+  meds,
   onSelect,
   onTogglePin,
   onMarkRead,
@@ -913,6 +953,20 @@ function ThreadInboxRow({
         )}
       >
         <div className="flex items-start gap-3">
+          {/* EMR-657 — avatar with meds tooltip; click navigates to chart */}
+          <MedsTooltip meds={meds}>
+            <Link
+              href={`/clinic/patients/${t.patientId}`}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`Open chart for ${t.patientName}`}
+            >
+              <Avatar
+                firstName={t.patientName.split(" ")[0] ?? ""}
+                lastName={t.patientName.split(" ")[1] ?? ""}
+                size="sm"
+              />
+            </Link>
+          </MedsTooltip>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -948,10 +1002,15 @@ function ThreadInboxRow({
                     <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .013 2.371c-.125.612-.413 1.27-.978 1.834a.5.5 0 0 1-.707 0L5.95 11.756 1.854 15.85a.5.5 0 1 1-.708-.707L5.243 11.05 2.475 8.28a.5.5 0 0 1 0-.706c.565-.565 1.222-.853 1.834-.978a5.93 5.93 0 0 1 2.372.013l3.134-3.134a2.97 2.97 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z" />
                   </svg>
                 </span>
+                {/* EMR-657 — clicking name opens the patient chart */}
                 <PatientHoverCard patientId={t.patientId}>
-                  <p className="text-sm font-semibold text-text truncate cursor-default">
+                  <Link
+                    href={`/clinic/patients/${t.patientId}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm font-semibold text-text truncate hover:text-accent hover:underline transition-colors"
+                  >
                     {t.patientName}
-                  </p>
+                  </Link>
                 </PatientHoverCard>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -1069,7 +1128,6 @@ export function SmartInboxView({
     initialThreadId ?? triaged[0]?.threadId ?? null,
   );
   const [showCompose, setShowCompose] = useState(false);
-  const [composeOpen, setComposeOpen] = useState(false);
   // EMR-659 — in-thread search: filters the visible message timeline by body
   // text (case-insensitive substring). Resets whenever the selected thread
   // changes so a stale query doesn't carry across threads.
@@ -1332,6 +1390,19 @@ export function SmartInboxView({
     setThreadSearch("");
   }, [selectedThreadId]);
 
+  // EMR-808 — opening a thread marks its inbound messages read, durably. The
+  // ref guards against re-firing for a thread already marked this session;
+  // markThreadRead revalidates so the unread badge clears on the next render.
+  const markedReadRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    if (markedReadRef.current.has(selectedThreadId)) return;
+    const triage = triaged.find((t) => t.threadId === selectedThreadId);
+    if (!triage || triage.unreadCount === 0) return;
+    markedReadRef.current.add(selectedThreadId);
+    void markThreadRead(selectedThreadId);
+  }, [selectedThreadId, triaged]);
+
   // Empty state: no threads at all
   if (triaged.length === 0) {
     return (
@@ -1534,10 +1605,12 @@ export function SmartInboxView({
                       isSelected={isSelected}
                       isPinned={isPinned}
                       childVariants={childVariants}
+                      meds={patientMeds[t.patientId] ?? []}
                       onSelect={() => setSelectedThreadId(t.threadId)}
                       onTogglePin={() => togglePinned(t.threadId)}
                       onMarkRead={() => {
-                        setSelectedThreadId(t.threadId);
+                        markedReadRef.current.add(t.threadId);
+                        void markThreadRead(t.threadId);
                       }}
                       onResolve={() => {
                         setSelectedThreadId(t.threadId);
@@ -1636,17 +1709,7 @@ export function SmartInboxView({
                       </Button>
                       <ResolveButton
                         threadId={selectedThread.threadId}
-                        isResolved={(() => {
-                          // EMR-660 — Resolved when the most recent clinician
-                          // message carries the [[RESOLVED]] sentinel AND no
-                          // patient reply has landed after it. We check the
-                          // last message in chronological order.
-                          const sorted = [...selectedThread.messages].sort((a, b) =>
-                            a.createdAt.localeCompare(b.createdAt),
-                          );
-                          const last = sorted[sorted.length - 1];
-                          return !!last && isResolvedMarker(last.body);
-                        })()}
+                        isResolved={selectedThread.isResolved}
                       />
                     </div>
                   )}
@@ -1809,6 +1872,13 @@ export function SmartInboxView({
                                 }
                               />
                             )}
+                            {(isOwn || isAgent) && (
+                              <DeliveryBadge
+                                channel={msg.channel}
+                                delivery={msg.delivery}
+                                detail={msg.deliveryDetail}
+                              />
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1829,6 +1899,7 @@ export function SmartInboxView({
               <ExportModal
                 open={exportOpen}
                 onClose={() => setExportOpen(false)}
+                threadId={selectedThread.threadId}
                 patientName={selectedThread.patientName}
                 subject={selectedThread.subject}
                 messages={selectedThread.messages.map(
@@ -1861,32 +1932,6 @@ export function SmartInboxView({
           )}
         </Card>
       </div>
-
-      {/* Gmail-style floating compose window */}
-      {composeOpen && (
-        <div className="fixed bottom-0 right-8 w-[400px] bg-surface border border-border rounded-t-xl shadow-2xl z-50 flex flex-col">
-          <div className="bg-surface-raised px-4 py-2 border-b border-border rounded-t-xl flex justify-between items-center cursor-pointer">
-            <h3 className="text-sm font-semibold text-text">New Message</h3>
-            <button onClick={() => setComposeOpen(false)} className="text-text-muted hover:text-text">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <div className="p-4 flex flex-col gap-3">
-            <Input placeholder="To: Patient Name" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
-            <Input placeholder="Subject" className="text-sm border-0 border-b border-border rounded-none px-0 shadow-none focus-visible:ring-0" />
-            <Textarea placeholder="Type message... (type '/' for shortcuts)" className="min-h-[150px] border-0 focus-visible:ring-0 px-0 shadow-none text-sm resize-none" />
-          </div>
-          <div className="bg-surface-muted px-4 py-3 border-t border-border flex justify-between items-center">
-            <div className="flex gap-2 text-text-muted">
-              <button title="Format" className="p-1.5 hover:bg-surface rounded-md"><SparklesIcon /></button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setComposeOpen(false)}>Save Draft</Button>
-              <Button size="sm" onClick={() => setComposeOpen(false)}>Send</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Bulk action bar — slides up when any inbox thread is selected. */}
       <BulkActionBar

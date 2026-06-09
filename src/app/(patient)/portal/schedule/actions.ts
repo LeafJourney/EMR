@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import {
+  cancelEncounterForAppointment,
+  syncEncounterScheduleForAppointment,
+} from "@/lib/domain/ensure-encounter";
 import type { AppointmentType } from "@/lib/domain/scheduling";
+import { zonedTimeToUtc, DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
 
 interface BookAppointmentInput {
   patientId: string;
@@ -20,22 +25,90 @@ function durationMinutesFor(t: AppointmentType): number {
   return t === "new_patient" ? 60 : t === "urgent" ? 15 : 30;
 }
 
+const BOOK_MODALITIES = new Set(["in_person", "video", "phone"]);
+
+export type BookAppointmentResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string; code?: string };
+
 async function getOwnedPatient(userId: string, patientId: string) {
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, userId, deletedAt: null },
+    include: { organization: { select: { timeZone: true } } },
   });
   if (!patient) throw new Error("Patient not found or unauthorized.");
   return patient;
 }
 
-export async function bookAppointment(input: BookAppointmentInput) {
+export async function bookAppointment(
+  input: BookAppointmentInput,
+): Promise<BookAppointmentResult> {
   const user = await requireUser();
-  await getOwnedPatient(user.id, input.patientId);
+  const patient = await getOwnedPatient(user.id, input.patientId);
 
-  const startAt = new Date(`${input.slotDate}T${input.slotStartTime}:00`);
+  // Interpret the chosen slot in the CLINIC's timezone, then store the correct
+  // UTC instant. Previously `new Date("...T11:00:00")` was parsed in the
+  // server's timezone (UTC in prod), so an 11:00 AM booking was stored as
+  // 11:00 UTC and shown back to the patient as 4:00 AM.
+  const timeZone = patient.organization?.timeZone || DEFAULT_TIME_ZONE;
+  const [bYear, bMonth, bDay] = input.slotDate.split("-").map(Number);
+  const [bHour, bMinute] = input.slotStartTime.split(":").map(Number);
+  if ([bYear, bMonth, bDay, bHour, bMinute].some((n) => Number.isNaN(n))) {
+    return { ok: false, error: "Invalid appointment time." };
+  }
+  const startAt = zonedTimeToUtc(timeZone, {
+    year: bYear,
+    month: bMonth,
+    day: bDay,
+    hour: bHour,
+    minute: bMinute,
+  });
+  if (startAt.getTime() < Date.now()) {
+    return { ok: false, error: "Choose a time in the future." };
+  }
+
   const endAt = new Date(
     startAt.getTime() + durationMinutesFor(input.appointmentType) * 60_000,
   );
+
+  // The provider must exist, be active, and belong to the patient's org —
+  // bookAppointment previously trusted an arbitrary providerId, so the portal
+  // could create a dangling appointment against a missing or cross-org provider.
+  const provider = await prisma.provider.findFirst({
+    where: {
+      id: input.providerId,
+      organizationId: patient.organizationId,
+      active: true,
+    },
+    select: { id: true },
+  });
+  if (!provider) {
+    return { ok: false, error: "That provider isn't available for booking." };
+  }
+
+  // Don't let the portal double-book a provider's slot. rescheduleAppointment
+  // already enforces this guard; bookAppointment skipped it, so two patients
+  // (or one patient clicking twice) could create overlapping "requested"
+  // appointments on the same provider.
+  const conflict = await prisma.appointment.findFirst({
+    where: {
+      providerId: provider.id,
+      status: { in: ["requested", "confirmed"] },
+      startAt: { lt: endAt },
+      endAt: { gt: startAt },
+    },
+  });
+  if (conflict) {
+    return {
+      ok: false,
+      error: "That time was just taken. Please pick another slot.",
+      code: "CONFLICT",
+    };
+  }
+
+  // Preserve the requested modality (in_person | video | phone). The old code
+  // silently collapsed "phone" into "video".
+  const modality = BOOK_MODALITIES.has(input.modality) ? input.modality : "video";
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -44,13 +117,13 @@ export async function bookAppointment(input: BookAppointmentInput) {
       status: "requested",
       startAt,
       endAt,
-      modality: input.modality === "in_person" ? "in_person" : "video",
+      modality,
       notes: input.reason ?? null,
     },
   });
 
   revalidatePath("/portal/schedule");
-  return { id: appointment.id };
+  return { ok: true, id: appointment.id };
 }
 
 const cancelSchema = z.object({ appointmentId: z.string().min(1) });
@@ -83,6 +156,10 @@ export async function cancelAppointment(
     data: { status: "cancelled" },
   });
 
+  // If this appointment had already materialized a (still-scheduled) Encounter,
+  // cancel it too so it doesn't linger as a ghost card on the queue board.
+  await cancelEncounterForAppointment(appt.id);
+
   revalidatePath("/portal/schedule");
   return { ok: true };
 }
@@ -105,6 +182,9 @@ export async function rescheduleAppointment(
       id: parsed.data.appointmentId,
       patient: { userId: user.id, deletedAt: null },
     },
+    include: {
+      patient: { select: { organization: { select: { timeZone: true } } } },
+    },
   });
   if (!appt) return { ok: false, error: "Appointment not found." };
 
@@ -112,7 +192,17 @@ export async function rescheduleAppointment(
     return { ok: false, error: "This appointment can no longer be rescheduled." };
   }
 
-  const newStart = new Date(`${parsed.data.slotDate}T${parsed.data.slotStartTime}:00`);
+  // Interpret the new slot in the clinic's timezone (see bookAppointment).
+  const timeZone = appt.patient.organization?.timeZone || DEFAULT_TIME_ZONE;
+  const [rYear, rMonth, rDay] = parsed.data.slotDate.split("-").map(Number);
+  const [rHour, rMinute] = parsed.data.slotStartTime.split(":").map(Number);
+  const newStart = zonedTimeToUtc(timeZone, {
+    year: rYear,
+    month: rMonth,
+    day: rDay,
+    hour: rHour,
+    minute: rMinute,
+  });
   if (Number.isNaN(newStart.getTime())) {
     return { ok: false, error: "Invalid target time." };
   }
@@ -152,6 +242,10 @@ export async function rescheduleAppointment(
       status: "requested",
     },
   });
+
+  // Keep a materialized (still-scheduled) Encounter pointed at the new time so
+  // the queue board doesn't show the old slot.
+  await syncEncounterScheduleForAppointment(appt.id, newStart);
 
   revalidatePath("/portal/schedule");
   return { ok: true, id: appt.id };

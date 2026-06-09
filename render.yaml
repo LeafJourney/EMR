@@ -44,9 +44,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
       - key: SUPABASE_URL
@@ -64,6 +64,15 @@ services:
       - key: PAYABLI_ENVIRONMENT
         value: sandbox
       - key: PAYABLI_WEBHOOK_SECRET
+        sync: false
+      # Transactional email (org invitations). Both are dashboard-set.
+      # RESEND_API_KEY: the Resend API key.
+      # EMAIL_FROM: a sender on a Resend-verified domain, e.g.
+      #   "Leafjourney <invites@leafjourney.com>". Until a domain is
+      #   verified, invite email falls back to a copyable link.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
         sync: false
 
   # LeafNerd — Dedicated frontend service for the clinical intelligence product.
@@ -93,9 +102,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: LeafNerd
 
@@ -117,9 +126,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-001
+        value: google/gemini-2.5-flash
       - key: OPENROUTER_FREE_MODEL
-        value: google/gemma-2-9b-it:free
+        value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
 

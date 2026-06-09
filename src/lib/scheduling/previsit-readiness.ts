@@ -76,8 +76,8 @@ export const CONSENT_FRESHNESS_POLICY: {
   visitConsentMaxAgeDays: number | null;
   telehealthConsentMaxAgeDays: number | null;
 } = {
-  visitConsentMaxAgeDays: null,
-  telehealthConsentMaxAgeDays: null,
+  visitConsentMaxAgeDays: 365,
+  telehealthConsentMaxAgeDays: 1,
 };
 
 /** A consent is "telehealth" if its template name mentions telehealth/virtual. */

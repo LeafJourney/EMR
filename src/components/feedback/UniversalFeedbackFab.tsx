@@ -87,7 +87,7 @@ export function UniversalFeedbackFab() {
       setState("thanks");
       toast({
         title: "Thanks for the whisper",
-        description: "We'll route it to the right team.",
+        description: "On its way to Scott & Neal.",
         variant: "success",
       });
       setTimeout(close, 2500);

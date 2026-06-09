@@ -12,6 +12,10 @@ import { prisma } from "@/lib/db/prisma";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { getSpecialtyTemplate } from "@/lib/specialty-templates/registry";
+import {
+  type ConfigStatus,
+  canTransition,
+} from "@/lib/db/practice-config-status";
 import { withAuthErrors, notFound } from "../../_helpers";
 
 export const runtime = "nodejs";
@@ -55,6 +59,21 @@ export const POST = withAdminMutation<{ id: string }>(
     });
     if (!config) return notFound();
 
+    // EMR-436 — state-machine guard. Only a draft can be published. A
+    // double-submit or a publish against an already-published/archived row is a
+    // client error (409), not a 500.
+    if (!canTransition(config.status as ConfigStatus, "published")) {
+      return NextResponse.json(
+        {
+          error: "conflict",
+          reason: "invalid_state",
+          from: config.status,
+          to: "published",
+        },
+        { status: 409 },
+      );
+    }
+
     const missing = findMissing(config as unknown as Record<string, unknown>);
     if (missing.length > 0) {
       return NextResponse.json(
@@ -87,8 +106,21 @@ export const POST = withAdminMutation<{ id: string }>(
     // Snapshot + flip in a single transaction so we never end up with a
     // version row pointing at a config that didn't actually flip.
     const published = await prisma.$transaction(async (tx) => {
-      // TODO(EMR-409): the snapshot table column names are taken from the
-      // EMR-409 ticket spec — confirm once the migration lands.
+      // EMR-436 — single-tenant publish constraint: at most one published
+      // config per practice. Demote any OTHER currently-published config for
+      // this practice to `archived` BEFORE promoting this one, inside the same
+      // transaction. The partial unique index (status='published') is the
+      // defense-in-depth backstop; this keeps the demoted row's lifecycle
+      // explicit and auditable rather than relying on a constraint violation.
+      await tx.practiceConfiguration.updateMany({
+        where: {
+          practiceId: config.practiceId,
+          status: "published",
+          id: { not: config.id },
+        },
+        data: { status: "archived" },
+      });
+
       await tx.practiceConfigurationVersion.create({
         data: {
           configurationId: config.id,

@@ -61,7 +61,8 @@ const MotionButton = React.forwardRef<
   HTMLMotionProps<"button">
 >(function MotionButton(props, ref) {
   const reduce = useReducedMotion() ?? false;
-  const tap = tapPress(reduce);
+  const isSubmit = props.type === "submit";
+  const tap = isSubmit ? {} : tapPress(reduce);
   return <motion.button ref={ref} {...tap} {...props} />;
 });
 

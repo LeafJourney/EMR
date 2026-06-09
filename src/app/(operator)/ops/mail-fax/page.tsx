@@ -3,8 +3,9 @@ import { requireUser } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
 import { MailFaxClient } from "./mail-fax-client";
 import { type DocumentSource } from "@/lib/billing/mail-fax-ocr";
+import { SAMPLE_DOCS } from "./sample-docs";
 
-export const metadata = { title: "Documents Inbox & Outbox" };
+export const metadata = { title: "Documents Processing Center" };
 
 interface ScanRow {
   id: string;
@@ -14,6 +15,10 @@ interface ScanRow {
   patientMrn: string;
   rawOcr: string;
   coverages: Array<{ payerName: string; memberId: string; groupNumber: string | null }>;
+  /** EMR-986: URL/data-URI of the actual scanned document for full-size preview. */
+  documentUrl: string;
+  /** EMR-986: file format of the actual document, drives the preview renderer. */
+  documentType: "pdf" | "jpg" | "docx";
 }
 
 // Initial preview scans
@@ -33,6 +38,8 @@ const PREVIEW_SCANS: ScanRow[] = [
         groupNumber: "0042-ABC",
       },
     ],
+    documentUrl: SAMPLE_DOCS.aetnaCard,
+    documentType: "jpg",
   },
   {
     id: "scan-002",
@@ -49,6 +56,8 @@ const PREVIEW_SCANS: ScanRow[] = [
         groupNumber: "NY-ENT-118",
       },
     ],
+    documentUrl: SAMPLE_DOCS.bcbsEob,
+    documentType: "pdf",
   },
   {
     id: "scan-003",
@@ -59,6 +68,8 @@ const PREVIEW_SCANS: ScanRow[] = [
     rawOcr:
       "UNITED HEALTHCARE\nINSURANCE CARD\nMember #: UHC-77891234\nGroup: GRP-44-OPT\nHDHP Plan",
     coverages: [],
+    documentUrl: SAMPLE_DOCS.uhcCard,
+    documentType: "jpg",
   },
   {
     id: "scan-004",
@@ -75,6 +86,8 @@ const PREVIEW_SCANS: ScanRow[] = [
         groupNumber: null,
       },
     ],
+    documentUrl: SAMPLE_DOCS.cignaLetter,
+    documentType: "pdf",
   },
 ];
 
