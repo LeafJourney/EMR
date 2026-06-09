@@ -133,6 +133,7 @@ export default async function OperatorLayout({
         { label: "Mission Control", href: "/ops/mission-control" },
         { label: "Schedule", href: "/ops/schedule" },
         { label: "Patients", href: "/ops/patients" },
+        { label: "Worklist", href: "/ops/tasks" },
         { label: "Command Center", href: "/clinic/command" },
       ],
     },
