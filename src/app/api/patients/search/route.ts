@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { requireApiAuth } from "@/lib/auth/api-gate";
 import { prisma } from "@/lib/db/prisma";
+import { EXCLUDE_CALENDAR_BLOCK_PATIENT } from "@/lib/domain/calendar-block-patient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     where: {
       organizationId: orgId,
       deletedAt: null,
+      ...EXCLUDE_CALENDAR_BLOCK_PATIENT,
       OR: [
         { firstName: { contains: q, mode: "insensitive" } },
         { lastName: { contains: q, mode: "insensitive" } },
@@ -63,7 +65,12 @@ export async function GET(req: NextRequest) {
   let dobMatches: typeof patients = [];
   if (/\d/.test(q) && patients.length < LIMIT) {
     const all = await prisma.patient.findMany({
-      where: { organizationId: orgId, deletedAt: null, dateOfBirth: { not: null } },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        dateOfBirth: { not: null },
+        ...EXCLUDE_CALENDAR_BLOCK_PATIENT,
+      },
       select: {
         id: true,
         firstName: true,

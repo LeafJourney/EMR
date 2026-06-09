@@ -210,6 +210,7 @@ Generate 2-5 specific, actionable tasks. Examples:
             patientId,
             title: t.title,
             description: t.description,
+            kind: "clinical_review",
             assigneeRole: "clinician",
             dueAt: new Date(now.getTime() + t.dueInDays * 24 * 60 * 60 * 1000),
             status: "open",

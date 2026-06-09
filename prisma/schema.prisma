@@ -1812,6 +1812,23 @@ enum TaskStatus {
   cancelled
 }
 
+// EMR-1079 — task category, so the unified staff worklist (/ops/tasks) can
+// facet by the kind of work, matching the Back-Office Operations Audit's
+// "filterable by type". Nullable: existing rows and unclassified creators fall
+// into the "Unspecified" bucket until set.
+enum TaskKind {
+  verify_benefits
+  obtain_auth
+  refill
+  recall
+  message_reply
+  records_request
+  billing_followup
+  clinical_review
+  patient_task
+  other
+}
+
 model Task {
   id             String     @id @default(cuid())
   organizationId String
@@ -1819,6 +1836,7 @@ model Task {
   title          String
   description    String?
   status         TaskStatus @default(open)
+  kind           TaskKind?
   assigneeRole   Role?
   assigneeUserId String?
   dueAt          DateTime?
@@ -1833,6 +1851,8 @@ model Task {
   // Filters by patientId+status, orders by dueAt — covered by this composite.
   // Index audit 2026-05-09.
   @@index([patientId, status, dueAt])
+  // EMR-1079 — worklist owner/type facet (groupBy assigneeRole/kind).
+  @@index([organizationId, kind])
 }
 
 // --------------------------------------------------------------
