@@ -1376,6 +1376,9 @@ model MessageThread {
   triageSafetyFlags Json? // string[] of red-flag symptoms
   triageSummary     String? // 1-2 sentence AI summary of the thread
   triagedAt         DateTime?
+  // EMR-808 — durable resolve state, replaces the in-body RESOLVED_SENTINEL hack.
+  resolvedAt        DateTime?
+  resolvedById      String? // clinician who resolved; plain audit column (no relation)
 
   patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   messages Message[]
@@ -1391,16 +1394,42 @@ enum MessageStatus {
   read
 }
 
+// Transport channel for a message. `portal` = in-app secure message the patient
+// reads in their portal (delivered on save). The rest are real external channels.
+enum MessageChannel {
+  portal
+  email
+  sms
+  fax
+  phone
+}
+
+// Truthful delivery state, distinct from MessageStatus (which only tracks
+// draft/sent/read for the thread UI). `delivered` = portal in-app OR an external
+// provider returned ok. `failed` = an external send was attempted and errored
+// (stays visible + retryable). `recorded` = an internal record only, with no
+// external transmission (call log, fax-disabled, or the honest no-provider /
+// dev-mock fallback). See src/lib/messaging/deliver.ts.
+enum MessageDelivery {
+  recorded
+  delivered
+  failed
+}
+
 model Message {
-  id           String        @id @default(cuid())
-  threadId     String
-  senderUserId String? // null when agent-drafted
-  senderAgent  String? // agent name:version if AI-drafted
-  status       MessageStatus @default(draft)
-  body         String
-  aiDrafted    Boolean       @default(false)
-  createdAt    DateTime      @default(now())
-  sentAt       DateTime?
+  id             String          @id @default(cuid())
+  threadId       String
+  senderUserId   String? // null when agent-drafted
+  senderAgent    String? // agent name:version if AI-drafted
+  status         MessageStatus   @default(draft)
+  channel        MessageChannel  @default(portal)
+  delivery       MessageDelivery @default(recorded)
+  deliveryDetail String? // provider id (resend/twilio) OR failure reason / "simulated …"
+  recipient      String? // email/phone for external channels; null for portal (patient via thread)
+  body           String
+  aiDrafted      Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  sentAt         DateTime?
 
   thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   sender User?         @relation("MessageSender", fields: [senderUserId], references: [id])

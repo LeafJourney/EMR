@@ -12,9 +12,11 @@
  *     pre-fill the slot.
  *
  * The operator triages: each visit can be marked "handled" (localStorage-interim
- * per browser) so the board reflects what's been worked. Actual reminder
- * dispatch runs on the comms worker (sendDueAppointmentReminders) — this surface
- * decides *what to do*, it doesn't fake the send.
+ * per browser) so the board reflects what's been worked. "Send now" performs a
+ * REAL SMS reminder via sendManualAppointmentReminder (EMR-808) — Twilio in prod,
+ * an honest "simulated" outcome in dev — so the button never fakes a send. The
+ * scheduled comms worker (sendDueAppointmentReminders) still handles the
+ * automatic 7/2/1-day cadence.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -31,6 +33,9 @@ import {
   type ReminderChannel,
 } from "@/lib/scheduling/reminders";
 import type { RiskTier } from "@/lib/scheduling/no-show-model";
+import { sendVisitReminderNow } from "./actions";
+
+type SendState = { sending: boolean; result?: { tone: "ok" | "warn" | "err"; text: string } };
 
 export type RiskedVisit = {
   id: string;
@@ -95,6 +100,22 @@ export function NoShowCockpit({ visits }: { visits: RiskedVisit[] }) {
   const [handled, setHandled] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [sendState, setSendState] = useState<Record<string, SendState>>({});
+
+  async function handleSendNow(id: string) {
+    setSendState((s) => ({ ...s, [id]: { sending: true } }));
+    try {
+      const res = await sendVisitReminderNow(id);
+      if (!res.ok) {
+        setSendState((s) => ({ ...s, [id]: { sending: false, result: { tone: "err", text: res.error } } }));
+        return;
+      }
+      const tone = res.delivery === "delivered" ? "ok" : res.delivery === "failed" ? "err" : "warn";
+      setSendState((s) => ({ ...s, [id]: { sending: false, result: { tone, text: res.detail } } }));
+    } catch {
+      setSendState((s) => ({ ...s, [id]: { sending: false, result: { tone: "err", text: "Send failed — try again." } } }));
+    }
+  }
 
   useEffect(() => {
     try {
@@ -229,8 +250,17 @@ export function NoShowCockpit({ visits }: { visits: RiskedVisit[] }) {
                         onClick={() => setExpanded(expanded === v.id ? null : v.id)}
                         className="text-[11px] font-medium text-accent hover:underline"
                       >
-                        {expanded === v.id ? "Hide" : "Send"} {v.playbook.remindersToSend} reminder
+                        {expanded === v.id ? "Hide" : "Preview"} {v.playbook.remindersToSend} reminder
                         {v.playbook.remindersToSend === 1 ? "" : "s"}
+                      </button>
+                      <span className="text-border">·</span>
+                      <button
+                        type="button"
+                        disabled={sendState[v.id]?.sending}
+                        onClick={() => handleSendNow(v.id)}
+                        className="text-[11px] font-medium text-accent hover:underline disabled:opacity-50"
+                      >
+                        {sendState[v.id]?.sending ? "Sending…" : "Send now"}
                       </button>
                       {v.playbook.requiresLiveConfirm && (
                         <Badge tone="warning" className="text-[9px]">📞 Live confirm</Badge>
@@ -248,6 +278,21 @@ export function NoShowCockpit({ visits }: { visits: RiskedVisit[] }) {
                     {/* Reminder plan preview (real engine) */}
                     {expanded === v.id && (
                       <ReminderPlanPreview tier={v.tier} startAt={v.startAt} apptId={v.id} patientId={v.patient.id} />
+                    )}
+
+                    {/* Honest "Send now" outcome */}
+                    {sendState[v.id]?.result && (
+                      <p
+                        className={cn(
+                          "text-[11px] mt-2",
+                          sendState[v.id]!.result!.tone === "ok" && "text-success",
+                          sendState[v.id]!.result!.tone === "warn" && "text-warning",
+                          sendState[v.id]!.result!.tone === "err" && "text-danger",
+                        )}
+                      >
+                        {sendState[v.id]!.result!.tone === "ok" ? "✓ " : sendState[v.id]!.result!.tone === "err" ? "⚠ " : "• "}
+                        {sendState[v.id]!.result!.text}
+                      </p>
                     )}
                   </div>
 
@@ -273,8 +318,9 @@ export function NoShowCockpit({ visits }: { visits: RiskedVisit[] }) {
       <p className="text-[11px] leading-relaxed text-text-subtle rounded-lg bg-surface-muted/60 border border-border/60 px-3 py-2 mt-6">
         Risk is scored from each patient&apos;s visit history (EMR-207). Recommended
         touches come from the tier playbook; the timeline preview is exactly what the
-        reminder workers enqueue (EMR-211). &quot;Handled&quot; is your triage marker
-        (this browser) — actual sends run on the comms worker.
+        reminder workers enqueue (EMR-211). &quot;Send now&quot; dispatches a real SMS
+        reminder via the comms adapter (and is honest when no provider is configured —
+        it says &quot;simulated&quot;). &quot;Handled&quot; is your triage marker (this browser).
       </p>
     </>
   );
