@@ -10,6 +10,7 @@
 // drawer toggles aria-expanded for screen readers.
 
 import * as React from "react";
+import Link from "next/link";
 import { ChevronDown, MapPin, Users, Stethoscope, Mail } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -317,16 +318,26 @@ export function PracticeCard({ practice }: { practice: PracticeCardData }) {
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-border/60 text-[12px] text-text-muted">
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/60 text-[12px] text-text-muted flex-wrap">
             <div className="inline-flex items-center gap-1.5">
               <Mail className="h-3.5 w-3.5" />
               {practice.primaryContactEmail ?? "No primary contact email"}
             </div>
-            <div>
-              Updated{" "}
-              {practice.updatedAt
-                ? new Date(practice.updatedAt).toLocaleDateString()
-                : "—"}
+            <div className="flex items-center gap-4">
+              <span>
+                Updated{" "}
+                {practice.updatedAt
+                  ? new Date(practice.updatedAt).toLocaleDateString()
+                  : "—"}
+              </span>
+              {(practice.configId ?? practice.organizationId) && (
+                <Link
+                  href={`/practices/${practice.configId ?? practice.organizationId}`}
+                  className="inline-flex items-center gap-1 rounded-lg bg-accent text-accent-ink font-semibold px-3 py-1.5 hover:bg-accent-hover transition-colors"
+                >
+                  View practice →
+                </Link>
+              )}
             </div>
           </div>
         </div>
