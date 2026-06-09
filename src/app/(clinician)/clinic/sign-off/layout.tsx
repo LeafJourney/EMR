@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { SignOffNav, type NavSection } from "./sign-off-nav";
+import { SignOffLayoutShell } from "./sign-off-layout-shell";
 import { PageTransition } from "@/components/ui/page-transition";
 
 export default async function SignOffLayout({
@@ -79,22 +80,12 @@ export default async function SignOffLayout({
   ];
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-4rem)]">
-      {/* Left sidebar — Sign-Off tree navigation */}
-      <div className="w-56 shrink-0 border-r border-border bg-surface flex flex-col p-3">
-        <p className="text-[11px] font-semibold text-text-subtle uppercase tracking-[0.12em] mb-3 px-2">
-          Sign-off
-        </p>
-        <SignOffNav sections={sections} />
-      </div>
-
-      {/* Right content */}
-      <div className="flex-1 min-w-0 bg-surface-raised overflow-y-auto">
-        {/* PageTransition re-keys on pathname so sub-route swaps inside
-            sign-off (labs ↔ refills ↔ notes ↔ messages) get the shared
-            `pagePushIn` motion. No-op under prefers-reduced-motion. */}
-        <PageTransition>{children}</PageTransition>
-      </div>
-    </div>
+    // EMR-662 — resizable sign-off nav sidebar (SplitPane) replacing the
+    // fixed-width column. PageTransition re-keys on pathname so sub-route
+    // swaps inside sign-off (labs ↔ refills ↔ notes ↔ messages) get the
+    // shared `pagePushIn` motion. No-op under prefers-reduced-motion.
+    <SignOffLayoutShell nav={<SignOffNav sections={sections} />}>
+      <PageTransition>{children}</PageTransition>
+    </SignOffLayoutShell>
   );
 }
