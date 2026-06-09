@@ -156,14 +156,23 @@ export function HeaderContact({
     }
     setEmailSending(true);
     try {
-      await logCorrespondence(patientId, "email", subject, message, attachments);
+      const res = await logCorrespondence(patientId, "email", subject, message, attachments);
+      // Honest outcome — distinguish a real external delivery from a chart
+      // record that did not go out (EMR-808).
+      if (res.delivery === "delivered") {
+        alert(`Email delivered to ${patientName}.`);
+      } else if (res.delivery === "failed") {
+        alert(`Email could not be delivered (${res.detail ?? "send failed"}). It's saved to the chart so you can retry.`);
+      } else {
+        alert(res.detail ?? "Recorded to the chart — not delivered externally.");
+      }
       setSubject("");
       setMessage("");
       setAttachments([]);
       setEmailOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Failed to send correspondence.");
+      alert("Could not record the correspondence. Please try again.");
     } finally {
       setEmailSending(false);
     }
@@ -180,6 +189,7 @@ export function HeaderContact({
     try {
       const text = callTranscript.join("\n");
       await logCorrespondence(patientId, "call", "", text);
+      alert("Call logged to correspondence.");
       setPhoneOpen(false);
       setCallTranscript([]);
       setCallTimer(0);

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { logger } from "@/lib/observability/log";
+import { deliverMessage } from "@/lib/messaging/deliver";
 import {
   ForbiddenError,
   assertChartAccess,
@@ -501,16 +502,25 @@ export async function updatePMHAndPSH(patientId: string, pmh: string[], psh: str
   return { ok: true };
 }
 
+export type LogCorrespondenceResult = {
+  ok: true;
+  /** EMR-808 — truthful delivery state: "delivered" | "failed" | "recorded". */
+  delivery: "delivered" | "failed" | "recorded";
+  /** Human-readable detail (provider id, failure reason, or "Call logged"). */
+  detail: string | null;
+};
+
 export async function logCorrespondence(
   patientId: string,
   type: "email" | "call",
   subject: string,
   body: string,
   attachments?: { name: string; type: string; size: number; base64: string }[]
-) {
+): Promise<LogCorrespondenceResult> {
   const user = await requireUser();
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, organizationId: user.organizationId!, deletedAt: null },
+    select: { id: true, email: true, phone: true },
   });
   if (!patient) throw new Error("Patient not found");
 
@@ -523,9 +533,11 @@ export async function logCorrespondence(
       subject: type === "call" ? `Phone Call - ${now.toLocaleDateString()}` : subject,
       lastMessageAt: now,
     },
+    select: { id: true },
   });
 
-  // Create message
+  // Append an attachment manifest to the body (true attachment storage is a
+  // separate ticket; this keeps the chart record human-readable).
   let messageBody = body;
   if (attachments && attachments.length > 0) {
     messageBody += "\n\nAttachments:";
@@ -534,18 +546,19 @@ export async function logCorrespondence(
     }
   }
 
-  await prisma.message.create({
-    data: {
-      threadId: thread.id,
-      senderUserId: user.id,
-      status: "sent",
-      body: messageBody,
-      sentAt: now,
-    },
+  // type "email" → attempt a real Resend send; "call" → a recorded call log.
+  const result = await deliverMessage({
+    threadId: thread.id,
+    channel: type === "email" ? "email" : "phone",
+    body: messageBody,
+    subject,
+    senderUserId: user.id,
+    recipient: type === "email" ? patient.email : patient.phone,
+    organizationId: user.organizationId,
   });
 
   revalidatePath(`/clinic/patients/${patientId}`);
-  return { ok: true };
+  return { ok: true, delivery: result.delivery, detail: result.detail };
 }
 
 export async function addPastMedicalConditionAction(
