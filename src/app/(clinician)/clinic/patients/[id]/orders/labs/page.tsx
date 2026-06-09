@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { LabOrderForm } from "./lab-order-form";
+import { OrderHistory } from "../order-history";
 
 interface PageProps {
   params: { id: string };
@@ -53,9 +54,18 @@ export default async function LabOrdersPage({ params }: PageProps) {
         </Link>
       </div>
 
-      <LabOrderForm
-        patientName={`${patient.firstName} ${patient.lastName}`}
-      />
+      <div className="space-y-6">
+        <LabOrderForm
+          patientId={patient.id}
+          patientName={`${patient.firstName} ${patient.lastName}`}
+        />
+
+        <OrderHistory
+          patientId={patient.id}
+          organizationId={user.organizationId!}
+          orderType="lab"
+        />
+      </div>
     </PageShell>
   );
 }
