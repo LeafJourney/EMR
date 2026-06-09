@@ -149,6 +149,7 @@ export default async function OperatorLayout({
         { label: "Denials", href: "/ops/denials", badge: denialsBadge },
         { label: "Aging", href: "/ops/aging", badge: agingBadge },
         { label: "Eligibility", href: "/ops/eligibility" },
+        { label: "Patient payments", href: "/ops/payments" },
         { label: "Mail / Fax OCR", href: "/ops/mail-fax" },
         { label: "Agents", href: "/ops/billing-agents" },
         { label: "Revenue", href: "/ops/revenue" },

@@ -33,7 +33,19 @@ export async function collectPayment(
 ): Promise<CollectResult> {
   const user = await requireUser();
 
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner" || r === "operator")) {
+  // Front desk and billers collect money at the desk (Back-Office Audit §7),
+  // alongside operators, owners, and clinicians.
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "back_office" ||
+        r === "operator" ||
+        r === "practice_owner" ||
+        r === "practice_admin" ||
+        r === "clinician",
+    )
+  ) {
     return { ok: false, error: "Unauthorized" };
   }
 
