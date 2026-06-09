@@ -8,6 +8,7 @@ import {
   ensureEncounterForAppointment,
   syncEncounterScheduleForAppointment,
 } from "@/lib/domain/ensure-encounter";
+import { CALENDAR_BLOCK_PATIENT } from "@/lib/domain/calendar-block-patient";
 
 const rescheduleSchema = z.object({
   appointmentId: z.string(),
@@ -172,16 +173,14 @@ export async function createSpecialBlockAction(
   let patient = await prisma.patient.findFirst({
     where: {
       organizationId: user.organizationId!,
-      firstName: "System",
-      lastName: "CalendarBlock",
+      ...CALENDAR_BLOCK_PATIENT,
     },
   });
   if (!patient) {
     patient = await prisma.patient.create({
       data: {
         organizationId: user.organizationId!,
-        firstName: "System",
-        lastName: "CalendarBlock",
+        ...CALENDAR_BLOCK_PATIENT,
         status: "active",
       },
     });

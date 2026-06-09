@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { MetricTile } from "@/components/ui/metric-tile";
+import { EXCLUDE_CALENDAR_BLOCK_PATIENT } from "@/lib/domain/calendar-block-patient";
 import { PatientsClient } from "./patients-client";
 
 export const metadata = { title: "Patients" };
@@ -20,7 +21,12 @@ export default async function OpsPatientsPage({
 
   const [patients, counts] = await Promise.all([
     prisma.patient.findMany({
-      where: { organizationId: orgId, deletedAt: null, ...statusWhere },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        ...statusWhere,
+        ...EXCLUDE_CALENDAR_BLOCK_PATIENT,
+      },
       include: {
         chartSummary: true,
         tasks: { where: { status: "open" } },
@@ -30,7 +36,11 @@ export default async function OpsPatientsPage({
     }),
     prisma.patient.groupBy({
       by: ["status"],
-      where: { organizationId: orgId, deletedAt: null },
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        ...EXCLUDE_CALENDAR_BLOCK_PATIENT,
+      },
       _count: true,
     }),
   ]);

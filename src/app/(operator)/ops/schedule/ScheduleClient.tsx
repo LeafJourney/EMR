@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
+import { confirmAppointment, declineAppointment } from "./actions";
 
 // ---------------------------------------------------------------------------
 // EMR-936 — Clickable "Providers this week" cards → provider snapshot in the
@@ -402,6 +403,20 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
 
 function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
   const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // EMR-1085 — action a patient-requested booking right from the card.
+  function runStatusChange(
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+  ) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Could not update the appointment.");
+      else router.refresh();
+    });
+  }
 
   const menuItems: ContextMenuItem[] = [
     {
@@ -413,6 +428,23 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
       },
     },
   ];
+  // Only a still-requested booking can be confirmed or declined.
+  if (appt.status === "requested") {
+    menuItems.push(
+      {
+        label: "Confirm appointment",
+        icon: ContextMenuIcons.Check,
+        onSelect: () =>
+          runStatusChange(() => confirmAppointment({ appointmentId: appt.id })),
+      },
+      {
+        label: "Decline request",
+        danger: true,
+        onSelect: () =>
+          runStatusChange(() => declineAppointment({ appointmentId: appt.id })),
+      },
+    );
+  }
   const { triggerProps, menu } = useContextMenu(menuItems);
 
   return (
@@ -455,15 +487,44 @@ function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
         <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
         {/* EMR-920 — inline insurance-eligibility helper tag on upcoming visits. */}
         {(appt.status === "requested" || appt.status === "confirmed") && (
-          <Badge
-            tone="info"
-            className="text-[9px]"
-            title="Insurance eligibility not yet verified for this visit."
+          <Link
+            href="/ops/eligibility"
+            className="inline-flex"
+            title="Check insurance eligibility for this visit."
           >
-            ⊕ Verify insurance
-          </Badge>
+            <Badge tone="info" className="text-[9px] hover:bg-blue-100">
+              ⊕ Verify insurance
+            </Badge>
+          </Link>
         )}
       </div>
+
+      {/* EMR-1085 — confirm/decline a patient-requested booking inline. */}
+      {appt.status === "requested" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => confirmAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => declineAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md px-2 py-0.5 text-[10px] font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+          >
+            Decline
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-[10px] text-danger">{error}</p>}
       {menu}
     </div>
   );
