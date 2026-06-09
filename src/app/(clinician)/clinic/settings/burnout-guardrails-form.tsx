@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * EMR-214 — Provider burnout guardrails (prefs INTERIM, localStorage-backed).
+ * EMR-214 — Provider burnout guardrails (prefs persisted server-side).
  *
  * Editor for the per-provider scheduling caps the slot recommender / waitlist
  * consult before placing a visit (max/day, max/week, buffer, protected lunch,
@@ -9,13 +9,14 @@
  * the real engine (`@/lib/scheduling/provider-prefs`) against the provider's
  * actual last-14-day load (passed in from the server).
  *
- * Interim notice: the caps persist to this browser's localStorage only (no
- * schema change). The burnout index itself is real — it reads loaded
- * appointment data — but `highIntensityVisits` is not yet derived from visit
- * type, so that single component reads 0 until visit-type tagging lands.
+ * Persistence: caps save to the per-user CommunicationPreference row
+ * (preferences.schedulingPrefs JSON) via a server action — no schema change.
+ * The burnout index is real (reads loaded appointment data); `highIntensityVisits`
+ * is not yet derived from visit type, so that single component reads 0 until
+ * visit-type tagging lands.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,10 +28,10 @@ import {
 } from "@/components/ui/card";
 import {
   burnoutIndex,
-  DEFAULT_PROVIDER_PREFS,
   type ProviderPrefs,
   type DayLoad,
 } from "@/lib/scheduling/provider-prefs";
+import { saveSchedulingPrefs } from "./scheduling-prefs-actions";
 
 const LABEL_CLASS =
   "block text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle mb-1.5";
@@ -42,10 +43,6 @@ const INPUT_CLASS =
 export type SerializedDayLoad = Omit<DayLoad, "day"> & { day: string };
 
 type StoredPrefs = Omit<ProviderPrefs, "providerId">;
-
-function storageKey(providerId: string) {
-  return `provider-prefs:${providerId}:v1`;
-}
 
 const LEVEL_TONE: Record<"green" | "yellow" | "red", "success" | "warning" | "danger"> = {
   green: "success",
@@ -64,35 +61,31 @@ const COMPONENT_LABEL: Record<string, string> = {
 export function BurnoutGuardrailsForm({
   providerId,
   fortnight,
+  initialPrefs,
 }: {
   providerId: string;
   fortnight: SerializedDayLoad[];
+  initialPrefs: StoredPrefs;
 }) {
-  const key = storageKey(providerId);
-  const [prefs, setPrefs] = useState<StoredPrefs>(DEFAULT_PROVIDER_PREFS);
+  const [prefs, setPrefs] = useState<StoredPrefs>(initialPrefs);
   const [justSaved, setJustSaved] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (raw) setPrefs({ ...DEFAULT_PROVIDER_PREFS, ...(JSON.parse(raw) as StoredPrefs) });
-    } catch {
-      /* corrupt / private mode — keep defaults */
-    }
-  }, [key]);
+  const [saving, setSaving] = useState(false);
 
   function updateNum(field: keyof StoredPrefs, value: number) {
     setPrefs((p) => ({ ...p, [field]: value }));
   }
 
-  function save() {
+  async function save() {
+    setSaving(true);
     try {
-      window.localStorage.setItem(key, JSON.stringify(prefs));
+      const saved = await saveSchedulingPrefs(prefs);
+      setPrefs(saved);
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2500);
     } catch {
-      /* non-fatal */
+      /* non-fatal — button returns to idle so the user can retry */
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -195,16 +188,15 @@ export function BurnoutGuardrailsForm({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button type="button" onClick={save}>
-            {justSaved ? "Saved ✓" : "Save guardrails"}
+          <Button type="button" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : justSaved ? "Saved ✓" : "Save guardrails"}
           </Button>
         </div>
 
         <p className="text-[11px] leading-relaxed text-text-subtle rounded-lg bg-surface-muted/60 border border-border/60 px-3 py-2">
-          <span className="font-semibold">Interim storage notice:</span> caps save
-          to this browser&apos;s localStorage only (no schema change). The burnout
-          index reads real loaded appointment data; the high-intensity component
-          reads 0 until visit-type tagging lands.
+          Caps save to your provider communication profile (server-side). The
+          burnout index reads real loaded appointment data; the high-intensity
+          component reads 0 until visit-type tagging lands.
         </p>
       </CardContent>
     </Card>

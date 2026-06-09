@@ -7,6 +7,12 @@ import { PatientImpactTile } from "@/components/command/patient-impact-tile";
 import { Tile } from "@/components/ui/tile";
 import { Sparkline } from "@/components/ui/sparkline";
 import { prisma } from "@/lib/db/prisma";
+import {
+  getLocalDayBounds,
+  getZonedParts,
+  greetingForTimeZone,
+  DEFAULT_TIME_ZONE,
+} from "@/lib/utils/timezone";
 
 export const metadata = { title: "Command Center" };
 
@@ -14,15 +20,16 @@ export default async function CommandCenterPage() {
   const user = await requireUser();
   const organizationId = user.organizationId!;
 
-  const today = new Date();
-  const startOfDay = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
-  const startOfWeek = new Date(startOfDay);
-  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { timeZone: true },
+  });
+  const timeZone = org?.timeZone || DEFAULT_TIME_ZONE;
+
+  // Boundaries + greeting use the clinic's timezone, not the server's UTC clock.
+  const { startOfDay, endOfDay } = getLocalDayBounds(timeZone);
+  const { weekday } = getZonedParts(timeZone);
+  const startOfWeek = new Date(startOfDay.getTime() - weekday * 86_400_000);
 
   const [weekVisits, weekFinalizedNotes, dailyEncounterCounts] = await Promise.all([
     prisma.encounter.count({
@@ -53,7 +60,7 @@ export default async function CommandCenterPage() {
     ),
   ]);
 
-  const greeting = pickGreeting(today.getHours());
+  const greeting = greetingForTimeZone(timeZone);
 
   return (
     <PageShell maxWidth="max-w-[1400px]">
@@ -105,10 +112,3 @@ export default async function CommandCenterPage() {
   );
 }
 
-function pickGreeting(hour: number): string {
-  if (hour < 5) return "Still up";
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  if (hour < 21) return "Good evening";
-  return "Good night";
-}

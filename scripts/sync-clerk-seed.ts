@@ -18,6 +18,9 @@ async function syncClerkUsers() {
   const SEED_USERS = [
     { email: "owner@demo.health", password: "Longbeach2026!" },
     { email: "clinician@demo.health", password: "Longbeach2026!" },
+    { email: "frontdesk@demo.health", password: "Longbeach2026!" },
+    { email: "ma@demo.health", password: "Longbeach2026!" },
+    { email: "office@demo.health", password: "Longbeach2026!" },
     { email: "patient@demo.health", password: "Longbeach2026!" },
     { email: "james.chen@demo.health", password: "Longbeach2026!" },
     { email: "sarah.thompson@demo.health", password: "Longbeach2026!" },

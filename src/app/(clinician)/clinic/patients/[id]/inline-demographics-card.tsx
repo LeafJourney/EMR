@@ -110,26 +110,56 @@ export function InlineDemographicsCard({
             />
           </Row>
           <Row label="Email">
-            <InlineEdit
-              value={initial.email}
-              onSave={makeDemo("email")}
-              validator={inlineValidators.email}
-              type="email"
-              placeholder="Add email"
-              ariaLabel="email"
-              disabled={!canEdit}
-            />
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <InlineEdit
+                  value={initial.email}
+                  onSave={makeDemo("email")}
+                  validator={inlineValidators.email}
+                  type="email"
+                  placeholder="Add email"
+                  ariaLabel="email"
+                  disabled={!canEdit}
+                />
+              </div>
+              {/* EMR-826 — click-to-mail icon next to the contact detail. */}
+              {initial.email && (
+                <a
+                  href={`mailto:${initial.email}`}
+                  title={`Email ${initial.email}`}
+                  aria-label="Send email"
+                  className="shrink-0 text-text-subtle hover:text-accent"
+                >
+                  <MailIcon />
+                </a>
+              )}
+            </div>
           </Row>
           <Row label="Phone">
-            <InlineEdit
-              value={initial.phone}
-              onSave={makeDemo("phone")}
-              validator={inlineValidators.phone}
-              type="tel"
-              placeholder="Add phone"
-              ariaLabel="phone"
-              disabled={!canEdit}
-            />
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <InlineEdit
+                  value={initial.phone}
+                  onSave={makeDemo("phone")}
+                  validator={inlineValidators.phone}
+                  type="tel"
+                  placeholder="Add phone"
+                  ariaLabel="phone"
+                  disabled={!canEdit}
+                />
+              </div>
+              {/* EMR-826 — click-to-call icon next to the contact detail. */}
+              {initial.phone && (
+                <a
+                  href={`tel:${initial.phone.replace(/[^0-9+]/g, "")}`}
+                  title={`Call ${initial.phone}`}
+                  aria-label="Call"
+                  className="shrink-0 text-text-subtle hover:text-accent"
+                >
+                  <PhoneIcon />
+                </a>
+              )}
+            </div>
           </Row>
           <Row label="Address">
             <InlineEdit
@@ -230,5 +260,23 @@ function Row({
       <dt className="text-xs text-text-subtle py-1 self-center">{label}</dt>
       <dd className="min-w-0 py-0.5">{children}</dd>
     </>
+  );
+}
+
+// EMR-826 — compact click-to-contact glyphs.
+function MailIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <rect x="2.5" y="4.5" width="15" height="11" rx="2" />
+      <path d="M3 6l7 5 7-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+      <path d="M6 3H4a1 1 0 0 0-1 1c0 7.18 5.82 13 13 13a1 1 0 0 0 1-1v-2a1 1 0 0 0-.76-.97l-2.45-.61a1 1 0 0 0-1 .27l-.7.86a10.6 10.6 0 0 1-4.4-4.4l.86-.7a1 1 0 0 0 .27-1l-.61-2.45A1 1 0 0 0 6 3z" />
+    </svg>
   );
 }

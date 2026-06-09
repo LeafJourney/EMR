@@ -23,7 +23,7 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
-import { sendReply, composeMessage, type ComposeResult } from "./actions";
+import { sendReply, composeMessage, markThreadRead, type ComposeResult } from "./actions";
 import { isResolvedMarker } from "./resolve-marker";
 import {
   bulkMarkThreadsReadAction,
@@ -64,6 +64,10 @@ interface MessageData {
   senderAgent: string | null;
   sender: { firstName: string; lastName: string } | null;
   createdAt: string;
+  // EMR-808 — truthful transport + delivery state.
+  channel: string;
+  delivery: string;
+  deliveryDetail: string | null;
 }
 
 interface ThreadMessageData {
@@ -73,6 +77,8 @@ interface ThreadMessageData {
   subject: string;
   messages: MessageData[];
   callLogs: CallLogData[];
+  /** EMR-808 — server-computed from `resolvedAt >= lastMessageAt`. */
+  isResolved: boolean;
 }
 
 interface PatientOption {
@@ -108,15 +114,54 @@ type TimelineItem =
 
 function buildTimeline(thread: ThreadMessageData): TimelineItem[] {
   const items: TimelineItem[] = [
-    ...thread.messages.map(
-      (m): TimelineItem => ({ kind: "message", ts: m.createdAt, data: m }),
-    ),
+    // Hide legacy [[RESOLVED]] sentinel rows (pre-EMR-808 resolve markers); the
+    // durable resolvedAt column now carries that state, not a chat bubble.
+    ...thread.messages
+      .filter((m) => !isResolvedMarker(m.body))
+      .map((m): TimelineItem => ({ kind: "message", ts: m.createdAt, data: m })),
     ...thread.callLogs.map(
       (c): TimelineItem => ({ kind: "call", ts: c.startedAt, data: c }),
     ),
   ];
   items.sort((a, b) => a.ts.localeCompare(b.ts));
   return items;
+}
+
+// EMR-808 — truthful per-message delivery indicator. Portal messages are
+// delivered in-app (no badge for the normal case); external channels show
+// whether they actually went out, and failed sends stay visibly flagged.
+function DeliveryBadge({
+  channel,
+  delivery,
+  detail,
+}: {
+  channel: string;
+  delivery: string;
+  detail: string | null;
+}) {
+  if (channel === "portal") return null;
+  if (delivery === "failed") {
+    return (
+      <span title={detail ?? undefined} className="text-xs font-medium text-red-600">
+        ⚠ Not delivered
+      </span>
+    );
+  }
+  if (delivery === "delivered") {
+    return (
+      <span title={detail ?? undefined} className="text-xs text-emerald-600">
+        ✓ Delivered · {channel}
+      </span>
+    );
+  }
+  if (channel === "phone") {
+    return <span className="text-xs text-text-subtle">Call logged</span>;
+  }
+  return (
+    <span title={detail ?? undefined} className="text-xs text-text-subtle">
+      Recorded · not delivered
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,6 +1390,19 @@ export function SmartInboxView({
     setThreadSearch("");
   }, [selectedThreadId]);
 
+  // EMR-808 — opening a thread marks its inbound messages read, durably. The
+  // ref guards against re-firing for a thread already marked this session;
+  // markThreadRead revalidates so the unread badge clears on the next render.
+  const markedReadRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    if (markedReadRef.current.has(selectedThreadId)) return;
+    const triage = triaged.find((t) => t.threadId === selectedThreadId);
+    if (!triage || triage.unreadCount === 0) return;
+    markedReadRef.current.add(selectedThreadId);
+    void markThreadRead(selectedThreadId);
+  }, [selectedThreadId, triaged]);
+
   // Empty state: no threads at all
   if (triaged.length === 0) {
     return (
@@ -1551,7 +1609,8 @@ export function SmartInboxView({
                       onSelect={() => setSelectedThreadId(t.threadId)}
                       onTogglePin={() => togglePinned(t.threadId)}
                       onMarkRead={() => {
-                        setSelectedThreadId(t.threadId);
+                        markedReadRef.current.add(t.threadId);
+                        void markThreadRead(t.threadId);
                       }}
                       onResolve={() => {
                         setSelectedThreadId(t.threadId);
@@ -1650,17 +1709,7 @@ export function SmartInboxView({
                       </Button>
                       <ResolveButton
                         threadId={selectedThread.threadId}
-                        isResolved={(() => {
-                          // EMR-660 — Resolved when the most recent clinician
-                          // message carries the [[RESOLVED]] sentinel AND no
-                          // patient reply has landed after it. We check the
-                          // last message in chronological order.
-                          const sorted = [...selectedThread.messages].sort((a, b) =>
-                            a.createdAt.localeCompare(b.createdAt),
-                          );
-                          const last = sorted[sorted.length - 1];
-                          return !!last && isResolvedMarker(last.body);
-                        })()}
+                        isResolved={selectedThread.isResolved}
                       />
                     </div>
                   )}
@@ -1823,6 +1872,13 @@ export function SmartInboxView({
                                 }
                               />
                             )}
+                            {(isOwn || isAgent) && (
+                              <DeliveryBadge
+                                channel={msg.channel}
+                                delivery={msg.delivery}
+                                detail={msg.deliveryDetail}
+                              />
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1843,6 +1899,7 @@ export function SmartInboxView({
               <ExportModal
                 open={exportOpen}
                 onClose={() => setExportOpen(false)}
+                threadId={selectedThread.threadId}
                 patientName={selectedThread.patientName}
                 subject={selectedThread.subject}
                 messages={selectedThread.messages.map(

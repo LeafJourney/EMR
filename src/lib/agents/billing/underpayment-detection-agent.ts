@@ -178,6 +178,7 @@ export const underpaymentDetectionAgent: Agent<
           title: `Underpayment review: ${candidate.payerName ?? "payer"} (${formatMoney(candidate.varianceCents)} variance)`,
           description: `Claim ${candidate.claimId.slice(0, 8)} (${candidate.cptCode}) was paid below expectation.\n\nExpected: ${formatMoney(candidate.expectedCents)}\nAllowed: ${formatMoney(candidate.allowedCents)}\nVariance: ${formatMoney(candidate.varianceCents)}\n\nReview the contract and consider an appeal if the payer's allowed amount is below your contracted rate.\n\n[Created by underpaymentDetection agent]`,
           status: "open",
+          kind: "billing_followup",
           assigneeRole: "operator",
           dueAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
         },

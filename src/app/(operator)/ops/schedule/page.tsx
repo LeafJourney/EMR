@@ -151,18 +151,18 @@ function isoOf(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// EMR-579 — schedule header date as a clean MM-DD-YYYY label.
+function mmddyyyy(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${m}-${day}-${d.getFullYear()}`;
+}
+
 function rangeSpanLabel(start: Date, end: Date): string {
   // end is exclusive; show the inclusive last day.
   const lastDay = addDays(end, -1);
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  if (isSameDay(start, lastDay)) {
-    return start.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-  }
-  return `${start.toLocaleDateString("en-US", opts)} – ${lastDay.toLocaleDateString("en-US", { ...opts, year: "numeric" })}`;
+  if (isSameDay(start, lastDay)) return mmddyyyy(start);
+  return `${mmddyyyy(start)} – ${mmddyyyy(lastDay)}`;
 }
 
 // ---------------------------------------------------------------------------

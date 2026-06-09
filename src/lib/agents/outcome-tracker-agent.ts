@@ -61,6 +61,7 @@ export const outcomeTrackerAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
           organizationId: patient.organizationId,
           patientId,
           title: t.title,
+          kind: "patient_task",
           assigneeRole: "patient",
           dueAt: t.dueAt,
         },

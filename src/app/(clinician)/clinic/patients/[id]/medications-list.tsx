@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 
+// DOB is a calendar date stored at UTC midnight — read it in UTC so it doesn't
+// roll back a day in negative-offset timezones (the off-by-one DOB bug).
 function format(date: Date, fmt: string) {
   const d = new Date(date);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const yyyy = d.getUTCFullYear();
   return `${mm}/${dd}/${yyyy}`;
 }
 

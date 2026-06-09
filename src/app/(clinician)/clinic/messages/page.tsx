@@ -12,6 +12,7 @@ import {
 } from "@/lib/domain/smart-inbox";
 import { SmartInboxView } from "./smart-inbox";
 import { MorningBriefView } from "./brief-view";
+import { isThreadResolved, unreadInboundCount } from "@/lib/messaging/thread-state";
 
 export const metadata = { title: "Smart Inbox" };
 
@@ -129,9 +130,7 @@ export default async function ClinicMessagesPage({
 
     const result = triageThread(messagesForTriage, t.patient.userId);
 
-    const unreadCount = t.messages.filter(
-      (m) => m.status !== "read" && m.senderUserId !== user.id && !m.senderAgent,
-    ).length;
+    const unreadCount = unreadInboundCount(t.messages, user.id);
 
     const attachmentCount = countAttachments(t.messages);
 
@@ -187,6 +186,9 @@ export default async function ClinicMessagesPage({
     patientId: t.patient.id,
     patientName: `${t.patient.firstName} ${t.patient.lastName}`,
     subject: t.subject,
+    // EMR-808 — resolved while the resolve mark is at/after the last activity;
+    // a newer patient reply (lastMessageAt > resolvedAt) re-opens the thread.
+    isResolved: isThreadResolved(t.resolvedAt, t.lastMessageAt),
     messages: t.messages.map((m) => ({
       id: m.id,
       body: m.body,
@@ -198,6 +200,9 @@ export default async function ClinicMessagesPage({
         ? { firstName: m.sender.firstName, lastName: m.sender.lastName }
         : null,
       createdAt: m.createdAt.toISOString(),
+      channel: m.channel,
+      delivery: m.delivery,
+      deliveryDetail: m.deliveryDetail,
     })),
     callLogs: t.callLogs.map((c) => ({
       id: c.id,
