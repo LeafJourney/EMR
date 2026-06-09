@@ -1,9 +1,11 @@
-// Generic helpers shared across per-state registry stubs.
+// Generic helpers shared across per-state registry integrations.
 //
 // Real state registry APIs are heterogeneous (REST/SOAP/portal-only) and
-// most require provider onboarding before credentials are issued. Until
-// each state's contract is implemented, these helpers produce a deterministic
-// stub response so the EMR UI can be exercised end-to-end.
+// most require provider onboarding before credentials are issued. When a
+// state has no API configured (or is paper-based), we DO NOT pretend the
+// submission happened: the result is tagged `mode: "manual_stub"` with no
+// confirmation number, and the UI/server must route the clinician to a
+// manual filing workflow.
 
 import type {
   RegistrySubmission,
@@ -18,7 +20,7 @@ export interface RegistryEndpoint {
 /**
  * Resolve `STATE_REGISTRY_<CODE>_API_URL` and `STATE_REGISTRY_<CODE>_API_KEY`
  * from the environment. Returns null when either is missing — caller should
- * fall back to stub mode.
+ * fall back to manual-stub mode.
  */
 export function resolveRegistryEndpoint(
   stateCode: string,
@@ -30,28 +32,19 @@ export function resolveRegistryEndpoint(
   return { url, apiKey };
 }
 
-export function buildStubSuccess(
-  stateCode: string,
-  renewalPeriodDays: number,
-): RegistrySubmissionResult {
-  const expDate = new Date();
-  expDate.setDate(expDate.getDate() + renewalPeriodDays);
+/**
+ * Honest "nothing was transmitted" result for states without a connected
+ * registry API. Deliberately carries NO confirmation number, registry
+ * patient ID, or expiration date — those can only come from a real
+ * registry response. `success: true` here means "the attempt was recorded
+ * without error", not "the registry accepted a submission"; callers must
+ * branch on `mode` before presenting any success state.
+ */
+export function buildManualStubResult(): RegistrySubmissionResult {
   return {
     success: true,
-    confirmationNumber: `${stateCode.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
-    registryPatientId: `REG-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-    expirationDate: expDate.toISOString().slice(0, 10),
+    mode: "manual_stub",
     submittedAt: new Date().toISOString(),
-    channel: "stub",
-  };
-}
-
-export function buildManualSuccess(stateCode: string): RegistrySubmissionResult {
-  return {
-    success: true,
-    confirmationNumber: `${stateCode.toUpperCase()}-MANUAL-${Date.now().toString(36).toUpperCase()}`,
-    submittedAt: new Date().toISOString(),
-    channel: "manual",
   };
 }
 
@@ -60,14 +53,14 @@ export function buildErrorResult(errors: string[]): RegistrySubmissionResult {
     success: false,
     errors,
     submittedAt: new Date().toISOString(),
-    channel: "electronic",
+    mode: "api",
   };
 }
 
 /**
- * Generic POST submitter for state registry APIs. Each state's stub can call
- * this with its specific path/body shape; in production the path is the only
- * thing that typically differs per state (auth is bearer-token API key).
+ * Generic POST submitter for state registry APIs. Each state's module can
+ * call this with its specific path/body shape; in production the path is the
+ * only thing that typically differs per state (auth is bearer-token API key).
  */
 export async function postToRegistry(
   endpoint: RegistryEndpoint,
@@ -103,11 +96,11 @@ export async function postToRegistry(
 
     return {
       success: true,
+      mode: "api",
       confirmationNumber: result.confirmationNumber,
       registryPatientId: result.patientId,
       expirationDate: result.expirationDate,
       submittedAt: new Date().toISOString(),
-      channel: "electronic",
     };
   } catch (err) {
     return buildErrorResult([

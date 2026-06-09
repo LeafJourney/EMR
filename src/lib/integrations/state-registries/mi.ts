@@ -3,13 +3,14 @@
 //
 // Michigan certifications are paper-based: the patient submits the physician
 // certification along with their application to LARA. There is no electronic
-// submission API, so this stub records a manual submission.
+// submission API, so nothing is transmitted — the result is an honest
+// manual_stub marker.
 
-import { buildManualSuccess } from "./client";
+import { buildManualStubResult } from "./client";
 import type { RegistrySubmission, RegistrySubmissionResult } from "./types";
 
 export async function submitMI(
   _submission: RegistrySubmission,
 ): Promise<RegistrySubmissionResult> {
-  return buildManualSuccess("MI");
+  return buildManualStubResult();
 }
