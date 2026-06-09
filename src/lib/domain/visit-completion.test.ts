@@ -166,12 +166,74 @@ describe("buildVisitCompletionBundle", () => {
       },
     });
 
-    expect(bundle.cards.find((card) => card.id === "practice_readiness")?.items).toEqual(
+    const items = bundle.cards.find((card) => card.id === "practice_readiness")?.items;
+    expect(items).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          label: "Coding review needed — 2 suggested codes awaiting approval",
+          tone: "warning",
+          source: "coding",
+          dataMode: "agent_output",
+          proposedActionType: "coding_review",
+        }),
         expect.objectContaining({ label: "Suggested E/M: 99214" }),
         expect.objectContaining({ label: "ICD-10 candidate: E11.9 Diabetes mellitus" }),
+        expect.objectContaining({ label: "ICD-10 candidate: I10 Essential hypertension" }),
       ]),
     );
+    // EMR-1100: no mocked placeholder items remain on this card.
+    expect(items?.every((item) => item.dataMode !== "mvp_mock")).toBe(true);
+  });
+
+  it("shows the approved coding state once the physician signs off", () => {
+    const bundle = buildVisitCompletionBundle({
+      patientFirstName: "Miguel",
+      blocks: followUpBlocks,
+      hasFutureAppointment: true,
+      codingSuggestion: {
+        emLevel: "99214",
+        rationale: "Chronic condition management with medication adjustment.",
+        icd10: [{ code: "E11.9", label: "Diabetes mellitus", confidence: 0.91 }],
+        status: "modified",
+        approvedByName: "Asha Patel",
+        approvedAt: "2026-06-09T15:00:00.000Z",
+        approvedIcd10: [{ code: "E11.65", label: "Diabetes with hyperglycemia" }],
+        approvedEmLevel: "99215",
+      },
+    });
+
+    expect(bundle.cards.find((card) => card.id === "practice_readiness")?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Codes approved ✓",
+          tone: "neutral",
+          source: "coding",
+          dataMode: "agent_output",
+          reason: expect.stringContaining("Approved by Asha Patel"),
+        }),
+        expect.objectContaining({ label: "Approved E/M: 99215" }),
+        expect.objectContaining({
+          label: "ICD-10 approved: E11.65 Diabetes with hyperglycemia",
+        }),
+      ]),
+    );
+  });
+
+  it("deep-links the Review coding action to the note's coding section", () => {
+    const bundle = buildVisitCompletionBundle({
+      patientFirstName: "Miguel",
+      blocks: followUpBlocks,
+      codingSuggestion: null,
+      hasFutureAppointment: true,
+    });
+
+    const reviewCoding = bundle.cards
+      .find((card) => card.id === "practice_readiness")
+      ?.actions.find((action) => action.id === "review_coding");
+    expect(reviewCoding).toMatchObject({
+      proposedActionType: "coding_review",
+      href: "#coding-suggestions",
+    });
   });
 
   it("degrades practice readiness when coding is not available yet", () => {

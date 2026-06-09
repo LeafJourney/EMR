@@ -21,7 +21,7 @@ const hoisted = vi.hoisted(() => {
     mockPrisma,
     requireUserMock: vi.fn(async () => mockUser),
     requirePermissionMock: vi.fn(),
-    assertChartAccessMock: vi.fn(async () => ({
+    assertChartAccessMock: vi.fn(async (..._args: any[]) => ({
       patientId: "patient_1",
       organizationId: "org_1",
       isRestricted: false,
@@ -47,7 +47,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/rbac/permissions", () => ({
   requirePermission: (...args: unknown[]) =>
     hoisted.requirePermissionMock(...args),
-  assertChartAccess: (...args: unknown[]) =>
+  assertChartAccess: (...args: any[]) =>
     hoisted.assertChartAccessMock(...args),
   ForbiddenError: hoisted.ForbiddenError,
 }));

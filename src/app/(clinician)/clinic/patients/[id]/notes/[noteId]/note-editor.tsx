@@ -10,6 +10,7 @@ import {
   saveAndFinalizeNote,
   refineSection,
   saveEmotionalVital,
+  approveCodingSuggestion,
   type RefineMode,
 } from "./actions";
 import {
@@ -65,6 +66,12 @@ interface NoteEditorProps {
     icd10: { code: string; label: string; confidence: number }[];
     emLevel: string | null;
     rationale: string | null;
+    /** EMR-1097 physician decision: suggested, approved, modified, dismissed. */
+    status?: string | null;
+    approvedByName?: string | null;
+    approvedAt?: string | null;
+    approvedIcd10?: { code: string; label?: string }[] | null;
+    approvedEmLevel?: string | null;
   } | null;
   initialDemeanor?: PatientDemeanor | null;
   releasedPayload?: any;
@@ -671,58 +678,11 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Finalized success state with coding suggestions */}
+      {/* Finalized success state with coding suggestions — EMR-1097: the
+          physician approves (or edits then approves) the suggested codes
+          here. Charges are NOT extracted until this approval is recorded. */}
       {currentStatus === "finalized" && codingSuggestion && (
-        <Card tone="ambient" className="mt-6">
-          <CardContent className="pt-6">
-            <h3 className="font-display text-lg font-medium text-text tracking-tight mb-3">
-              Coding Suggestions
-            </h3>
-            {codingSuggestion.icd10 &&
-              Array.isArray(codingSuggestion.icd10) &&
-              codingSuggestion.icd10.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-2">
-                    ICD-10 Codes
-                  </p>
-                  <ul className="space-y-1.5">
-                    {codingSuggestion.icd10.map(
-                      (
-                        code: { code: string; label: string; confidence: number },
-                        i: number
-                      ) => (
-                        <li key={i} className="flex items-center gap-2 text-sm">
-                          <Badge tone="accent">{code.code}</Badge>
-                          <span className="text-text">{code.label}</span>
-                          <span className="text-text-subtle text-xs">
-                            ({Math.round(code.confidence * 100)}%)
-                          </span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                </div>
-              )}
-            {codingSuggestion.emLevel && (
-              <div className="mb-3">
-                <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
-                  E/M Level
-                </p>
-                <Badge tone="info">{codingSuggestion.emLevel}</Badge>
-              </div>
-            )}
-            {codingSuggestion.rationale && (
-              <div>
-                <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
-                  Rationale
-                </p>
-                <p className="text-sm text-text-muted leading-relaxed">
-                  {codingSuggestion.rationale}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <CodingApprovalCard noteId={noteId} suggestion={codingSuggestion} />
       )}
 
       {currentStatus === "finalized" && !codingSuggestion && (
@@ -763,5 +723,267 @@ export function NoteEditor({
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coding approval — EMR-1097 (B4)
+// ---------------------------------------------------------------------------
+// The Coding Readiness Agent's suggestions render here for the physician to
+// approve as-is or edit (ICD-10 list + E/M level) and then approve. Approval
+// calls approveCodingSuggestion, which records the decision, audits it, and
+// emits coding.approved — the event that gates billing charge extraction.
+
+type CodingSuggestionProp = NonNullable<NoteEditorProps["codingSuggestion"]>;
+
+function CodingApprovalCard({
+  noteId,
+  suggestion,
+}: {
+  noteId: string;
+  suggestion: CodingSuggestionProp;
+}) {
+  const router = useRouter();
+  const initiallyApproved =
+    suggestion.status === "approved" || suggestion.status === "modified";
+
+  // Editable working set: starts from the approved decision (if one exists)
+  // so re-approval edits build on what the physician already signed off on.
+  const [codes, setCodes] = useState<{ code: string; label: string }[]>(() =>
+    initiallyApproved && suggestion.approvedIcd10 && suggestion.approvedIcd10.length > 0
+      ? suggestion.approvedIcd10.map((c) => ({ code: c.code, label: c.label ?? "" }))
+      : (Array.isArray(suggestion.icd10) ? suggestion.icd10 : []).map((c) => ({
+          code: c.code,
+          label: c.label,
+        })),
+  );
+  const [emLevel, setEmLevel] = useState<string>(
+    (initiallyApproved ? suggestion.approvedEmLevel : null) ?? suggestion.emLevel ?? "",
+  );
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [approval, setApproval] = useState<{
+    byName: string;
+    at: string | null;
+    status: string;
+  } | null>(
+    initiallyApproved
+      ? {
+          byName: suggestion.approvedByName ?? "Physician",
+          at: suggestion.approvedAt ?? null,
+          status: suggestion.status!,
+        }
+      : null,
+  );
+
+  const suggestedConfidence = (code: string) =>
+    (Array.isArray(suggestion.icd10) ? suggestion.icd10 : []).find((c) => c.code === code)
+      ?.confidence;
+
+  function removeCode(index: number) {
+    setCodes((prev) => prev.filter((_, i) => i !== index));
+    setDirty(true);
+  }
+
+  function addCode() {
+    const code = newCode.trim().toUpperCase();
+    if (!code) return;
+    if (codes.some((c) => c.code === code)) {
+      setNewCode("");
+      setNewLabel("");
+      return;
+    }
+    setCodes((prev) => [...prev, { code, label: newLabel.trim() }]);
+    setNewCode("");
+    setNewLabel("");
+    setDirty(true);
+  }
+
+  function handleApprove() {
+    setError(null);
+    startTransition(async () => {
+      const result = await approveCodingSuggestion(noteId, {
+        icd10: codes,
+        emLevel: emLevel.trim() ? emLevel.trim() : null,
+        modified: dirty,
+      });
+      if (result.ok) {
+        setApproval({
+          byName: result.approvedByName,
+          at: result.approvedAt,
+          status: result.status,
+        });
+        setEditing(false);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  const approvedAtLabel = approval?.at
+    ? new Date(approval.at).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
+
+  return (
+    <Card tone="ambient" className="mt-6" id="coding-suggestions">
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 className="font-display text-lg font-medium text-text tracking-tight">
+            Coding Suggestions
+          </h3>
+          {approval ? (
+            <Badge tone="success">
+              {approval.status === "modified" ? "Approved with edits" : "Approved"}
+            </Badge>
+          ) : (
+            <Badge tone="warning">Awaiting physician approval</Badge>
+          )}
+        </div>
+
+        {approval && (
+          <p className="text-xs text-text-muted mb-3">
+            Approved by {approval.byName}
+            {approvedAtLabel ? ` · ${approvedAtLabel}` : ""}. Approved codes were
+            handed to billing for charge extraction.
+          </p>
+        )}
+        {!approval && (
+          <p className="text-xs text-text-muted mb-3">
+            Review the AI-suggested codes below. No billing charges are created
+            until you approve them — edit first if anything is wrong.
+          </p>
+        )}
+
+        <div className="mb-4">
+          <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-2">
+            ICD-10 Codes
+          </p>
+          {codes.length === 0 && (
+            <p className="text-sm text-text-muted mb-2">No codes selected.</p>
+          )}
+          <ul className="space-y-1.5">
+            {codes.map((code, i) => {
+              const confidence = suggestedConfidence(code.code);
+              return (
+                <li key={code.code} className="flex items-center gap-2 text-sm">
+                  <Badge tone="accent">{code.code}</Badge>
+                  <span className="text-text">{code.label}</span>
+                  {typeof confidence === "number" && (
+                    <span className="text-text-subtle text-xs">
+                      ({Math.round(confidence * 100)}%)
+                    </span>
+                  )}
+                  {editing && (
+                    <button
+                      type="button"
+                      onClick={() => removeCode(i)}
+                      aria-label={`Remove ${code.code}`}
+                      className="ml-1 text-text-subtle hover:text-danger transition-colors text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {editing && (
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                placeholder="ICD-10 code"
+                aria-label="New ICD-10 code"
+                className="w-28 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+              <input
+                type="text"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Description"
+                aria-label="New ICD-10 description"
+                className="flex-1 min-w-40 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+              <Button size="sm" variant="secondary" onClick={addCode} disabled={!newCode.trim()}>
+                Add code
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-3">
+          <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
+            E/M Level
+          </p>
+          {editing ? (
+            <input
+              type="text"
+              value={emLevel}
+              onChange={(e) => {
+                setEmLevel(e.target.value);
+                setDirty(true);
+              }}
+              placeholder="e.g. 99214"
+              aria-label="E/M level"
+              className="w-28 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+            />
+          ) : emLevel ? (
+            <Badge tone="info">{emLevel}</Badge>
+          ) : (
+            <p className="text-sm text-text-muted">No E/M level suggested.</p>
+          )}
+        </div>
+
+        {suggestion.rationale && (
+          <div className="mb-4">
+            <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
+              Rationale
+            </p>
+            <p className="text-sm text-text-muted leading-relaxed">
+              {suggestion.rationale}
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div
+            role="alert"
+            className="mb-3 flex items-start gap-2 rounded-md border border-highlight/30 bg-highlight-soft/50 px-3 py-2 text-[11px] text-[color:var(--highlight-hover)]"
+          >
+            <span aria-hidden="true" className="shrink-0 mt-0.5">⚠</span>
+            <span className="flex-1 leading-relaxed">{error}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-1 flex-wrap">
+          <Button variant="primary" size="sm" onClick={handleApprove} disabled={isPending}>
+            {isPending
+              ? "Approving..."
+              : approval
+                ? "Re-approve codes"
+                : dirty
+                  ? "Approve with edits"
+                  : "Approve codes"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setEditing((prev) => !prev)}
+            disabled={isPending}
+          >
+            {editing ? "Done editing" : "Edit codes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

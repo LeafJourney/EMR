@@ -354,8 +354,21 @@ export function VisitCompletionPanel({
         setEditDraft("");
         openCardDetails(card.id, "edit");
         return;
-      case "order_review":
       case "coding_review":
+        // EMR-1100: "Review coding" deep-links to the note's coding section
+        // (the EMR-1097 approval UI) rather than the generic drawer. Fall
+        // back to the drawer when the section isn't on this page (e.g. the
+        // read-only chart view doesn't render the coding editor).
+        if (action.href?.startsWith("#")) {
+          const target = document.querySelector(action.href);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+            return;
+          }
+        }
+        openCardDetails(card.id);
+        return;
+      case "order_review":
       case "view_checks":
         openCardDetails(card.id);
         return;

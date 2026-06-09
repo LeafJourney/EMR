@@ -50,6 +50,12 @@ export interface VisitCompletionAction {
   requiresPhysicianApproval: true;
   sideEffect: "none";
   placeholderCopy: string;
+  /**
+   * Optional deep-link target. When set, activating the action navigates
+   * (e.g. "#coding-suggestions" jumps to the note's coding section) instead
+   * of opening the generic details drawer.
+   */
+  href?: string;
 }
 
 export interface VisitCompletionCard {
@@ -95,6 +101,12 @@ export interface VisitCompletionCodingSuggestion {
   icd10: { code: string; label: string; confidence?: number }[];
   emLevel: string | null;
   rationale?: string | null;
+  /** EMR-1097 physician decision: suggested, approved, modified, dismissed. */
+  status?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: Date | string | null;
+  approvedIcd10?: { code: string; label?: string }[] | null;
+  approvedEmLevel?: string | null;
 }
 
 export interface VisitCompletionBlock {
@@ -367,35 +379,11 @@ function buildPatientMessageCard(
 function buildPracticeReadinessCard(
   codingSuggestion: VisitCompletionCodingSuggestion | null,
 ): VisitCompletionCard {
-  const items: VisitCompletionItem[] = [
-    item(
-      "practice-readiness-overview",
-      "Practice Readiness feedback: coding, documentation, prior auth, and staff routing checks.",
-      "neutral",
-      "heuristic",
-      "mvp_mock",
-      "view_checks",
-      "AI summarizes operational checks here so the physician can release intent without doing back-office translation.",
-    ),
-    item(
-      "documentation-gap",
-      "Documentation gap: add medication risk discussion if dose changes proceed",
-      "warning",
-      "heuristic",
-      "deterministic_heuristic",
-      "coding_review",
-      "This strengthens billing readiness and makes the clinical reasoning easier for staff to follow.",
-    ),
-    item(
-      "staff-routing",
-      "Staff task draft: confirm pharmacy and monitor prior-auth need before fulfillment",
-      "neutral",
-      "heuristic",
-      "deterministic_heuristic",
-      "create_staff_task",
-      "This turns the physician's plan into a reviewable staff handoff without silently assigning work.",
-    ),
-  ];
+  // EMR-1100 (M5): this card renders the REAL coding state from the
+  // CodingSuggestion the Coding Readiness Agent attached to the note — no
+  // placeholder copy. The "Review coding" action deep-links to the note's
+  // coding section where the physician approves the codes (EMR-1097).
+  const items: VisitCompletionItem[] = [];
 
   if (!codingSuggestion) {
     items.push(
@@ -410,11 +398,56 @@ function buildPracticeReadinessCard(
       ),
     );
   } else {
-    if (codingSuggestion.emLevel) {
+    const approved =
+      codingSuggestion.status === "approved" || codingSuggestion.status === "modified";
+    const suggestedCount = codingSuggestion.icd10.length;
+
+    if (approved) {
+      const approvedDetail = [
+        codingSuggestion.approvedByName
+          ? `Approved by ${codingSuggestion.approvedByName}`
+          : "Approved by the physician",
+        codingSuggestion.approvedAt
+          ? `on ${new Date(codingSuggestion.approvedAt).toLocaleDateString("en-US")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      items.push(
+        item(
+          "coding-approval-status",
+          "Codes approved ✓",
+          "neutral",
+          "coding",
+          "agent_output",
+          "coding_review",
+          `${approvedDetail}. Charges are extracted from the approved codes.`,
+        ),
+      );
+    } else {
+      items.push(
+        item(
+          "coding-approval-status",
+          `Coding review needed — ${suggestedCount} suggested ${
+            suggestedCount === 1 ? "code" : "codes"
+          } awaiting approval`,
+          "warning",
+          "coding",
+          "agent_output",
+          "coding_review",
+          "No charges are created until the physician approves the suggested codes.",
+        ),
+      );
+    }
+
+    const emLevel = approved
+      ? codingSuggestion.approvedEmLevel ?? codingSuggestion.emLevel
+      : codingSuggestion.emLevel;
+    if (emLevel) {
       items.push(
         item(
           "em-level",
-          `Suggested E/M: ${codingSuggestion.emLevel}`,
+          `${approved ? "Approved" : "Suggested"} E/M: ${emLevel}`,
           "neutral",
           "coding",
           "agent_output",
@@ -422,11 +455,18 @@ function buildPracticeReadinessCard(
         ),
       );
     }
-    for (const candidate of codingSuggestion.icd10.slice(0, 2)) {
+
+    const displayCodes =
+      approved && codingSuggestion.approvedIcd10 && codingSuggestion.approvedIcd10.length > 0
+        ? codingSuggestion.approvedIcd10
+        : codingSuggestion.icd10;
+    for (const candidate of displayCodes.slice(0, 4)) {
       items.push(
         item(
           `icd10-${candidate.code}`,
-          `ICD-10 candidate: ${candidate.code} ${candidate.label}`,
+          `${approved ? "ICD-10 approved" : "ICD-10 candidate"}: ${candidate.code} ${
+            candidate.label ?? ""
+          }`.trim(),
           "neutral",
           "coding",
           "agent_output",
@@ -434,6 +474,7 @@ function buildPracticeReadinessCard(
         ),
       );
     }
+
     if (codingSuggestion.rationale) {
       items.push(
         item(
@@ -456,7 +497,8 @@ function buildPracticeReadinessCard(
     items,
     actions: [
       action("view_checks", "View checks", "primary", "view_checks"),
-      action("review_coding", "Review coding", "secondary", "coding_review"),
+      // Deep-link to the coding section of the note (EMR-1097 approval UI).
+      action("review_coding", "Review coding", "secondary", "coding_review", "#coding-suggestions"),
       action("create_staff_tasks", "Create staff tasks", "secondary", "create_staff_task"),
       action("defer_item", "Defer", "secondary", "defer"),
     ],
@@ -519,6 +561,7 @@ function action(
   label: string,
   variant: VisitCompletionAction["variant"],
   proposedActionType: VisitCompletionProposedActionType,
+  href?: string,
 ): VisitCompletionAction {
   return {
     id,
@@ -530,5 +573,6 @@ function action(
     placeholderCopy:
       ACTION_DISPOSITION_COPY[proposedActionType] ??
       "Physician review required. This control stages the card disposition; Release Care Plan is the only action that creates reviewed tasks, drafts, and audit records.",
+    ...(href ? { href } : {}),
   };
 }

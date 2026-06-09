@@ -8,17 +8,20 @@ import { recallMemories, formatMemoriesForPrompt } from "../memory/patient-memor
 // ---------------------------------------------------------------------------
 // Encounter Intelligence Agent
 // ---------------------------------------------------------------------------
-// First agent in the clean claim path. Wakes up when an encounter completes,
-// reads the clinical documentation, and extracts billable charges.
+// First agent in the clean claim path. Wakes up when the physician approves
+// the coding suggestions on a finalized note (EMR-1097 — previously this ran
+// on encounter.completed, creating charges before the physician ever reviewed
+// the codes), reads the clinical documentation, and extracts billable charges.
 //
 // This agent answers: "What services were performed in this visit?"
 //
 // It does NOT assign final codes (that's the Coding Optimization Agent).
 // It identifies the billable INTENT from the documentation and creates
-// Charge objects with tentative CPT codes and linked diagnoses.
+// Charge objects with tentative CPT codes and linked diagnoses, reconciled
+// against the physician-approved ICD-10 set and E/M level when provided.
 //
 // Layer 3 state transition: (none) → charge.created
-// Layer 4 events: subscribes encounter.completed, emits charge.created
+// Layer 4 events: subscribes coding.approved, emits charge.created
 // ---------------------------------------------------------------------------
 
 function tryParseJSON(text: string): any | null {
@@ -37,6 +40,12 @@ function tryParseJSON(text: string): any | null {
 const input = z.object({
   encounterId: z.string(),
   patientId: z.string(),
+  // EMR-1097 — physician-approved codes from the coding.approved event.
+  // When present, they are authoritative and the extraction reconciles
+  // against them.
+  noteId: z.string().optional(),
+  approvedIcd10: z.array(z.string()).optional(),
+  approvedEmLevel: z.string().nullable().optional(),
 });
 
 const chargeOutput = z.object({
@@ -73,9 +82,13 @@ export const encounterIntelligenceAgent: Agent<
   ],
   requiresApproval: false,
 
-  async run({ encounterId, patientId }, ctx) {
+  async run({ encounterId, patientId, approvedIcd10, approvedEmLevel }, ctx) {
     const trace = startReasoning("encounterIntelligence", "1.0.0", ctx.jobId);
-    trace.step("begin charge extraction", { encounterId });
+    trace.step("begin charge extraction", {
+      encounterId,
+      approvedIcd10Count: approvedIcd10?.length ?? 0,
+      approvedEmLevel: approvedEmLevel ?? null,
+    });
 
     ctx.assertCan("read.encounter");
 
@@ -168,6 +181,10 @@ ${formatMemoriesForPrompt(memories)}
 ACTIVE CANNABIS REGIMENS:
 ${patient.dosingRegimens.map((r: any) => `  - ${r.product?.name ?? "cannabis product"}: ${r.volumePerDose}${r.volumeUnit} ${r.frequencyPerDay}x/day`).join("\n") || "  (none)"}
 
+PHYSICIAN-APPROVED CODING (authoritative — use these for the E/M level and diagnoses):
+${approvedEmLevel ? `- Approved E/M level: ${approvedEmLevel}` : "- No approved E/M level on file"}
+${approvedIcd10 && approvedIcd10.length > 0 ? `- Approved ICD-10 codes: ${approvedIcd10.join(", ")}` : "- No approved ICD-10 codes on file"}
+
 For each billable service, return a JSON array:
 [
   {
@@ -220,18 +237,50 @@ Return ONLY the JSON array. No markdown, no explanation.`;
 
     // ── Deterministic fallback ──────────────────────────────────
     if (charges.length === 0) {
-      // At minimum, every completed encounter with documentation gets a 99213
+      // At minimum, every completed encounter with documentation gets an E/M
+      // charge — the physician-approved level when we have one.
       charges = [
         {
-          cptCode: "99213",
-          cptDescription: "Office visit, established patient, low MDM",
+          cptCode: approvedEmLevel ?? "99213",
+          cptDescription: approvedEmLevel
+            ? "Office visit, established patient (physician-approved E/M)"
+            : "Office visit, established patient, low MDM",
           modifiers: [],
           units: 1,
-          icd10Codes: ["Z71.3"], // cannabis counseling as default
-          confidence: 0.6,
+          icd10Codes:
+            approvedIcd10 && approvedIcd10.length > 0
+              ? approvedIcd10
+              : ["Z71.3"], // cannabis counseling as default
+          confidence: approvedEmLevel ? 0.9 : 0.6,
         },
       ];
-      trace.step("used deterministic fallback — default 99213");
+      trace.step("used deterministic fallback", {
+        cptCode: approvedEmLevel ?? "99213",
+      });
+    }
+
+    // ── Reconcile with the physician-approved coding ────────────
+    // EMR-1097: the physician's approval (coding.approved) is the source of
+    // truth for the E/M level and diagnosis set. The LLM extraction supplies
+    // procedure detail; the approved codes override what it guessed.
+    if (approvedEmLevel || (approvedIcd10 && approvedIcd10.length > 0)) {
+      charges = charges.map((charge) => {
+        const isEmCode = /^99\d{3}$/.test(charge.cptCode);
+        return {
+          ...charge,
+          cptCode: isEmCode && approvedEmLevel ? approvedEmLevel : charge.cptCode,
+          icd10Codes:
+            approvedIcd10 && approvedIcd10.length > 0
+              ? approvedIcd10
+              : charge.icd10Codes,
+          // Physician review raises our confidence floor.
+          confidence: Math.max(charge.confidence, 0.9),
+        };
+      });
+      trace.step("reconciled charges with physician-approved coding", {
+        approvedEmLevel: approvedEmLevel ?? null,
+        approvedIcd10Count: approvedIcd10?.length ?? 0,
+      });
     }
 
     // ── Persist charges ─────────────────────────────────────────

@@ -133,13 +133,32 @@ export default async function NoteDetailPage({ params }: PageProps) {
   // Parse coding suggestion. `icd10` is a JSON column — runtime-validate
   // that it's actually an array before handing it to the client, otherwise
   // a legacy/malformed row will crash the editor on render.
-  const codingSuggestion = note.codingSuggestion
+  // EMR-1097: also surface the physician approval decision so the editor and
+  // the Practice Readiness card render the real coding state. The cast covers
+  // the new approval columns until `prisma generate` runs.
+  const codingRow = note.codingSuggestion as
+    | (typeof note.codingSuggestion & {
+        status?: string | null;
+        approvedByName?: string | null;
+        approvedAt?: Date | null;
+        approvedIcd10?: unknown;
+        approvedEmLevel?: string | null;
+      })
+    | null;
+  const codingSuggestion = codingRow
     ? {
-        icd10: Array.isArray(note.codingSuggestion.icd10)
-          ? (note.codingSuggestion.icd10 as { code: string; label: string; confidence: number }[])
+        icd10: Array.isArray(codingRow.icd10)
+          ? (codingRow.icd10 as { code: string; label: string; confidence: number }[])
           : [],
-        emLevel: note.codingSuggestion.emLevel,
-        rationale: note.codingSuggestion.rationale,
+        emLevel: codingRow.emLevel,
+        rationale: codingRow.rationale,
+        status: codingRow.status ?? "suggested",
+        approvedByName: codingRow.approvedByName ?? null,
+        approvedAt: codingRow.approvedAt ? codingRow.approvedAt.toISOString() : null,
+        approvedIcd10: Array.isArray(codingRow.approvedIcd10)
+          ? (codingRow.approvedIcd10 as { code: string; label?: string }[])
+          : null,
+        approvedEmLevel: codingRow.approvedEmLevel ?? null,
       }
     : null;
   const visitCompletionBundle =

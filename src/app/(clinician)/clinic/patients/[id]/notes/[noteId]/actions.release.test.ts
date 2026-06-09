@@ -10,7 +10,7 @@ const hoisted = vi.hoisted(() => {
     visitCompletion: { findUnique: vi.fn(), create: vi.fn() },
     task: { create: vi.fn() },
     messageThread: { findFirst: vi.fn(), create: vi.fn() },
-    message: { create: vi.fn() },
+    message: { create: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(async (cb) => cb(mockPrisma)),
   };
   return { mockPrisma, requireUserMock: vi.fn(), recordFeedbackMock: vi.fn() };
@@ -183,6 +183,8 @@ beforeEach(() => {
   mockPrisma.messageThread.findFirst.mockResolvedValue({ id: "thread_1" });
   mockPrisma.messageThread.create.mockResolvedValue({ id: "thread_1" });
   mockPrisma.message.create.mockResolvedValue({ id: "msg_1" });
+  // EMR-1101 dedup probe: no pre-existing outreach draft by default.
+  mockPrisma.message.findFirst.mockResolvedValue(null);
   mockPrisma.auditLog.create.mockResolvedValue({ id: "audit_1" });
   recordFeedbackMock.mockResolvedValue({ id: "feedback_1" });
 });
@@ -400,6 +402,45 @@ describe("releaseVisitCompletion server action", () => {
       reviewerNote: "Patient Communication: Physician edited the patient communication.",
       editDelta: "Drafted patient email",
     });
+  });
+
+  it("skips the patient draft when the outreach agent already drafted one for this encounter (EMR-1101 dedup)", async () => {
+    // The Patient Outreach Agent fires on encounter.completed — usually before
+    // the physician reaches the release step. When its draft already exists,
+    // release must not stack a second near-identical draft into the thread.
+    mockPrisma.message.findFirst.mockResolvedValue({ id: "outreach_draft_1" });
+
+    const result = await releaseVisitCompletion("note_1", validPayload());
+
+    expect(result).toEqual({ ok: true });
+
+    // The dedup probe scopes to recent, aiDrafted outreach-agent drafts for
+    // this patient.
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith({
+      where: {
+        thread: { patientId: "patient_1" },
+        aiDrafted: true,
+        status: "draft",
+        senderAgent: { startsWith: "agent:patientOutreach" },
+        createdAt: { gte: expect.any(Date) },
+      },
+      select: { id: true },
+    });
+
+    // No second patient draft — but every other release side effect lands.
+    expect(mockPrisma.message.create).not.toHaveBeenCalled();
+    expect(mockPrisma.visitCompletion.create).toHaveBeenCalled();
+    expect(mockPrisma.task.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.auditLog.create).toHaveBeenCalled();
+  });
+
+  it("creates the patient draft when no outreach draft exists for the encounter", async () => {
+    mockPrisma.message.findFirst.mockResolvedValue(null);
+
+    const result = await releaseVisitCompletion("note_1", validPayload());
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.message.create).toHaveBeenCalledTimes(1);
   });
 
   it("does not fail the care-plan release if feedback persistence fails", async () => {
