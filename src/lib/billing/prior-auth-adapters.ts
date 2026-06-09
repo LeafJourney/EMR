@@ -84,6 +84,31 @@ const ADAPTERS: PortalAdapter[] = [
     supportedPayers: ["carecentrix"],
     submit: stubSubmit("carecentrix"),
   },
+  // ── EMR-952 — additional ePA / utilization-management engines ─────────────
+  {
+    id: "covermymeds",
+    displayName: "CoverMyMeds",
+    supportedPayers: ["covermymeds", "express scripts", "caremark", "optumrx", "medimpact"],
+    submit: stubSubmit("covermymeds"),
+  },
+  {
+    id: "innovaccer",
+    displayName: "Innovaccer",
+    supportedPayers: ["innovaccer", "molina", "centene", "wellcare"],
+    submit: stubSubmit("innovaccer"),
+  },
+  {
+    id: "insight_health",
+    displayName: "Insight Health",
+    supportedPayers: ["insight health", "insight", "kaiser", "tricare"],
+    submit: stubSubmit("insight_health"),
+  },
+  {
+    id: "scriberunner",
+    displayName: "ScribeRunner",
+    supportedPayers: ["scriberunner", "medicaid", "medicare", "ambetter"],
+    submit: stubSubmit("scriberunner"),
+  },
   {
     id: "manual_fax",
     displayName: "Manual fax (universal fallback)",

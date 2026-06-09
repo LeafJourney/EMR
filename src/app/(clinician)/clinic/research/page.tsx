@@ -8,7 +8,6 @@ import { LeafSprig } from "@/components/ui/ornament";
 import { ResearchSearchForm } from "./research-form";
 import { ChatCBPanel } from "./chat-cb-panel";
 import { formatRelative } from "@/lib/utils/format";
-import { ChatCB } from "./chat-cb";
 import { EvidenceSourcesCard } from "./evidence-sources-card";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isModalityEnabled } from "@/lib/modality/server";
@@ -198,10 +197,6 @@ export default async function ResearchConsolePage({
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* ChatCB is the cannabis conversational search — gated on
-              cannabis-medicine modality (EMR-668). */}
-          {cannabisEnabled && <ChatCB />}
-
           <Card>
             <CardHeader>
               <CardTitle>Recent queries</CardTitle>
@@ -249,7 +244,9 @@ export default async function ResearchConsolePage({
             </CardContent>
           </Card>
 
-          <ChatCBPanel />
+          {/* ChatCBPanel — streaming ChatCB with citations. Cannabis-only
+              (EMR-615): non-cannabis practices don't use the chat-cb API. */}
+          {cannabisEnabled && <ChatCBPanel />}
 
           {/* Cannabis opt-out button — only meaningful when the practice
               does cannabis (EMR-668). */}

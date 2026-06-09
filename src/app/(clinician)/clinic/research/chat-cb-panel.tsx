@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Card,
   CardHeader,
@@ -29,6 +29,13 @@ export function ChatCBPanel() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   async function send() {
     const question = input.trim();
@@ -47,11 +54,18 @@ export function ChatCBPanel() {
     const abort = new AbortController();
     abortRef.current = abort;
 
+    // Build a history snapshot before appending the new user message.
+    // Include only settled (non-loading) Q+A pairs, capped at last 3 pairs.
+    const history = messages
+      .filter((m) => !m.loading)
+      .slice(-6)
+      .map((m) => ({ role: m.role, text: m.text }));
+
     try {
       const res = await fetch("/api/agents/chat-cb", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, history }),
         signal: abort.signal,
       });
 
@@ -154,17 +168,36 @@ export function ChatCBPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <span className="text-base">🌿</span>
-          ChatCB
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Ask about cannabinoids, conditions, or evidence.
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <span className="text-base">🌿</span>
+              ChatCB
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Ask about cannabinoids, conditions, or evidence.
+            </CardDescription>
+          </div>
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                abortRef.current?.abort();
+                setMessages([]);
+                setInput("");
+                setBusy(false);
+              }}
+              className="shrink-0 text-[10px] text-text-subtle hover:text-text transition-colors mt-0.5 px-1.5 py-0.5 rounded hover:bg-surface-muted"
+              aria-label="Clear conversation"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {messages.length > 0 && (
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+          <div ref={scrollRef} className="space-y-3 max-h-72 overflow-y-auto pr-1">
             {messages.map((msg, i) => (
               <div key={i}>
                 {msg.role === "user" ? (

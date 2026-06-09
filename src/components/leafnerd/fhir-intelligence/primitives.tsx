@@ -53,6 +53,10 @@ export function Icon({
     book:      "M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2zM4 4v16",
     code:      "M8 6 2 12l6 6M16 6l6 6-6 6",
     dot:       "M12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z",
+    logout:    "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4|M16 17l5-5-5-5|M21 12H9",
+    pause:     "M7 4h3v16H7zM14 4h3v16h-3z",
+    play:      "M7 4l13 8-13 8z",
+    refresh:   "M21 12a9 9 0 1 1-2.6-6.4M21 4v4h-4",
   };
   const d = P[name];
   if (!d) return null;

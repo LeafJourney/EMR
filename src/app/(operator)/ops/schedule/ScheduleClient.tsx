@@ -1,13 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
+import {
+  useContextMenu,
+  ContextMenuIcons,
+  type ContextMenuItem,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils/cn";
 import { RangeFilter, type RangeKey } from "./RangeFilter";
+import { setPatientStatus } from "../patients/actions";
+import { confirmAppointment, declineAppointment } from "./actions";
 
 // ---------------------------------------------------------------------------
 // EMR-936 — Clickable "Providers this week" cards → provider snapshot in the
@@ -31,6 +40,9 @@ const MODALITY_TONE: Record<string, "accent" | "info" | "neutral"> = {
   phone: "neutral",
 };
 
+// EMR-919 — stable display order for the clickable modality KPI chips.
+const MODALITY_ORDER = ["in_person", "video", "phone"];
+
 const STATUS_TONE: Record<
   string,
   "success" | "warning" | "danger" | "neutral" | "accent"
@@ -48,7 +60,10 @@ export type SerializedAppointment = {
   status: string;
   modality: string;
   providerId: string | null;
-  patient: { id: string; firstName: string; lastName: string };
+  patient: { id: string; firstName: string; lastName: string; status: string };
+  // EMR-207 — no-show risk (null for already-resolved visits or low risk we don't surface).
+  riskTier: "low" | "medium" | "high" | null;
+  riskProbability: number | null;
 };
 
 export type SerializedProvider = {
@@ -98,6 +113,8 @@ export function ScheduleClient({
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null,
   );
+  // EMR-919 / EMR-930 — modality filter driven by the clickable KPI chips.
+  const [selectedModality, setSelectedModality] = useState<string | null>(null);
 
   const selectedProvider = useMemo(
     () => providers.find((p) => p.id === selectedProviderId) ?? null,
@@ -106,17 +123,26 @@ export function ScheduleClient({
 
   const totalThisWeek = appointments.length;
 
-  // When a provider is selected, restrict the day buckets to that provider so
-  // the Week View grid reflects only their schedule.
+  // Modality counts across the loaded window — power the KPI chips.
+  const modalityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const a of appointments) counts[a.modality] = (counts[a.modality] ?? 0) + 1;
+    return counts;
+  }, [appointments]);
+
+  // Restrict the day buckets by the active provider + modality filters so the
+  // Week View grid reflects only the matching schedule.
   const visibleDays = useMemo(() => {
-    if (!selectedProviderId) return days;
+    if (!selectedProviderId && !selectedModality) return days;
     return days.map((d) => ({
       ...d,
       appointments: d.appointments.filter(
-        (a) => a.providerId === selectedProviderId,
+        (a) =>
+          (!selectedProviderId || a.providerId === selectedProviderId) &&
+          (!selectedModality || a.modality === selectedModality),
       ),
     }));
-  }, [days, selectedProviderId]);
+  }, [days, selectedProviderId, selectedModality]);
 
   // Snapshot stats for the selected provider, computed from loaded data.
   const snapshot = useMemo(() => {
@@ -167,6 +193,41 @@ export function ScheduleClient({
           />
         </div>
       </div>
+
+      {/* EMR-919 — clickable modality KPI chips that filter the calendar on click. */}
+      {totalThisWeek > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {MODALITY_ORDER.filter((m) => modalityCounts[m]).map((m) => {
+            const active = selectedModality === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedModality(active ? null : m)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  active
+                    ? "border-accent/50 bg-accent/10 text-accent"
+                    : "border-border text-text-muted hover:border-border-strong",
+                )}
+              >
+                {MODALITY_LABEL[m] ?? m}:{" "}
+                <span className="tabular-nums">{modalityCounts[m]}</span>
+              </button>
+            );
+          })}
+          {selectedModality && (
+            <button
+              type="button"
+              onClick={() => setSelectedModality(null)}
+              className="text-[11px] text-accent hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Week View box — either the full grid, or the provider snapshot. */}
       {selectedProvider && snapshot ? (
@@ -323,40 +384,7 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
                 </p>
               ) : (
                 day.appointments.map((appt) => (
-                  <div
-                    key={appt.id}
-                    className="rounded-lg border border-border/60 bg-surface p-2.5 hover:border-accent/40 transition-colors"
-                  >
-                    <div className="flex items-start gap-2">
-                      <Avatar
-                        firstName={appt.patient.firstName}
-                        lastName={appt.patient.lastName}
-                        size="sm"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-text truncate">
-                          {appt.patient.firstName} {appt.patient.lastName}
-                        </p>
-                        <p className="text-[10px] text-text-subtle tabular-nums">
-                          {formatTime(new Date(appt.startAt))}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 mt-2 flex-wrap">
-                      <Badge
-                        tone={MODALITY_TONE[appt.modality] ?? "neutral"}
-                        className="text-[9px]"
-                      >
-                        {MODALITY_LABEL[appt.modality] ?? appt.modality}
-                      </Badge>
-                      <Badge
-                        tone={STATUS_TONE[appt.status] ?? "neutral"}
-                        className="text-[9px]"
-                      >
-                        {appt.status}
-                      </Badge>
-                    </div>
-                  </div>
+                  <AppointmentCard key={appt.id} appt={appt} />
                 ))
               )}
             </div>
@@ -364,6 +392,210 @@ function WeekGrid({ days }: { days: DayBucket[] }) {
         );
       })}
     </div>
+  );
+}
+
+// EMR-943 — color-coded patient status bubble (active/inactive/prospect).
+const PATIENT_STATUS_TONE: Record<string, "success" | "accent" | "neutral" | "warning"> = {
+  active: "success",
+  prospect: "accent",
+  inactive: "neutral",
+};
+
+function PatientStatusBubble({ status }: { status: string }) {
+  const tone = PATIENT_STATUS_TONE[status.toLowerCase()] ?? "warning";
+  return (
+    <Badge tone={tone} className="text-[9px] capitalize">
+      {status}
+    </Badge>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-927 — Appointment card with a right-click context menu. The "Schedule"
+// item navigates to /clinic/schedule?patientId=<id> so the operator lands on
+// the clinic scheduler scoped to that patient. Reuses the shared
+// `useContextMenu` hook already used by the patients roster.
+// ---------------------------------------------------------------------------
+
+function AppointmentCard({ appt }: { appt: SerializedAppointment }) {
+  const router = useRouter();
+  const [, startStatusChange] = useTransition();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // EMR-939 — change the patient's lifecycle status from the schedule board,
+  // reusing the roster's setPatientStatus action; refresh to reflect the bubble.
+  function changeStatus(status: string, close: () => void) {
+    close();
+    startStatusChange(async () => {
+      await setPatientStatus(appt.patient.id, status);
+      router.refresh();
+    });
+  }
+
+  // EMR-1085 — action a patient-requested booking right from the card.
+  function runStatusChange(
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+  ) {
+    setError(null);
+    startTransition(async () => {
+      const res = await fn();
+      if (!res.ok) setError(res.error ?? "Could not update the appointment.");
+      else router.refresh();
+    });
+  }
+
+  const menuItems: ContextMenuItem[] = [
+    {
+      label: `Schedule ${appt.patient.firstName} ${appt.patient.lastName}`,
+      icon: ContextMenuIcons.Calendar,
+      onSelect: (close) => {
+        router.push(`/clinic/schedule?patientId=${appt.patient.id}`);
+        close();
+      },
+    },
+    { divider: true, label: "" },
+    {
+      label: "Change status",
+      icon: ContextMenuIcons.Check,
+      subItems: [
+        { label: "Mark active", onSelect: (close: () => void) => changeStatus("active", close) },
+        { label: "Mark prospect", onSelect: (close: () => void) => changeStatus("prospect", close) },
+        { label: "Mark inactive", onSelect: (close: () => void) => changeStatus("inactive", close) },
+      ],
+    },
+  ];
+  // Only a still-requested booking can be confirmed or declined.
+  if (appt.status === "requested") {
+    menuItems.push(
+      {
+        label: "Confirm appointment",
+        icon: ContextMenuIcons.Check,
+        onSelect: () =>
+          runStatusChange(() => confirmAppointment({ appointmentId: appt.id })),
+      },
+      {
+        label: "Decline request",
+        danger: true,
+        onSelect: () =>
+          runStatusChange(() => declineAppointment({ appointmentId: appt.id })),
+      },
+    );
+  }
+  const { triggerProps, menu } = useContextMenu(menuItems);
+
+  return (
+    <div
+      {...triggerProps}
+      className="rounded-lg border border-border/60 bg-surface p-2.5 hover:border-accent/40 transition-colors"
+    >
+      <div className="flex items-start gap-2">
+        <Avatar
+          firstName={appt.patient.firstName}
+          lastName={appt.patient.lastName}
+          size="sm"
+        />
+        <div className="min-w-0 flex-1">
+          {/* EMR-923 — patient name links through to the chart home page. */}
+          <Link
+            href={`/clinic/patients/${appt.patient.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block text-xs font-medium text-text truncate hover:text-accent hover:underline"
+          >
+            {appt.patient.firstName} {appt.patient.lastName}
+          </Link>
+          <p className="text-[10px] text-text-subtle tabular-nums">
+            {formatTime(new Date(appt.startAt))}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 mt-2 flex-wrap">
+        <Badge
+          tone={MODALITY_TONE[appt.modality] ?? "neutral"}
+          className="text-[9px]"
+        >
+          {MODALITY_LABEL[appt.modality] ?? appt.modality}
+        </Badge>
+        <Badge
+          tone={STATUS_TONE[appt.status] ?? "neutral"}
+          className="text-[9px]"
+        >
+          {appt.status}
+        </Badge>
+        {/* EMR-943 — color-coded patient status bubble */}
+        <PatientStatusBubble status={appt.patient.status} />
+        <NoShowRiskBadge tier={appt.riskTier} probability={appt.riskProbability} />
+        {/* EMR-920 — inline insurance-eligibility helper tag on upcoming visits. */}
+        {(appt.status === "requested" || appt.status === "confirmed") && (
+          <Link
+            href="/ops/eligibility"
+            className="inline-flex"
+            title="Check insurance eligibility for this visit."
+          >
+            <Badge tone="info" className="text-[9px] hover:bg-blue-100">
+              ⊕ Verify insurance
+            </Badge>
+          </Link>
+        )}
+      </div>
+
+      {/* EMR-1085 — confirm/decline a patient-requested booking inline. */}
+      {appt.status === "requested" && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => confirmAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              runStatusChange(() => declineAppointment({ appointmentId: appt.id }))
+            }
+            className="rounded-md px-2 py-0.5 text-[10px] font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+          >
+            Decline
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-[10px] text-danger">{error}</p>}
+      {menu}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EMR-207 — No-show risk pill. Surfaces the predicted no-show probability for
+// medium/high-risk upcoming visits so the front desk knows where to spend an
+// extra reminder. Low risk is intentionally silent to keep the board calm.
+// ---------------------------------------------------------------------------
+
+function NoShowRiskBadge({
+  tier,
+  probability,
+}: {
+  tier: "low" | "medium" | "high" | null;
+  probability: number | null;
+}) {
+  if (tier === null || tier === "low" || probability === null) return null;
+  const pct = Math.round(probability * 100);
+  const tone = tier === "high" ? "danger" : "warning";
+  const label = tier === "high" ? "High no-show risk" : "Elevated no-show risk";
+  return (
+    <Badge
+      tone={tone}
+      className="text-[9px]"
+      title={`${label} — ${pct}% predicted. Consider an extra reminder or live confirm.`}
+    >
+      ⚠ {pct}%
+    </Badge>
   );
 }
 

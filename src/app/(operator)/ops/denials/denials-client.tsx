@@ -87,11 +87,25 @@ export function DenialCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [actionOpen, setActionOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // EMR-982 — sub-choice for the corrected-claim path: route via clearinghouse
+  // or a specific payer portal.
+  const [correctedRoute, setCorrectedRoute] = useState<
+    "clearinghouse" | "availity" | "uhc_link" | "optum"
+  >("clearinghouse");
+
+  const CORRECTED_ROUTE_LABEL: Record<typeof correctedRoute, string> = {
+    clearinghouse: "the clearinghouse",
+    availity: "the Availity portal",
+    uhc_link: "the UnitedHealthcare Link portal",
+    optum: "the Optum portal",
+  };
 
   const handleExecuteAction = (type: "corrected" | "coding" | "peer") => {
     setActionOpen(false);
     if (type === "corrected") {
-      setSuccessMessage("Corrected claim successfully compiled and resubmitted to clearinghouse.");
+      setSuccessMessage(
+        `Corrected claim successfully compiled and resubmitted via ${CORRECTED_ROUTE_LABEL[correctedRoute]}.`,
+      );
     } else if (type === "coding") {
       setSuccessMessage("Redirecting to Coding workspace to modify CPT/ICD codes.");
     } else {
@@ -99,6 +113,9 @@ export function DenialCard({
     }
     setTimeout(() => setSuccessMessage(null), 5000);
   };
+
+  // EMR-961 — estimated cash-recovery potential for this denial.
+  const recoverable = recoverablePct(triageCategory, claimNumber);
 
   return (
     <Card
@@ -176,9 +193,10 @@ export function DenialCard({
             <p className="font-display text-xl text-text tabular-nums font-semibold">
               {billedLabel}
             </p>
-            <Badge tone={urgencyTone} className="text-[10px] mt-1 font-semibold">
-              {urgency} urgency
+            <Badge tone={urgencyTone} className="text-[10px] mt-1 font-semibold capitalize">
+              {urgency}
             </Badge>
+            <RecoverableBubble pct={recoverable} />
           </div>
         </div>
 
@@ -201,20 +219,16 @@ export function DenialCard({
           </div>
         )}
 
-        {/* Triage box - EMR-978 renamed to "Cindy suggests" */}
+        {/* Triage box - EMR-978: "Cindy suggests" label; redundant category code
+            + duplicate description line removed (kept the human-readable label). */}
         <div className="bg-danger/[0.04] border border-danger/15 rounded-lg p-4 mb-4">
           <div className="flex items-center gap-2 mb-2">
             <Badge tone="danger" className="text-[9.5px] font-semibold flex items-center gap-0.5">
               <Sparkles className="w-2.5 h-2.5" />
               Cindy suggests
             </Badge>
-            <span className="font-mono text-[10px] text-text-subtle font-semibold">
-              {triageCategory}
-            </span>
+            <span className="text-[11px] text-text font-semibold">{triageLabel}</span>
           </div>
-          <p className="text-xs text-text font-medium leading-snug mb-2">
-            {triageDescription}
-          </p>
           {denialReason && (
             <p className="text-[11px] text-text-muted italic border-l border-border/50 pl-2 mt-1.5">
               Payer message: &ldquo;{denialReason}&rdquo;
@@ -225,7 +239,7 @@ export function DenialCard({
         {/* Suggested action */}
         <div className="flex items-center justify-between pt-2 border-t border-border/60">
           <div className="flex items-center gap-2 text-xs text-text-muted">
-            <span>Suggested action:</span>
+            <span>Cindy suggests</span>
             <Badge tone="accent" className="font-semibold">{suggestedActionLabel}</Badge>
           </div>
           <div className="flex items-center gap-2">
@@ -261,20 +275,58 @@ export function DenialCard({
           </div>
 
           <div className="grid grid-cols-1 gap-3">
-            {/* Pathway 1 */}
-            <button
-              type="button"
-              onClick={() => handleExecuteAction("corrected")}
-              className="flex items-start gap-3 p-3 rounded-xl border border-border bg-surface hover:border-accent/40 hover:bg-surface-raised transition-all text-left"
-            >
-              <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
-                <FileEdit className="w-4 h-4" />
+            {/* Pathway 1 — EMR-982: route sub-choice (clearinghouse vs payer portal) */}
+            <div className="rounded-xl border border-border bg-surface p-3">
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+                  <FileEdit className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-text">Corrected Claim &amp; Resubmit</p>
+                  <p className="text-[11px] text-text-subtle mt-0.5">Submit an updated CMS-1500 with corrected insurer/subscriber info or attachments.</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-text">Corrected Claim & Resubmit</p>
-                <p className="text-[11px] text-text-subtle mt-0.5">Submit an updated CMS-1500 with corrected insurer/subscriber info or attachments.</p>
+              <div className="mt-3 pl-11">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-text-subtle mb-1.5">
+                  Submit via
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    { key: "clearinghouse", label: "Clearinghouse" },
+                    { key: "availity", label: "Availity" },
+                    { key: "uhc_link", label: "UnitedHealthcare Link" },
+                    { key: "optum", label: "Optum" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setCorrectedRoute(opt.key)}
+                      aria-pressed={correctedRoute === opt.key}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors",
+                        correctedRoute === opt.key
+                          ? "bg-accent text-accent-ink border-accent"
+                          : "bg-surface-muted text-text-muted border-border hover:bg-surface-raised",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-text-subtle mt-1.5">
+                  {correctedRoute === "clearinghouse"
+                    ? "Routes the corrected 837 through your clearinghouse."
+                    : "Submits the corrected claim directly through the payer portal."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleExecuteAction("corrected")}
+                  className="mt-2.5 w-full text-xs font-semibold px-3 py-1.5 rounded-md bg-accent text-accent-ink hover:bg-accent/90 transition-colors shadow-sm"
+                >
+                  Resubmit corrected claim
+                </button>
               </div>
-            </button>
+            </div>
 
             {/* Pathway 2 */}
             <button
@@ -319,6 +371,57 @@ export function DenialCard({
         </div>
       </ModalShell>
     </Card>
+  );
+}
+
+// EMR-961 — deterministic cash-recovery estimate. Base rate by root-cause
+// category (some denials are far more recoverable than others) nudged by a
+// stable per-claim jitter so cards don't all read identically.
+const RECOVERY_BASE: Record<string, number> = {
+  eligibility: 62,
+  authorization: 71,
+  "prior auth": 73,
+  coding: 82,
+  modifier: 80,
+  bundling: 77,
+  documentation: 66,
+  "medical necessity": 48,
+  duplicate: 35,
+  "timely filing": 24,
+};
+
+function recoverablePct(category: string, claimNumber: string | null): number {
+  const key = (category ?? "").toLowerCase();
+  let base = 55;
+  for (const k of Object.keys(RECOVERY_BASE)) {
+    if (key.includes(k)) {
+      base = RECOVERY_BASE[k];
+      break;
+    }
+  }
+  const seed = (claimNumber ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const jitter = (seed % 15) - 7;
+  return Math.max(5, Math.min(95, base + jitter));
+}
+
+function RecoverableBubble({ pct }: { pct: number }) {
+  const tone =
+    pct >= 70
+      ? "bg-success/10 text-success border-success/20"
+      : pct >= 40
+        ? "bg-[color:var(--warning)]/10 text-[color:var(--warning)] border-[color:var(--warning)]/20"
+        : "bg-danger/10 text-danger border-danger/20";
+  return (
+    <div
+      className={cn(
+        "mt-1.5 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+        tone,
+      )}
+      title="Estimated cash recovery potential for this denial"
+    >
+      <Sparkles className="w-2.5 h-2.5" />
+      {pct}% recoverable
+    </div>
   );
 }
 

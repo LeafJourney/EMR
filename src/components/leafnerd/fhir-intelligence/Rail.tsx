@@ -1,7 +1,46 @@
 "use client";
 /* LEAFNERD — left navigation rail */
+import { useState, useEffect, useRef } from "react";
+import { useClerk } from "@clerk/nextjs";
 import { Icon } from "./primitives";
 import type { NavGroup } from "@/lib/leafnerd/types";
+
+export function getInitials(userName?: string): string {
+  return userName
+    ? userName.startsWith("Dr. ")
+      ? "D" + (userName.split(" ")[1]?.[0] || "").toUpperCase()
+      : userName
+          .split(/\s+/)
+          .map((part) => part[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2)
+    : "DR";
+}
+
+function ClerkSignOutButton() {
+  const clerk = useClerk();
+
+  const handleSignOut = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!clerk.session) {
+      window.location.href = "/sign-in";
+      return;
+    }
+    try {
+      await clerk.signOut({ redirectUrl: "/sign-in" });
+    } catch {
+      window.location.href = "/sign-in";
+    }
+  };
+
+  return (
+    <button className="dropdown-item logout" role="menuitem" onClick={handleSignOut}>
+      <Icon name="logout" size={15} />
+      <span>Sign out</span>
+    </button>
+  );
+}
 
 export function Rail({
   nav,
@@ -16,6 +55,29 @@ export function Rail({
   userName?: string;
   userRole?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // Compute initials for the avatar bubble (e.g. Dr. Patel -> DP, Dr. Reyes -> DR, Neal -> N)
+  const initials = getInitials(userName);
   return (
     <nav className="rail">
       <div className="rail-head">
@@ -45,10 +107,37 @@ export function Rail({
           </div>
         ))}
       </div>
-      <div className="rail-foot">
-        <div className="rail-user">
-          <span className="avatar">DR</span>
-          <div><div className="nm">{userName || "Dr. Reyes"}</div><div className="rl">{userRole || "Population Health Lead"}</div></div>
+      <div className="rail-foot" ref={containerRef}>
+        {open && (
+          <div className="rail-user-dropdown" role="menu">
+            <div className="dropdown-header">
+              <span className="avatar">{initials}</span>
+              <div className="user-info">
+                <div className="nm">{userName || "Dr. Reyes"}</div>
+                <div className="rl">{userRole || "Population Health Lead"}</div>
+              </div>
+            </div>
+            <div className="dropdown-divider" />
+            {typeof window !== "undefined" && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+              <ClerkSignOutButton />
+            ) : (
+              <a 
+                href={process.env.NODE_ENV !== "production" ? "/api/dev/logout?redirect=/sign-in" : "/sign-in"} 
+                className="dropdown-item logout" 
+                role="menuitem"
+              >
+                <Icon name="logout" size={15} />
+                <span>Sign out</span>
+              </a>
+            )}
+          </div>
+        )}
+        <div className="rail-user" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="true">
+          <span className="avatar">{initials}</span>
+          <div>
+            <div className="nm">{userName || "Dr. Reyes"}</div>
+            <div className="rl">{userRole || "Population Health Lead"}</div>
+          </div>
         </div>
       </div>
     </nav>

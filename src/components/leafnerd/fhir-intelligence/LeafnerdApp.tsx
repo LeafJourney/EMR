@@ -21,6 +21,7 @@ import { LabsSurface } from "./LabsSurface";
 import { QualitySurface } from "./QualitySurface";
 import { AnalyticsSurface } from "./AnalyticsSurface";
 import { AdminSurface } from "./AdminSurface";
+import { AgentWorkbenchSurface } from "./AgentWorkbenchSurface";
 import { RiskSurface } from "./RiskSurface";
 import { AskLeafnerdPanel } from "./AskLeafnerdPanel";
 import { DEMO_DATA } from "@/lib/leafnerd/analytics";
@@ -90,6 +91,7 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   else if (active === "medications") body = <MedicationsSurface rows={clinical?.medications} openRecord={openRecord} />;
   else if (active === "labs") body = <LabsSurface rows={clinical?.labs} openRecord={openRecord} />;
   else if (active === "admin") body = <AdminSurface toast={toast} openRecord={openRecord} />;
+  else if (active === "agents") body = <AgentWorkbenchSurface data={props.agentWorkbench} toast={toast} />;
   else body = <Placeholder id={active} />;
 
   const fullBleed = active === "fhir" || active === "claims" || active === "simulator";
@@ -97,7 +99,7 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
   return (
     <div className="ln-root">
       <div className="app">
-        <Rail nav={data.nav} active={active} setActive={setActive} userName={props.userName} />
+        <Rail nav={data.nav} active={active} setActive={setActive} userName={props.userName} userRole={props.userRole} />
         <div className="main">
           <CommandBar onAsk={() => setAskOpen(true)} onSources={() => setActive("admin")} toast={toast} />
           <div className="content" style={fullBleed ? { overflow: "auto", display: "block" } : {}}>

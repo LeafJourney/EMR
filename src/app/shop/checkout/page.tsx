@@ -15,6 +15,7 @@ import { toCompareItem } from "@/components/store/compare-item";
 import { useStoreCart, formatUSD } from "@/components/store/cart";
 import { CompareDrawer } from "@/components/store/CompareDrawer";
 import { ShareButton } from "@/components/store/ShareButton";
+import { SeedsEarnBadge } from "@/components/store/SeedsEarnBadge";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 
@@ -57,9 +58,17 @@ export default function CheckoutPage() {
             This is a demo checkout — no payment was taken. In production your order would route to
             the fulfilling distributor with a tracked ETA.
           </p>
-          <Link href="/shop" className="mt-5 inline-block">
-            <Button>Keep shopping</Button>
-          </Link>
+          <p className="mt-3 text-[13px] text-text-subtle">
+            We may text you a quick check-in in about a week — finish it to nurture Seeds.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link href="/shop">
+              <Button>Keep shopping</Button>
+            </Link>
+            <Link href="/shop/surveys">
+              <Button variant="secondary">Manage survey texts</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -191,6 +200,11 @@ export default function CheckoutPage() {
                 Add {formatUSD(FREE_SHIP_THRESHOLD - subtotal)} more for free shipping.
               </p>
             )}
+
+            {/* Seed Trove loyalty (EMR-313 / EMR-314) */}
+            <div className="mt-3">
+              <SeedsEarnBadge dollars={subtotal} />
+            </div>
 
             <Button onClick={placeOrder} className="mt-4 w-full">
               Place order

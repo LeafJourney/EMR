@@ -21,14 +21,14 @@ const TABS = [
   // way Memory answers "what do we know?".
   { key: "timeline", label: "Timeline", dot: "bg-[color:var(--info)]", group: "Overview" },
   { key: "notes", label: "Notes", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
-  // EMR-588 — Confidential clinician-only notes (private provider
-  // notes). NOT part of the legal chart, never released to the patient
-  // or to export packets. Rendered with a danger-toned dot so the rail
-  // already telegraphs "this is a sensitive surface" before click.
-  { key: "private_notes", label: "Private notes", dot: "bg-danger", group: "Clinical" },
-  { key: "labs", label: "Labs", dot: "bg-[color:var(--success)]", group: "Clinical" },
+  // EMR-894 — Private clinician-only notes moved off their own rail tab
+  // onto a "Private" label on the Patient Chart card (see
+  // private-notes-button.tsx). The key stays valid (counts + deep links)
+  // but is flagged `hidden` so it no longer renders as a rail tab.
+  { key: "private_notes", label: "Private notes", dot: "bg-danger", group: "Clinical", hidden: true },
+  { key: "labs", label: "Labs, Scores & Vitals", dot: "bg-[color:var(--success)]", group: "Clinical" },
   { key: "images", label: "Images", dot: "bg-[color:var(--info)]", group: "Clinical" },
-  { key: "rx", label: "Cannabis Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
+  { key: "rx", label: "Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
   { key: "records", label: "Records", dot: "bg-accent", group: "Documents" },
   { key: "correspondence", label: "Correspondence", dot: "bg-[color:var(--info)]", group: "Documents" },
   // EMR-178 — Billing tab is a deep-link to the standalone Financial
@@ -271,6 +271,9 @@ export function ChartTabs({ patientId, counts, peeks, peekSummaries }: ChartTabs
       {order.map((key, idx) => {
         const tab = TAB_BY_KEY.get(key);
         if (!tab) return null;
+        // EMR-894: hidden tabs (e.g. private_notes) keep a valid key for
+        // counts/deep-links but never render in the rail.
+        if ("hidden" in tab && tab.hidden) return null;
         const isActive = active === tab.key;
         const count = counts[tab.key];
         const entries = peeks?.[tab.key];

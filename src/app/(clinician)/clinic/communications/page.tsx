@@ -13,10 +13,9 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MetricTile } from "@/components/ui/metric-tile";
 import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { CommsRecentClient } from "./comms-recent-client";
+import { CommsSummaryModals } from "./comms-summary-modals.client";
 import { ChannelsDensityFrame } from "./channels-density-frame";
 import { OverlayWorkspace } from "./overlay-workspace.client";
 
@@ -117,64 +116,49 @@ export default async function CommunicationsPage() {
           and recent activity below are the original hub surface. */}
       <OverlayWorkspace />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        {/* EMR-673 — each tile is a Link to its detail surface.
-            EMR-690 — labels use the all-caps spec; Zoom is now Beam. */}
-        <Link href="/clinic/communications/transcripts" className="block group">
-          <MetricTile
-            label="CALLS (7 DAYS)"
-            value={callsThisWeek}
-            accent="forest"
-            hint="Phone + video sessions logged"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-        <Link href="/clinic/communications/beam" className="block group">
-          <MetricTile
-            label="BEAM UPCOMING"
-            value={upcomingBeam}
-            accent={upcomingBeam > 0 ? "forest" : "none"}
-            hint="HIPAA-compliant Beam visits"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-        <Link href="/clinic/communications/voicemail" className="block group">
-          <MetricTile
-            label="NEW VOICEMAILS"
-            value={newVoicemails}
-            accent={newVoicemails > 0 ? "amber" : "none"}
-            hint="Awaiting clinician review"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-        <Link href="/clinic/communications/transcripts" className="block group">
-          <MetricTile
-            label="TRANSCRIPTS TO REVIEW"
-            value={pendingTranscripts}
-            accent={pendingTranscripts > 0 ? "amber" : "none"}
-            hint="Pertinent-info-only summaries"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-        <Link href="/clinic/communications/fax" className="block group">
-          <MetricTile
-            label="FAXES IN FLIGHT"
-            value={pendingFaxes}
-            accent={pendingFaxes > 0 ? "amber" : "none"}
-            hint="Queued or sending"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-        <Link href="/clinic/communications/broadcasts" className="block group">
-          <MetricTile
-            label="ACTIVE OUTREACH"
-            value={activeCampaigns}
-            accent="forest"
-            hint="SMS + email campaigns"
-            className="group-hover:ring-1 group-hover:ring-accent/30 transition-shadow"
-          />
-        </Link>
-      </div>
+      {/* EMR-673 — tiles with pre-fetched data open inline detail modals;
+          tiles without (Beam, Voicemail, Transcripts) navigate to their page. */}
+      <CommsSummaryModals
+        callsThisWeek={callsThisWeek}
+        upcomingBeam={upcomingBeam}
+        newVoicemails={newVoicemails}
+        pendingTranscripts={pendingTranscripts}
+        pendingFaxes={pendingFaxes}
+        activeCampaigns={activeCampaigns}
+        recentCalls={recentCalls.map((call) => ({
+          id: call.id,
+          counterparty: call.patient
+            ? `${call.patient.firstName} ${call.patient.lastName}`
+            : call.providerUser
+              ? `${call.providerUser.firstName} ${call.providerUser.lastName}`
+              : call.externalNumber ?? "Unknown",
+          patientId: call.patient?.id,
+          channel: call.channel,
+          direction: call.direction,
+          startedAt: call.startedAt.toISOString(),
+          status: call.status,
+        }))}
+        recentFaxes={recentFaxes.map((fax) => ({
+          id: fax.id,
+          toNumber: fax.toNumber,
+          patientId: fax.patient?.id,
+          patientName: fax.patient
+            ? `${fax.patient.firstName} ${fax.patient.lastName}`
+            : undefined,
+          direction: fax.direction,
+          pageCount: fax.pageCount,
+          createdAt: fax.createdAt.toISOString(),
+          status: fax.status,
+        }))}
+        recentBroadcasts={recentCampaigns.map((c) => ({
+          id: c.id,
+          name: c.name,
+          channel: c.channel,
+          recipientCount: c._count.recipients,
+          createdAt: c.createdAt.toISOString(),
+          status: c.status,
+        }))}
+      />
 
       <ChannelsDensityFrame>
         <ChannelCard
@@ -277,25 +261,30 @@ function ChannelCard({
   cta: string;
   highlight?: boolean;
 }) {
-  // When mounted inside `.density-dense`, collapse the default Card
-  // header/content padding so more channel tiles fit above the fold.
+  // EMR-673 — entire card is now the clickable region; the CTA pill is
+  // decorative (pointer-events handled by the outer Link).
   return (
-    <Card
-      tone={highlight ? "raised" : "default"}
-      className="[.density-dense_&]:[&_>div]:py-2 [.density-dense_&]:[&_>div]:px-4"
-    >
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Link href={href}>
-          <Button variant={highlight ? "primary" : "secondary"} size="sm">
+    <Link href={href} className="block group h-full">
+      <Card
+        tone={highlight ? "raised" : "default"}
+        className="h-full transition-shadow group-hover:ring-1 group-hover:ring-accent/30 [.density-dense_&]:[&_>div]:py-2 [.density-dense_&]:[&_>div]:px-4"
+      >
+        <CardHeader>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <span
+            className={
+              highlight
+                ? "inline-flex items-center rounded-md bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent"
+                : "inline-flex items-center rounded-md border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-text-subtle"
+            }
+          >
             {cta}
-          </Button>
-        </Link>
-      </CardContent>
-    </Card>
+          </span>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
-

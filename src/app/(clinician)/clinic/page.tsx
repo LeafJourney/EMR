@@ -21,6 +21,12 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { QueueEmptyIllustration } from "@/components/ui/empty-illustrations";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatRelative } from "@/lib/utils/format";
+import {
+  getLocalDayBounds,
+  getZonedParts,
+  greetingForTimeZone,
+  DEFAULT_TIME_ZONE,
+} from "@/lib/utils/timezone";
 import { RecentPatients } from "@/components/shell/recent-patients";
 import { withTimeout } from "@/lib/utils/with-timeout";
 import { logger } from "@/lib/observability/log";
@@ -71,15 +77,6 @@ export const metadata = { title: "Mission Control" };
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 5) return "Still up";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 21) return "Good evening";
-  return "Hello";
-}
 
 function modalityLabel(m: string): string {
   switch (m) {
@@ -260,15 +257,18 @@ export default async function ClinicHomePage() {
     practiceConfig?.selectedSpecialty === "cannabis-medicine" ||
     (practiceConfig?.enabledModalities ?? []).includes("cannabis-medicine");
 
-  const today = new Date();
-  const startOfDay = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
-  const startOfWeek = new Date(startOfDay);
-  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { timeZone: true },
+  });
+  const timeZone = org?.timeZone || DEFAULT_TIME_ZONE;
+
+  // Day/week boundaries computed in the CLINIC's timezone, not the server's
+  // UTC clock. Otherwise a visit scheduled for "today" (e.g. Jun 7, 2:30 PM
+  // local) is missed once the server has ticked over to tomorrow in UTC.
+  const { startOfDay, endOfDay } = getLocalDayBounds(timeZone);
+  const { weekday } = getZonedParts(timeZone);
+  const startOfWeek = new Date(startOfDay.getTime() - weekday * 86_400_000);
 
   /* ---- Parallel data fetches ---- */
   const [
@@ -313,7 +313,7 @@ export default async function ClinicHomePage() {
             chartSummary: true,
             observations: {
               where: { acknowledgedAt: null },
-              select: { severity: true },
+              select: { severity: true, summary: true, category: true },
             },
             documents: {
               where: { deletedAt: null },
@@ -594,10 +594,11 @@ export default async function ClinicHomePage() {
   const feed = activityFeed.slice(0, 15);
 
   /* ---- Date display ---- */
-  const dateStr = today.toLocaleDateString("en-US", {
+  const dateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone,
   });
 
   return (
@@ -616,7 +617,7 @@ export default async function ClinicHomePage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-display text-xl font-medium text-text tracking-tight leading-tight">
-                  {greeting()},{" "}
+                  {greetingForTimeZone(timeZone)},{" "}
                   <span className="text-accent">{user.firstName}</span>
                 </h1>
                 <RelaxPopup />
@@ -651,8 +652,10 @@ export default async function ClinicHomePage() {
             />
             <StatusDot
               color="var(--text-subtle)"
+              pulse={activeThreads > 0}
               count={activeThreads}
               label="Threads"
+              href="/clinic/messages"
             />
           </div>
 

@@ -59,6 +59,7 @@ interface Props {
   threads: DecryptedThread[];
   currentUserId: string;
   directory: DirectoryProvider[];
+  initialUserId?: string | null;
 }
 
 // One row in the left pane — either an existing thread (preferred) or
@@ -72,11 +73,18 @@ type RightPane =
   | { kind: "compose"; prefillUserId: string | null }
   | { kind: "empty" };
 
-export function ProviderInboxView({ threads, currentUserId, directory }: Props) {
+export function ProviderInboxView({ threads, currentUserId, directory, initialUserId }: Props) {
   const [search, setSearch] = useState("");
-  const [right, setRight] = useState<RightPane>(
-    threads[0] ? { kind: "thread", threadId: threads[0].id } : { kind: "empty" },
-  );
+  const [right, setRight] = useState<RightPane>(() => {
+    if (initialUserId) {
+      const existing = threads.find(
+        (t) => t.participants[0]?.userId === initialUserId,
+      );
+      if (existing) return { kind: "thread", threadId: existing.id };
+      return { kind: "compose", prefillUserId: initialUserId };
+    }
+    return threads[0] ? { kind: "thread", threadId: threads[0].id } : { kind: "empty" };
+  });
   const [popupUserId, setPopupUserId] = useState<string | null>(null);
 
   // Build merged left-pane list: every existing thread first (in chat

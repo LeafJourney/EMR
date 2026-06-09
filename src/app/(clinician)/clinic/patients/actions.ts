@@ -105,6 +105,9 @@ export async function searchPatientsAction(query: string) {
     where: {
       organizationId: orgId,
       deletedAt: null,
+      // Exclude the reserved internal record that anchors calendar blocks —
+      // it is not a real patient and must never be selectable in patient search.
+      NOT: { firstName: "System", lastName: "CalendarBlock" },
     },
     include: {
       appointments: {

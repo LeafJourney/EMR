@@ -29,7 +29,7 @@ import {
 } from "@/lib/clinical/dictation-routing";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note-template-picker";
-import { NOTE_BLOCK_LABELS as NB_LABELS } from "@/lib/domain/notes";
+import { AI_CONSENT_DISCLAIMER_HEADING } from "@/lib/clinical/ai-consent-disclaimer";
 import { buildVisitCompletionBundle } from "@/lib/domain/visit-completion";
 import { VisitCompletionPanel } from "./visit-completion-panel";
 
@@ -100,6 +100,17 @@ function scrubMessage(raw: string): string {
   return trimmed;
 }
 
+// Resolve a block's display heading. APSO-typed blocks show their canonical
+// label, but the AI consent disclaimer rides on the "summary" type and MUST
+// keep its own heading — otherwise it renders as a SECOND "Subjective" section
+// beside the real summary block, making the signed note ambiguous (QA #6).
+function displayBlockHeading(block: { type?: NoteBlockType; heading: string }): string {
+  if (block.heading === AI_CONSENT_DISCLAIMER_HEADING) return block.heading;
+  return block.type && NOTE_BLOCK_LABELS[block.type]
+    ? NOTE_BLOCK_LABELS[block.type]
+    : block.heading;
+}
+
 export function NoteEditor({
   noteId,
   patientId,
@@ -143,9 +154,7 @@ export function NoteEditor({
     return sorted.map((block) => ({
       ...block,
       body: typeof block.body === "string" ? block.body : "",
-      heading: block.type && NOTE_BLOCK_LABELS[block.type]
-        ? NOTE_BLOCK_LABELS[block.type]
-        : block.heading,
+      heading: displayBlockHeading(block),
     }));
   });
   const [isPending, startTransition] = useTransition();
@@ -173,6 +182,22 @@ export function NoteEditor({
   }
 
   const isEditable = currentStatus === "draft" || currentStatus === "needs_review";
+
+  // Only make AI "pre-drafted / already incorporates your talking points"
+  // claims when the draft actually has substantive Assessment/Plan content —
+  // not the "-- draft, pending clinician input --" placeholder the scribe emits
+  // when no model output was produced. Otherwise the UI tells the clinician to
+  // trust content that isn't there.
+  const PLACEHOLDER_DRAFT_RE =
+    /^\s*(--\s*draft|no chart summary|draft placeholder|summary placeholder|ai output unavailable)/i;
+  const hasSubstantiveDraft = blocks.some(
+    (b) =>
+      (b.type === "assessment" || b.type === "plan") &&
+      !!b.body &&
+      b.body.trim().length > 24 &&
+      !PLACEHOLDER_DRAFT_RE.test(b.body.trim()),
+  );
+
   const visitCompletionBundle =
     currentStatus === "finalized"
       ? buildVisitCompletionBundle({
@@ -261,7 +286,7 @@ export function NoteEditor({
       sorted.map((b) => ({
         type: b.type,
         body: b.body,
-        heading: b.type && NB_LABELS[b.type] ? NB_LABELS[b.type] : b.heading,
+        heading: displayBlockHeading(b),
       })),
     );
     setSaveMessage(null);
@@ -326,7 +351,7 @@ export function NoteEditor({
   return (
     <div className="space-y-4">
       {/* Briefing banner */}
-      {fromBriefing && aiDrafted && isEditable && (
+      {fromBriefing && aiDrafted && isEditable && hasSubstantiveDraft && (
         <Card className="border-l-4 border-l-accent bg-accent/5">
           <CardContent className="py-4 flex items-start gap-3">
             <div className="h-8 w-8 rounded-lg bg-accent flex items-center justify-center shrink-0">
@@ -355,11 +380,23 @@ export function NoteEditor({
               Visit snapshot
             </p>
             <p className="text-xs text-text-muted leading-relaxed">
-              This note was pre-drafted by the AI scribe using the patient&apos;s
-              chart, recent outcomes, and your pre-visit briefing. Review
-              each section — the Assessment and Plan already incorporate
-              your talking points. Use the AI refine buttons to adjust
-              tone, expand, or add dosing detail. Sign when ready.
+              {hasSubstantiveDraft ? (
+                <>
+                  This note was pre-drafted by the AI scribe using the
+                  patient&apos;s chart, recent outcomes, and your pre-visit
+                  briefing. Review each section — the Assessment and Plan
+                  already incorporate your talking points. Use the AI refine
+                  buttons to adjust tone, expand, or add dosing detail. Sign
+                  when ready.
+                </>
+              ) : (
+                <>
+                  The AI scribe didn&apos;t produce a draft for this visit, so
+                  the sections below are empty placeholders — nothing has been
+                  pre-filled for you. Document each section yourself; the AI
+                  refine buttons can help once you&apos;ve added content.
+                </>
+              )}
             </p>
           </CardContent>
         </Card>
@@ -437,7 +474,7 @@ export function NoteEditor({
             {currentStatus}
           </Badge>
           {aiDrafted && <Badge tone="highlight">AI-drafted</Badge>}
-          {aiConfidence !== null && (
+          {aiConfidence !== null && hasSubstantiveDraft && (
             <Badge tone="info">
               Confidence {Math.round(aiConfidence * 100)}%
             </Badge>

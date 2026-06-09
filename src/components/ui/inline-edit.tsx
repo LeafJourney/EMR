@@ -370,7 +370,7 @@ export const InlineEdit = forwardRef<InlineEditHandle, InlineEditProps>(
         <span className="relative inline-flex items-center">
           <input
             ref={inputRef}
-            type={type}
+            type={type === "date" ? "text" : type}
             value={draft}
             onChange={(e) => {
               setDraft(e.target.value);

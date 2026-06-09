@@ -89,6 +89,17 @@ export async function saveNoteBlocks(
     }
     throw err;
   }
+
+  // A signed note (finalized or amended) is a locked legal record. The editor
+  // hides the Save button once a note leaves draft/needs_review, but the server
+  // must enforce it too: a direct action call (or a stale client) must not
+  // silently mutate a signed note. Mirrors the guard saveObjectiveDocumentation
+  // already applies. Amending a signed note is a deliberate, audited flow — not
+  // a plain block save.
+  if (note.status === "finalized" || note.status === "amended") {
+    return { ok: false, error: "This note is signed and can no longer be edited." };
+  }
+
   // EMR-784: AI-drafted notes (voice/ambient scribe) must keep the
   // patient verbal-consent disclaimer even if the clinician edited the
   // draft. Re-inject if it was stripped.
@@ -610,7 +621,12 @@ const REFINE_INSTRUCTIONS: Record<RefineMode, string> = {
 
 export type RefineResult =
   | { ok: true; refined: string }
-  | { ok: false; error: string; code: ModelErrorCode | "not_found" | "unauthorized" };
+  | { ok: false; error: string; code: ModelErrorCode | "not_found" | "unauthorized" | "unavailable" };
+
+// The stub / unconfigured model returns a human-readable "unavailable" notice
+// rather than throwing. Detect it so we surface an honest failure instead of
+// silently overwriting the clinician's section with placeholder boilerplate.
+const AI_UNAVAILABLE_RE = /unavailable in this environment|AI output unavailable|^\s*(draft|summary) placeholder/i;
 
 export async function refineSection(
   noteId: string,
@@ -657,11 +673,23 @@ Return ONLY the refined text — no JSON, no markdown, no explanation. Just the 
     // Note sections are short paragraphs; 256 is plenty and keeps us well
     // under common credit ceilings. A generous SOAP subsection is ~200 words
     // which is ~260 tokens.
-    const refined = await model.complete(prompt, {
-      maxTokens: 256,
-      temperature: 0.25,
-    });
-    return { ok: true, refined: refined.trim() };
+    const refined = (
+      await model.complete(prompt, {
+        maxTokens: 256,
+        temperature: 0.25,
+      })
+    ).trim();
+    // Never clobber the clinician's text with an "AI unavailable" notice or an
+    // empty completion — report an honest, content-preserving failure instead.
+    if (!refined || AI_UNAVAILABLE_RE.test(refined)) {
+      return {
+        ok: false,
+        error:
+          "AI refinement isn't available in this environment yet — your text was left unchanged.",
+        code: "unavailable",
+      };
+    }
+    return { ok: true, refined };
   } catch (err) {
     // Log the full provider detail for our own debugging — but send ONLY
     // the friendly message to the client. Raw provider JSON must never
@@ -678,7 +706,7 @@ Return ONLY the refined text — no JSON, no markdown, no explanation. Just the 
     logger.warn({ event: "clinic.refine_section.unexpected_error", err });
     return {
       ok: false,
-      error: "AI refinement failed. Try again in a moment.",
+      error: "AI refinement is temporarily unavailable — your text was left unchanged.",
       code: "unknown",
     };
   }

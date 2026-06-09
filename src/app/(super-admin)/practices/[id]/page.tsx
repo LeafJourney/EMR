@@ -36,6 +36,7 @@ import { BillingTab } from "./billing-tab";
 import { CostsTab } from "./costs-tab";
 import { HistoryTab } from "./history-tab";
 import { TabBar, isTabKey, type TabKey } from "./tab-bar";
+import { PracticeBornBanner } from "./practice-born-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function PracticeDrillInPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ tab?: string; historyCursor?: string }>;
+  searchParams?: Promise<{ tab?: string; historyCursor?: string; published?: string }>;
 }) {
   const { id } = await params;
   const sp = (await searchParams) ?? {};
@@ -87,6 +88,10 @@ export default async function PracticeDrillInPage({
           { label: practice.practiceName },
         ]}
       />
+
+      {sp.published === "1" && (
+        <PracticeBornBanner practiceName={practice.practiceName} />
+      )}
 
       <div className="mb-6">
         <Link

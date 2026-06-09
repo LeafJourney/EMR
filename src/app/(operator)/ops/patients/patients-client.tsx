@@ -33,6 +33,8 @@ interface PatientRow {
   updatedAt: string;
   createdAt: string;
   intakeProgress: number;
+  // EMR-955 — serialized DOB (ISO string) for the compact age label.
+  dateOfBirth: string | null;
 }
 
 const STATUS_TABS = [
@@ -52,8 +54,27 @@ const STATUS_OPTIONS = [
 function statusTone(status: string): BadgeTone {
   if (status === "active") return "success";
   if (status === "prospect") return "warning";
-  if (status === "inactive" || status === "archived") return "neutral";
+  // EMR-943 — inactive/archived patients read as "danger" (red) so a dropped
+  // patient is visually distinct from an active/prospect one at a glance.
+  if (status === "inactive" || status === "archived") return "danger";
   return "neutral";
+}
+
+// EMR-955 — compact age string for the row subheader. The Patient model has
+// NO sex/gender field (confirmed against prisma/schema.prisma — only
+// dateOfBirth exists), so we fall back to an age-only label like "38y"
+// instead of the requested "38F". Wire in sex here if the schema ever gains
+// a gender/sex field.
+function ageLabel(dateOfBirth: string | null): string | null {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+  if (age < 0 || age > 150) return null;
+  return `${age}y`;
 }
 
 // EMR-967 — map a free-form `missingFields` string to the most relevant chart
@@ -259,6 +280,12 @@ function PatientListItem({
               )}
             </div>
             <div className="flex items-center gap-3 mt-1">
+              {/* EMR-955 — compact age (sex omitted: no schema field) */}
+              {ageLabel(p.dateOfBirth) && (
+                <p className="text-xs font-medium text-text-muted tabular-nums">
+                  {ageLabel(p.dateOfBirth)}
+                </p>
+              )}
               <p className="text-xs text-text-subtle">
                 Updated {formatRelative(p.updatedAt)}
               </p>

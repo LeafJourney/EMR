@@ -35,6 +35,8 @@ export interface ModalShellProps {
   className?: string;
   /** Optional sticky footer rendered below the scrollable body. */
   footer?: React.ReactNode;
+  /** Optional actions placed between the title block and the X button. */
+  headerActions?: React.ReactNode;
   children?: React.ReactNode;
 }
 
@@ -49,6 +51,7 @@ export function ModalShell({
   maxWidth = "max-w-lg",
   className,
   footer,
+  headerActions,
   children,
 }: ModalShellProps) {
   const titleId = useId();
@@ -136,19 +139,22 @@ export function ModalShell({
             )}
           </div>
 
-          {/* Visible X close button — EMR-642 */}
-          <button
-            type="button"
-            onClick={requestClose}
-            aria-label="Close"
-            className={cn(
-              "shrink-0 h-8 w-8 rounded-full flex items-center justify-center",
-              "bg-surface-muted hover:bg-surface-raised text-text-muted hover:text-text",
-              "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
-            )}
-          >
-            <X className="w-4 h-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {headerActions}
+            {/* Visible X close button — EMR-642 */}
+            <button
+              type="button"
+              onClick={requestClose}
+              aria-label="Close"
+              className={cn(
+                "h-8 w-8 rounded-full flex items-center justify-center",
+                "bg-surface-muted hover:bg-surface-raised text-text-muted hover:text-text",
+                "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
+              )}
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         {/* ── Discard confirmation bar — shown when isDirty + requestClose ─ */}
