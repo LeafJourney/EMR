@@ -984,7 +984,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
             id: r.id,
             panelName: r.panelName,
             receivedAt: new Date(r.receivedAt).toISOString(),
-            results: (r.results as unknown) as Record<string, LsvLabMarker>,
+            results: (r.results ?? {}) as unknown as Record<string, LsvLabMarker>,
             abnormalFlag: r.abnormalFlag,
           }))}
           assessments={assessmentResponses.map((r: any) => ({

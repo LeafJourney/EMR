@@ -200,8 +200,8 @@ export function RecordsTab({
         </div>
       )}
 
-      {/* EMR-863: drag-and-drop + Cindy routing */}
-      <CindyDropZone patientId={patientId} />
+      {/* EMR-863: drag-and-drop + Cindy routing (clinician-approval gated) */}
+      <CindyDropZone patientId={patientId} record={record} />
 
       {/* EMR-862/864: split-pane viewer */}
       <SplitPaneViewer
@@ -288,9 +288,26 @@ function IconBtn({
   );
 }
 
-function CindyDropZone({ patientId }: { patientId: string }) {
+function CindyDropZone({
+  patientId,
+  record,
+}: {
+  patientId: string;
+  record: ReturnType<typeof useChartLedger>["record"];
+}) {
   const [over, setOver] = React.useState(false);
-  const [routed, setRouted] = React.useState<{ name: string; subtab: string } | null>(null);
+  // EMR-863 governance: Cindy *suggests* a destination, but nothing is filed
+  // until the clinician explicitly approves (or overrides) it — human-in-the-
+  // loop. `pending` is the un-approved suggestion; `filed` is the confirmation.
+  const [pending, setPending] = React.useState<
+    { name: string; suggested: string; chosen: string } | null
+  >(null);
+  const [filed, setFiled] = React.useState<
+    { name: string; subtab: string; overridden: boolean } | null
+  >(null);
+
+  const labelFor = (key: string) =>
+    RECORD_SUBTABS.find((s) => s.key === key)?.label ?? key;
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -305,8 +322,25 @@ function CindyDropZone({ patientId }: { patientId: string }) {
         createdAt: "",
         tags: [],
       });
-      setRouted({ name: f.name, subtab: guess.subtab });
+      setPending({ name: f.name, suggested: guess.subtab, chosen: guess.subtab });
+      setFiled(null);
     }
+  }
+
+  function approve() {
+    if (!pending) return;
+    const overridden = pending.chosen !== pending.suggested;
+    record({
+      kind: "note",
+      source: "Records",
+      subject: `Filed “${pending.name}” → ${labelFor(pending.chosen)} ${
+        overridden
+          ? `(clinician override of Cindy’s “${labelFor(pending.suggested)}”)`
+          : "(approved Cindy’s suggestion)"
+      }`,
+    });
+    setFiled({ name: pending.name, subtab: pending.chosen, overridden });
+    setPending(null);
   }
 
   return (
@@ -328,27 +362,71 @@ function CindyDropZone({ patientId }: { patientId: string }) {
           )}
         >
           <p className="text-sm text-text-muted">
-            Drag &amp; drop a file here — Cindy will suggest where it belongs.
+            Drag &amp; drop a file here — Cindy will suggest where it belongs, then
+            you approve.
           </p>
-          {routed && (
+
+          {/* EMR-863: Cindy's routing is advisory — pending clinician approval. */}
+          {pending && (
+            <div className="mt-3 rounded-lg border border-accent/30 bg-accent-soft/20 p-3 text-left">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-text font-medium truncate max-w-[200px]">
+                  “{pending.name}”
+                </span>
+                <span className="text-text-subtle">→ Cindy suggests</span>
+                <Bubble tone="info">{labelFor(pending.suggested)}</Bubble>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="text-xs text-text-muted">File under</label>
+                <select
+                  value={pending.chosen}
+                  onChange={(e) => setPending({ ...pending, chosen: e.target.value })}
+                  className="text-xs rounded border border-border bg-surface px-1.5 py-1"
+                  aria-label="Choose destination subtab"
+                >
+                  {RECORD_SUBTABS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+                {pending.chosen !== pending.suggested && (
+                  <span className="text-[11px] text-highlight">override</span>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPending(null)}
+                    className="text-xs px-2.5 py-1 rounded-md text-text-muted hover:bg-surface-muted"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={approve}
+                    className="text-xs px-2.5 py-1 rounded-md bg-accent text-accent-ink font-semibold"
+                  >
+                    Approve &amp; file
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-text-subtle">
+                Cindy’s routing is a suggestion only — the document is filed when
+                you approve.
+              </p>
+            </div>
+          )}
+
+          {/* Post-approval confirmation */}
+          {filed && (
             <div className="mt-3 inline-flex items-center gap-2 text-sm">
-              <span className="text-text">“{routed.name}”</span>
-              <span className="text-text-subtle">→ Cindy suggests</span>
-              <Bubble tone="info">
-                {RECORD_SUBTABS.find((s) => s.key === routed.subtab)?.label ?? routed.subtab}
-              </Bubble>
-              <select
-                value={routed.subtab}
-                onChange={(e) => setRouted({ ...routed, subtab: e.target.value })}
-                className="text-xs rounded border border-border bg-surface px-1.5 py-1"
-                aria-label="Override routing"
-              >
-                {RECORD_SUBTABS.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              <span className="text-emerald-600">✓ Filed</span>
+              <span className="text-text">“{filed.name}”</span>
+              <span className="text-text-subtle">→</span>
+              <Bubble tone="info">{labelFor(filed.subtab)}</Bubble>
+              {filed.overridden && (
+                <span className="text-[11px] text-text-subtle">(your override)</span>
+              )}
             </div>
           )}
         </div>
