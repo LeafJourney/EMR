@@ -85,6 +85,8 @@ export interface SerializedClaim {
   paidAmountCents: number;
   allowedAmountCents: number | null;
   patientRespCents: number;
+  /** EMR-933 — primary-coverage eligibility status for the inline row badge. */
+  eligibilityStatus?: string | null;
   denialReason: string | null;
   deniedAt: string | null;
   denialEvents: SerializedDenialEvent[];
@@ -438,6 +440,16 @@ const TIMELINE_DOT: Record<TimelineTone, string> = {
 
 // ───────────────────────────────────────── Cell renderers
 
+// EMR-933 — eligibility indicator color (green active / red inactive / yellow other).
+function eligibilityColor(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "active") return "var(--success)";
+  if (["inactive", "termed", "terminated", "denied", "expired"].includes(s)) {
+    return "var(--danger)";
+  }
+  return "var(--warning)";
+}
+
 function renderCell(claim: SerializedClaim, key: ColumnKey): React.ReactNode {
   switch (key) {
     case "patient":
@@ -455,6 +467,14 @@ function renderCell(claim: SerializedClaim, key: ColumnKey): React.ReactNode {
           <span className="font-medium text-text group-hover:text-accent transition-colors">
             {claim.patient.firstName} {claim.patient.lastName}
           </span>
+          {claim.eligibilityStatus && (
+            <span
+              title={`Insurance eligibility: ${claim.eligibilityStatus}`}
+              aria-label={`Insurance eligibility: ${claim.eligibilityStatus}`}
+              className="h-2 w-2 rounded-full shrink-0"
+              style={{ backgroundColor: eligibilityColor(claim.eligibilityStatus) }}
+            />
+          )}
         </Link>
       );
     case "date":
@@ -891,6 +911,7 @@ function DenialDetail({ claim }: { claim: SerializedClaim }) {
       <DenialActionForm
         claimId={claim.id}
         patientName={`${claim.patient.firstName} ${claim.patient.lastName}`}
+        claimBalanceCents={Math.max(0, claim.billedAmountCents - claim.paidAmountCents)}
       />
     </div>
   );
