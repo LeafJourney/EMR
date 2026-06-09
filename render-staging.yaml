@@ -65,6 +65,8 @@ services:
         value: sandbox
       - key: PAYABLI_WEBHOOK_SECRET
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
 
   # LeafNerd — Dedicated frontend service for the clinical intelligence product (Staging).
   - type: web
@@ -120,6 +122,8 @@ services:
         value: google/gemma-2-9b-it:free
       - key: OPENROUTER_APP_NAME
         value: Leafjourney
+      - key: RESEND_API_KEY
+        sync: false
 
   # Scheduler — enqueues recurring workflows every 15 minutes. Pinned to main.
   - type: cron
@@ -133,6 +137,8 @@ services:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
+        sync: false
+      - key: RESEND_API_KEY
         sync: false
 
 databases:
