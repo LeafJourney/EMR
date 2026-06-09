@@ -7,6 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { money } from "@/lib/ui/format";
 import type { PracticeCardData } from "../types";
 import { humanizeCareModel, humanizeSpecialty } from "../types";
+import { derivePracticeLifecycle } from "../lifecycle";
+import { loadPracticeRoster, loadPracticeInvitations } from "../loaders";
+import { PracticeActivation } from "./practice-activation";
+import { PracticePeoplePanel } from "./practice-people-panel";
+import { PracticeInvitePanel } from "./practice-invite-panel";
+import { PracticeSpecialtyCoverage } from "./practice-specialty-coverage";
+import { PracticeAiReview } from "./practice-ai-review";
+import { PracticeLifecycleActions } from "./practice-lifecycle-actions";
 
 function formatDollars(cents: number): string {
   return money(cents, { abbreviate: true });
@@ -75,13 +83,45 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function OverviewTab({ practice }: { practice: PracticeCardData }) {
+export async function OverviewTab({ practice }: { practice: PracticeCardData }) {
   const specialtyLabel = humanizeSpecialty(practice.specialty);
   const careModelLabel = humanizeCareModel(practice.careModel);
   const location = [practice.city, practice.state].filter(Boolean).join(", ");
+  const lifecycle = derivePracticeLifecycle(practice, {
+    npi: practice.npi,
+    launch: practice.launch,
+  });
+  const [roster, invitations] = await Promise.all([
+    loadPracticeRoster(practice.organizationId),
+    loadPracticeInvitations(practice.organizationId),
+  ]);
 
   return (
     <div className="grid gap-8">
+      {/* Activation layer — the gate between creation pipeline and operations. */}
+      <PracticeActivation practice={practice} lifecycle={lifecycle} />
+
+      {/* People & role coverage — who's here, who still needs inviting. */}
+      <PracticePeoplePanel roster={roster} />
+
+      {/* Team invitations — create / revoke real pending invites. */}
+      <PracticeInvitePanel
+        organizationId={practice.organizationId}
+        invitations={invitations}
+      />
+
+      {/* Specialty-template coverage — what machine this practice is becoming. */}
+      <PracticeSpecialtyCoverage practice={practice} />
+
+      {/* AI setup review — real model client on demand, rule-based fallback. */}
+      <PracticeAiReview
+        organizationId={practice.organizationId}
+        practiceName={practice.practiceName}
+        specialty={practice.specialty}
+        careModel={practice.careModel}
+        lifecycle={lifecycle}
+      />
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           label="Active providers"
@@ -218,6 +258,18 @@ export function OverviewTab({ practice }: { practice: PracticeCardData }) {
           )}
         </div>
       </div>
+
+      {/* Lifecycle actions — archive-first; empty drafts framed as discard. */}
+      <PracticeLifecycleActions
+        configId={practice.configId}
+        practiceName={practice.practiceName}
+        stage={lifecycle.stage}
+        isEmpty={
+          practice.kpi.patientCount === 0 &&
+          practice.kpi.claimCount === 0 &&
+          practice.kpi.encounterCount === 0
+        }
+      />
     </div>
   );
 }
