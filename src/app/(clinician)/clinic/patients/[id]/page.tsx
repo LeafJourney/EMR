@@ -490,6 +490,29 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       meta: `${c.status} · ${formatRelative(c.serviceDate)}`,
       href: `/clinic/patients/${params.id}/billing`,
     })),
+    // EMR-817 — demographics tab hover peek: primary contact summary.
+    demographics: [
+      {
+        id: "dob",
+        title: patient.dateOfBirth
+          ? `DOB ${new Date(patient.dateOfBirth).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}`
+          : "DOB not on file",
+        meta: "Date of birth",
+        href: `/clinic/patients/${params.id}?tab=demographics`,
+      },
+      {
+        id: "email",
+        title: patient.email || "No email on file",
+        meta: "Email",
+        href: `/clinic/patients/${params.id}?tab=demographics`,
+      },
+      {
+        id: "phone",
+        title: patient.phone || "No phone on file",
+        meta: "Phone",
+        href: `/clinic/patients/${params.id}?tab=demographics`,
+      },
+    ],
   };
 
   /* ── AI peek summaries (slice 3) ────────────────────────────

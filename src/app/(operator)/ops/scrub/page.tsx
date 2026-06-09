@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
+import { ChargeCapturePipeline } from "./charge-capture-pipeline";
 import {
   scrubClaim,
   countBySeverity,
@@ -198,6 +199,10 @@ export default async function ScrubWorkbenchPage() {
         title="Scrub and Auths"
         description="Every claim is checked against payer + coding rules. Plain language issues, structured detail, suggested fixes. Submit prior authorizations from one hub."
       />
+
+      {/* EMR-1080 — charge capture → submission funnel so staff see the
+          hand-off from a signed note's codes into a scrubbed, submitted claim. */}
+      <ChargeCapturePipeline organizationId={organizationId} />
 
       {/* EMR-979 — "Top issues this week" now lives inside the client shell so
           its count bubbles can filter the review list. */}

@@ -3,11 +3,14 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { createLightContext } from "@/lib/orchestration/context";
-import { formatDate, fullName } from "@/lib/utils/format";
+import { formatDateOnly, formatDateInZone, fullName } from "@/lib/utils/format";
+import { DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
 import {
   extractNoteSection,
   extractActionItems,
   buildDeterministicNarrative,
+  formatVisitModality,
+  sanitizeReason,
   type LeafletData,
   type LeafletMedication,
 } from "@/lib/domain/leaflet";
@@ -35,12 +38,20 @@ export async function generateLeafletData(
 
   const patient = encounter.patient;
 
+  const orgRow = await prisma.organization.findUnique({
+    where: { id: user.organizationId! },
+    select: { timeZone: true },
+  });
+  const timeZone = orgRow?.timeZone || DEFAULT_TIME_ZONE;
+
   // Load optional relations separately (so one failure doesn't block the page)
   const [medications, dosingRegimens, outcomeLogs, appointments, provider] = await Promise.allSettled([
     prisma.patientMedication.findMany({ where: { patientId: patient.id, active: true } }),
     prisma.dosingRegimen.findMany({ where: { patientId: patient.id, active: true }, include: { product: true } }),
     prisma.outcomeLog.findMany({ where: { patientId: patient.id }, orderBy: { loggedAt: "desc" }, take: 5 }),
-    prisma.appointment.findMany({ where: { patientId: patient.id, status: "confirmed" }, orderBy: { startAt: "asc" }, take: 1 }),
+    // FUTURE confirmed appointments only — an old confirmed appt would otherwise
+    // surface a PAST "next appointment" date in the patient handout.
+    prisma.appointment.findMany({ where: { patientId: patient.id, status: "confirmed", startAt: { gte: new Date() } }, orderBy: { startAt: "asc" }, take: 1 }),
     encounter.providerId
       ? prisma.provider.findUnique({ where: { id: encounter.providerId }, include: { user: { select: { firstName: true, lastName: true } } } })
       : Promise.resolve(null),
@@ -84,21 +95,26 @@ export async function generateLeafletData(
   const nextSteps = extractActionItems(plan);
   const carePlanNotes = plan || "Care plan will be updated after your next visit.";
 
-  // Follow-up
+  // Follow-up — anchored to the clinician's documented follow-up in the SIGNED
+  // note, plus a real FUTURE appointment date if one exists. Never a past date.
+  const followUpSection = extractNoteSection(blocks, "followUp");
   const nextAppt = appointmentsResult[0];
-  const followUp = nextAppt
-    ? `Your next appointment is ${formatDate(nextAppt.startAt)}.`
-    : "Please schedule a follow-up visit within 2-4 weeks.";
+  const apptLine = nextAppt
+    ? `Your next appointment is ${formatDateInZone(nextAppt.startAt, timeZone)}.`
+    : "";
+  const followUp =
+    [followUpSection, apptLine].filter(Boolean).join(" ").trim() ||
+    "Please schedule a follow-up visit as advised by your care team.";
 
   // Narrative source
   const narrativeSource = [assessment, plan, subjective].filter(Boolean).join("\n\n");
 
   const data: LeafletData = {
     patientName: fullName(patient.firstName, patient.lastName),
-    patientDOB: patient.dateOfBirth ? formatDate(patient.dateOfBirth) : null,
+    patientDOB: patient.dateOfBirth ? formatDateOnly(patient.dateOfBirth) : null,
     allergies: patient.allergies ?? [],
     visit: {
-      date: formatDate(encounter.scheduledFor ?? encounter.createdAt),
+      date: formatDateInZone(encounter.scheduledFor ?? encounter.createdAt, timeZone),
       provider: providerResult?.user ? fullName(providerResult.user.firstName, providerResult.user.lastName) : "Your care team",
       modality: encounter.modality,
       reason: encounter.reason,
@@ -106,7 +122,13 @@ export async function generateLeafletData(
     discussed,
     carePlan: meds,
     carePlanNotes,
-    nextSteps: nextSteps.length > 0 ? nextSteps : ["Continue current care plan", "Log outcomes daily in the portal"],
+    nextSteps:
+      nextSteps.length > 0
+        ? nextSteps
+        : [
+            "Follow the care plan your clinician reviewed with you today",
+            "Log how you're feeling in the portal",
+          ],
     followUp,
     narrativeSource,
     generatedAt: new Date().toISOString(),
@@ -140,8 +162,8 @@ export async function generateLeafletNarrative(
   const prompt = `You are writing a short narrative recap for a patient's after-visit summary at Leafjourney, a cannabis care clinic.
 
 PATIENT: ${data.patientName}
-VISIT: ${data.visit.date}, ${data.visit.modality} with ${data.visit.provider}
-REASON: ${data.visit.reason ?? "Follow-up"}
+VISIT: ${data.visit.date}, ${formatVisitModality(data.visit.modality)} with ${data.visit.provider}
+REASON: ${sanitizeReason(data.visit.reason) ?? "Follow-up"}
 
 CLINICAL NOTES:
 ${data.narrativeSource}

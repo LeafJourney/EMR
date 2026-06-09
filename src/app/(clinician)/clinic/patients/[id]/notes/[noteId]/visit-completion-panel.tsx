@@ -108,7 +108,10 @@ const statusBadgeTone: Record<
 
 const statusLabel: Record<VisitCompletionCardSelectionStatus, string> = {
   selected: "Confirmation required",
-  approved: "Approved; confirm",
+  // Two-step: "Approve" stages the card; it only counts toward the
+  // "N of N confirmations" progress once the card is also confirmed. Spell
+  // that out so the two vocabularies don't read as a single done action.
+  approved: "Approved — confirm to count",
   confirmed: "Confirmed",
   edited: "Edited; resolved",
   removed: "Removed",
@@ -1362,6 +1365,7 @@ function VisitCompletionActionList({
                 "border-accent/25 bg-accent-soft text-accent hover:bg-accent-soft",
             )}
             title={action.placeholderCopy}
+            aria-label={`${action.label}: ${action.placeholderCopy}`}
             onClick={() => onAction(action)}
             leadingIcon={<Icon className="h-3.5 w-3.5" />}
           >

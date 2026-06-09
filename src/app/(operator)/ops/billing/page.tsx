@@ -74,6 +74,16 @@ export default async function BillingPage({
     }),
   ]);
 
+  // EMR-933 — primary-coverage eligibility per patient, for inline row badges.
+  const patientIds = [...new Set(claims.map((c) => c.patient.id))];
+  const coverages = await prisma.patientCoverage.findMany({
+    where: { patientId: { in: patientIds }, type: "primary", active: true },
+    select: { patientId: true, eligibilityStatus: true },
+  });
+  const eligibilityByPatient = new Map(
+    coverages.map((c) => [c.patientId, c.eligibilityStatus]),
+  );
+
   const countByStatus = Object.fromEntries(
     statusCounts.map((s) => [s.status, s._count]),
   );
@@ -113,6 +123,7 @@ export default async function BillingPage({
     paidAmountCents: claim.paidAmountCents,
     allowedAmountCents: claim.allowedAmountCents,
     patientRespCents: claim.patientRespCents,
+    eligibilityStatus: eligibilityByPatient.get(claim.patient.id) ?? null,
     denialReason: claim.denialReason,
     deniedAt: claim.deniedAt ? claim.deniedAt.toISOString() : null,
     denialEvents: claim.denialEvents.map((d) => ({

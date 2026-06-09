@@ -157,4 +157,43 @@ describe("evaluatePrevisitReadiness", () => {
     expect(JSON.stringify(r)).not.toMatch(/1985|Main St|priorUse|back pain/);
     expect(r.outstandingRequiredCount).toBe(r.missingRequiredIds.length);
   });
+
+  describe("evaluatePrevisitReadiness — consent freshness with policy", () => {
+    it("rejects an expired visit consent (older than 365 days) and makes the appointment not ready", () => {
+      const staleConsent = fullSnapshot({
+        consents: [
+          { templateName: "Visit Consent", version: "1.0", signedAt: new Date("2025-05-01T00:00:00.000Z") }, // 1+ years old
+        ],
+      });
+      const r = evaluatePrevisitReadiness(staleConsent, NOW);
+      expect(r.isReady).toBe(false);
+      expect(r.missingRequiredIds).toContain("consent");
+    });
+
+    it("for virtual visits, rejects a telehealth consent older than 1 day", () => {
+      const staleTelehealth = fullSnapshot({
+        isVirtual: true,
+        consents: [
+          { templateName: "Visit Consent", version: "1.0", signedAt: new Date("2026-05-30T00:00:00.000Z") }, // fresh
+          { templateName: "Telehealth Informed Consent", version: "1.0", signedAt: new Date("2026-05-20T00:00:00.000Z") }, // older than 1 day from NOW (2026-06-01)
+        ],
+      });
+      const r = evaluatePrevisitReadiness(staleTelehealth, NOW);
+      expect(r.isReady).toBe(false);
+      expect(r.missingRequiredIds).toContain("consent");
+    });
+
+    it("for virtual visits, accepts a telehealth consent signed within 1 day of NOW", () => {
+      const freshTelehealth = fullSnapshot({
+        isVirtual: true,
+        consents: [
+          { templateName: "Visit Consent", version: "1.0", signedAt: new Date("2026-05-30T00:00:00.000Z") }, // fresh
+          { templateName: "Telehealth Informed Consent", version: "1.0", signedAt: new Date("2026-06-01T11:00:00.000Z") }, // signed 1 hour before NOW
+        ],
+      });
+      const r = evaluatePrevisitReadiness(freshTelehealth, NOW);
+      expect(r.isReady).toBe(true);
+      expect(r.missingRequiredIds).not.toContain("consent");
+    });
+  });
 });

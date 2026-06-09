@@ -28,16 +28,23 @@ export function LeafletEditor({ data, encounterId, initialNarrative }: Props) {
   const [saved, setSaved] = useState(false);
   const [isPending, startTransition] = useTransition();
 
+  // Assemble the clinician's in-editor edits back onto the leaflet data.
+  // Without this, regenerate/save used the ORIGINAL `data` and silently
+  // discarded every correction the clinician just made.
+  function editedData(): LeafletData {
+    return { ...data, discussed, nextSteps, carePlanNotes };
+  }
+
   function handleRegenerate() {
     startTransition(async () => {
-      const result = await generateLeafletNarrative(data, tone);
+      const result = await generateLeafletNarrative(editedData(), tone);
       if (result.ok) setNarrative(result.narrative);
     });
   }
 
   function handleSave() {
     startTransition(async () => {
-      await saveLeafletToChart(encounterId, narrative, data);
+      await saveLeafletToChart(encounterId, narrative, editedData());
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     });
@@ -170,27 +177,35 @@ export function LeafletEditor({ data, encounterId, initialNarrative }: Props) {
               <LeafSprig size={14} className="text-accent/60" />
               Your Care Plan
             </h2>
-            {data.carePlan.length > 0 ? (
-              <div className="space-y-2 mb-3">
-                {data.carePlan.map((med, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
-                    <Badge tone={med.type === "cannabis" ? "accent" : "neutral"} className="text-[10px] mt-0.5 shrink-0">
-                      {med.type === "cannabis" ? "Cannabis" : "Rx"}
-                    </Badge>
-                    <div>
-                      <span className="font-medium text-text">{med.name}</span>
-                      {med.dosage && <span className="text-text-muted"> — {med.dosage}</span>}
-                      {med.instructions && <p className="text-xs text-text-muted mt-0.5">{med.instructions}</p>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            {/* The authoritative care plan is the clinician's SIGNED Plan note
+                (editable here) — shown first so the handout leads with what was
+                actually decided today, not the standing medication list. */}
             <textarea
               value={carePlanNotes}
               onChange={(e) => setCarePlanNotes(e.target.value)}
-              className="leaflet-editable w-full text-sm text-text-muted leading-relaxed bg-surface-muted/30 border border-border/30 rounded-lg px-3 py-2 min-h-[50px] resize-y focus:outline-none focus:ring-1 focus:ring-accent/30 print:border-none print:bg-transparent print:p-0"
+              className="leaflet-editable w-full text-sm text-text leading-relaxed bg-surface-muted/30 border border-border/30 rounded-lg px-3 py-2 min-h-[60px] resize-y focus:outline-none focus:ring-1 focus:ring-accent/30 print:border-none print:bg-transparent print:p-0"
             />
+            {data.carePlan.length > 0 ? (
+              <div className="mt-3">
+                <p className="text-[11px] uppercase tracking-wider text-text-subtle mb-1.5">
+                  Current medications on file
+                </p>
+                <div className="space-y-2">
+                  {data.carePlan.map((med, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <Badge tone={med.type === "cannabis" ? "accent" : "neutral"} className="text-[10px] mt-0.5 shrink-0">
+                        {med.type === "cannabis" ? "Cannabis" : "Rx"}
+                      </Badge>
+                      <div>
+                        <span className="font-medium text-text">{med.name}</span>
+                        {med.dosage && <span className="text-text-muted"> — {med.dosage}</span>}
+                        {med.instructions && <p className="text-xs text-text-muted mt-0.5">{med.instructions}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </section>
 
           {/* ── What to Do Next ──────────── */}
