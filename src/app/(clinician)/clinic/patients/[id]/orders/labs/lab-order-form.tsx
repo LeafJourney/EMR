@@ -10,7 +10,7 @@ import { LAB_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/toast";
-import { createClinicalOrder } from "../actions";
+import { createClinicalOrder, uploadLabOrderAttachment } from "../actions";
 
 type Priority = "stat" | "routine";
 
@@ -93,7 +93,14 @@ export function LabOrderForm({ patientId, patientName }: Props) {
           reason,
           diagnoses: icd10Selected,
           priority,
-          attachments: attachments.map((a) => a.file.name),
+          // Persisted chart Document references (id + name) for every
+          // supporting file that uploaded successfully — not just filenames.
+          attachments: attachments
+            .filter((a) => a.status === "uploaded" && a.result)
+            .map((a) => ({
+              documentId: a.result!.id,
+              name: a.result!.name ?? a.file.name,
+            })),
           timestamp: new Date().toISOString(),
         },
       });
@@ -298,15 +305,12 @@ export function LabOrderForm({ patientId, patientName }: Props) {
 
             <FieldGroup label="Supporting attachments (optional)">
               <p className="text-[11px] text-text-subtle -mt-1 mb-2">
-                Prior result PDFs, requisition forms, or insurance cards.
-                They&apos;ll travel with the order to the lab.
+                Prior result PDFs, requisition forms, or insurance cards. Each
+                file is saved to the chart as a document and referenced by this
+                order. Requires document storage to be configured — otherwise
+                the upload reports an error instead of silently dropping the
+                file.
               </p>
-              {/*
-                Server-side TODO: there is no /api/labs/orders/[id]/attachments
-                endpoint yet. The handler below resolves locally so the UI
-                ships ready-to-wire — once a real upload route is in place,
-                replace the resolve with `createFetchUploadHandler({ url: ... })`.
-              */}
               <FileUpload
                 accept=".pdf,.png,.jpg,.jpeg,.heic,.webp"
                 maxFiles={5}
@@ -315,13 +319,16 @@ export function LabOrderForm({ patientId, patientName }: Props) {
                 label="Drop requisitions or prior results"
                 hint="PDF or image — up to 15 MB per file"
                 onUpload={async (file, { onProgress }) => {
-                  // Local-only: simulate the upload so the queue UI is
-                  // exercisable today. Replace once the server route lands.
-                  for (let p = 0; p <= 100; p += 20) {
-                    onProgress?.(p);
-                    await new Promise((r) => setTimeout(r, 80));
-                  }
-                  return { id: `local-${file.name}`, name: file.name };
+                  // EMR-1103 (WS-D): persist the attachment as a real chart
+                  // Document. Throwing flips the file row to "failed" so a
+                  // storage-not-configured environment is honest, not faked.
+                  const fd = new FormData();
+                  fd.append("patientId", patientId);
+                  fd.append("file", file);
+                  const res = await uploadLabOrderAttachment(fd);
+                  if (!res.ok) throw new Error(res.error);
+                  onProgress?.(100);
+                  return { id: res.documentId, name: res.name };
                 }}
                 onComplete={(items) => setAttachments(items)}
               />
