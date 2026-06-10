@@ -87,6 +87,41 @@ export function checkInteractions(
   );
 }
 
+const KNOWN_CANNABINOIDS = ["THC", "CBD", "CBN", "CBG"] as const;
+
+/**
+ * Best-effort cannabinoid profile for a custom / free-text product that has no
+ * structured concentration data. Scans the product name (and any explicit
+ * "open to" cannabinoid hints) for cannabinoid tokens, treats a ratio like
+ * "1:1" as implying THC + CBD, and falls back to the THC + CBD pair a cannabis
+ * product almost always carries — so interaction screening still runs instead
+ * of silently passing. (WS-C task 2 / audit minor #9.)
+ */
+export function inferCannabinoidsFromName(
+  name: string,
+  hints: ReadonlyArray<string> = [],
+): string[] {
+  const found = new Set<string>();
+  const haystack = (name ?? "").toUpperCase();
+  for (const c of KNOWN_CANNABINOIDS) {
+    if (haystack.includes(c)) found.add(c);
+  }
+  for (const h of hints) {
+    const u = h.toUpperCase().trim();
+    if ((KNOWN_CANNABINOIDS as readonly string[]).includes(u)) found.add(u);
+  }
+  // A ratio like "1:1" or "20:1" implies both THC and CBD are present.
+  if (/\d+\s*:\s*\d+/.test(name ?? "")) {
+    found.add("THC");
+    found.add("CBD");
+  }
+  if (found.size === 0) {
+    found.add("THC");
+    found.add("CBD");
+  }
+  return Array.from(found);
+}
+
 /** Return the full interaction database sorted by severity (red → yellow → green). */
 export function getAllInteractions(): DrugInteraction[] {
   return (interactionData.interactions as InteractionEntry[])
