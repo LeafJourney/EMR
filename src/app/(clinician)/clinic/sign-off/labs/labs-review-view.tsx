@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { ModalShell } from "@/components/ui/modal-shell";
 import { Printer } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { explainLabValue } from "@/lib/domain/lab-explainer";
@@ -426,61 +427,33 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Lab review for ${row.patientFirstName} ${row.patientLastName}`}
+    <ModalShell
+      open
+      onClose={onClose}
+      title={`${row.patientFirstName} ${row.patientLastName}`}
+      eyebrow={row.panelName}
+      description={`Received ${fmtDate(row.receivedAt)}${row.prior ? ` · compared against ${fmtDate(row.prior.receivedAt)}` : ""}`}
+      placement="center"
+      maxWidth="max-w-3xl"
+      headerActions={
+        /* ux/print-stylesheets-clinical — open a server-rendered print view
+           in a new tab so the page lands as a clean clinical document with no
+           modal chrome. */
+        <Tooltip content="Print / Save as PDF">
+          <a
+            href={`/clinic/sign-off/labs/${row.id}/print`}
+            target="_blank"
+            rel="noopener"
+            className="text-text-subtle hover:text-text p-1.5 rounded-lg hover:bg-surface-muted transition-colors"
+            aria-label="Print / Save as PDF"
+          >
+            <Printer className="h-4 w-4" aria-hidden="true" />
+          </a>
+        </Tooltip>
+      }
     >
-      <div
-        className="bg-bg rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-border"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-border flex items-start justify-between gap-4 sticky top-0 bg-bg z-10">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-text-subtle font-medium">
-              {row.panelName}
-            </p>
-            <h2 className="font-display text-2xl text-text tracking-tight mt-1">
-              {row.patientFirstName} {row.patientLastName}
-            </h2>
-            <p className="text-sm text-text-muted mt-1">
-              Received {fmtDate(row.receivedAt)}
-              {row.prior && ` · compared against ${fmtDate(row.prior.receivedAt)}`}
-            </p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {/* ux/print-stylesheets-clinical — open a server-rendered
-                print view in a new tab instead of printing the live overlay.
-                The dedicated route uses the shared PrintDocument frame so
-                the page lands on the printer as a clean clinical document
-                (no modal chrome, no batch tray, no glass blur). */}
-            <Tooltip content="Print / Save as PDF">
-              <a
-                href={`/clinic/sign-off/labs/${row.id}/print`}
-                target="_blank"
-                rel="noopener"
-                className="text-text-subtle hover:text-text p-1.5 rounded-lg hover:bg-surface-muted transition-colors"
-                aria-label="Print / Save as PDF"
-              >
-                <Printer className="h-4 w-4" aria-hidden="true" />
-              </a>
-            </Tooltip>
-            <button
-              onClick={onClose}
-              className="text-text-subtle hover:text-text text-xl leading-none px-2"
-              aria-label="Close"
-            >
-              &times;
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-5 space-y-6">
-          {/* Values table */}
+      <div className="px-6 py-5 space-y-6">
+        {/* Values table */}
           <section>
             <h3 className="text-sm font-semibold text-text mb-3">Results</h3>
             <div className="rounded-xl border border-border overflow-hidden">
@@ -719,8 +692,7 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
             />
           </section>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
 

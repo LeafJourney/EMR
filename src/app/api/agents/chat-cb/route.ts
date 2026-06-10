@@ -58,7 +58,11 @@ export async function POST(request: Request) {
   });
   if (gate.error) return gate.error;
 
-  let body: { question?: unknown; message?: unknown };
+  let body: {
+    question?: unknown;
+    message?: unknown;
+    history?: unknown;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -73,6 +77,24 @@ export async function POST(request: Request) {
     typeof rawQuestion === "string" && rawQuestion.trim().length > 0
       ? rawQuestion.trim().slice(0, 400)
       : null;
+
+  // Validated prior turns for multi-turn context. We accept at most 6 turns
+  // (3 Q+A pairs) to keep the prompt size bounded.
+  type HistoryTurn = { role: "user" | "assistant"; text: string };
+  const history: HistoryTurn[] = (() => {
+    if (!Array.isArray(body.history)) return [];
+    return (body.history as unknown[])
+      .filter((t) => {
+        if (typeof t !== "object" || t === null) return false;
+        const role = (t as Record<string, unknown>).role;
+        return role === "user" || role === "assistant";
+      })
+      .slice(-6)
+      .map((t) => ({
+        role: (t as Record<string, unknown>).role as "user" | "assistant",
+        text: String((t as Record<string, unknown>).text ?? "").slice(0, 600),
+      }));
+  })();
 
   if (!question) {
     return new Response(JSON.stringify({ error: "missing_question" }), {
@@ -130,8 +152,16 @@ export async function POST(request: Request) {
           .join("\n")
       : "";
 
+  const historyContext =
+    history.length > 0
+      ? "\n\nPrior conversation (use for context only — do not re-answer):\n" +
+        history
+          .map((t) => `${t.role === "user" ? "Clinician" : "ChatCB"}: ${t.text}`)
+          .join("\n")
+      : "";
+
   const systemPrompt = buildChatCBSystemPrompt();
-  const userPrompt = `${systemPrompt}${kbContext}${pubmedContext}\n\nClinician question: ${question}`;
+  const userPrompt = `${systemPrompt}${historyContext}${kbContext}${pubmedContext}\n\nClinician question: ${question}`;
 
   const model = resolveModelClient();
 
@@ -237,4 +267,3 @@ export async function POST(request: Request) {
     },
   });
 }
-

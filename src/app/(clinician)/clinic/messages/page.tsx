@@ -10,8 +10,10 @@ import {
   type MessagePriority,
   type MessageCategory,
 } from "@/lib/domain/smart-inbox";
+import { isResolvedMarker } from "./resolve-marker";
 import { SmartInboxView } from "./smart-inbox";
 import { MorningBriefView } from "./brief-view";
+import { isThreadResolved, unreadInboundCount } from "@/lib/messaging/thread-state";
 
 export const metadata = { title: "Smart Inbox" };
 
@@ -129,9 +131,7 @@ export default async function ClinicMessagesPage({
 
     const result = triageThread(messagesForTriage, t.patient.userId);
 
-    const unreadCount = t.messages.filter(
-      (m) => m.status !== "read" && m.senderUserId !== user.id && !m.senderAgent,
-    ).length;
+    const unreadCount = unreadInboundCount(t.messages, user.id);
 
     const attachmentCount = countAttachments(t.messages);
 
@@ -187,6 +187,9 @@ export default async function ClinicMessagesPage({
     patientId: t.patient.id,
     patientName: `${t.patient.firstName} ${t.patient.lastName}`,
     subject: t.subject,
+    // EMR-808 — resolved while the resolve mark is at/after the last activity;
+    // a newer patient reply (lastMessageAt > resolvedAt) re-opens the thread.
+    isResolved: isThreadResolved(t.resolvedAt, t.lastMessageAt),
     messages: t.messages.map((m) => ({
       id: m.id,
       body: m.body,
@@ -198,6 +201,9 @@ export default async function ClinicMessagesPage({
         ? { firstName: m.sender.firstName, lastName: m.sender.lastName }
         : null,
       createdAt: m.createdAt.toISOString(),
+      channel: m.channel,
+      delivery: m.delivery,
+      deliveryDetail: m.deliveryDetail,
     })),
     callLogs: t.callLogs.map((c) => ({
       id: c.id,
@@ -209,6 +215,28 @@ export default async function ClinicMessagesPage({
       durationSeconds: c.durationSeconds,
     })),
   }));
+
+  // EMR-660 — Hide resolved threads from the inbox until the patient sends
+  // a new reply (which lands after the [[RESOLVED]] sentinel, making it
+  // no longer the last message). The resolveThread action deliberately
+  // skips bumping lastMessageAt for the same reason; this is the
+  // server-side complement that actually removes them from the feed.
+  //
+  // We cast to a narrow interface for the detection loop only; the final
+  // filtered arrays keep the `any[]` inference so they stay assignable to
+  // the ThreadMessageData[] prop expected by SmartInboxView.
+  const resolvedThreadIds = new Set<string>();
+  for (const t of threadMessages) {
+    const msgs = [...t.messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const last = msgs[msgs.length - 1];
+    if (last && isResolvedMarker(last.body)) resolvedThreadIds.add(t.threadId);
+  }
+
+  const activeTriaged = triaged.filter((t) => !resolvedThreadIds.has(t.threadId));
+  const activeThreadMessages: typeof threadMessages = [];
+  for (const t of threadMessages) {
+    if (!resolvedThreadIds.has(t.threadId)) activeThreadMessages.push(t);
+  }
 
   return (
     <PageShell maxWidth="max-w-[1400px]">
@@ -230,8 +258,8 @@ export default async function ClinicMessagesPage({
         </Link>
       </div>
       <SmartInboxView
-        triaged={triaged}
-        threadMessages={threadMessages}
+        triaged={activeTriaged}
+        threadMessages={activeThreadMessages}
         currentUserId={user.id}
         initialThreadId={searchParams?.thread}
         initialFilter={searchParams?.filter}

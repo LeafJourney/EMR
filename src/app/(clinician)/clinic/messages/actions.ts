@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-import { RESOLVED_SENTINEL } from "./resolve-marker";
+import { deliverMessage } from "@/lib/messaging/deliver";
+import { sendEmail } from "@/lib/email/resend";
+import { getSmsAdapter, normalizePhone } from "@/lib/sms/adapter";
 
 // ---------- Reply to a thread ----------
 
@@ -42,23 +44,14 @@ export async function sendClinicReplyAction(
   });
   if (!thread) return { ok: false, error: "Thread not found." };
 
-  const now = new Date();
-
-  await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        threadId: parsed.data.threadId,
-        senderUserId: user.id,
-        status: "sent",
-        body: parsed.data.body,
-        sentAt: now,
-      },
-    }),
-    prisma.messageThread.update({
-      where: { id: parsed.data.threadId },
-      data: { lastMessageAt: now },
-    }),
-  ]);
+  // Portal secure message — delivered in-app (the patient reads it in their
+  // portal). deliverMessage records the channel + truthful delivery state.
+  await deliverMessage({
+    threadId: parsed.data.threadId,
+    channel: "portal",
+    body: parsed.data.body,
+    senderUserId: user.id,
+  });
 
   revalidatePath("/clinic/messages");
   return { ok: true };
@@ -106,22 +99,20 @@ export async function composeMessage(
   });
   if (!patient) return { ok: false, error: "Patient not found." };
 
-  const now = new Date();
-
   const thread = await prisma.messageThread.create({
     data: {
       patientId: parsed.data.patientId,
       subject: parsed.data.subject,
-      lastMessageAt: now,
-      messages: {
-        create: {
-          senderUserId: user.id,
-          status: "sent",
-          body: parsed.data.body,
-          sentAt: now,
-        },
-      },
+      lastMessageAt: new Date(),
     },
+    select: { id: true },
+  });
+
+  await deliverMessage({
+    threadId: thread.id,
+    channel: "portal",
+    body: parsed.data.body,
+    senderUserId: user.id,
   });
 
   revalidatePath("/clinic/messages");
@@ -152,45 +143,33 @@ export async function composePatientMessage(
   });
   if (!patient) return { ok: false, error: "Patient not found." };
 
-  const now = new Date();
   const thread = await prisma.messageThread.create({
     data: {
       patientId: parsed.data.patientId,
       subject: parsed.data.subject,
-      lastMessageAt: now,
+      lastMessageAt: new Date(),
     },
     select: { id: true },
   });
 
-  await prisma.message.create({
-    data: {
-      threadId: thread.id,
-      senderUserId: user.id,
-      status: "sent",
-      body: parsed.data.body,
-      sentAt: now,
-    },
+  await deliverMessage({
+    threadId: thread.id,
+    channel: "portal",
+    body: parsed.data.body,
+    senderUserId: user.id,
   });
 
   revalidatePath("/clinic/messages");
   return { ok: true, threadId: thread.id };
 }
 
-// ---------- Resolve thread (EMR-660) ----------
+// ---------- Resolve thread (EMR-660, EMR-808) ----------
 //
-// Marks a thread as clinically dispositioned by inserting a system-authored
-// "Resolved" chat bubble. The MessageThread model does not (yet) carry a
-// dedicated status column — see the follow-up note in the PR body. Until
-// then, the inbox treats the presence of a trailing `[[RESOLVED]]` bubble
-// from a clinician as the dispositioned marker, and a subsequent patient
-// reply causes the thread to reappear automatically (it lands AFTER the
-// resolved bubble, so `lastMessageAt > resolvedBubble.createdAt`).
-//
-// Body sentinel keeps the wire format auditable for the chart export while
-// avoiding a schema migration during this PR. When MessageThread gains a
-// real `status` column the action will switch to `prisma.messageThread
-// .update({ data: { status: "resolved" } })` and the sentinel becomes a
-// human-readable label.
+// Marks a thread as clinically dispositioned via a durable `resolvedAt` column.
+// The inbox treats a thread as resolved when `resolvedAt >= lastMessageAt`; a
+// subsequent patient reply bumps lastMessageAt past resolvedAt and the thread
+// re-opens automatically. (Pre-EMR-808 this was faked with a `[[RESOLVED]]`
+// body sentinel; the migration backfilled resolvedAt from those bubbles.)
 
 const resolveSchema = z.object({ threadId: z.string().min(1) });
 
@@ -220,20 +199,12 @@ export async function resolveThread(
   });
   if (!thread) return { ok: false, error: "Thread not found." };
 
-  const now = new Date();
-  await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        threadId: thread.id,
-        senderUserId: user.id,
-        status: "sent",
-        body: `${RESOLVED_SENTINEL} Thread resolved at ${now.toISOString()}`,
-        sentAt: now,
-      },
-    }),
-    // Do NOT bump lastMessageAt — that would defeat the "hide until new
-    // patient message" filter. Leave lastMessageAt at the previous reply.
-  ]);
+  // Set resolvedAt to now. Do NOT bump lastMessageAt — resolved stays true
+  // until a newer patient message lands (lastMessageAt > resolvedAt).
+  await prisma.messageThread.update({
+    where: { id: thread.id },
+    data: { resolvedAt: new Date(), resolvedById: user.id },
+  });
 
   revalidatePath("/clinic/messages");
   return { ok: true };
@@ -268,24 +239,164 @@ export async function sendReply(
   });
   if (!thread) return { ok: false, error: "Thread not found." };
 
-  const now = new Date();
-
-  await prisma.$transaction([
-    prisma.message.create({
-      data: {
-        threadId: parsed.data.threadId,
-        senderUserId: user.id,
-        status: "sent",
-        body: parsed.data.body,
-        sentAt: now,
-      },
-    }),
-    prisma.messageThread.update({
-      where: { id: parsed.data.threadId },
-      data: { lastMessageAt: now },
-    }),
-  ]);
+  await deliverMessage({
+    threadId: parsed.data.threadId,
+    channel: "portal",
+    body: parsed.data.body,
+    senderUserId: user.id,
+  });
 
   revalidatePath("/clinic/messages");
   return { ok: true };
+}
+
+// ---------- Mark a thread read (EMR-808) ----------
+//
+// Persists read state so it survives a refresh: flips inbound patient messages
+// (not authored by this clinician, not agent drafts) to status "read". The
+// inbox's unreadCount derives from `status !== "read"`, so persisting here is
+// what makes the unread badge stick.
+
+const markReadSchema = z.object({ threadId: z.string().min(1) });
+
+export async function markThreadRead(threadId: string): Promise<void> {
+  const user = await requireUser();
+  const parsed = markReadSchema.safeParse({ threadId });
+  if (!parsed.success) return;
+
+  const thread = await prisma.messageThread.findFirst({
+    where: {
+      id: parsed.data.threadId,
+      patient: { organizationId: user.organizationId! },
+    },
+    select: { id: true },
+  });
+  if (!thread) return;
+
+  await prisma.message.updateMany({
+    where: {
+      threadId: parsed.data.threadId,
+      status: { not: "read" },
+      senderUserId: { not: user.id },
+      senderAgent: null,
+    },
+    data: { status: "read" },
+  });
+
+  revalidatePath("/clinic/messages");
+}
+
+// ---------- Export a thread to an external channel (EMR-808) ----------
+//
+// Replaces the old window.alert("Queued … EMR-664") fake. Performs a REAL send
+// for email/text (Resend / Twilio, honest dev fallback), records a PHI-safe
+// AuditLog so the export is durable + auditable, and returns the truthful
+// outcome for the modal to display. Fax has no adapter → recorded only.
+
+const exportSchema = z.object({
+  threadId: z.string().min(1),
+  channel: z.enum(["email", "text", "fax"]),
+  destination: z.string().min(1).max(200),
+  from: z.string().optional(), // YYYY-MM-DD
+  to: z.string().optional(),
+});
+
+export type ExportThreadResult =
+  | { ok: true; delivery: "delivered" | "recorded" | "failed"; detail: string; count: number }
+  | { ok: false; error: string };
+
+export async function exportThread(input: {
+  threadId: string;
+  channel: "email" | "text" | "fax";
+  destination: string;
+  from?: string;
+  to?: string;
+}): Promise<ExportThreadResult> {
+  const user = await requireUser();
+
+  const parsed = exportSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a destination for this channel." };
+
+  const thread = await prisma.messageThread.findFirst({
+    where: {
+      id: parsed.data.threadId,
+      patient: { organizationId: user.organizationId! },
+    },
+    include: {
+      patient: { select: { firstName: true, lastName: true } },
+      messages: { orderBy: { createdAt: "asc" }, select: { body: true, createdAt: true } },
+    },
+  });
+  if (!thread) return { ok: false, error: "Thread not found." };
+
+  const from = parsed.data.from ?? "0000-00-00";
+  const to = parsed.data.to ?? "9999-99-99";
+  const inRange = thread.messages.filter((m) => {
+    const d = m.createdAt.toISOString().slice(0, 10);
+    return d >= from && d <= to;
+  });
+  if (inRange.length === 0) return { ok: false, error: "No messages in the selected date range." };
+
+  const patientName = `${thread.patient.firstName} ${thread.patient.lastName}`;
+  const transcript = inRange
+    .map((m) => `[${m.createdAt.toISOString().slice(0, 16).replace("T", " ")}] ${m.body}`)
+    .join("\n\n");
+
+  let delivery: "delivered" | "recorded" | "failed" = "recorded";
+  let detail = "";
+
+  if (parsed.data.channel === "email") {
+    const res = await sendEmail({
+      to: [parsed.data.destination.trim()],
+      subject: `Correspondence with ${patientName}: ${thread.subject}`,
+      text: transcript,
+    });
+    if (res.ok) {
+      delivery = "delivered";
+      detail = `Emailed ${inRange.length} message(s) to ${parsed.data.destination}.`;
+    } else if (res.reason === "no-api-key") {
+      delivery = "recorded";
+      detail = "Email not delivered — no mail provider configured. Export recorded only.";
+    } else {
+      delivery = "failed";
+      detail = `Email export failed: ${res.message}`;
+    }
+  } else if (parsed.data.channel === "text") {
+    const to = normalizePhone(parsed.data.destination);
+    if (!to) return { ok: false, error: "Enter a valid phone number." };
+    // Never text PHI — send a portal-login notice, not the transcript.
+    const res = await getSmsAdapter().send({
+      to,
+      body: `Your care team shared correspondence with you. Log in to your patient portal to view it securely.`,
+    });
+    if (!res.ok) {
+      delivery = "failed";
+      detail = `Text export failed: ${res.error ?? "unknown error"}`;
+    } else if (res.adapter === "mock") {
+      delivery = "recorded";
+      detail = "Simulated — no SMS provider configured. Export recorded only.";
+    } else {
+      delivery = "delivered";
+      detail = `Texted a secure portal notice to ${parsed.data.destination}.`;
+    }
+  } else {
+    // fax — no adapter wired.
+    delivery = "recorded";
+    detail = "Fax delivery isn't configured — export recorded only.";
+  }
+
+  // Durable, PHI-safe audit row (channel/delivery/count only — no destination
+  // or body).
+  await prisma.auditLog.create({
+    data: {
+      organizationId: user.organizationId ?? null,
+      actorUserId: user.id,
+      action: `message.export.${parsed.data.channel}.${delivery}`,
+      subjectType: "MessageThread",
+      subjectId: thread.id,
+      metadata: { channel: parsed.data.channel, delivery, count: inRange.length },
+    },
+  });
+
+  return { ok: true, delivery, detail, count: inRange.length };
 }

@@ -1,28 +1,30 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
-import { homeForRoles } from "@/lib/rbac/roles";
+import nextDynamic from "next/dynamic";
 
 export const metadata = { title: "Signing you in…" };
 
-// Disable caching so every post-auth visit re-evaluates the user's role.
+// Force-dynamic so this never serves a cached shell.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // Post-sign-in landing — single source of truth for "where does this user go
-// after Clerk finishes authenticating them?" Previously the Clerk widget
-// hard-coded /portal as the redirect target, which forced every role
-// (practice_owner, super_admin, etc.) to bounce through the patient layout's
-// reject-and-redirect logic. That bounce relied on `user.roles[0]`, which
-// orders by membership creation date — not by privilege — so multi-role users
-// could land in the wrong shell and trip the (auth) group's missing
-// error.tsx, surfacing global-error.tsx ("Something went wrong").
+// after Clerk finishes authenticating them?"
 //
-// Landing uses `homeForRoles` (→ `landingRole`), which prefers the surface a
-// user actually works in. A clinician who also carries an admin role lands on
-// /clinic, not the Practice Onboarding wizard.
-export default async function PostSignInPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
+// This used to be a Server Component that called auth() and redirect()ed inline.
+// That bounced freshly-authenticated users back to /sign-in on the first attempt
+// (Clerk dev-instance handshake hadn't synced the __session cookie yet — see
+// post-sign-in-resolver.tsx for the full write-up). We now defer the decision to
+// a client resolver that waits for Clerk to load, then resolves the role home via
+// the resolveHomePath server action (homeForRoles → landingRole, so a clinician
+// who also carries an admin role lands on /clinic, not the onboarding wizard).
+const PostSignInResolver = nextDynamic(
+  () => import("./post-sign-in-resolver"),
+  { ssr: false },
+);
 
-  redirect(homeForRoles(user.roles));
+export default function PostSignInPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-bg px-6">
+      <PostSignInResolver />
+    </div>
+  );
 }

@@ -12,16 +12,17 @@
 // etc.) is selected by the registry and not visible to callers.
 //
 // Status: v1 ships the contract + a passthrough implementation that uses
-// the existing OpenRouter client. PracticeAiConfig + LlmUsage Prisma
-// models land separately (EMR-751 + a follow-up). Until they exist the
-// broker logs to console and stores no usage row; the call site interface
-// is stable so wiring those in is a one-file change.
+// the existing OpenRouter client. PracticeAiConfig (model selection) still
+// lands separately (EMR-751). The LlmUsage ledger (EMR-724) IS now wired:
+// every call persists a usage row via `persistLlmUsage`, in addition to the
+// structured log, so per-org token accounting + anomaly detection have a
+// durable feed.
 
 import "server-only";
 
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
-import { persistLlmUsage } from "../usage-repository";
+import { persistLlmUsage } from "@/lib/db/llm-usage";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -149,8 +150,10 @@ async function checkThrottle(
 }
 
 /**
- * Append-only usage row writer — persists to the LlmUsage ledger (EMR-755).
- * Exported for testing — call sites should never invoke directly.
+ * Append-only usage row writer (EMR-724). Emits a structured log AND persists
+ * a durable LlmUsage row. Exported for testing — call sites should never
+ * invoke directly. `persistLlmUsage` swallows its own write errors so a
+ * metering miss never breaks the brokered call.
  */
 export async function recordLlmUsage(row: {
   practiceId: string;
@@ -163,8 +166,7 @@ export async function recordLlmUsage(row: {
   ok: boolean;
   errorCode?: string;
 }): Promise<void> {
-  // persistLlmUsage also emits the structured `llm.usage` log and is
-  // best-effort (never throws into the caller).
+  logger.info({ event: "llm.usage", ...row });
   await persistLlmUsage({
     organizationId: row.practiceId,
     agentBucket: row.agentBucket,

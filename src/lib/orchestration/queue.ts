@@ -1,9 +1,17 @@
 import { prisma } from "@/lib/db/prisma";
 import { AgentJobStatus, Prisma, type PrismaClient } from "@prisma/client";
+import type { ResolvedDecision } from "@/lib/db/approval-defaults-logic";
 
 // Minimal surface so the org/status guards can be unit tested without a real
 // database (the test injects a fake `agentJob.updateMany`).
 type ApprovalDb = { agentJob: Pick<PrismaClient["agentJob"], "updateMany"> };
+
+// EMR-960: the auto-decision path needs `update` (single job) and `auditLog`,
+// so it uses a wider injectable surface than the human approve/reject path.
+type AutoDecisionDb = {
+  agentJob: Pick<PrismaClient["agentJob"], "update">;
+  auditLog: Pick<PrismaClient["auditLog"], "create">;
+};
 
 /**
  * Claim the next runnable job using Postgres row locking. Returns null if
@@ -135,6 +143,92 @@ export async function reapStuckJobs(
   `;
 
   return { reclaimed, failed };
+}
+
+/**
+ * Cancel a job terminally without marking it a failure (EMR-974).
+ *
+ * Used when the runner declines to execute a claimed job for a non-error
+ * reason — e.g. its agent has been switched off for the org via the Agent
+ * Fleet toggle. `cancelled` is terminal and never retried, unlike `failed`,
+ * which can re-enter the queue with backoff.
+ */
+export async function markCancelled(
+  jobId: string,
+  reason: string,
+  logs: unknown[] = [],
+): Promise<void> {
+  await prisma.agentJob.update({
+    where: { id: jobId },
+    data: {
+      status: AgentJobStatus.cancelled,
+      lastError: reason,
+      logs: logs as any,
+      completedAt: new Date(),
+    },
+  });
+}
+
+/**
+ * Apply an owner-configured default approve/reject decision to a job that
+ * would otherwise have entered the Needs-Approval queue (EMR-960).
+ *
+ * `approve` finalizes the job as `succeeded`; `reject` finalizes it as
+ * `cancelled` with a reason. Either way we write a per-job AuditLog entry so
+ * the auto-decision is attributable — the contract documented on
+ * `resolveDefaultDecisionForOrg`. The audit write is best-effort (mirrors
+ * `createAuditLog`) so an audit hiccup never strands the job mid-transition.
+ */
+export async function applyDefaultDecision(
+  job: {
+    id: string;
+    organizationId: string | null;
+    agentName: string;
+    workflowName: string;
+  },
+  resolved: ResolvedDecision,
+  output: unknown,
+  logs: unknown[],
+  db: AutoDecisionDb = prisma,
+): Promise<void> {
+  const approve = resolved.decision === "approve";
+
+  await db.agentJob.update({
+    where: { id: job.id },
+    data: {
+      status: approve ? AgentJobStatus.succeeded : AgentJobStatus.cancelled,
+      output: output as any,
+      logs: logs as any,
+      completedAt: new Date(),
+      approvedAt: new Date(),
+      lastError: approve
+        ? null
+        : `Auto-rejected by default rule (${resolved.rule.scopeType}:${resolved.rule.scopeKey})`,
+    },
+  });
+
+  try {
+    await db.auditLog.create({
+      data: {
+        organizationId: job.organizationId,
+        actorAgent: "system:approval-defaults",
+        action: approve ? "agent_job.auto_approved" : "agent_job.auto_rejected",
+        subjectType: "agent_job",
+        subjectId: job.id,
+        metadata: {
+          agentName: job.agentName,
+          workflowName: job.workflowName,
+          rule: {
+            scopeType: resolved.rule.scopeType,
+            scopeKey: resolved.rule.scopeKey,
+            decision: resolved.rule.decision,
+          },
+        } as Prisma.InputJsonValue,
+      },
+    });
+  } catch {
+    // Best-effort audit; the job state transition above is authoritative.
+  }
 }
 
 /**

@@ -365,6 +365,7 @@ export const schedulingAgent: Agent<z.infer<typeof input>, z.infer<typeof output
           patientId,
           title: rule.title,
           description,
+          kind: "recall",
           assigneeRole: "operator",
           dueAt,
         },

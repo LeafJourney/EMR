@@ -11,20 +11,24 @@ const MIN = 60_000;
 const SEC = 1_000;
 
 describe("idle-timeouts", () => {
-  it("clinician/operator/practice_owner get 15 minutes", () => {
-    expect(IDLE_LIMITS_MS.clinician).toBe(15 * MIN);
-    expect(IDLE_LIMITS_MS.operator).toBe(15 * MIN);
-    expect(IDLE_LIMITS_MS.practice_owner).toBe(15 * MIN);
-    expect(IDLE_LIMITS_MS.practice_admin).toBe(15 * MIN);
+  it("clinician/operator/practice_owner get 20 minutes", () => {
+    expect(IDLE_LIMITS_MS.clinician).toBe(20 * MIN);
+    expect(IDLE_LIMITS_MS.operator).toBe(20 * MIN);
+    expect(IDLE_LIMITS_MS.practice_owner).toBe(20 * MIN);
+    expect(IDLE_LIMITS_MS.practice_admin).toBe(20 * MIN);
   });
 
   it("patient gets 30 minutes", () => {
     expect(IDLE_LIMITS_MS.patient).toBe(30 * MIN);
   });
 
-  it("super_admin and implementation_admin get 10 minutes", () => {
-    expect(IDLE_LIMITS_MS.super_admin).toBe(10 * MIN);
-    expect(IDLE_LIMITS_MS.implementation_admin).toBe(10 * MIN);
+  it("super_admin and implementation_admin get 20 minutes", () => {
+    expect(IDLE_LIMITS_MS.super_admin).toBe(20 * MIN);
+    expect(IDLE_LIMITS_MS.implementation_admin).toBe(20 * MIN);
+  });
+
+  it("kiosk keeps its tight 3-minute budget", () => {
+    expect(IDLE_LIMITS_MS.kiosk).toBe(3 * MIN);
   });
 
   it("absolute cap is 12 hours", () => {
@@ -38,18 +42,20 @@ describe("idle-timeouts", () => {
   describe("idleLimitForRoles", () => {
     it("returns the role's limit for a single-role user", () => {
       expect(idleLimitForRoles(["patient"])).toBe(30 * MIN);
-      expect(idleLimitForRoles(["clinician"])).toBe(15 * MIN);
-      expect(idleLimitForRoles(["super_admin"])).toBe(10 * MIN);
+      expect(idleLimitForRoles(["clinician"])).toBe(20 * MIN);
+      expect(idleLimitForRoles(["super_admin"])).toBe(20 * MIN);
     });
 
     it("picks the SHORTEST budget when a user has multiple roles", () => {
-      // A super_admin who is also a patient should get the 10-min cap,
-      // not the 30-min patient one.
-      expect(idleLimitForRoles(["patient", "super_admin"])).toBe(10 * MIN);
-      expect(idleLimitForRoles(["clinician", "practice_owner"])).toBe(15 * MIN);
+      // A super_admin who is also a patient should get the tighter 20-min
+      // staff cap, not the 30-min patient one.
+      expect(idleLimitForRoles(["patient", "super_admin"])).toBe(20 * MIN);
+      expect(idleLimitForRoles(["clinician", "practice_owner"])).toBe(20 * MIN);
       expect(
         idleLimitForRoles(["patient", "clinician", "implementation_admin"]),
-      ).toBe(10 * MIN);
+      ).toBe(20 * MIN);
+      // The kiosk's 3-min budget still wins against any staff role.
+      expect(idleLimitForRoles(["kiosk", "clinician"])).toBe(3 * MIN);
     });
 
     it("falls back to patient when roles are empty", () => {
@@ -287,11 +293,12 @@ describe("idle-timeouts", () => {
       // can't silently break the warning behavior for one role.
       const cases: Array<[keyof typeof IDLE_LIMITS_MS, number]> = [
         ["patient", 30 * MIN],
-        ["clinician", 15 * MIN],
-        ["operator", 15 * MIN],
-        ["practice_owner", 15 * MIN],
-        ["super_admin", 10 * MIN],
-        ["implementation_admin", 10 * MIN],
+        ["clinician", 20 * MIN],
+        ["operator", 20 * MIN],
+        ["practice_owner", 20 * MIN],
+        ["super_admin", 20 * MIN],
+        ["implementation_admin", 20 * MIN],
+        ["kiosk", 3 * MIN],
       ];
       for (const [role, limit] of cases) {
         const idleLimitMs = IDLE_LIMITS_MS[role];

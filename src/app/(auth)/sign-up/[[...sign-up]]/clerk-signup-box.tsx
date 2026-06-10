@@ -5,34 +5,19 @@
 // user actually navigates here — never during boot of the (auth) group.
 
 import { SignUp } from "@clerk/nextjs";
+import { clerkAuthAppearance } from "@/lib/auth/clerk-appearance";
 
 export default function ClerkSignUpBox() {
   return (
     <SignUp
       signInUrl="/sign-in"
+      // New accounts are patients and belong in /portal. We intentionally do
+      // NOT send sign-up through /post-sign-in: the Prisma user is created by
+      // the Clerk webhook, which can lag the redirect, so role resolution may
+      // not be ready yet. /portal is the correct landing and avoids that race.
       fallbackRedirectUrl="/portal"
       forceRedirectUrl="/portal"
-      appearance={{
-        variables: {
-          colorPrimary: "#2E5A44",
-          colorText: "#152119",
-          colorTextSecondary: "#5E6C64",
-          colorBackground: "white",
-          colorInputBackground: "white",
-          colorInputText: "#152119",
-        },
-        elements: {
-          rootBox: "w-full",
-          cardBox: "shadow-none border-none",
-          card: "shadow-none border-none",
-          headerTitle: "hidden",
-          headerSubtitle: "hidden",
-        },
-        layout: {
-          socialButtonsPlacement: "top",
-          socialButtonsVariant: "blockButton",
-        },
-      }}
+      appearance={clerkAuthAppearance}
     />
   );
 }

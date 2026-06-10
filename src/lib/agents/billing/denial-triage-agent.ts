@@ -367,6 +367,7 @@ export const denialTriageAgent: Agent<z.infer<typeof input>, z.infer<typeof outp
         title: `${titlePrefix}${claim.patient.firstName} ${claim.patient.lastName}`,
         description: `${triage.description}\n\nSuggested action: ${NEXT_ACTION_LABEL[triage.suggestedAction]}\n\nClaim: ${claim.claimNumber} — ${claim.payerName ?? "Unknown payer"}\n\nPayer message: "${claim.denialReason ?? "no reason given"}"\n\n[Created by denialTriage agent${cannabisPattern ? ` — cannabis pattern: ${cannabisPattern.id}` : ""}]`,
         status: "open",
+        kind: "billing_followup",
         assigneeRole: "operator",
         dueAt: new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000),
       },

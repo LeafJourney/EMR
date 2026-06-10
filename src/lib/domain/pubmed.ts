@@ -22,18 +22,31 @@ export interface PubMedSearchResult {
 
 const EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
+export interface SearchPubMedOptions {
+  /**
+   * When true (default), appends a cannabis/cannabinoid AND clause so results
+   * stay within the therapeutic-cannabis literature — useful for ChatCB.
+   * Set to false for general biomedical search (e.g. the research-agent
+   * supplemental lookup which must work for non-cannabis practices too).
+   */
+  scopeToCannabis?: boolean;
+}
+
 /**
- * Search PubMed for cannabis-related articles.
+ * Search PubMed for articles matching `query`.
  * Uses NCBI E-utilities (free, no API key needed for <3 req/sec).
  */
 export async function searchPubMed(
   query: string,
-  maxResults: number = 10
+  maxResults: number = 10,
+  options: SearchPubMedOptions = {},
 ): Promise<PubMedSearchResult> {
+  const { scopeToCannabis = true } = options;
   const start = Date.now();
 
-  // Always scope to cannabis/cannabinoid research
-  const scopedQuery = `(${query}) AND (cannabis OR cannabinoid OR THC OR CBD OR marijuana OR hemp)`;
+  const scopedQuery = scopeToCannabis
+    ? `(${query}) AND (cannabis OR cannabinoid OR THC OR CBD OR marijuana OR hemp)`
+    : query;
 
   // Step 1: ESearch — get PMIDs
   const searchUrl = `${EUTILS_BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(scopedQuery)}&retmax=${maxResults}&sort=relevance&retmode=json`;

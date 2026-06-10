@@ -136,10 +136,10 @@ export class StubModelClient implements ModelClient {
  * Configure with OPENROUTER_FREE_MODEL to override.
  */
 const FREE_MODEL_CANDIDATES = [
-  "google/gemma-2-9b-it:free",
-  "qwen/qwen-2-7b-instruct:free",
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "mistralai/mistral-7b-instruct:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "openai/gpt-oss-20b:free",
+  "z-ai/glm-4.5-air:free",
 ];
 
 /**

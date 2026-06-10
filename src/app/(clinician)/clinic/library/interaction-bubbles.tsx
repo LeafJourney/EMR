@@ -30,28 +30,81 @@ const RING: Record<Severity, string> = {
   green: "ring-2 ring-emerald-400/50 ring-offset-1",
 };
 
+function parsePubMedLink(ref: string): { pmid: string } | null {
+  const m = ref.match(/PMID:\s*(\d+)/i);
+  return m ? { pmid: m[1] } : null;
+}
+
 export function InteractionBubbles({
   interactions,
 }: {
   interactions: DrugInteraction[];
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const toggle = (key: string) =>
     setSelected((prev) => (prev === key ? null : key));
 
+  const q = query.toLowerCase().trim();
+  const filtered = q
+    ? interactions.filter(
+        (i) =>
+          i.drug.toLowerCase().includes(q) ||
+          i.cannabinoid.toLowerCase().includes(q),
+      )
+    : interactions;
+
+  const matchCount = q ? filtered.length : null;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Search filter */}
+      <div className="relative">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSelected(null);
+          }}
+          placeholder="Filter by drug or cannabinoid…"
+          className="w-full text-sm rounded-lg border border-border bg-surface-muted px-3 py-2 pr-8 text-text placeholder:text-text-subtle focus:outline-none focus:ring-2 focus:ring-accent/40 transition"
+          aria-label="Filter interactions"
+        />
+        {q && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSelected(null);
+            }}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-subtle hover:text-text transition-colors text-xs"
+            aria-label="Clear filter"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {matchCount !== null && (
+        <p className="text-xs text-text-subtle -mt-1">
+          {matchCount === 0
+            ? "No matches"
+            : `${matchCount} interaction${matchCount === 1 ? "" : "s"} matching "${query}"`}
+        </p>
+      )}
+
       {GROUPS.map(({ severity, heading }) => {
-        const group = interactions.filter((i) => i.severity === severity);
+        const group = filtered.filter((i) => i.severity === severity);
         if (group.length === 0) return null;
         const detail = group.find(
           (i) => `${i.drug}|${i.cannabinoid}` === selected,
         );
 
         return (
-          <div key={severity}>
-            <p className="text-xs text-text-subtle uppercase tracking-wider mb-2">
+          <div key={severity} className="space-y-2">
+            <p className="text-xs text-text-subtle uppercase tracking-wider">
               {heading} &middot; {group.length}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -90,7 +143,7 @@ export function InteractionBubbles({
             </div>
 
             {detail && (
-              <div className="mt-3 rounded-lg border border-border bg-surface-muted p-4 text-sm">
+              <div className="mt-1 rounded-lg border border-border bg-surface-muted p-4 text-sm">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <p className="font-medium text-text capitalize">{detail.drug}</p>
@@ -115,7 +168,52 @@ export function InteractionBubbles({
                       {detail.recommendation}
                     </p>
                   </div>
+                  {detail.references.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-text-subtle uppercase tracking-wider mb-1">
+                        References
+                      </p>
+                      <ul className="space-y-1">
+                        {detail.references.map((ref) => {
+                          const pubmed = parsePubMedLink(ref);
+                          return (
+                            <li key={ref} className="text-xs text-text-muted">
+                              {pubmed ? (
+                                <a
+                                  href={`https://pubmed.ncbi.nlm.nih.gov/${pubmed.pmid}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-accent hover:underline"
+                                >
+                                  {ref}
+                                </a>
+                              ) : (
+                                ref
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
+                {detail.references && detail.references.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border/40">
+                    <p className="text-[10px] text-text-subtle uppercase tracking-wider mb-1">
+                      References
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detail.references.map((ref) => (
+                        <span
+                          key={ref}
+                          className="inline-block font-mono text-[10px] text-text-muted bg-surface-muted px-2 py-0.5 rounded"
+                        >
+                          {ref}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelected(null)}

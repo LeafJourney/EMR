@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { UniversalFeedbackFab } from "@/components/feedback/UniversalFeedbackFab";
 import { ClerkProvider } from "@clerk/nextjs";
+import { clerkBaseAppearance } from "@/lib/auth/clerk-appearance";
 import { CookieConsent } from "@/components/layout/CookieConsent";
 import { ToastProvider } from "@/components/ui/toast";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
@@ -105,7 +106,9 @@ export default function RootLayout({
   );
 
   if (hasClerk) {
-    return <ClerkProvider>{content}</ClerkProvider>;
+    return (
+      <ClerkProvider appearance={clerkBaseAppearance}>{content}</ClerkProvider>
+    );
   }
 
   return content;

@@ -13,22 +13,49 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import { Icd10PickerButton } from "./icd10-picker-button";
+import {
+  StateLegalityPopupButton,
+  QualifyingConditionsPopupButton,
+} from "./finding-popups";
+import { findStateLegality } from "./us-cannabis-legality";
 
 // EMR-959 — the recommendation string that becomes a clickable ICD-10 picker.
 const ICD10_RECOMMENDATION = "Document qualifying condition with ICD-10 coding";
+// EMR-949 — recommendation strings the UI turns into actionable links.
+const CARD_APPLICATION_RECOMMENDATION = "Initiate medical cannabis card application";
+const CERTIFICATION_RECOMMENDATION =
+  "Schedule certification appointment with cannabis-certified provider";
 
 // ---------------------------------------------------------------------------
 // Eligibility rules engine (deterministic — no API needed)
 // ---------------------------------------------------------------------------
 
+// EMR-942 — a finding may carry a "kind" so the UI can attach the right leaf
+// popup (state-legality grid / qualifying-conditions list) next to it.
+type FindingKind = "state-legality" | "qualifying-condition" | "generic";
+interface Finding {
+  text: string;
+  kind: FindingKind;
+}
+
+// EMR-933 — insurance eligibility status drives the PRIMARY result bubble.
+//   active = green (coverage applies) · check = yellow (manual verify / errors)
+//   not_active = red (no applicable coverage)
+type InsuranceStatus = "active" | "check" | "not_active";
+
 interface EligibilityResult {
   eligible: boolean;
   category: "qualified" | "may_qualify" | "not_eligible";
-  reasons: string[];
+  reasons: Finding[];
   recommendations: string[];
   insuranceCoverage: string;
   stateProgramEligible: boolean;
   medicareEligible: boolean;
+  // EMR-933 — derived insurance eligibility (drives the primary bubble).
+  insuranceStatus: InsuranceStatus;
+  insuranceStatusLabel: string;
+  // EMR-949 — the resolved state (full name) so links target the right state.
+  state: string;
 }
 
 function checkEligibility(data: {
@@ -62,39 +89,77 @@ function checkEligibility(data: {
   const isLegalState = legalMedStates.includes(state);
   const dxLower = data.diagnosis.toLowerCase();
   const hasQualifyingDx = qualifyingDx.some((dx) => dxLower.includes(dx));
-  const isMedicare = data.insurance.toLowerCase().includes("medicare") || age >= 65;
+  const insLower = data.insurance.trim().toLowerCase();
+  const isMedicare = insLower.includes("medicare") || age >= 65;
+  // EMR-949 — prefer the canonical state name from the legality dataset so any
+  // links target the right state regardless of how the operator typed it.
+  const resolvedState =
+    findStateLegality(data.state)?.name ?? data.state;
 
-  const reasons: string[] = [];
+  const reasons: Finding[] = [];
   const recommendations: string[] = [];
 
   if (isLegalState) {
-    reasons.push(`${data.state} has a legal medical cannabis program`);
+    reasons.push({
+      text: `${resolvedState} has a legal medical cannabis program`,
+      kind: "state-legality",
+    });
   } else {
-    reasons.push(`${data.state} may not have a medical cannabis program or has limited access`);
+    reasons.push({
+      text: `${resolvedState} may not have a medical cannabis program or has limited access`,
+      kind: "state-legality",
+    });
   }
 
   if (hasQualifyingDx) {
-    reasons.push(`"${data.diagnosis}" is a qualifying condition in most medical cannabis states`);
+    reasons.push({
+      text: `"${data.diagnosis}" is a qualifying condition in most medical cannabis states`,
+      kind: "qualifying-condition",
+    });
   }
 
   if (isMedicare && age >= 65) {
-    reasons.push("Patient may qualify for Medicare CBD reimbursement under the upcoming CMS program (up to $500 annually)");
+    reasons.push({
+      text: "Patient may qualify for Medicare CBD reimbursement under the upcoming CMS program (up to $500 annually)",
+      kind: "generic",
+    });
     recommendations.push("Explore Medicare CBD reimbursement framework — document all CBD prescriptions with clinical justification");
   }
 
-  // Insurance coverage
+  // EMR-933 — derive INSURANCE eligibility deterministically from the inputs.
+  // This is distinct from the cannabis-card qualification: it reflects whether
+  // an applicable insurance pathway exists for this patient.
   let insuranceCoverage = "Not typically covered";
-  if (data.insurance.toLowerCase().includes("va") || data.insurance.toLowerCase().includes("veteran")) {
+  let insuranceStatus: InsuranceStatus = "not_active";
+  let insuranceStatusLabel = "No active coverage";
+  const isVa = insLower.includes("va") || insLower.includes("veteran");
+
+  if (!insLower) {
+    // No insurance entered → needs manual verification (yellow).
+    insuranceCoverage = "No insurance entered — verify coverage manually";
+    insuranceStatus = "check";
+    insuranceStatusLabel = "Verify coverage";
+  } else if (isVa) {
     insuranceCoverage = "VA acknowledges medical cannabis — coverage varies by state";
+    insuranceStatus = "active";
+    insuranceStatusLabel = "VA pathway active";
     recommendations.push("Connect with VA cannabis program coordinator");
   } else if (isMedicare) {
     insuranceCoverage = "Medicare: CBD products may be reimbursable under new CMS program (Schedule 3)";
+    insuranceStatus = "active";
+    insuranceStatusLabel = "Medicare CBD pathway active";
+  } else {
+    // Commercial / other plan named but no cannabis pathway recognized →
+    // surface as "verify" rather than a hard "not active".
+    insuranceCoverage = "Not typically covered — verify any cannabis/CBD benefit with the plan";
+    insuranceStatus = "check";
+    insuranceStatusLabel = "Verify coverage";
   }
 
   if (isLegalState && hasQualifyingDx) {
-    recommendations.push("Initiate medical cannabis card application");
-    recommendations.push("Document qualifying condition with ICD-10 coding");
-    recommendations.push("Schedule certification appointment with cannabis-certified provider");
+    recommendations.push(CARD_APPLICATION_RECOMMENDATION);
+    recommendations.push(ICD10_RECOMMENDATION);
+    recommendations.push(CERTIFICATION_RECOMMENDATION);
   }
 
   let category: EligibilityResult["category"];
@@ -114,7 +179,87 @@ function checkEligibility(data: {
     insuranceCoverage,
     stateProgramEligible: isLegalState && hasQualifyingDx,
     medicareEligible: isMedicare,
+    insuranceStatus,
+    insuranceStatusLabel,
+    state: resolvedState,
   };
+}
+
+// ---------------------------------------------------------------------------
+// EMR-949 — render a "Recommended Next Steps" item, turning known steps into
+// actionable links:
+//   • ICD-10 coding         → opens the ICD-10 picker (existing behavior)
+//   • card application      → links to the selected STATE's official MMJ
+//                             application page (from us-cannabis-legality)
+//   • certification appt    → HELD/disabled link to the Schedule tab, with a
+//                             "coming soon — pending clinician directory" note
+// ---------------------------------------------------------------------------
+
+function RecommendationItem({
+  text,
+  state,
+  diagnosis,
+}: {
+  text: string;
+  state: string;
+  diagnosis: string;
+}) {
+  if (text === ICD10_RECOMMENDATION) {
+    return <Icd10PickerButton seedQuery={diagnosis} />;
+  }
+
+  if (text === CARD_APPLICATION_RECOMMENDATION) {
+    const legality = findStateLegality(state);
+    const url = legality?.applicationUrl ?? null;
+    if (url) {
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-left underline decoration-accent/40 underline-offset-2 hover:decoration-accent text-text-muted hover:text-accent transition-colors"
+        >
+          {text}
+          {legality ? ` (${legality.name})` : ""}
+          <span aria-hidden="true" className="text-text-subtle/70">
+            ↗
+          </span>
+        </a>
+      );
+    }
+    // No application URL for the resolved state — show the step as plain text
+    // with a short note rather than a dead link.
+    return (
+      <span>
+        {text}
+        <span className="ml-1 text-[11px] text-text-subtle italic">
+          (no online application found for {state || "this state"})
+        </span>
+      </span>
+    );
+  }
+
+  if (text === CERTIFICATION_RECOMMENDATION) {
+    // HELD — disabled link to the Schedule tab until the clinician directory
+    // (cannabis-certified providers) ships.
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          role="link"
+          aria-disabled="true"
+          title="Coming soon — pending clinician directory"
+          className="text-text-subtle/70 line-through decoration-text-subtle/40 cursor-not-allowed"
+        >
+          {text}
+        </span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-text-subtle bg-surface-muted border border-border rounded px-1.5 py-0.5">
+          Coming soon — pending clinician directory
+        </span>
+      </span>
+    );
+  }
+
+  return <span>{text}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,34 +385,58 @@ export default function EligibilityPage() {
         <>
           <EditorialRule className="mb-8" />
 
+          {/* EMR-933 — the primary bubble now reflects INSURANCE eligibility
+              (green=active / yellow=verify-or-error / red=not active). The
+              cannabis-card qualification is shown as a secondary chip below. */}
           <Card
             tone="raised"
             className={`mb-6 border-l-4 ${
-              result.category === "qualified"
+              result.insuranceStatus === "active"
                 ? "border-l-[color:var(--success)]"
-                : result.category === "may_qualify"
+                : result.insuranceStatus === "check"
                   ? "border-l-[color:var(--highlight)]"
                   : "border-l-[color:var(--danger)]"
             }`}
           >
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">Eligibility Result</CardTitle>
-                <Badge
-                  tone={
-                    result.category === "qualified"
-                      ? "success"
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <CardTitle className="text-xl">Eligibility Result</CardTitle>
+                  <p className="text-xs text-text-subtle mt-0.5">
+                    Insurance eligibility status
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Primary: insurance eligibility */}
+                  <Badge
+                    tone={
+                      result.insuranceStatus === "active"
+                        ? "success"
+                        : result.insuranceStatus === "check"
+                          ? "warning"
+                          : "danger"
+                    }
+                  >
+                    {result.insuranceStatusLabel}
+                  </Badge>
+                  {/* Secondary: cannabis-card qualification */}
+                  <Badge
+                    tone={
+                      result.category === "qualified"
+                        ? "success"
+                        : result.category === "may_qualify"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
+                    Card:{" "}
+                    {result.category === "qualified"
+                      ? "Likely Qualified"
                       : result.category === "may_qualify"
-                        ? "warning"
-                        : "danger"
-                  }
-                >
-                  {result.category === "qualified"
-                    ? "Likely Qualified"
-                    : result.category === "may_qualify"
-                      ? "May Qualify"
-                      : "Not Eligible"}
-                </Badge>
+                        ? "May Qualify"
+                        : "Not Eligible"}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -286,7 +455,14 @@ export default function EligibilityPage() {
                         size={12}
                         className="text-accent/60 mt-1 shrink-0"
                       />
-                      {r}
+                      <span className="flex-1">{r.text}</span>
+                      {/* EMR-942 — leaf popups beside the relevant finding */}
+                      {r.kind === "state-legality" && (
+                        <StateLegalityPopupButton />
+                      )}
+                      {r.kind === "qualifying-condition" && (
+                        <QualifyingConditionsPopupButton />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -323,11 +499,11 @@ export default function EligibilityPage() {
                         className="text-sm text-text-muted flex items-start gap-2"
                       >
                         <span className="text-accent shrink-0">{i + 1}.</span>
-                        {r === ICD10_RECOMMENDATION ? (
-                          <Icd10PickerButton seedQuery={formData.diagnosis} />
-                        ) : (
-                          r
-                        )}
+                        <RecommendationItem
+                          text={r}
+                          state={result.state}
+                          diagnosis={formData.diagnosis}
+                        />
                       </li>
                     ))}
                   </ul>

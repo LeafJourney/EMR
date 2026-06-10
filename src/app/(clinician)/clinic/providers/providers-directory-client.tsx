@@ -23,6 +23,7 @@ import {
 
 export interface ProviderRow extends SearchableProvider {
   id: string;
+  userId: string;
   bio: string | null;
 }
 
@@ -41,6 +42,17 @@ function parseSlashCommand(raw: string): { mode: SlashMode; term: string } {
   if (body.startsWith("hospital ")) return { mode: "hospital", term: body.slice(9) };
   return { mode: null, term: body };
 }
+
+// Category labels mirrored here so the provider-directory component can build
+// autocomplete suggestions without importing from ancillary-services-directory.
+const ANCILLARY_CATEGORY_LABELS: Record<string, string> = {
+  lab: "Lab",
+  imaging: "Imaging",
+  pharmacy: "Pharmacy",
+  dispensary: "Dispensary",
+  rehab: "Rehab / PT",
+};
+const ANCILLARY_CATEGORY_KEYS = Object.keys(ANCILLARY_CATEGORY_LABELS);
 
 function applyFilter(providers: ProviderRow[], search: string): ProviderRow[] {
   const { mode, term } = parseSlashCommand(search);
@@ -65,9 +77,23 @@ function getSuggestions(raw: string, providers: ProviderRow[]): string[] {
   if (!raw.startsWith("/")) return [];
   const body = raw.slice(1);
 
-  if (!body || (!body.startsWith("specialty") && !body.startsWith("hospital"))) {
+  if (
+    !body ||
+    (!body.startsWith("specialty") &&
+      !body.startsWith("hospital") &&
+      !body.startsWith("ancillary"))
+  ) {
     const top = ["/specialty", "/hospital", "/ancillary"];
     return body ? top.filter((s) => s.slice(1).startsWith(body)) : top;
+  }
+  if (body.startsWith("ancillary")) {
+    const term = body.slice("ancillary".length).trimStart().toLowerCase();
+    return ANCILLARY_CATEGORY_KEYS.filter(
+      (c) =>
+        !term ||
+        c.startsWith(term) ||
+        ANCILLARY_CATEGORY_LABELS[c].toLowerCase().startsWith(term),
+    ).map((c) => `/ancillary ${c}`);
   }
   if (body.startsWith("specialty ")) {
     const term = body.slice(10).toLowerCase();
@@ -119,7 +145,13 @@ export function ProvidersDirectoryClient({ providers }: Props) {
   const { mode } = parseSlashCommand(search);
 
   function applySuggestion(s: string) {
-    if (s === "/ancillary") {
+    if (s === "/ancillary" || s.startsWith("/ancillary ")) {
+      const cat = s.startsWith("/ancillary ") ? s.slice("/ancillary ".length).trim() : null;
+      if (cat) {
+        document.dispatchEvent(
+          new CustomEvent("ancillary:filter", { detail: { category: cat } }),
+        );
+      }
       document.getElementById("ancillary")?.scrollIntoView({ behavior: "smooth" });
       setSearch("");
       setShowDropdown(false);
@@ -283,7 +315,7 @@ export function ProvidersDirectoryClient({ providers }: Props) {
 
                 <div className="mt-4 pt-3 border-t border-border/60">
                   <a
-                    href="/clinic/providers/messages"
+                    href={`/clinic/providers/messages?userId=${provider.userId}`}
                     className="flex items-center justify-center gap-2 w-full text-sm font-medium text-accent py-2 rounded-md border border-accent/30 bg-accent/5 hover:bg-accent/10 transition-colors"
                   >
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-accent">

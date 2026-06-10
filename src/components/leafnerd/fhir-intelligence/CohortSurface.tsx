@@ -110,9 +110,10 @@ export function CohortSurface({
           <div className="eyebrow">Intelligence</div>
           <h1 className="page-title">Cohort Simulator</h1>
           <p className="page-lede">
-            Model treatment efficacy across synthetic patient profiles. Pick a
-            cohort segment and dosing regimen, then run a Monte Carlo projection
-            of efficacy, adverse-event probability, and optimal dosage.
+            Model treatment efficacy across synthetic patient profiles. Tap a
+            preset cohort (e.g. high-risk diabetics), pick a dosing regimen, then
+            run a Monte Carlo projection. Hover the distribution to reveal the
+            shaded confidence band, adverse-event probability, and optimal dosage.
           </p>
         </div>
       </div>

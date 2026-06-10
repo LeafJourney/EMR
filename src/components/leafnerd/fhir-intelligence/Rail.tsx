@@ -1,7 +1,7 @@
 "use client";
 /* LEAFNERD — left navigation rail */
 import { useState, useEffect, useRef } from "react";
-import { SignOutButton } from "@clerk/nextjs";
+import { useClerk } from "@clerk/nextjs";
 import { Icon } from "./primitives";
 import type { NavGroup } from "@/lib/leafnerd/types";
 
@@ -16,6 +16,30 @@ export function getInitials(userName?: string): string {
           .toUpperCase()
           .slice(0, 2)
     : "DR";
+}
+
+function ClerkSignOutButton() {
+  const clerk = useClerk();
+
+  const handleSignOut = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!clerk.session) {
+      window.location.href = "/sign-in";
+      return;
+    }
+    try {
+      await clerk.signOut({ redirectUrl: "/sign-in" });
+    } catch {
+      window.location.href = "/sign-in";
+    }
+  };
+
+  return (
+    <button className="dropdown-item logout" role="menuitem" onClick={handleSignOut}>
+      <Icon name="logout" size={15} />
+      <span>Sign out</span>
+    </button>
+  );
 }
 
 export function Rail({
@@ -95,12 +119,7 @@ export function Rail({
             </div>
             <div className="dropdown-divider" />
             {typeof window !== "undefined" && !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
-              <SignOutButton redirectUrl="/sign-in">
-                <button className="dropdown-item logout" role="menuitem">
-                  <Icon name="logout" size={15} />
-                  <span>Sign out</span>
-                </button>
-              </SignOutButton>
+              <ClerkSignOutButton />
             ) : (
               <a 
                 href={process.env.NODE_ENV !== "production" ? "/api/dev/logout?redirect=/sign-in" : "/sign-in"} 

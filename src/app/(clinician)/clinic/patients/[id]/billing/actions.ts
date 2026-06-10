@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolvePaymentGateway } from "@/lib/payments";
+import { createPlan } from "@/lib/billing/payment-plans";
 import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
@@ -33,7 +34,19 @@ export async function collectPayment(
 ): Promise<CollectResult> {
   const user = await requireUser();
 
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner" || r === "operator")) {
+  // Front desk and billers collect money at the desk (Back-Office Audit §7),
+  // alongside operators, owners, and clinicians.
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "back_office" ||
+        r === "operator" ||
+        r === "practice_owner" ||
+        r === "practice_admin" ||
+        r === "clinician",
+    )
+  ) {
     return { ok: false, error: "Unauthorized" };
   }
 
@@ -311,6 +324,115 @@ export async function collectCopay(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Copay collection failed",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Set up a payment plan (EMR-909)
+// Wraps the payment-plan engine (createPlan) with auth + org scoping so the
+// "Enroll in payment plan" dialog can stand a balance up into installments.
+// The engine validates the $50–$500 / 3–24-installment limits and throws on
+// violation — we surface that message back to the dialog.
+// ---------------------------------------------------------------------------
+
+const planSchema = z.object({
+  patientId: z.string().min(1),
+  totalAmountCents: z.coerce.number().int().min(1).max(1_000_000), // max $10k plan
+  installmentAmountCents: z.coerce.number().int().min(1),
+  frequency: z.enum(["monthly", "biweekly", "weekly"]),
+  startDate: z.string().min(1),
+  autopayEnabled: z.coerce.boolean(),
+});
+
+export type PaymentPlanResult =
+  | { ok: true; planId: string; installmentCount: number }
+  | { ok: false; error: string };
+
+export async function createPaymentPlanAction(
+  _prev: PaymentPlanResult | null,
+  formData: FormData,
+): Promise<PaymentPlanResult> {
+  const user = await requireUser();
+
+  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner" || r === "operator")) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
+  const parsed = planSchema.safeParse({
+    patientId: formData.get("patientId"),
+    totalAmountCents: formData.get("totalAmountCents"),
+    installmentAmountCents: formData.get("installmentAmountCents"),
+    frequency: formData.get("frequency"),
+    startDate: formData.get("startDate"),
+    autopayEnabled: formData.get("autopayEnabled") === "on" || formData.get("autopayEnabled") === "true",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid payment plan data" };
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: {
+      id: parsed.data.patientId,
+      organizationId: user.organizationId!,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!patient) return { ok: false, error: "Patient not found." };
+
+  // One active plan per patient — the cron + balance card both assume a single
+  // active plan, so block a second rather than silently create a duplicate.
+  const existingActive = await prisma.paymentPlan.findFirst({
+    where: { patientId: parsed.data.patientId, status: "active" },
+    select: { id: true },
+  });
+  if (existingActive) {
+    return { ok: false, error: "This patient already has an active payment plan." };
+  }
+
+  const startDate = new Date(parsed.data.startDate);
+  if (Number.isNaN(startDate.getTime())) {
+    return { ok: false, error: "Invalid start date." };
+  }
+
+  try {
+    const { plan, installmentCount } = await createPlan({
+      organizationId: user.organizationId!,
+      patientId: parsed.data.patientId,
+      totalAmountCents: parsed.data.totalAmountCents,
+      installmentAmountCents: parsed.data.installmentAmountCents,
+      frequency: parsed.data.frequency,
+      startDate,
+      autopayEnabled: parsed.data.autopayEnabled,
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        organizationId: user.organizationId!,
+        actorUserId: user.id,
+        action: "patient.payment_plan.created",
+        subjectType: "Patient",
+        subjectId: parsed.data.patientId,
+        metadata: {
+          planId: plan.id,
+          totalAmountCents: parsed.data.totalAmountCents,
+          installmentAmountCents: parsed.data.installmentAmountCents,
+          frequency: parsed.data.frequency,
+          installmentCount,
+          autopay: parsed.data.autopayEnabled,
+        },
+      },
+    });
+
+    revalidatePath(`/clinic/patients/${parsed.data.patientId}`);
+    revalidatePath(`/clinic/patients/${parsed.data.patientId}/billing`);
+    return { ok: true, planId: plan.id, installmentCount };
+  } catch (err) {
+    // createPlan throws on out-of-range installment/count — surface it.
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to create payment plan",
     };
   }
 }

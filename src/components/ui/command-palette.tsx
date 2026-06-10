@@ -141,6 +141,8 @@ export const CLINICIAN_COMMANDS: CommandDef[] = [
   { id: "c-go-providers", label: "Providers directory", icon: "☷", href: "/clinic/providers", group: "Navigate", roles: ["clinician"], keywords: ["directory", "colleagues"] },
   { id: "c-go-research", label: "Research feed", icon: "✦", href: "/clinic/research", group: "Navigate", roles: ["clinician"], keywords: ["pubmed", "papers"] },
   { id: "c-go-library", label: "Education library", icon: "❦", href: "/clinic/library", group: "Navigate", roles: ["clinician"], keywords: ["leaflet", "library", "handouts"] },
+  { id: "c-go-followup-cadence", label: "Follow-up cadence", icon: "↻", href: "/clinic/scheduling/follow-up", group: "Navigate", roles: ["clinician"], keywords: ["cadence", "follow up", "interval", "recall", "EMR-208"] },
+  { id: "c-go-slot-recommender", label: "Smart slot recommender", icon: "◷", href: "/clinic/scheduling/recommend", group: "Navigate", roles: ["clinician"], keywords: ["slot", "recommend", "scheduling", "availability", "EMR-209"] },
   { id: "c-go-audit", label: "Open audit trail", icon: "❒", href: "/clinic/audit-trail", group: "Navigate", roles: ["clinician"], keywords: ["history", "log", "audit"] },
 
   // Legacy "Actions" — kept under a tighter set of keywords so they don't drown
@@ -166,11 +168,12 @@ export const OPERATOR_COMMANDS: CommandDef[] = [
   { id: "o-overview", label: "Overview", icon: "○", href: "/ops", group: "Navigate", roles: ["operator"], keywords: ["home", "dashboard"] },
   { id: "o-mission", label: "Mission Control", icon: "◉", href: "/ops/mission-control", group: "Navigate", roles: ["operator"], keywords: ["agents", "fleet"] },
   { id: "o-schedule", label: "Schedule", icon: "◷", href: "/ops/schedule", group: "Navigate", roles: ["operator"], keywords: ["calendar", "appts"] },
+  { id: "o-noshow-defense", label: "No-show defense", icon: "⚠", href: "/ops/no-show-defense", group: "Navigate", roles: ["operator"], keywords: ["no-show", "noshow", "risk", "reminders", "at-risk", "defense"] },
   { id: "o-patients", label: "Patients", icon: "☷", href: "/ops/patients", group: "Navigate", roles: ["operator"], keywords: ["roster"] },
   { id: "o-command", label: "Command Center (clinic)", icon: "◉", href: "/clinic/command", group: "Navigate", roles: ["operator"], keywords: ["bridge", "clinic"] },
 
   { id: "o-billing", label: "Billing hub", icon: "$", href: "/ops/billing", group: "Billing", roles: ["operator"], keywords: ["billing", "rcm"] },
-  { id: "o-scrub", label: "Scrub claims", icon: "$", href: "/ops/scrub", group: "Billing", roles: ["operator"], keywords: ["scrub", "claims", "clean"] },
+  { id: "o-scrub", label: "Scrub and Auths", icon: "$", href: "/ops/scrub", group: "Billing", roles: ["operator"], keywords: ["scrub", "claims", "clean", "auth", "authorization", "prior auth"] },
   { id: "o-denials", label: "Work denials", icon: "$", href: "/ops/denials", group: "Billing", roles: ["operator"], keywords: ["denials", "deny", "work"] },
   { id: "o-aging", label: "Aging buckets", icon: "$", href: "/ops/aging", group: "Billing", roles: ["operator"], keywords: ["aging", "ar", "receivable"] },
   { id: "o-billing-agents", label: "Billing agents", icon: "$", href: "/ops/billing-agents", group: "Billing", roles: ["operator"], keywords: ["agents", "fleet", "rcm"] },

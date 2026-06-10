@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Sparkles, ShieldCheck, FlaskConical, ChevronRight } from "lucide-react";
+import { Sparkles, ShieldCheck, FlaskConical, ChevronRight, BookOpen } from "lucide-react";
 import {
   PRODUCTS,
   getProductBySlug,
@@ -19,6 +19,8 @@ import { ReviewsWithPhotos } from "@/components/store/ReviewsWithPhotos";
 import { AddToCartPanel } from "@/components/store/AddToCartPanel";
 import { ShareButton } from "@/components/store/ShareButton";
 import { CompareDrawer } from "@/components/store/CompareDrawer";
+import { CompareToggleButton } from "@/components/store/compare-tray";
+import { SeedsEarnBadge } from "@/components/store/SeedsEarnBadge";
 import { DistributorBadge } from "@/components/store/DistributorBadge";
 import { StarRating } from "@/components/store/StarRating";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +135,11 @@ export default async function ProductDetailPage({ params }: { params: { slug: st
             />
           </div>
 
+          {/* Seed Trove loyalty (EMR-313 / EMR-314) */}
+          <div className="mt-3">
+            <SeedsEarnBadge dollars={product.price} />
+          </div>
+
           {/* Share + Compare (EMR-310) */}
           <div className="mt-3 flex flex-wrap gap-2">
             <ShareButton
@@ -143,6 +150,13 @@ export default async function ProductDetailPage({ params }: { params: { slug: st
               size="sm"
             />
             <CompareDrawer base={compareBase} similar={compareSimilar} triggerSize="sm" />
+            <CompareToggleButton item={compareBase} size="sm" />
+            <Link
+              href={`/shop/dosing-guide?format=${product.format}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong/70 bg-surface-raised px-3.5 text-sm font-medium text-text shadow-sm transition-all hover:bg-surface-muted hover:-translate-y-px"
+            >
+              <BookOpen width={15} height={15} /> Dosing guide
+            </Link>
           </div>
         </div>
       </div>

@@ -63,9 +63,9 @@
 #   3. Changing a route's auth kind requires a security-review label on
 #      the PR.
 
-generated_at: 2026-05-17
-generated_against: feature/wave-9-sprint@709f969
-total_routes: 106
+generated_at: 2026-06-04
+generated_against: sprint-ln-9
+total_routes: 240
 
 routes:
 
@@ -192,6 +192,18 @@ routes:
     notes: "implementation_admin via withAdminMutation (EMR-728). Earlier 2026-05-12 entry noted middleware coarse-gating; the route is now self-gated too."
     rate_limit_bucket: admin.config.apply_specialty
 
+  configs/[id]/versions:
+    methods: [GET]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-471 — published version history list. requireImplementationAdmin."
+
+  configs/[id]/versions/diff:
+    methods: [GET]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-471 — side-by-side snapshot diff (from/to). requireImplementationAdmin."
+
   configs/by-practice/[practiceId]:
     methods: [GET]
     auth: required
@@ -202,6 +214,12 @@ routes:
     methods: [GET, POST]
     auth: required
     owner: onboarding-controller
+
+  connectors/csv:
+    methods: [POST]
+    auth: required
+    owner: onboarding-controller
+    notes: "EMR-457 — CSV source connector. requireImplementationAdmin; parses + maps rows and stages them into a MigrationJob."
 
   migration-profiles:
     methods: [POST]
@@ -412,7 +430,6 @@ routes:
     notes: "Clears Leafmart session cookies."
 
 
-
   # ── Marketplace ───────────────────────────────────────────
   marketplace/age-gate/confirm:
     methods: [POST]
@@ -567,7 +584,6 @@ routes:
     auth: required
     owner: integrations
     notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — gate exists."
-
 
 
   dev/logout:
@@ -783,11 +799,23 @@ routes:
     owner: scribe
     notes: "EMR-070 scaffold. Uses requireUser. Accepts an audio blob and returns a SOAP-structured transcript."
 
+  cron/breach-watch:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-633 — HIPAA broad-PHI-access breach watch. Bearer CRON_SECRET check, prod-only. Scans patient.phi_accessed audit events, opens compliance tasks."
+
   cron/credential-check:
     methods: [POST]
     auth: cron
     owner: platform-security
     notes: "EMR-068 scaffold. Bearer CRON_SECRET check, prod-only. Weekly NPPES/DEA license verification sweep."
+
+  cron/migration-runner:
+    methods: [POST]
+    auth: cron
+    owner: platform-security
+    notes: "EMR-456 — drains/resumes queued MigrationJob imports in checkpointed batches. Bearer CRON_SECRET check, prod-only."
 
   cron/erx-ddi-sync:
     methods: [POST]
@@ -873,18 +901,6 @@ routes:
     rate_limit_bucket: cron.mutation-budget
     owner: platform-security
     notes: "EMR-730. Bearer CRON_SECRET check, prod-only. Sweeps ControllerAuditLog over a 5-minute window, fires a logger.error alarm (event: super_admin.mutation_budget_exceeded) when any actor exceeds 30 mutations/min OR 100 mutations/5min. Per-actor dedupe ledger: MutationBudgetAlarm, 10-minute window. Threshold env knobs: SUPER_ADMIN_ALARM_PER_MIN, SUPER_ADMIN_ALARM_PER_5MIN."
-
-  leafnerd/chat:
-    methods: [POST]
-    auth: required
-    owner: agents
-    notes: "AI Insight Engine for LeafNerd dashboard. Uses requireUser + explicit leafnerd role check."
-
-  terminology/[system]/[code]:
-    methods: [GET]
-    auth: public
-    owner: integrations
-    notes: "EMR-766 terminology lookup endpoint. Pure public reference data (LOINC, SNOMED, RxNorm, ICD10 lookup), no PHI, safe public."
 
   # ── wave-9-sprint scaffolded routes (EMR-081 through EMR-200) ──────
   # Bulk-added on 2026-05-20 to unblock route-auth CI on PR #402.
@@ -1613,3 +1629,69 @@ routes:
     owner: marketplace
     review_due: 2026-07-31
     notes: "EMR-002 dispensary shop checkout flow."
+
+  agent-settings:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-974 — Agent Fleet enable/disable API. Org governance required."
+
+  approval-defaults:
+    methods: [GET, POST, DELETE]
+    auth: required
+    owner: platform-security
+    notes: "EMR-960 — owner default approve/reject decisions API. Org governance required."
+
+  credentialing:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-625/627/628/629 — provider credentialing API. Org governance required."
+
+  credentialing/[providerId]:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-625 — single provider credential profile. Org governance required."
+
+  dev/login:
+    methods: [GET]
+    auth: establishes_auth
+    owner: platform-security
+    notes: "Development bypass login. Disabled in production."
+
+  leafnerd/enqueue:
+    methods: [POST]
+    auth: required
+    owner: platform-security
+    notes: "Leafnerd demo enqueuing agent jobs."
+
+  leafnerd/job-action:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "Governed AgentJob lifecycle endpoint for LeafNerd Agent Workbench."
+
+  migration-jobs:
+    methods: [GET, POST]
+    auth: required
+    owner: platform-security
+    notes: "EMR-456 — migration import job ledger API."
+
+  migration-jobs/[id]:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-456 — single migration job status."
+
+  agents/metrics:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-940/969 — Agent Fleet status tiles + per-agent summary. Org governance required (read-only)."
+
+  saas/usage:
+    methods: [GET]
+    auth: required
+    owner: platform-security
+    notes: "EMR-724 — per-org LLM token-usage roll-up over a trailing window. Org governance required (read-only)."

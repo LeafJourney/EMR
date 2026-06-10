@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { deliverMessage } from "@/lib/messaging/deliver";
 
 const replySchema = z.object({
   threadId: z.string().min(1),
@@ -38,29 +39,17 @@ export async function sendChartReply(
   });
   if (!thread) return { ok: false, error: "Thread not found." };
 
-  const now = new Date();
-
-  await prisma.$transaction([
-    prisma.message.deleteMany({
-      where: {
-        threadId: parsed.data.threadId,
-        status: "draft",
-      },
-    }),
-    prisma.message.create({
-      data: {
-        threadId: parsed.data.threadId,
-        senderUserId: user.id,
-        status: "sent",
-        body: parsed.data.body,
-        sentAt: now,
-      },
-    }),
-    prisma.messageThread.update({
-      where: { id: parsed.data.threadId },
-      data: { lastMessageAt: now },
-    }),
-  ]);
+  // Clear any in-progress draft for this thread, then record the reply as a
+  // delivered portal message (the patient reads it in their portal).
+  await prisma.message.deleteMany({
+    where: { threadId: parsed.data.threadId, status: "draft" },
+  });
+  await deliverMessage({
+    threadId: parsed.data.threadId,
+    channel: "portal",
+    body: parsed.data.body,
+    senderUserId: user.id,
+  });
 
   revalidatePath(`/clinic/patients`);
   return { ok: true };

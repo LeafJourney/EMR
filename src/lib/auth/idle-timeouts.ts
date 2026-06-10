@@ -4,14 +4,18 @@ import type { Role } from "@prisma/client";
 //
 // HIPAA's Security Rule does not name a number, but the recommended
 // safeguard is automatic logoff after a period of inactivity. The values
-// below align to community norms for EMR vendors:
+// below balance that safeguard against day-to-day usability — a too-short
+// idle budget that signs people out mid-task reads as broken and trains
+// users to defeat it.
 //
-//   - PHI-touching staff (clinician, operator, practice_owner,
-//     practice_admin, system) → 15 min idle
+//   - PHI-touching staff (clinician, midlevel, back/front office, operator,
+//     practice_owner, practice_admin, system) → 20 min idle
+//   - LeafJourney internal admins (super_admin, implementation_admin)
+//     → 20 min idle (was 10; the tighter budget was needlessly disruptive)
 //   - Patients on their own portal → 30 min idle (personal device,
 //     friction-light)
-//   - LeafJourney internal admins (super_admin, implementation_admin)
-//     → 10 min idle (cross-tenant access, tightest budget)
+//   - Kiosk → 3 min (shared public waiting-room device; intentionally short
+//     and deliberately NOT raised — it holds no PHI but must reset fast)
 //
 // The absolute session cap (`ABSOLUTE_SESSION_MS`) is layered on top:
 // even with continuous activity, a session ends after 12 hours so the
@@ -23,19 +27,19 @@ const HOUR = 60 * MINUTE;
 
 export const IDLE_LIMITS_MS: Record<Role, number> = {
   patient: 30 * MINUTE,
-  clinician: 15 * MINUTE,
+  clinician: 20 * MINUTE,
   // EMR-786 — Mid-level providers and back/front-office staff sit on
   // the clinic floor with shared workstations, so we hold them to the
-  // same 15-minute PHI-staff budget.
-  midlevel: 15 * MINUTE,
-  back_office: 15 * MINUTE,
-  front_office: 15 * MINUTE,
-  operator: 15 * MINUTE,
-  practice_owner: 15 * MINUTE,
-  practice_admin: 15 * MINUTE,
-  system: 15 * MINUTE,
-  implementation_admin: 10 * MINUTE,
-  super_admin: 10 * MINUTE,
+  // same PHI-staff budget.
+  midlevel: 20 * MINUTE,
+  back_office: 20 * MINUTE,
+  front_office: 20 * MINUTE,
+  operator: 20 * MINUTE,
+  practice_owner: 20 * MINUTE,
+  practice_admin: 20 * MINUTE,
+  system: 20 * MINUTE,
+  implementation_admin: 20 * MINUTE,
+  super_admin: 20 * MINUTE,
   leafnerd: 30 * MINUTE,
   // Shared front-desk device in a public waiting room — the tightest idle
   // budget so a walk-in can never leave the kiosk parked on a half-finished

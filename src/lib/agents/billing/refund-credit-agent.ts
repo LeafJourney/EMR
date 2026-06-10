@@ -203,6 +203,7 @@ export const refundCreditAgent: Agent<
             title: `Credit balance: ${patient.firstName} ${patient.lastName} (${formatMoney(creditCents)})`,
             description: `${reason}\n\nRecommended action: ${action.toUpperCase()}\n\n[Created by refundCredit agent]`,
             status: "open",
+            kind: "billing_followup",
             assigneeRole: "operator",
             dueAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
           },

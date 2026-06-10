@@ -6,6 +6,10 @@ import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
+import {
+  type ConfigStatus,
+  canTransition,
+} from "@/lib/db/practice-config-status";
 import { withAuthErrors, notFound } from "../../_helpers";
 
 export const runtime = "nodejs";
@@ -22,6 +26,21 @@ export const POST = withAdminMutation<{ id: string }>(
       where: { id: params.id },
     });
     if (!existing) return notFound();
+
+    // EMR-436 — only draft/published can be archived; archiving an already
+    // archived row is a 409 (idempotent-looking double-submit, surfaced as a
+    // client error rather than a silent no-op).
+    if (!canTransition(existing.status as ConfigStatus, "archived")) {
+      return NextResponse.json(
+        {
+          error: "conflict",
+          reason: "invalid_state",
+          from: existing.status,
+          to: "archived",
+        },
+        { status: 409 },
+      );
+    }
 
     const archived = await prisma.practiceConfiguration.update({
       where: { id: params.id },
