@@ -91,7 +91,7 @@ export async function saveNoteBlocks(
   }
 
   // A signed note (finalized or amended) is a locked legal record. The editor
-  // hides the Save button once a note leaves draft/needs_review, but the server
+  // hides the Save button once a note leaves draft, but the server
   // must enforce it too: a direct action call (or a stale client) must not
   // silently mutate a signed note. Mirrors the guard saveObjectiveDocumentation
   // already applies. Amending a signed note is a deliberate, audited flow — not
@@ -801,7 +801,6 @@ export async function approveCodingSuggestion(
   // re-approval UPDATES the same decision row rather than duplicating it.
   await prisma.codingSuggestion.update({
     where: { noteId },
-    // Cast pending `prisma generate` for the new approval columns.
     data: {
       status,
       approvedById: user.id,
@@ -809,7 +808,7 @@ export async function approveCodingSuggestion(
       approvedAt,
       approvedIcd10: approvedIcd10Payload,
       approvedEmLevel: parsed.data.emLevel,
-    } as any,
+    },
   });
 
   await prisma.auditLog.create({
@@ -826,7 +825,7 @@ export async function approveCodingSuggestion(
         modified: parsed.data.modified,
         codeCount: approvedIcd10Payload.length,
         emLevel: parsed.data.emLevel,
-        reapproval: (suggestion as any).status != null && (suggestion as any).status !== "suggested",
+        reapproval: suggestion.status != null && suggestion.status !== "suggested",
       } as any,
     },
   });

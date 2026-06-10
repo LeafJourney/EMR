@@ -33,6 +33,7 @@ import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note
 import { AI_CONSENT_DISCLAIMER_HEADING } from "@/lib/clinical/ai-consent-disclaimer";
 import { buildVisitCompletionBundle } from "@/lib/domain/visit-completion";
 import { VisitCompletionPanel } from "./visit-completion-panel";
+import { noteStatusBadge } from "./note-status";
 
 interface NoteBlock {
   type?: NoteBlockType;
@@ -167,6 +168,14 @@ export function NoteEditor({
   const [isPending, startTransition] = useTransition();
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState(status);
+  // EMR audit minor #1 — autosave. `dirty` tracks unsaved block edits;
+  // `lastSavedAt` drives the "Saved 12:04" indicator; `autosaving` shows the
+  // in-flight state; `autosaveError` keeps the note dirty (and the beforeunload
+  // guard armed) when a background save fails.
+  const [dirty, setDirty] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autosaving, setAutosaving] = useState(false);
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
   const [demeanor, setDemeanor] = useState<PatientDemeanor | null>(initialDemeanor ?? null);
   const [demeanorPending, setDemeanorPending] = useState(false);
   // EMR-131: clinician can acknowledge the grounding review once they've
@@ -188,7 +197,9 @@ export function NoteEditor({
       .finally(() => setDemeanorPending(false));
   }
 
-  const isEditable = currentStatus === "draft" || currentStatus === "needs_review";
+  // Only a draft is freely editable. (`needs_review` was a defined-but-never-set
+  // status — audit minor #5 — so it is no longer part of the editable set.)
+  const isEditable = currentStatus === "draft";
 
   // Only make AI "pre-drafted / already incorporates your talking points"
   // claims when the draft actually has substantive Assessment/Plan content —
@@ -299,12 +310,89 @@ export function NoteEditor({
     setSaveMessage(null);
   }
 
+  // ── Autosave (audit minor #1) ──────────────────────────────────────────
+  // Latest values mirrored into refs so the debounce timer and the save call
+  // always act on current state without re-arming on every keystroke.
+  const blocksRef = useRef(blocks);
+  useEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
+  const isPendingRef = useRef(isPending);
+  useEffect(() => {
+    isPendingRef.current = isPending;
+  }, [isPending]);
+  const autosaveInFlight = useRef(false);
+
+  // Any block mutation after mount marks the note dirty. We skip the very
+  // first render so the initial APSO sort/labeling doesn't count as an edit.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    setDirty(true);
+    setAutosaveError(null);
+  }, [blocks]);
+
+  async function runAutosave() {
+    // Never autosave a signed note (mirrors the server save-lock), and never
+    // race a manual Save / Finalize that's already writing.
+    if (!isEditable || autosaveInFlight.current || isPendingRef.current) return;
+    const snapshot = blocksRef.current;
+    autosaveInFlight.current = true;
+    setAutosaving(true);
+    try {
+      const result = await saveNoteBlocks(noteId, snapshot);
+      if (result.ok) {
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        // Only clear dirty if nothing changed while the save was in flight;
+        // otherwise the debounce re-arms and saves the newer edits.
+        if (blocksRef.current === snapshot) setDirty(false);
+      } else {
+        setAutosaveError(result.error);
+      }
+    } catch {
+      setAutosaveError("Couldn't autosave — your changes are not saved.");
+    } finally {
+      autosaveInFlight.current = false;
+      setAutosaving(false);
+    }
+  }
+
+  // Debounced trigger: 3s after the last edit while the note is dirty + editable.
+  // Re-arms on every block change (debounce); clears once saved.
+  useEffect(() => {
+    if (!isEditable || !dirty) return;
+    const timer = setTimeout(() => {
+      void runAutosave();
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, blocks, isEditable]);
+
+  // Warn before leaving with unsaved changes (audit minor #1).
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
   function handleSave() {
     startTransition(async () => {
       const result = await saveNoteBlocks(noteId, blocks);
       if (result.ok) {
-        setSaveMessage("Saved successfully");
-        setTimeout(() => setSaveMessage(null), 2000);
+        // Manual save shares the persistent "Saved 12:04" indicator with
+        // autosave — single source of truth for save state.
+        setDirty(false);
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        setSaveMessage(null);
       } else {
         setSaveMessage(result.error);
       }
@@ -315,8 +403,20 @@ export function NoteEditor({
     startTransition(async () => {
       const result = await saveAndFinalizeNote(noteId, blocks);
       if (result.ok) {
-        setCurrentStatus("finalized");
-        setSaveMessage("Note finalized and signed");
+        // Finalize persists the blocks too, so the note is no longer dirty.
+        setDirty(false);
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        setCurrentStatus(result.status);
+        // Honest messaging for the mid-level co-signature path (audit minor #3):
+        // a note routed for co-signature is NOT yet signed.
+        setSaveMessage(
+          result.status === "pending_cosign"
+            ? "Note routed for physician co-signature"
+            : "Note finalized and signed",
+        );
+        // Auto-clear the finalize toast like the save toast does (audit minor #12).
+        setTimeout(() => setSaveMessage(null), 4000);
         router.refresh();
       } else {
         setSaveMessage(result.error);
@@ -469,16 +569,8 @@ export function NoteEditor({
       {/* Status + AI badges + template picker (EMR-174) */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            tone={
-              currentStatus === "finalized"
-                ? "success"
-                : currentStatus === "needs_review"
-                  ? "warning"
-                  : "neutral"
-            }
-          >
-            {currentStatus}
+          <Badge tone={noteStatusBadge(currentStatus).tone}>
+            {noteStatusBadge(currentStatus).label}
           </Badge>
           {aiDrafted && <Badge tone="highlight">AI-drafted</Badge>}
           {aiConfidence !== null && hasSubstantiveDraft && (
@@ -663,7 +755,7 @@ export function NoteEditor({
 
       {/* Action buttons */}
       {isEditable && (
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-3 pt-2 flex-wrap">
           <Button variant="secondary" onClick={handleSave} disabled={isPending}>
             {isPending ? "Saving..." : "Save draft"}
           </Button>
@@ -675,6 +767,19 @@ export function NoteEditor({
               {scrubMessage(saveMessage)}
             </span>
           )}
+          {/* Autosave / dirty-state indicator (audit minor #1). Always
+              rendered + aria-live so screen readers hear the save state. */}
+          <span className="text-xs text-text-subtle tabular-nums" aria-live="polite">
+            {autosaveError ? (
+              <span className="text-danger">⚠ Autosave failed — changes not saved</span>
+            ) : autosaving ? (
+              "Saving…"
+            ) : dirty ? (
+              "Unsaved changes…"
+            ) : lastSavedAt ? (
+              `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            ) : null}
+          </span>
         </div>
       )}
 
