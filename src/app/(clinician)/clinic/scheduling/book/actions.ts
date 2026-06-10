@@ -1,10 +1,26 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, type AuthedUser } from "@/lib/auth/session";
 
 const VisitTypeSchema = z.enum(["new_patient", "follow_up", "renewal", "in_person"]);
+
+// EMR-1110 (FO-M2) — staff roles allowed to book on a patient's behalf by
+// passing an explicit patientId. Matches the scheduling allowlist used by
+// the schedule actions (QUEUE_STATE_ROLES style).
+const STAFF_BOOKING_ROLES = new Set([
+  "front_office",
+  "back_office",
+  "clinician",
+  "practice_owner",
+  "operator",
+]);
+
+function isBookingStaff(user: AuthedUser): boolean {
+  return user.roles.some((role) => STAFF_BOOKING_ROLES.has(role));
+}
 
 const ConfirmBookingSchema = z.object({
   visitTypeId: VisitTypeSchema,
@@ -12,6 +28,9 @@ const ConfirmBookingSchema = z.object({
   modality: z.enum(["video", "in_person"]),
   providerId: z.string().nullable(),
   slotStartIso: z.string(),
+  // Staff-only: book on this patient's behalf. Omitted in the self-serve
+  // (patient) flow, which resolves the patient from the session user.
+  patientId: z.string().min(1).optional(),
   insurance: z.discriminatedUnion("selfPay", [
     z.object({ selfPay: z.literal(true) }),
     z.object({
@@ -54,19 +73,35 @@ export async function confirmBookingAction(input: ConfirmBookingInput): Promise<
   if (Number.isNaN(start.getTime())) return { ok: false, error: "Invalid slot." };
   const end = new Date(start.getTime() + data.durationMinutes * 60_000);
 
-  // Find the patient — we use the current user's patient record. The
-  // public booking page on leafjourney.com runs in a shopper context;
-  // operator-on-behalf-of is gated by the patient context the front desk
-  // has loaded into their command palette.
-  const patient = await prisma.patient.findFirst({
-    where: { organizationId: orgId, userId: user.id },
-    select: { id: true, firstName: true, lastName: true },
-  });
-  if (!patient) {
-    return {
-      ok: false,
-      error: "No patient record on file. Ask the front desk to enroll you first.",
-    };
+  // Resolve the patient.
+  //  - Staff path (EMR-1110 / FO-M2): an explicit patientId books on that
+  //    patient's behalf — allowed only for STAFF_BOOKING_ROLES, org-scoped.
+  //  - Self-serve path (unchanged): no patientId — the booking lands on the
+  //    current user's own patient record (patient portal behavior).
+  const onBehalf = !!data.patientId;
+  let patient: { id: string; firstName: string; lastName: string } | null;
+  if (data.patientId) {
+    if (!isBookingStaff(user)) {
+      return { ok: false, error: "You don't have permission to book for another patient." };
+    }
+    patient = await prisma.patient.findFirst({
+      where: { id: data.patientId, organizationId: orgId, deletedAt: null },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!patient) return { ok: false, error: "Patient not found in your organization." };
+  } else {
+    patient = await prisma.patient.findFirst({
+      where: { organizationId: orgId, userId: user.id },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!patient) {
+      return {
+        ok: false,
+        error: isBookingStaff(user)
+          ? "Select a patient to book for — staff bookings need an explicit patient."
+          : "No patient record on file. Ask the front desk to enroll you first.",
+      };
+    }
   }
 
   // Conflict check on the chosen provider — the synthetic grid pre-filters
@@ -96,6 +131,25 @@ export async function confirmBookingAction(input: ConfirmBookingInput): Promise<
       notes: buildNoteBlock(data),
     },
   });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: orgId,
+      actorUserId: user.id,
+      action: "appointment.created",
+      subjectType: "Appointment",
+      subjectId: appt.id,
+      metadata: {
+        patientId: patient.id,
+        onBehalf,
+        visitType: data.visitTypeId,
+        slotStart: start.toISOString(),
+      },
+    },
+  });
+
+  revalidatePath("/clinic/schedule");
+  revalidatePath("/clinic/scheduling/book");
 
   const icsContent = buildIcs({
     uid: appt.id,

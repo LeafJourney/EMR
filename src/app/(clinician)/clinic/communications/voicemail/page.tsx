@@ -27,6 +27,19 @@ export const metadata = { title: "Voicemail" };
 
 export default async function VoicemailPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-M4) — fail fast: recordVoicemailAction only accepts the
+  // desk/clinical/ops allowlist, so don't render the log form for roles
+  // the action will reject. Mirror of VOICEMAIL_LOG_ROLES in ./actions.ts.
+  const canLogVoicemail = user.roles.some(
+    (r) =>
+      r === "front_office" ||
+      r === "back_office" ||
+      r === "clinician" ||
+      r === "practice_owner" ||
+      r === "operator",
+  );
+
   const orgId = user.organizationId;
   if (!orgId) {
     return (
@@ -137,25 +150,27 @@ export default async function VoicemailPage() {
         </div>
 
         <div className="space-y-4">
-          <Card tone="raised">
-            <CardHeader>
-              <CardTitle className="text-base">Log a voicemail</CardTitle>
-              {/* EMR-692 — reworded into plain language. */}
-              <CardDescription>
-                The front desk removes private health information from the
-                notes before saving them so no personal information is
-                stored in the EMR.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <LogVoicemailForm
-                teammates={teammates.map((t) => ({
-                  id: t.id,
-                  name: `${t.firstName} ${t.lastName}`,
-                }))}
-              />
-            </CardContent>
-          </Card>
+          {canLogVoicemail && (
+            <Card tone="raised">
+              <CardHeader>
+                <CardTitle className="text-base">Log a voicemail</CardTitle>
+                {/* EMR-692 — reworded into plain language. */}
+                <CardDescription>
+                  The front desk removes private health information from the
+                  notes before saving them so no personal information is
+                  stored in the EMR.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <LogVoicemailForm
+                  teammates={teammates.map((t) => ({
+                    id: t.id,
+                    name: `${t.firstName} ${t.lastName}`,
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <Card tone="raised">
             <CardHeader>

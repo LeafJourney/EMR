@@ -1004,7 +1004,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           )}
           pastConditions={pastConditions}
           pastSurgeries={pastSurgeries}
-          canEditDemographics={canEditSection(user, "notes")}
+          canEditDemographics={canEditSection(user, "demographics")}
           moduleFlags={moduleFlags}
         />
       )}

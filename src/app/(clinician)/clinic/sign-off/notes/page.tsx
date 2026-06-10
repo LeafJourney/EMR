@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +12,9 @@ export const metadata = { title: "Notes Sign-Off" };
 
 export default async function NotesSignOffPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — clinical notes queue requires notes.read.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
 
   const notes = await prisma.note.findMany({
     where: {

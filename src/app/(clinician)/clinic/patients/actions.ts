@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { ForbiddenError, requirePermission } from "@/lib/rbac/permissions";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
 
 const emergencyContactSchema = z.object({
@@ -43,6 +44,18 @@ export async function createPatientAction(
 ): Promise<CreatePatientResult> {
   const user = await requireUser();
   const orgId = user.organizationId!;
+
+  // EMR-1111 (FO-M4) — previously ungated: any authenticated user could
+  // create a patient row. Creating a chart is a demographics-edit power,
+  // so gate it on the matrix permission (front office holds it by design).
+  try {
+    requirePermission(user, "patient.demographics.edit");
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "You don't have permission to create patients." };
+    }
+    throw err;
+  }
 
   const parsed = createPatientSchema.safeParse(data);
   if (!parsed.success) {

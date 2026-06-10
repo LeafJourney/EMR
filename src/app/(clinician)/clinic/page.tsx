@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { PageShell } from "@/components/shell/PageHeader";
 import {
   Card,
@@ -45,7 +46,7 @@ import { UpcomingVisitsMissingInfo } from "./upcoming-visits-missing-info";
 // loading skeleton.
 const MISSION_CONTROL_TIMEOUT_MS = 8_000;
 
-// Empty-shape fallback for the 19-way Promise.all below. If the DB
+// Empty-shape fallback for the 21-way Promise.all below. If the DB
 // fan-out times out (or any individual query rejects), we render the
 // page with zeros/empty lists instead of stranding the user. Typed as
 // `any` intentionally — the destructured tuple has deep Prisma types
@@ -70,6 +71,8 @@ const MISSION_CONTROL_FALLBACK: any = [
   [],  // 17 recentAgentJobs
   [],  // 18 pendingDrafts
   [],  // 19 recentObservations
+  0,   // 20 deskOpenTasks
+  0,   // 21 unreadInboundMessages
 ];
 
 export const metadata = { title: "Mission Control" };
@@ -248,6 +251,12 @@ export default async function ClinicHomePage() {
   const user = await requireUser();
   const organizationId = user.organizationId!;
 
+  // EMR-1111 (FO-B5 / FO-M8) — Mission Control is shared by every clinic
+  // floor role. Roles without notes.read (front office) must never trigger
+  // the note-content queries or see the clinical counters; they get desk
+  // widgets (schedule count, open desk tasks, unread messages) instead.
+  const canReadNotes = hasPermission(user, "notes.read");
+
   const practiceConfig = await prisma.practiceConfiguration.findFirst({
     where: { organizationId },
     orderBy: { version: 'desc' },
@@ -292,6 +301,9 @@ export default async function ClinicHomePage() {
     recentAgentJobs,
     pendingDrafts,
     recentObservations,
+    // Desk widgets (front-office Mission Control variant)
+    deskOpenTasks,
+    unreadInboundMessages,
   ] = await withTimeout(
     Promise.all([
     // 1. Today's encounters
@@ -326,30 +338,37 @@ export default async function ClinicHomePage() {
       take: 200,
     }),
 
-    // 2. Draft notes count
-    prisma.note.count({
-      where: { status: "draft", encounter: { organizationId } },
-    }),
+    // 2. Draft notes count (clinical — skipped without notes.read)
+    canReadNotes
+      ? prisma.note.count({
+          where: { status: "draft", encounter: { organizationId } },
+        })
+      : Promise.resolve(0),
 
-    // 3. Notes needing review (full list for sidebar)
-    prisma.note.findMany({
-      where: {
-        status: { in: ["draft", "pending_cosign"] },
-        encounter: { organizationId },
-      },
-      include: {
-        encounter: {
-          include: { patient: { select: { id: true, firstName: true, lastName: true } } },
-        },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-    }),
+    // 3. Notes needing review (full list for sidebar; clinical — skipped
+    //    without notes.read)
+    canReadNotes
+      ? prisma.note.findMany({
+          where: {
+            status: { in: ["draft", "pending_cosign"] },
+            encounter: { organizationId },
+          },
+          include: {
+            encounter: {
+              include: { patient: { select: { id: true, firstName: true, lastName: true } } },
+            },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 10,
+        })
+      : Promise.resolve([]),
 
-    // 4. Agent jobs needing approval
-    prisma.agentJob.count({
-      where: { organizationId, status: "needs_approval" },
-    }),
+    // 4. Agent jobs needing approval (clinical sign-off work)
+    canReadNotes
+      ? prisma.agentJob.count({
+          where: { organizationId, status: "needs_approval" },
+        })
+      : Promise.resolve(0),
 
     // 5. Active message threads
     prisma.messageThread.count({
@@ -394,17 +413,20 @@ export default async function ClinicHomePage() {
       take: 5,
     }),
 
-    // 10. Recently finalized notes (activity feed)
-    prisma.note.findMany({
-      where: { status: "finalized", encounter: { organizationId } },
-      include: {
-        encounter: {
-          include: { patient: { select: { id: true, firstName: true, lastName: true } } },
-        },
-      },
-      orderBy: { finalizedAt: "desc" },
-      take: 5,
-    }),
+    // 10. Recently finalized notes (activity feed; clinical — skipped
+    //     without notes.read)
+    canReadNotes
+      ? prisma.note.findMany({
+          where: { status: "finalized", encounter: { organizationId } },
+          include: {
+            encounter: {
+              include: { patient: { select: { id: true, firstName: true, lastName: true } } },
+            },
+          },
+          orderBy: { finalizedAt: "desc" },
+          take: 5,
+        })
+      : Promise.resolve([]),
 
     // 11. Recent assessment responses (activity feed)
     prisma.assessmentResponse.findMany({
@@ -468,48 +490,85 @@ export default async function ClinicHomePage() {
       })
     ),
 
-    // 16. Notes awaiting co-signature (for command strip count)
-    prisma.note.count({
-      where: { status: "pending_cosign", encounter: { organizationId } },
-    }),
+    // 16. Notes awaiting co-signature (for command strip count; clinical)
+    canReadNotes
+      ? prisma.note.count({
+          where: { status: "pending_cosign", encounter: { organizationId } },
+        })
+      : Promise.resolve(0),
 
     // 17. Recent agent jobs (fleet bridge — last 24h, succeeded + needs_approval)
-    prisma.agentJob.findMany({
-      where: {
-        organizationId,
-        status: { in: ["succeeded", "needs_approval"] },
-        completedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      },
-      select: { agentName: true, status: true, completedAt: true },
-      orderBy: { completedAt: "desc" },
-      take: 50,
-    }),
+    canReadNotes
+      ? prisma.agentJob.findMany({
+          where: {
+            organizationId,
+            status: { in: ["succeeded", "needs_approval"] },
+            completedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          },
+          select: { agentName: true, status: true, completedAt: true },
+          orderBy: { completedAt: "desc" },
+          take: 50,
+        })
+      : Promise.resolve([]),
 
     // 18. Pending AI drafts (fleet bridge — approval count per agent).
     // Cap at 500 — if the queue is bigger than that the count widget
     // should show "500+" and ops needs a real backlog dashboard, not a
-    // dropdown render dumping the full backlog.
-    prisma.message.findMany({
-      where: {
-        status: "draft",
-        aiDrafted: true,
-        thread: { patient: { organizationId } },
-      },
-      select: { senderAgent: true },
-      take: 500,
-    }),
+    // dropdown render dumping the full backlog. Clinical — skipped
+    // without notes.read.
+    canReadNotes
+      ? prisma.message.findMany({
+          where: {
+            status: "draft",
+            aiDrafted: true,
+            thread: { patient: { organizationId } },
+          },
+          select: { senderAgent: true },
+          take: 500,
+        })
+      : Promise.resolve([]),
 
-    // 19. Recent unacknowledged clinical observations
-    prisma.clinicalObservation.findMany({
-      where: {
-        patient: { organizationId },
-        acknowledgedAt: null,
-        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-      },
-      select: { id: true, severity: true, category: true, summary: true, observedBy: true, createdAt: true, patientId: true },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-    }),
+    // 19. Recent unacknowledged clinical observations (clinical summaries —
+    //     skipped without notes.read)
+    canReadNotes
+      ? prisma.clinicalObservation.findMany({
+          where: {
+            patient: { organizationId },
+            acknowledgedAt: null,
+            createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+          },
+          select: { id: true, severity: true, category: true, summary: true, observedBy: true, createdAt: true, patientId: true },
+          orderBy: { createdAt: "desc" },
+          take: 6,
+        })
+      : Promise.resolve([]),
+
+    // 20. Open front-office tasks (desk Mission Control variant). Physician
+    //     visit-completion routes follow-up work to assigneeRole
+    //     "front_office" — this is the desk's headline count.
+    canReadNotes
+      ? Promise.resolve(0)
+      : prisma.task.count({
+          where: {
+            organizationId,
+            status: { in: ["open", "in_progress"] },
+            assigneeRole: "front_office",
+          },
+        }),
+
+    // 21. Unread inbound messages (desk Mission Control variant). Mirrors
+    //     the markThreadRead persistence: inbound = not authored by this
+    //     user, not an agent draft, not yet flipped to "read".
+    canReadNotes
+      ? Promise.resolve(0)
+      : prisma.message.count({
+          where: {
+            status: { not: "read" },
+            senderUserId: { not: user.id },
+            senderAgent: null,
+            thread: { patient: { organizationId } },
+          },
+        }),
   ]).catch((err) => {
     logger.warn({ event: "clinic.home.fan_out_rejected", err });
     return MISSION_CONTROL_FALLBACK;
@@ -636,20 +695,43 @@ export default async function ClinicHomePage() {
               label="Patients today"
               href="/clinic/schedule"
             />
-            <StatusDot
-              color="var(--highlight)"
-              pulse={notesToSign > 0}
-              count={notesToSign}
-              label="Notes to sign"
-              href="/clinic/sign-off"
-            />
-            <StatusDot
-              color="var(--highlight)"
-              pulse={approvalJobs > 0}
-              count={approvalJobs}
-              label="Approvals"
-              href="/clinic/approvals"
-            />
+            {canReadNotes ? (
+              <>
+                <StatusDot
+                  color="var(--highlight)"
+                  pulse={notesToSign > 0}
+                  count={notesToSign}
+                  label="Notes to sign"
+                  href="/clinic/sign-off"
+                />
+                <StatusDot
+                  color="var(--highlight)"
+                  pulse={approvalJobs > 0}
+                  count={approvalJobs}
+                  label="Approvals"
+                  href="/clinic/approvals"
+                />
+              </>
+            ) : (
+              // EMR-1111 (FO-M8) — desk variant: schedule/tasks/messages
+              // instead of clinical sign-off counters.
+              <>
+                <StatusDot
+                  color="var(--highlight)"
+                  pulse={deskOpenTasks > 0}
+                  count={deskOpenTasks}
+                  label="Open tasks"
+                  href="/clinic/tasks"
+                />
+                <StatusDot
+                  color="var(--info)"
+                  pulse={unreadInboundMessages > 0}
+                  count={unreadInboundMessages}
+                  label="Unread messages"
+                  href="/clinic/messages"
+                />
+              </>
+            )}
             <StatusDot
               color="var(--text-subtle)"
               pulse={activeThreads > 0}
@@ -851,10 +933,10 @@ export default async function ClinicHomePage() {
             primaryAction={<RelaxPopup />}
             secondaryAction={
               <Link
-                href="/clinic/sign-off/notes"
+                href={canReadNotes ? "/clinic/sign-off/notes" : "/clinic/tasks"}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text hover:bg-surface-muted transition-colors"
               >
-                Open pending notes
+                {canReadNotes ? "Open pending notes" : "Open task list"}
               </Link>
             }
             tips={[
@@ -1077,7 +1159,62 @@ export default async function ClinicHomePage() {
             />
           </div>
 
-          {/* Notes needing attention */}
+          {/* Notes needing attention (clinical) — desk roles get a
+              front-desk shortcuts card instead (EMR-1111 FO-M8). */}
+          {!canReadNotes ? (
+            <Card tone="default">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <span
+                    className="h-2 w-2 rounded-full bg-highlight"
+                    aria-hidden="true"
+                  />
+                  Front desk
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-1 -mx-2">
+                  <li>
+                    <Link
+                      href="/clinic/schedule"
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-surface-muted/50 transition-colors group"
+                    >
+                      <span className="text-sm text-text group-hover:text-accent transition-colors">
+                        Today&apos;s schedule
+                      </span>
+                      <Badge tone="info">{todaysEncounters.length}</Badge>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/clinic/tasks"
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-surface-muted/50 transition-colors group"
+                    >
+                      <span className="text-sm text-text group-hover:text-accent transition-colors">
+                        Open front-office tasks
+                      </span>
+                      <Badge tone={deskOpenTasks > 0 ? "warning" : "neutral"}>
+                        {deskOpenTasks}
+                      </Badge>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/clinic/messages"
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-surface-muted/50 transition-colors group"
+                    >
+                      <span className="text-sm text-text group-hover:text-accent transition-colors">
+                        Unread messages
+                      </span>
+                      <Badge tone={unreadInboundMessages > 0 ? "info" : "neutral"}>
+                        {unreadInboundMessages}
+                      </Badge>
+                    </Link>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+          ) : (
           <Card tone="default">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -1124,6 +1261,7 @@ export default async function ClinicHomePage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Upcoming visits still missing intake (EMR-914) */}
           <UpcomingVisitsMissingInfo organizationId={organizationId} />

@@ -6,13 +6,20 @@
  * Each demographics subsection opens here as its own page where staff can
  * type, add, edit and erase information. Known fields per section are seeded
  * from the chart; an "additional fields" list lets staff add arbitrary
- * key/value rows. Persisted per patient+section in localStorage (no schema
- * change permitted this sprint) with a stable shape a server store can adopt.
+ * key/value rows.
+ *
+ * FO-B3 (EMR-1109): "Save changes" now persists server-side through
+ * `saveDemographicsSection` (audited, org-scoped, permission-gated) instead
+ * of the old localStorage-only buffer. Server data is the initial state and
+ * the saved-at stamp comes from the server result.
  */
 
 import * as React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { usePersistentState } from "../../chart-kit";
+import {
+  saveDemographicsSection,
+  type DemographicsExtraRow,
+} from "./actions";
 
 interface FieldDef {
   key: string;
@@ -20,44 +27,68 @@ interface FieldDef {
   placeholder?: string;
 }
 
-interface ExtraRow {
-  id: string;
-  label: string;
-  value: string;
-}
-
 export function DemographicsDetailEditor({
   patientId,
   section,
   fields,
   seed,
+  initialExtras,
+  initialSavedAt,
+  canEdit,
   patientLifeNumber,
 }: {
   patientId: string;
   section: string;
   fields: FieldDef[];
   seed: Record<string, string>;
+  initialExtras: DemographicsExtraRow[];
+  initialSavedAt: string | null;
+  canEdit: boolean;
   patientLifeNumber: string;
 }) {
-  const storeKey = `demographics-detail:${patientId}:${section}:v1`;
-  const [values, setValues] = usePersistentState<Record<string, string>>(
-    storeKey,
-    seed,
-  );
-  const [extras, setExtras] = usePersistentState<ExtraRow[]>(
-    `${storeKey}:extras`,
-    [],
-  );
-  const [savedAt, setSavedAt] = React.useState<string | null>(null);
+  const [values, setValues] = React.useState<Record<string, string>>(seed);
+  const [extras, setExtras] = React.useState<DemographicsExtraRow[]>(initialExtras);
+  const [savedAtLabel, setSavedAtLabel] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
   const [newLabel, setNewLabel] = React.useState("");
+
+  // Format the server's last-saved stamp after mount so SSR and client
+  // markup can't disagree on locale formatting.
+  React.useEffect(() => {
+    if (initialSavedAt) {
+      const d = new Date(initialSavedAt);
+      if (!Number.isNaN(d.getTime())) {
+        setSavedAtLabel(`Last saved ${d.toLocaleString()}`);
+      }
+    }
+  }, [initialSavedAt]);
 
   function setField(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
   }
 
   function save() {
-    // usePersistentState already writes through; this just flags a save.
-    setSavedAt(new Date().toLocaleTimeString());
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await saveDemographicsSection(
+          patientId,
+          section,
+          values,
+          extras,
+        );
+        if (result.ok) {
+          setSavedAtLabel(
+            `Saved at ${new Date(result.savedAt).toLocaleTimeString()}`,
+          );
+        } else {
+          setError(result.error);
+        }
+      } catch {
+        setError("Couldn't save — try again.");
+      }
+    });
   }
 
   return (
@@ -84,7 +115,8 @@ export function DemographicsDetailEditor({
                 value={values[f.key] ?? ""}
                 onChange={(e) => setField(f.key, e.target.value)}
                 placeholder={f.placeholder ?? ""}
-                className="w-full text-sm rounded-md border border-border bg-surface px-3 py-2 text-text focus:outline-none focus:border-accent"
+                disabled={!canEdit}
+                className="w-full text-sm rounded-md border border-border bg-surface px-3 py-2 text-text focus:outline-none focus:border-accent disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
           ))}
@@ -109,7 +141,8 @@ export function DemographicsDetailEditor({
                   )
                 }
                 placeholder="Label"
-                className="w-40 text-sm rounded-md border border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent"
+                disabled={!canEdit}
+                className="w-40 text-sm rounded-md border border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent disabled:opacity-60"
               />
               <input
                 value={row.value}
@@ -121,54 +154,68 @@ export function DemographicsDetailEditor({
                   )
                 }
                 placeholder="Value"
-                className="flex-1 text-sm rounded-md border border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent"
+                disabled={!canEdit}
+                className="flex-1 text-sm rounded-md border border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent disabled:opacity-60"
+              />
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setExtras((prev) => prev.filter((r) => r.id !== row.id))}
+                  className="text-text-subtle hover:text-danger px-1"
+                  aria-label="Erase"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          {canEdit && (
+            <div className="flex items-center gap-2">
+              <input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Add a field…"
+                className="flex-1 text-sm rounded-md border border-dashed border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent"
               />
               <button
                 type="button"
-                onClick={() => setExtras((prev) => prev.filter((r) => r.id !== row.id))}
-                className="text-text-subtle hover:text-danger px-1"
-                aria-label="Erase"
+                onClick={() => {
+                  if (!newLabel.trim()) return;
+                  setExtras((prev) => [
+                    ...prev,
+                    { id: `x_${Date.now()}`, label: newLabel.trim(), value: "" },
+                  ]);
+                  setNewLabel("");
+                }}
+                className="px-2.5 py-1.5 text-xs font-medium rounded-md border border-border text-text-muted hover:bg-surface-muted"
               >
-                ×
+                Add field
               </button>
             </div>
-          ))}
-          <div className="flex items-center gap-2">
-            <input
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Add a field…"
-              className="flex-1 text-sm rounded-md border border-dashed border-border bg-surface px-2 py-1.5 text-text focus:outline-none focus:border-accent"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (!newLabel.trim()) return;
-                setExtras((prev) => [
-                  ...prev,
-                  { id: `x_${Date.now()}`, label: newLabel.trim(), value: "" },
-                ]);
-                setNewLabel("");
-              }}
-              className="px-2.5 py-1.5 text-xs font-medium rounded-md border border-border text-text-muted hover:bg-surface-muted"
-            >
-              Add field
-            </button>
-          </div>
+          )}
         </CardContent>
       </Card>
 
+      {error && (
+        <p role="alert" className="text-xs text-danger text-right">
+          {error}
+        </p>
+      )}
+
       <div className="flex items-center justify-end gap-3">
-        {savedAt && (
-          <span className="text-[11px] text-text-subtle">Saved at {savedAt}</span>
+        {savedAtLabel && !error && (
+          <span className="text-[11px] text-text-subtle">{savedAtLabel}</span>
         )}
-        <button
-          type="button"
-          onClick={save}
-          className="px-4 py-2 text-sm font-medium rounded-md bg-accent text-accent-ink hover:bg-accent-strong transition-colors"
-        >
-          Save changes
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="px-4 py-2 text-sm font-medium rounded-md bg-accent text-accent-ink hover:bg-accent-strong transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {pending ? "Saving…" : "Save changes"}
+          </button>
+        )}
       </div>
     </div>
   );

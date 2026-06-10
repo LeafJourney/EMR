@@ -12,6 +12,18 @@ export const metadata = { title: "Fax" };
 
 export default async function FaxPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-M4) — fail fast: sendFaxAction only accepts the
+  // desk/clinical/ops allowlist. Mirror of FAX_SEND_ROLES in ./actions.ts.
+  const canSendFax = user.roles.some(
+    (r) =>
+      r === "front_office" ||
+      r === "back_office" ||
+      r === "clinician" ||
+      r === "practice_owner" ||
+      r === "operator",
+  );
+
   const orgId = user.organizationId;
   if (!orgId) {
     return (
@@ -40,17 +52,28 @@ export default async function FaxPage() {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Send a fax</CardTitle>
-            <CardDescription>
-              Outbound faxes are queued through the practice's fax provider.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <FaxComposeForm />
-          </CardContent>
-        </Card>
+        {canSendFax ? (
+          <Card tone="raised">
+            <CardHeader>
+              <CardTitle className="text-base">Send a fax</CardTitle>
+              <CardDescription>
+                Outbound faxes are queued through the practice's fax provider.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FaxComposeForm />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card tone="raised">
+            <CardContent className="py-6">
+              <p className="text-sm text-text-muted">
+                Sending faxes is limited to desk, clinical, and operations
+                staff.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card tone="raised">
           <CardHeader>

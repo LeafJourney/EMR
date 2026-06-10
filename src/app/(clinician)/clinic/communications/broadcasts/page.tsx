@@ -21,6 +21,14 @@ export const metadata = { title: "Outreach broadcasts" };
 
 export default async function BroadcastsPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-M3, audit minor 4) — fail fast: createCampaignAction only
+  // accepts clinician / practice_owner / operator, so don't render a compose
+  // form other roles can fill in but never submit.
+  const canBroadcast = user.roles.some(
+    (r) => r === "clinician" || r === "practice_owner" || r === "operator",
+  );
+
   const orgId = user.organizationId;
   if (!orgId) {
     return (
@@ -72,20 +80,30 @@ export default async function BroadcastsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <Card tone="raised">
-            <CardHeader>
-              <CardTitle className="text-base">New campaign</CardTitle>
-              <CardDescription>
-                Templates support <code>{`{{firstName}}`}</code> and{" "}
-                <code>{`{{lastName}}`}</code>. Active patients with a phone:{" "}
-                <strong>{activeWithSms}</strong> · with email:{" "}
-                <strong>{activeWithEmail}</strong>.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CampaignComposeForm />
-            </CardContent>
-          </Card>
+          {canBroadcast ? (
+            <Card tone="raised">
+              <CardHeader>
+                <CardTitle className="text-base">New campaign</CardTitle>
+                <CardDescription>
+                  Templates support <code>{`{{firstName}}`}</code> and{" "}
+                  <code>{`{{lastName}}`}</code>. Active patients with a phone:{" "}
+                  <strong>{activeWithSms}</strong> · with email:{" "}
+                  <strong>{activeWithEmail}</strong>.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CampaignComposeForm />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card tone="raised">
+              <CardContent className="py-6">
+                <p className="text-sm text-text-muted">
+                  Broadcasts are managed by clinicians and practice leadership.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <Card tone="raised">

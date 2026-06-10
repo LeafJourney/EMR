@@ -9,8 +9,20 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+
+// EMR-1111 (FO-M4) — sendFaxAction previously had no role gate; front desk
+// access was accidental. Explicit allowlist: desk + clinical + ops roles.
+const FAX_SEND_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "front_office",
+  "back_office",
+  "clinician",
+  "midlevel",
+  "practice_owner",
+  "operator",
+]);
 
 const sendFaxSchema = z.object({
   toNumber: z
@@ -39,6 +51,9 @@ export async function sendFaxAction(
   const user = await requireUser();
   if (!user.organizationId) {
     return { ok: false, error: "No organization context." };
+  }
+  if (!user.roles.some((r) => FAX_SEND_ROLES.has(r))) {
+    return { ok: false, error: "You don't have permission to send faxes." };
   }
 
   const parsed = sendFaxSchema.safeParse({

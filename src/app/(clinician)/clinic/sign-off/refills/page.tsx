@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RefillsView, type RefillRow } from "./refills-view";
 import { evaluateRefill } from "@/lib/agents/refill-copilot-agent";
@@ -9,6 +11,11 @@ export const metadata = { title: "Refill Queue" };
 
 export default async function RefillsPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — the refill queue is clinical PHI; gate on
+  // notes.read before any query runs.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
+
   const organizationId = user.organizationId!;
 
   const pending = await prisma.refillRequest.findMany({

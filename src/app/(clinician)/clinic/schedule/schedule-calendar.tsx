@@ -10,10 +10,13 @@ import { cn } from "@/lib/utils/cn";
 import { formatModality } from "@/lib/utils/format";
 import { Eyebrow } from "@/components/ui/ornament";
 import {
-  rescheduleAppointmentAction,
   createPatientAppointmentAction,
   createSpecialBlockAction,
 } from "./actions";
+import {
+  rescheduleAppointmentAction,
+  cancelAppointmentAction,
+} from "./calendar/actions";
 
 export type AppointmentDTO = {
   id: string;
@@ -25,6 +28,10 @@ export type AppointmentDTO = {
   status: string;
   modality: string;
   notes: string | null;
+  /** EMR-1112 (FO-5) — open-statement balance for the patient (cents). */
+  balanceDueCents: number;
+  /** Primary coverage copay (cents), null when no active primary plan. */
+  copayCents: number | null;
 };
 
 type PatientDTO = {
@@ -71,6 +78,10 @@ export function ScheduleCalendar({
   const [contextMenu, setContextMenu] = React.useState<{ x: number; y: number; date: Date } | null>(null);
   const [showBlockModal, setShowBlockModal] = React.useState<Date | null>(null);
   const [showScheduleModal, setShowScheduleModal] = React.useState<Date | null>(null);
+  // EMR-1110 (FO-M1) — right-click an appointment chip / list row for the
+  // appointment popover (details, balance chip, cancel affordance).
+  const [apptMenu, setApptMenu] = React.useState<{ x: number; y: number; appt: AppointmentDTO } | null>(null);
+  const [cancelTarget, setCancelTarget] = React.useState<AppointmentDTO | null>(null);
   const [pendingConflict, setPendingConflict] = React.useState<{
     appointmentId: string;
     newStartIso: string;
@@ -85,14 +96,38 @@ export function ScheduleCalendar({
     return weekStart;
   }, [weekStart]);
 
-  // Click handler to dismiss context menu
+  // Click handler to dismiss context menus
   React.useEffect(() => {
     const handleGlobalClick = () => {
       setContextMenu(null);
+      setApptMenu(null);
     };
     window.addEventListener("click", handleGlobalClick);
     return () => window.removeEventListener("click", handleGlobalClick);
   }, []);
+
+  const handleApptContextMenu = (e: React.MouseEvent, appt: AppointmentDTO) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu(null);
+    setApptMenu({ x: e.clientX, y: e.clientY, appt });
+  };
+
+  const handleCancelConfirm = async (appt: AppointmentDTO, reason: string) => {
+    setError(null);
+    setPending(true);
+    try {
+      const r = await cancelAppointmentAction({
+        appointmentId: appt.id,
+        reason: reason.trim() || undefined,
+      });
+      if (!r.ok) setError(r.error);
+      else router.refresh();
+    } finally {
+      setPending(false);
+      setCancelTarget(null);
+    }
+  };
 
   const onDrop = async (appointmentId: string, dayIdx: number, slotIdx: number, force = false) => {
     setError(null);
@@ -266,7 +301,11 @@ export function ScheduleCalendar({
       )}
 
       {view === "list" && (
-        <ListView appointments={appointments} onDropToDay={onDropToDay} />
+        <ListView
+          appointments={appointments}
+          onDropToDay={onDropToDay}
+          onApptContextMenu={handleApptContextMenu}
+        />
       )}
       {view === "week" && (
         <WeekGrid
@@ -274,6 +313,7 @@ export function ScheduleCalendar({
           appointments={appointments}
           onDrop={onDrop}
           onContextMenu={handleSlotContextMenu}
+          onApptContextMenu={handleApptContextMenu}
           pending={pending}
         />
       )}
@@ -295,6 +335,7 @@ export function ScheduleCalendar({
             );
             return handleSlotContextMenu(e, dayIdx, slotIdx);
           }}
+          onApptContextMenu={handleApptContextMenu}
           pending={pending}
         />
       )}
@@ -325,6 +366,30 @@ export function ScheduleCalendar({
             ⏱ New Time Block
           </button>
         </div>
+      )}
+
+      {/* Appointment Popover (details · balance · cancel) */}
+      {apptMenu && (
+        <AppointmentPopover
+          x={apptMenu.x}
+          y={apptMenu.y}
+          appt={apptMenu.appt}
+          onCancelRequest={() => {
+            setCancelTarget(apptMenu.appt);
+            setApptMenu(null);
+          }}
+          onClose={() => setApptMenu(null)}
+        />
+      )}
+
+      {/* Cancel Confirmation Dialog */}
+      {cancelTarget && (
+        <CancelDialog
+          appt={cancelTarget}
+          pending={pending}
+          onConfirm={(reason) => handleCancelConfirm(cancelTarget, reason)}
+          onClose={() => setCancelTarget(null)}
+        />
       )}
 
       {/* Collision Conflict Dialog */}
@@ -412,12 +477,14 @@ function WeekGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onApptContextMenu,
   pending,
 }: {
   weekStart: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, dayIdx: number, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, dayIdx: number, slotIdx: number) => void;
+  onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
 }) {
   return (
@@ -469,6 +536,7 @@ function WeekGrid({
                     appointment={findAppt(appointments, weekStart, dayIdx, slotIdx)}
                     onDrop={(apptId) => onDrop(apptId, dayIdx, slotIdx)}
                     onContextMenu={(e) => onContextMenu(e, dayIdx, slotIdx)}
+                    onApptContextMenu={onApptContextMenu}
                     pending={pending}
                     hourMark={isHourMark}
                   />
@@ -488,6 +556,7 @@ function Slot({
   appointment,
   onDrop,
   onContextMenu,
+  onApptContextMenu,
   pending,
   hourMark,
 }: {
@@ -496,6 +565,7 @@ function Slot({
   appointment: AppointmentDTO | null;
   onDrop: (apptId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
   hourMark: boolean;
 }) {
@@ -522,7 +592,9 @@ function Slot({
       )}
       style={{ height: SQUARE }}
     >
-      {appointment && <AppointmentChip appt={appointment} />}
+      {appointment && (
+        <AppointmentChip appt={appointment} onContextMenu={onApptContextMenu} />
+      )}
     </div>
   );
 }
@@ -534,12 +606,14 @@ function DayGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onApptContextMenu,
   pending,
 }: {
   day: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, slotIdx: number) => void;
+  onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
 }) {
   return (
@@ -559,10 +633,13 @@ function DayGrid({
             const isHourMark = min === 0;
             const slotStart = new Date(day);
             slotStart.setHours(hour, min, 0, 0);
-            const inSlot = appointments.find(
+            const matches = appointments.filter(
               (a) =>
                 new Date(a.startAtIso).getTime() === slotStart.getTime(),
             );
+            // Prefer a live appointment over a cancelled one in the same slot.
+            const inSlot =
+              matches.find((a) => a.status !== "cancelled") ?? matches[0] ?? null;
             return (
               <React.Fragment key={slotIdx}>
                 <div
@@ -586,7 +663,9 @@ function DayGrid({
                   )}
                   style={{ height: SQUARE }}
                 >
-                  {inSlot && <AppointmentChip appt={inSlot} />}
+                  {inSlot && (
+                    <AppointmentChip appt={inSlot} onContextMenu={onApptContextMenu} />
+                  )}
                 </div>
               </React.Fragment>
             );
@@ -602,10 +681,12 @@ function DayGrid({
 function ListView({
   appointments,
   onDropToDay,
+  onApptContextMenu,
 }: {
   appointments: AppointmentDTO[];
   // EMR-578 — drop an appointment onto a day group to reschedule it there.
   onDropToDay?: (appointmentId: string, dayKey: string) => void;
+  onApptContextMenu?: (e: React.MouseEvent, appt: AppointmentDTO) => void;
 }) {
   const [dragOverDay, setDragOverDay] = React.useState<string | null>(null);
 
@@ -655,16 +736,23 @@ function ListView({
             <ul className="divide-y divide-border/60">
               {list.map((a) => {
                 const isBlock = a.patientName.includes("System CalendarBlock");
+                const isCancelled = a.status === "cancelled";
                 return (
                   <li
                     key={a.id}
-                    draggable={!isBlock && !!onDropToDay}
+                    draggable={!isBlock && !isCancelled && !!onDropToDay}
                     onDragStart={(e) =>
                       e.dataTransfer.setData("text/appt-id", a.id)
                     }
+                    onContextMenu={
+                      !isBlock && onApptContextMenu
+                        ? (e) => onApptContextMenu(e, a)
+                        : undefined
+                    }
                     className={cn(
                       "py-2 flex items-center gap-3",
-                      !isBlock && onDropToDay && "cursor-grab active:cursor-grabbing",
+                      !isBlock && !isCancelled && onDropToDay && "cursor-grab active:cursor-grabbing",
+                      isCancelled && "opacity-55",
                     )}
                   >
                     <span className="text-xs font-mono tabular-nums text-text-subtle w-16 shrink-0">
@@ -677,7 +765,10 @@ function ListView({
                     ) : (
                       <Link
                         href={`/clinic/patients/${a.patientId}`}
-                        className="flex-1 min-w-0 text-sm text-text hover:text-accent truncate"
+                        className={cn(
+                          "flex-1 min-w-0 text-sm text-text hover:text-accent truncate",
+                          isCancelled && "line-through text-text-subtle",
+                        )}
                       >
                         {a.patientName}
                       </Link>
@@ -699,7 +790,13 @@ function ListView({
 
 // ── Chip + helpers ──────────────────────────────────────────────
 
-function AppointmentChip({ appt }: { appt: AppointmentDTO }) {
+function AppointmentChip({
+  appt,
+  onContextMenu,
+}: {
+  appt: AppointmentDTO;
+  onContextMenu?: (e: React.MouseEvent, appt: AppointmentDTO) => void;
+}) {
   const start = new Date(appt.startAtIso);
   const end = new Date(appt.endAtIso);
   const slotCount = Math.max(
@@ -708,6 +805,7 @@ function AppointmentChip({ appt }: { appt: AppointmentDTO }) {
   );
 
   const isBlock = appt.patientName.includes("System CalendarBlock");
+  const isCancelled = appt.status === "cancelled";
 
   if (isBlock) {
     let blockType = "Block";
@@ -743,19 +841,185 @@ function AppointmentChip({ appt }: { appt: AppointmentDTO }) {
   return (
     <Link
       href={`/clinic/patients/${appt.patientId}`}
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/appt-id", appt.id)}
+      draggable={!isCancelled}
+      onDragStart={(e) => {
+        if (isCancelled) {
+          e.preventDefault();
+          return;
+        }
+        e.dataTransfer.setData("text/appt-id", appt.id);
+      }}
+      onContextMenu={onContextMenu ? (e) => onContextMenu(e, appt) : undefined}
       className={cn(
-        "block rounded-lg px-2.5 py-1.5 mx-0.5 my-0.5 text-[11px] truncate cursor-grab active:cursor-grabbing",
-        "bg-accent-soft border border-accent/20 text-accent hover:bg-accent/15 transition-all shadow-sm",
+        "block rounded-lg px-2.5 py-1.5 mx-0.5 my-0.5 text-[11px] truncate transition-all shadow-sm",
+        isCancelled
+          ? "bg-surface-muted border border-border text-text-subtle line-through opacity-60 cursor-default"
+          : "bg-accent-soft border border-accent/20 text-accent hover:bg-accent/15 cursor-grab active:cursor-grabbing",
       )}
       style={{ height: slotCount * SQUARE - 4 }}
-      title={`${appt.patientName} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)} · ${appt.status}`}
+      title={`${appt.patientName} · ${formatTime(appt.startAtIso)}–${formatTime(appt.endAtIso)} · ${appt.status}${isCancelled ? "" : " · right-click for options"}`}
     >
       <span className="font-semibold truncate">{appt.patientName}</span>
-      <div className="text-[9px] opacity-80 mt-0.5">{formatTime(appt.startAtIso)}</div>
+      <div className="text-[9px] opacity-80 mt-0.5">
+        {formatTime(appt.startAtIso)}
+        {isCancelled ? " · cancelled" : ""}
+      </div>
     </Link>
   );
+}
+
+// ── Appointment popover + cancel dialog (EMR-1110 / EMR-1112) ─────
+
+function AppointmentPopover({
+  x,
+  y,
+  appt,
+  onCancelRequest,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  appt: AppointmentDTO;
+  onCancelRequest: () => void;
+  onClose: () => void;
+}) {
+  const isCancelled = appt.status === "cancelled";
+  return (
+    <div
+      className="fixed z-50 bg-surface border border-border rounded-xl shadow-xl w-64 text-left overflow-hidden"
+      style={{
+        top: Math.min(y, typeof window !== "undefined" ? window.innerHeight - 260 : y),
+        left: Math.min(x, typeof window !== "undefined" ? window.innerWidth - 280 : x),
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="px-4 pt-3 pb-2 border-b border-border/45">
+        <div className="flex items-center justify-between gap-2">
+          <p className={cn("text-sm font-semibold text-text truncate", isCancelled && "line-through text-text-subtle")}>
+            {appt.patientName}
+          </p>
+          <Badge tone={statusTone(appt.status)} className="text-[10px] shrink-0">
+            {appt.status}
+          </Badge>
+        </div>
+        <p className="text-[11px] text-text-subtle tabular-nums mt-0.5">
+          {formatTime(appt.startAtIso)}–{formatTime(appt.endAtIso)} · {formatModality(appt.modality)}
+        </p>
+        {/* EMR-1112 (FO-5) — balance/copay chip, deep-links to the financial cockpit */}
+        <BalanceChip appt={appt} onNavigate={onClose} />
+      </div>
+      <Link
+        href={`/clinic/patients/${appt.patientId}`}
+        onClick={onClose}
+        className="block w-full text-left px-4 py-2 text-xs font-semibold text-text hover:bg-surface-muted transition-colors"
+      >
+        📂 Open chart
+      </Link>
+      <Link
+        href={`/clinic/patients/${appt.patientId}/billing`}
+        onClick={onClose}
+        className="block w-full text-left px-4 py-2 text-xs font-semibold text-text hover:bg-surface-muted transition-colors border-t border-border/45"
+      >
+        💳 Billing & payments
+      </Link>
+      {!isCancelled && (
+        <button
+          type="button"
+          onClick={onCancelRequest}
+          className="w-full text-left px-4 py-2 text-xs font-semibold text-danger hover:bg-danger/10 transition-colors border-t border-border/45"
+        >
+          ✕ Cancel appointment…
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BalanceChip({
+  appt,
+  onNavigate,
+}: {
+  appt: AppointmentDTO;
+  onNavigate: () => void;
+}) {
+  const hasBalance = appt.balanceDueCents > 0;
+  const label = hasBalance
+    ? `Balance due ${formatCents(appt.balanceDueCents)}`
+    : appt.copayCents != null && appt.copayCents > 0
+      ? `Copay ${formatCents(appt.copayCents)}`
+      : "No balance due";
+  return (
+    <Link
+      href={`/clinic/patients/${appt.patientId}/billing`}
+      onClick={onNavigate}
+      className={cn(
+        "inline-flex items-center gap-1 mt-2 mb-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold transition-colors",
+        hasBalance
+          ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/70"
+          : appt.copayCents != null && appt.copayCents > 0
+            ? "bg-accent-soft border-accent/20 text-accent hover:bg-accent/15"
+            : "bg-surface-muted border-border text-text-subtle hover:text-text",
+      )}
+      title="Open the financial cockpit"
+    >
+      {label} →
+    </Link>
+  );
+}
+
+function CancelDialog({
+  appt,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  appt: AppointmentDTO;
+  pending: boolean;
+  onConfirm: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = React.useState("");
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="bg-surface p-6 rounded-2xl border border-border shadow-2xl w-full max-w-md">
+        <h2 className="text-lg font-bold text-text mb-1">Cancel appointment?</h2>
+        <p className="text-sm text-text-subtle mb-4">
+          {appt.patientName} · {formatTime(appt.startAtIso)}–{formatTime(appt.endAtIso)}.
+          The slot reopens immediately; the cancellation (and reason) is recorded in the audit log.
+        </p>
+        <label className="block text-xs font-bold uppercase tracking-wider text-text-subtle mb-1.5">
+          Reason
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Patient requested, provider unavailable, weather…"
+          rows={2}
+          autoFocus
+          className="w-full p-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+        />
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Keep appointment
+          </Button>
+          <Button variant="primary" onClick={() => onConfirm(reason)} disabled={pending}>
+            {pending ? "Cancelling…" : "Cancel appointment"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
 }
 
 // ── Modal components ──────────────────────────────────────────────
@@ -884,6 +1148,7 @@ function ScheduleModal({
 
     return appointments.some((a) => {
       if (a.patientId !== selectedPatient.id) return false;
+      if (a.status === "cancelled") return false;
       const apptDate = new Date(a.startAtIso);
       return getSundayStr(apptDate) === weekStartStr;
     });
@@ -1059,10 +1324,11 @@ function findAppt(
   const slotStart = new Date(weekStart);
   slotStart.setDate(slotStart.getDate() + dayIdx);
   slotStart.setHours(FIRST_HOUR, slotIdx * SLOT_MIN, 0, 0);
-  return (
-    list.find((a) => new Date(a.startAtIso).getTime() === slotStart.getTime()) ??
-    null
+  const matches = list.filter(
+    (a) => new Date(a.startAtIso).getTime() === slotStart.getTime(),
   );
+  // A live appointment booked over a cancelled one wins the square.
+  return matches.find((a) => a.status !== "cancelled") ?? matches[0] ?? null;
 }
 
 // weekStartIso is a UTC ISO string but represents a *calendar date* (the week's

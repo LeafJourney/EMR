@@ -28,6 +28,9 @@ const hoisted = vi.hoisted(() => {
     auditLog: {
       create: vi.fn(),
     },
+    paymentPlan: {
+      findFirst: vi.fn(),
+    },
   };
 
   const mockUser = {
@@ -54,10 +57,12 @@ const hoisted = vi.hoisted(() => {
     parseWebhook: vi.fn(),
   };
 
-  return { mockPrisma, mockUser, requireUserMock, mockGateway };
+  const createPlanMock = vi.fn();
+
+  return { mockPrisma, mockUser, requireUserMock, mockGateway, createPlanMock };
 });
 
-const { mockPrisma, mockUser, requireUserMock, mockGateway } = hoisted;
+const { mockPrisma, mockUser, requireUserMock, mockGateway, createPlanMock } = hoisted;
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -75,11 +80,15 @@ vi.mock("@/lib/payments", () => ({
   resolvePaymentGateway: () => hoisted.mockGateway,
 }));
 
+vi.mock("@/lib/billing/payment-plans", () => ({
+  createPlan: hoisted.createPlanMock,
+}));
+
 // ---------------------------------------------------------------------------
 // Import AFTER the mocks are in place.
 // ---------------------------------------------------------------------------
 
-import { collectCopay, collectPayment } from "./actions";
+import { collectCopay, collectPayment, createPaymentPlanAction } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -194,6 +203,104 @@ describe("collectCopay", () => {
       amountCents: 2500,
       method: "card",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectCopay — role gate (EMR-1111: same allowlist as collectPayment)
+// ---------------------------------------------------------------------------
+
+describe("collectCopay — role gate", () => {
+  beforeEach(resetAll);
+
+  it("allows front_office to collect a copay", async () => {
+    mockUser.roles = ["front_office"];
+    mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1" });
+    mockPrisma.financialEvent.createMany.mockResolvedValue({ count: 2 });
+    mockPrisma.auditLog.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await collectCopay("patient_1", 2500, "cash");
+
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.financialEvent.createMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a role outside the desk-collection allowlist (midlevel)", async () => {
+    mockUser.roles = ["midlevel"];
+
+    const result = await collectCopay("patient_1", 2500, "cash");
+
+    expect(result).toEqual({ ok: false, error: "Unauthorized" });
+    // Denied before any data access or writes.
+    expect(mockPrisma.patient.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.financialEvent.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createPaymentPlanAction — desk enrollment allowlist (FO-M5, EMR-1109)
+// ---------------------------------------------------------------------------
+
+describe("createPaymentPlanAction — role gate", () => {
+  beforeEach(resetAll);
+
+  it("allows front_office to enroll a payment plan", async () => {
+    mockUser.roles = ["front_office"];
+    mockPrisma.patient.findFirst.mockResolvedValue({ id: "patient_1" });
+    mockPrisma.paymentPlan.findFirst.mockResolvedValue(null);
+    createPlanMock.mockResolvedValue({
+      plan: { id: "plan_1" },
+      installmentCount: 6,
+    });
+    mockPrisma.auditLog.create.mockResolvedValue({ id: "audit_1" });
+
+    const result = await createPaymentPlanAction(
+      null,
+      fd({
+        patientId: "patient_1",
+        totalAmountCents: "60000",
+        installmentAmountCents: "10000",
+        frequency: "monthly",
+        startDate: "2026-07-01",
+        autopayEnabled: "on",
+      }),
+    );
+
+    expect(result).toEqual({ ok: true, planId: "plan_1", installmentCount: 6 });
+    expect(createPlanMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org_1",
+        patientId: "patient_1",
+        totalAmountCents: 60000,
+        installmentAmountCents: 10000,
+      }),
+    );
+    expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: "patient.payment_plan.created" }),
+      }),
+    );
+  });
+
+  it("returns a structured Unauthorized error (surfaced by the form) for roles off the allowlist", async () => {
+    mockUser.roles = ["back_office"];
+
+    const result = await createPaymentPlanAction(
+      null,
+      fd({
+        patientId: "patient_1",
+        totalAmountCents: "60000",
+        installmentAmountCents: "10000",
+        frequency: "monthly",
+        startDate: "2026-07-01",
+      }),
+    );
+
+    expect(result).toEqual({ ok: false, error: "Unauthorized" });
+    expect(createPlanMock).not.toHaveBeenCalled();
+    expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
   });
 });
 

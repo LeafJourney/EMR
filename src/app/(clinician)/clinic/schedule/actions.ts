@@ -1,80 +1,34 @@
 "use server";
 
+// NOTE (EMR-1110 / FO-3): the drag-to-reschedule action that used to live
+// here was a duplicate of the one in ./calendar/actions.ts. The calendar
+// version is now the single code path (role-gated, cancelled-aware,
+// force-capable) — callers import rescheduleAppointmentAction and
+// cancelAppointmentAction from "./calendar/actions".
+
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
-import {
-  ensureEncounterForAppointment,
-  syncEncounterScheduleForAppointment,
-} from "@/lib/domain/ensure-encounter";
+import { requireUser, type AuthedUser } from "@/lib/auth/session";
+import { ensureEncounterForAppointment } from "@/lib/domain/ensure-encounter";
 import { CALENDAR_BLOCK_PATIENT } from "@/lib/domain/calendar-block-patient";
 
-const rescheduleSchema = z.object({
-  appointmentId: z.string(),
-  newStartIso: z.string(),
-  force: z.boolean().optional(),
-});
+// Explicit allowlist (QUEUE_STATE_ROLES style) — scheduling is policy,
+// not a side effect of being authenticated.
+const SCHEDULING_ROLES = new Set([
+  "front_office",
+  "back_office",
+  "clinician",
+  "practice_owner",
+  "operator",
+]);
 
-/**
- * EMR-182: drag-to-reschedule. The client drops an appointment onto a
- * new 30-min square; this action moves the start (and end, preserving
- * the duration) to that slot. Org-scoped via the patient record.
- */
-export async function rescheduleAppointmentAction(
-  payload: z.infer<typeof rescheduleSchema>,
-): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
-  const user = await requireUser();
-  const parsed = rescheduleSchema.safeParse(payload);
-  if (!parsed.success) return { ok: false, error: "Invalid drop payload." };
-
-  const appt = await prisma.appointment.findFirst({
-    where: {
-      id: parsed.data.appointmentId,
-      patient: { organizationId: user.organizationId! },
-    },
-  });
-  if (!appt) return { ok: false, error: "Appointment not found." };
-
-  const newStart = new Date(parsed.data.newStartIso);
-  if (Number.isNaN(newStart.getTime())) {
-    return { ok: false, error: "Invalid target time." };
-  }
-  const durationMs = appt.endAt.getTime() - appt.startAt.getTime();
-  const newEnd = new Date(newStart.getTime() + durationMs);
-
-  // Conflict check — prevent stacking two appointments on the same
-  // provider in the same window. We allow back-to-back exactly (no
-  // gap).
-  if (appt.providerId && !parsed.data.force) {
-    const conflict = await prisma.appointment.findFirst({
-      where: {
-        providerId: appt.providerId,
-        id: { not: appt.id },
-        startAt: { lt: newEnd },
-        endAt: { gt: newStart },
-      },
-    });
-    if (conflict) {
-      return {
-        ok: false,
-        error: "That slot conflicts with another appointment for this provider.",
-        code: "CONFLICT",
-      };
-    }
-  }
-
-  await prisma.appointment.update({
-    where: { id: appt.id },
-    data: { startAt: newStart, endAt: newEnd },
-  });
-
-  // Keep a materialized (still-scheduled) Encounter aligned with the new slot.
-  await syncEncounterScheduleForAppointment(appt.id, newStart);
-
-  revalidatePath("/clinic/schedule");
-  return { ok: true };
+function canManageSchedule(user: AuthedUser): boolean {
+  return user.roles.some((role) => SCHEDULING_ROLES.has(role));
 }
+
+// Cancelled / no-show appointments never occupy a slot.
+const ACTIVE_STATUSES = ["requested", "confirmed"] as const;
 
 const createAppointmentSchema = z.object({
   patientId: z.string(),
@@ -89,6 +43,9 @@ export async function createPatientAppointmentAction(
   payload: z.infer<typeof createAppointmentSchema>,
 ): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
   const user = await requireUser();
+  if (!canManageSchedule(user)) {
+    return { ok: false, error: "You don't have permission to manage the schedule." };
+  }
   const parsed = createAppointmentSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, error: "Invalid appointment payload." };
 
@@ -107,11 +64,12 @@ export async function createPatientAppointmentAction(
   });
   if (!provider) return { ok: false, error: "No provider profile found for current user." };
 
-  // Check conflicts
+  // Check conflicts — cancelled appointments don't block the slot.
   if (!force) {
     const conflict = await prisma.appointment.findFirst({
       where: {
         providerId: provider.id,
+        status: { in: [...ACTIVE_STATUSES] },
         startAt: { lt: endAt },
         endAt: { gt: startAt },
       },
@@ -158,6 +116,9 @@ export async function createSpecialBlockAction(
   payload: z.infer<typeof createBlockSchema>,
 ): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
   const user = await requireUser();
+  if (!canManageSchedule(user)) {
+    return { ok: false, error: "You don't have permission to manage the schedule." };
+  }
   const parsed = createBlockSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, error: "Invalid block payload." };
 
@@ -192,11 +153,12 @@ export async function createSpecialBlockAction(
   });
   if (!provider) return { ok: false, error: "No provider profile found for current user." };
 
-  // Check conflicts
+  // Check conflicts — cancelled appointments don't block the slot.
   if (!force) {
     const conflict = await prisma.appointment.findFirst({
       where: {
         providerId: provider.id,
+        status: { in: [...ACTIVE_STATUSES] },
         startAt: { lt: endAt },
         endAt: { gt: startAt },
       },

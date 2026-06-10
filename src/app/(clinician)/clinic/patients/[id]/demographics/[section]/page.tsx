@@ -2,50 +2,18 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { canEditSection } from "@/lib/rbac/permissions";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { DemographicsDetailEditor } from "./detail-editor";
+import { MIRRORED_KEYS, SECTIONS } from "./sections";
+import type { DemographicsExtraRow } from "./actions";
 
 interface PageProps {
   params: { id: string; section: string };
 }
-
-const SECTIONS: Record<
-  string,
-  { title: string; fields: { key: string; label: string; placeholder?: string }[] }
-> = {
-  identity: {
-    title: "Identity",
-    fields: [
-      { key: "ssn", label: "Social Security Number", placeholder: "XXX-XX-XXXX" },
-      { key: "preferredName", label: "Preferred name" },
-      { key: "pronouns", label: "Pronouns" },
-      { key: "languages", label: "Preferred language(s)" },
-    ],
-  },
-  contact: {
-    title: "Contact",
-    fields: [
-      { key: "phone", label: "Phone" },
-      { key: "email", label: "Email" },
-      { key: "address", label: "Address" },
-      { key: "emergencyName", label: "Emergency contact name" },
-      { key: "emergencyNumber", label: "Emergency contact number" },
-      { key: "emergencyEmail", label: "Emergency contact email" },
-    ],
-  },
-  insurance: {
-    title: "Insurance",
-    fields: [
-      { key: "planName", label: "Plan name" },
-      { key: "memberId", label: "Member ID" },
-      { key: "groupNumber", label: "Group number" },
-      { key: "coordinationOfBenefits", label: "Coordination of benefits" },
-    ],
-  },
-};
 
 export default async function DemographicsSectionPage({ params }: PageProps) {
   const user = await requireUser();
@@ -57,9 +25,21 @@ export default async function DemographicsSectionPage({ params }: PageProps) {
   });
   if (!patient) notFound();
 
-  // Seed core values we already hold so the editor isn't empty on first open.
   const intake = (patient.intakeAnswers ?? {}) as Record<string, any>;
-  const seed: Record<string, string> = {
+
+  // Server-persisted section payload (written by saveDemographicsSection).
+  const detail = (intake.demographicsDetail?.[params.section] ?? {}) as {
+    fields?: Record<string, string>;
+    extras?: DemographicsExtraRow[];
+    savedAt?: string;
+  };
+
+  // Canonical values we already hold elsewhere on the chart. For mirrored
+  // keys (phone/email, insurance identifiers) the canonical store wins so
+  // this page can never drift from the inline-edit card, which writes to
+  // the same fields. Non-mirrored keys (e.g. the address string) prefer
+  // the persisted detail payload.
+  const canonical: Record<string, string> = {
     phone: patient.phone ?? "",
     email: patient.email ?? "",
     address: [patient.addressLine1, patient.city, patient.state, patient.postalCode]
@@ -70,7 +50,20 @@ export default async function DemographicsSectionPage({ params }: PageProps) {
       (typeof intake.insurance === "string" ? intake.insurance : "") ??
       "",
     memberId: (intake.insurance as any)?.memberId ?? intake.memberId ?? "",
+    groupNumber: (intake.insurance as any)?.groupNumber ?? "",
   };
+
+  const mirrored = new Set(MIRRORED_KEYS[params.section] ?? []);
+  const seed: Record<string, string> = { ...(detail.fields ?? {}) };
+  for (const [key, value] of Object.entries(canonical)) {
+    if (mirrored.has(key)) {
+      seed[key] = value;
+    } else if (!(key in seed) && value) {
+      seed[key] = value;
+    }
+  }
+
+  const canEdit = canEditSection(user, "demographics");
 
   return (
     <PageShell maxWidth="max-w-[840px]">
@@ -83,7 +76,9 @@ export default async function DemographicsSectionPage({ params }: PageProps) {
               {section.title} — {patient.firstName} {patient.lastName}
             </h1>
             <p className="text-sm text-text-muted mt-1">
-              Add, edit, or erase {section.title.toLowerCase()} information.
+              {canEdit
+                ? `Add, edit, or erase ${section.title.toLowerCase()} information.`
+                : `View ${section.title.toLowerCase()} information (read-only for your role).`}
             </p>
           </div>
         </div>
@@ -99,6 +94,9 @@ export default async function DemographicsSectionPage({ params }: PageProps) {
         section={params.section}
         fields={section.fields}
         seed={seed}
+        initialExtras={detail.extras ?? []}
+        initialSavedAt={detail.savedAt ?? null}
+        canEdit={canEdit}
         patientLifeNumber={patient.id.slice(0, 12).toUpperCase()}
       />
     </PageShell>

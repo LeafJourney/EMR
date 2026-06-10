@@ -27,6 +27,27 @@ export default async function GroupVisitsPage() {
   const user = await requireUser();
   const orgId = user.organizationId!;
 
+  // EMR-1110 (FO-M4, minor 2) — the planner needs an explicit series lead:
+  // pass the org's active providers, plus the viewer's own provider id (if
+  // any) as the default selection.
+  const [providerRows, viewerProvider] = await Promise.all([
+    prisma.provider.findMany({
+      where: { organizationId: orgId, active: true },
+      include: { user: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.provider.findFirst({
+      where: { organizationId: orgId, userId: user.id, active: true },
+      select: { id: true },
+    }),
+  ]);
+  const providerOptions = providerRows.map((p) => ({
+    id: p.id,
+    name:
+      `${p.user?.firstName ?? ""} ${p.user?.lastName ?? ""}`.trim() ||
+      "Unnamed provider",
+  }));
+
   const horizonStart = new Date();
   horizonStart.setHours(0, 0, 0, 0);
   const horizonEnd = new Date(horizonStart);
@@ -95,7 +116,10 @@ export default async function GroupVisitsPage() {
       />
 
       <div className="mb-8">
-        <GroupSeriesPlanner />
+        <GroupSeriesPlanner
+          providers={providerOptions}
+          viewerProviderId={viewerProvider?.id ?? null}
+        />
       </div>
 
       <div className="mb-3 flex items-baseline justify-between">

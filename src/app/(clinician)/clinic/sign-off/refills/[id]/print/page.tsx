@@ -15,6 +15,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { formatDate } from "@/lib/utils/format";
 import {
   PrintDocument,
@@ -38,6 +40,9 @@ const STATUS_DISPLAY: Record<string, { label: string; tone: "info" | "approved" 
 
 export default async function RefillPrintPage({ params }: PageProps) {
   const user = await requireUser();
+  // EMR-1111 (FO-B5): direct-URL print views carry the same PHI as the
+  // sign-off queue and must gate themselves, not rely on the layout.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
 
   const refill = await prisma.refillRequest.findFirst({
     where: {
