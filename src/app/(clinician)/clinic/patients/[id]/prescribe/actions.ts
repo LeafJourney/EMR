@@ -5,8 +5,18 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
-import { checkInteractions } from "@/lib/domain/drug-interactions";
+import {
+  checkInteractions,
+  inferCannabinoidsFromName,
+} from "@/lib/domain/drug-interactions";
 import { recommendNarcan } from "@/lib/domain/cures";
+import { classifyDEASchedule } from "@/lib/domain/dea-schedule";
+import { checkContraindications } from "@/lib/domain/contraindications";
+import {
+  assessHighRiskAttestation,
+  ageFromDob,
+  psychiatricComorbidityLabels,
+} from "./high-risk-attestation";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { logger } from "@/lib/observability/log";
 
@@ -22,6 +32,12 @@ const schema = z.object({
   quantity: z.coerce.number().positive(),
   refills: z.coerce.number().int().min(0).max(12),
   timingInstructions: z.string().max(500).optional(),
+  // WS-C task 1: marks the v2 prescribe form so the server can require a
+  // pharmacy routing target on that path without breaking legacy/batch callers.
+  rxFormVersion: z.string().max(10).optional(),
+  // WS-C task 2: cannabinoid hints from the "open to" picker — used to infer a
+  // profile for custom/free-text products so interactions are still screened.
+  openCannabinoids: z.string().optional(), // JSON array of cannabinoid names
   diagnosisCodes: z.string().optional(), // JSON-encoded array of {code, label}
   // EMR-1099 (M3): pharmacy routing target. The form requires a selection
   // before "Sign & send"; optional here so legacy callers keep working.
@@ -42,6 +58,10 @@ const schema = z.object({
   curesMmePerDay: z.coerce.number().nonnegative().optional(),
   narcanCoPrescribe: z.string().optional(),
   narcanDeclineReason: z.string().max(2000).optional(),
+  // WS-C task 3: clinician acknowledgment of a high-risk (non-controlled)
+  // prescribing scenario — high-dose THC, age >= 65, psychiatric comorbidity.
+  highRiskAttestationAcknowledged: z.string().optional(), // "true" if acknowledged
+  highRiskReasons: z.string().optional(), // JSON array of HighRiskKind
 });
 
 export type PrescribeResult = { ok: true } | { ok: false; error: string };
@@ -64,6 +84,8 @@ export async function createPrescriptionAction(
     quantity: formData.get("quantity"),
     refills: formData.get("refills"),
     timingInstructions: formData.get("timingInstructions") || undefined,
+    rxFormVersion: formData.get("rxFormVersion") || undefined,
+    openCannabinoids: formData.get("openCannabinoids") || undefined,
     diagnosisCodes: formData.get("diagnosisCodes") || undefined,
     pharmacyId: formData.get("pharmacyId") || undefined,
     pharmacyName: formData.get("pharmacyName") || undefined,
@@ -83,6 +105,9 @@ export async function createPrescriptionAction(
     curesMmePerDay: formData.get("curesMmePerDay") || undefined,
     narcanCoPrescribe: formData.get("narcanCoPrescribe") || undefined,
     narcanDeclineReason: formData.get("narcanDeclineReason") || undefined,
+    highRiskAttestationAcknowledged:
+      formData.get("highRiskAttestationAcknowledged") || undefined,
+    highRiskReasons: formData.get("highRiskReasons") || undefined,
   });
 
   if (!parsed.success) {
@@ -112,6 +137,19 @@ export async function createPrescriptionAction(
   // Must have either a product from formulary or a custom name
   if (!productId && !customProductName) {
     return { ok: false, error: "Please select a product or enter a custom medication name." };
+  }
+
+  // WS-C task 1: the v2 prescribe form collects a pharmacy routing target and
+  // gates "Sign & send" on it client-side (EMR-1099/M3). Enforce that contract
+  // server-side too — the client gate is a convenience, not the boundary. The
+  // legacy v1 form and the batch flow (separate action, formulary bulk
+  // authorization with no per-item routing) don't collect a pharmacy and are
+  // intentionally exempt: they omit the `rxFormVersion=v2` marker.
+  if (parsed.data.rxFormVersion === "v2" && !pharmacyId) {
+    return {
+      ok: false,
+      error: "Select a pharmacy before signing & sending the prescription.",
+    };
   }
 
   // Verify patient belongs to org
@@ -144,18 +182,43 @@ export async function createPrescriptionAction(
     resolvedProductId = product.id;
   }
 
-  // Check for drug interactions server-side if product is from formulary
+  // Parse the cannabinoid "open to" hints once — used to infer a profile for
+  // custom/free-text products (WS-C task 2).
+  let openCannabinoidsHint: string[] = [];
+  if (parsed.data.openCannabinoids) {
+    try {
+      const raw = JSON.parse(parsed.data.openCannabinoids);
+      const result = z.array(z.string()).safeParse(raw);
+      openCannabinoidsHint = result.success ? result.data : [];
+    } catch {
+      openCannabinoidsHint = [];
+    }
+  }
+
+  // Check for drug interactions server-side for BOTH formulary and custom
+  // products. Formulary products read their structured cannabinoid profile;
+  // custom/free-text products (no concentration data) get a best-effort profile
+  // inferred from the name + hints so the screen still runs and red/yellow
+  // interactions block until acknowledged regardless of product source.
   if (product) {
     const patientMeds = await prisma.patientMedication.findMany({
       where: { patientId, active: true },
     });
 
     if (patientMeds.length > 0) {
-      const cannabinoids: string[] = [];
-      if (product.thcConcentration && product.thcConcentration > 0) cannabinoids.push("THC");
-      if (product.cbdConcentration && product.cbdConcentration > 0) cannabinoids.push("CBD");
-      if (product.cbnConcentration && product.cbnConcentration > 0) cannabinoids.push("CBN");
-      if (product.cbgConcentration && product.cbgConcentration > 0) cannabinoids.push("CBG");
+      let cannabinoids: string[];
+      if (productId) {
+        cannabinoids = [];
+        if (product.thcConcentration && product.thcConcentration > 0) cannabinoids.push("THC");
+        if (product.cbdConcentration && product.cbdConcentration > 0) cannabinoids.push("CBD");
+        if (product.cbnConcentration && product.cbnConcentration > 0) cannabinoids.push("CBN");
+        if (product.cbgConcentration && product.cbgConcentration > 0) cannabinoids.push("CBG");
+      } else {
+        cannabinoids = inferCannabinoidsFromName(
+          customProductName ?? product.name,
+          openCannabinoidsHint,
+        );
+      }
 
       const medNames = patientMeds.map((m) => m.name);
       const interactions = checkInteractions(medNames, cannabinoids);
@@ -250,6 +313,67 @@ export async function createPrescriptionAction(
     mmePerDay: parsed.data.curesMmePerDay ?? null,
   };
 
+  // ── WS-C task 3: high-risk attestation gate ──────────────────────────────
+  // A documented acknowledgment is owed not only for DEA-controlled substances
+  // but for high-risk non-controlled scenarios too. The risk is recomputed
+  // server-side; the client gate is a convenience, never the enforcement point.
+  const candidateRxName = product?.name ?? customProductName ?? "";
+  const deaMatch = candidateRxName ? classifyDEASchedule(candidateRxName) : null;
+  const isControlledRx = !!deaMatch;
+
+  // Controlled substances: enforce the CURES/PDMP attestation server-side (the
+  // v2 form gates it client-side — mirror that here so the API can't be driven
+  // around the UI).
+  if (isControlledRx && !curesSummary.acknowledged) {
+    return {
+      ok: false,
+      error: "Controlled substance: complete the CURES/PDMP attestation before signing.",
+    };
+  }
+
+  // Non-controlled high-risk scenarios (high-dose THC, age ≥ 65, documented
+  // psychiatric comorbidity) require the clinical risk attestation. Controlled
+  // substances are already covered by the CURES gate above.
+  let highRiskSummary: { reasons: string[]; acknowledged: true } | null = null;
+  if (!isControlledRx) {
+    const chartSummary = await prisma.chartSummary.findUnique({
+      where: { patientId },
+      select: { summaryMd: true },
+    });
+    const contraindicationMatches = checkContraindications({
+      dateOfBirth: patient.dateOfBirth,
+      presentingConcerns: patient.presentingConcerns,
+      intakeAnswers: patient.intakeAnswers,
+      medicationNames: activePatientMeds.map((m) => m.name),
+      historyText: chartSummary?.summaryMd ?? null,
+    });
+    const highRiskReasons = assessHighRiskAttestation({
+      thcMgPerDay,
+      patientAge: ageFromDob(patient.dateOfBirth),
+      psychiatricComorbidities: psychiatricComorbidityLabels(
+        contraindicationMatches.map((m) => ({
+          id: m.contraindication.id,
+          label: m.contraindication.label,
+        })),
+      ),
+    });
+    if (highRiskReasons.length > 0) {
+      if (parsed.data.highRiskAttestationAcknowledged !== "true") {
+        return {
+          ok: false,
+          error:
+            "High-risk prescription (" +
+            highRiskReasons.map((r) => r.label).join(", ") +
+            "). Acknowledge the clinical risk attestation before signing.",
+        };
+      }
+      highRiskSummary = {
+        reasons: highRiskReasons.map((r) => r.kind),
+        acknowledged: true,
+      };
+    }
+  }
+
   const narcanSummary = narcanRec.recommended
     ? {
         recommended: true,
@@ -271,6 +395,7 @@ export async function createPrescriptionAction(
     interactionAcknowledged: interactionAcknowledged === "true",
     cures: curesSummary,
     narcan: narcanSummary,
+    highRisk: highRiskSummary,
   });
 
   // Auto-generate patient instructions if not provided
@@ -413,6 +538,22 @@ export async function createPrescriptionAction(
             flags: curesSummary.flags,
             mmePerDay: curesSummary.mmePerDay,
           },
+        },
+      });
+    }
+
+    // WS-C task 3: audit the high-risk attestation whenever it was required
+    // and acknowledged — the clinician's documented acknowledgment of a
+    // high-dose THC / elderly / psychiatric-comorbidity prescription.
+    if (highRiskSummary) {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: user.organizationId!,
+          actorUserId: user.id,
+          action: "prescribing.high_risk.attested",
+          subjectType: "DosingRegimen",
+          subjectId: regimen.id,
+          metadata: { reasons: highRiskSummary.reasons },
         },
       });
     }
