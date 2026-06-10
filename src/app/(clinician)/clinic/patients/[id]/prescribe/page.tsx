@@ -2,20 +2,28 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell } from "@/components/shell/PageHeader";
-import { PrescribeFormV2 } from "./prescribe-form-v2";
+import {
+  PrescribeFormV2,
+  type DiagnosisOption,
+  type RecommendationPrefill,
+} from "./prescribe-form-v2";
 import { checkContraindications } from "@/lib/domain/contraindications";
 import { resolveModuleFlags, scrubModuleWords } from "@/lib/clinical/module-opt-in";
+import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 
 interface PageProps {
   params: { id: string };
+  // EMR-1098 (M2): ?rec={CannabisRecommendation.id} pre-fills the form from a
+  // saved AI recommendation.
+  searchParams?: { rec?: string };
 }
 
 export const metadata = { title: "New Prescription" };
 
-export default async function PrescribePage({ params }: PageProps) {
+export default async function PrescribePage({ params, searchParams }: PageProps) {
   const user = await requireUser();
 
-  const [patient, products, medications, chartSummary, eligibleCoSigners] =
+  const [patient, products, medications, chartSummary, problemListConditions, eligibleCoSigners] =
     await Promise.all([
       prisma.patient.findFirst({
         where: {
@@ -34,6 +42,12 @@ export default async function PrescribePage({ params }: PageProps) {
       }),
       prisma.chartSummary.findUnique({
         where: { patientId: params.id },
+      }),
+      // EMR-1099 (M4): the patient's documented diagnoses (problem list).
+      // Rows store "ICD10 | description" in `condition` (see problems/page.tsx).
+      prisma.pastMedicalCondition.findMany({
+        where: { patientId: params.id, deletedAt: null },
+        orderBy: { createdAt: "desc" },
       }),
       // EMR-088: optional dual sign-off — list other clinicians/owners in the
       // org so the prescriber can route a high-risk override for co-signature.
@@ -54,6 +68,50 @@ export default async function PrescribePage({ params }: PageProps) {
 
   if (!patient) notFound();
 
+  // EMR-1098 (M2): load the saved recommendation referenced by ?rec= and map
+  // its payload onto the form's initial values. The catch keeps the page up
+  // while the CannabisRecommendation table migration is still rolling out.
+  const savedRecommendation = searchParams?.rec
+    ? await prisma.cannabisRecommendation
+        .findFirst({
+          where: {
+            id: searchParams.rec,
+            patientId: params.id,
+            organizationId: user.organizationId!,
+          },
+        })
+        .catch(() => null)
+    : null;
+
+  const recommendationPrefill: RecommendationPrefill | null = savedRecommendation
+    ? buildRecommendationPrefill(
+        savedRecommendation.id,
+        savedRecommendation.createdAt,
+        savedRecommendation.recommendation as Record<string, unknown>,
+      )
+    : null;
+
+  // EMR-1099 (M4): diagnosis-code options for the prescription — the patient's
+  // documented problem list first, then the common cannabis-context codes
+  // (same pattern as the referral form's diagnosis picker).
+  const chartDiagnoses: DiagnosisOption[] = problemListConditions
+    .map((c) => {
+      if (!c.condition.includes(" | ")) return null;
+      const [code, ...rest] = c.condition.split(" | ");
+      if (!code.trim()) return null;
+      return { code: code.trim(), label: rest.join(" | ").trim(), fromChart: true };
+    })
+    .filter((d): d is DiagnosisOption => d !== null);
+  const chartCodes = new Set(chartDiagnoses.map((d) => d.code));
+  const diagnosisOptions: DiagnosisOption[] = [
+    ...chartDiagnoses,
+    ...COMMON_PROBLEMS.filter((p) => !chartCodes.has(p.icd10)).map((p) => ({
+      code: p.icd10,
+      label: p.description,
+      fromChart: false,
+    })),
+  ];
+
   // EMR-088: run cannabis contraindication check
   const contraindicationMatches = checkContraindications({
     dateOfBirth: patient.dateOfBirth,
@@ -65,6 +123,14 @@ export default async function PrescribePage({ params }: PageProps) {
   });
 
   const patientState = patient.state ?? undefined;
+
+  // WS-C task 3: patient age gates the high-risk attestation for older adults.
+  const patientAge = patient.dateOfBirth
+    ? Math.floor(
+        (Date.now() - new Date(patient.dateOfBirth).getTime()) /
+          (365.25 * 24 * 60 * 60 * 1000),
+      )
+    : null;
 
   // EMR-883 — module gating. Cannabis is on by default for LeafJourney, but
   // when the org has opted out we scrub the word "Cannabis" from titles and
@@ -90,11 +156,14 @@ export default async function PrescribePage({ params }: PageProps) {
         patientPhone={patient.phone}
         patientPhotoUrl={null}
         patientState={patientState}
+        patientAge={patientAge}
         providerName={providerName}
         deaNumber={deaNumber}
         moduleFlags={moduleFlags}
         // EMR-883 — drop "Cannabis" from the heading when the module is off.
         heading={scrubModuleWords("New Cannabis Prescription", moduleFlags)}
+        recommendationPrefill={recommendationPrefill}
+        diagnosisOptions={diagnosisOptions}
         contraindicationMatches={contraindicationMatches.map((m) => ({
           id: m.contraindication.id,
           label: m.contraindication.label,
@@ -143,4 +212,63 @@ function deriveDeaPlaceholder(name: string): string {
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 10_000_000;
   const first = (name[0] ?? "X").toUpperCase();
   return `B${first}${hash.toString().padStart(7, "0")}`;
+}
+
+/**
+ * EMR-1098 (M2) — map a saved recommendation payload (free-text, evidence
+ * oriented) onto the prescribe form's structured fields. Conservative: dose
+ * takes the LOW end of any range ("start low, go slow"), and anything that
+ * can't be parsed is left for the physician — the raw payload is always shown
+ * in the "Pre-filled from recommendation" note.
+ */
+function buildRecommendationPrefill(
+  id: string,
+  createdAt: Date,
+  payload: Record<string, unknown>,
+): RecommendationPrefill {
+  const productType = typeof payload.productType === "string" ? payload.productType : "";
+  const startingDose = typeof payload.startingDoseMg === "string" ? payload.startingDoseMg : "";
+  const frequency = typeof payload.frequency === "string" ? payload.frequency : "";
+
+  // "2.5-5 mg THC + 2.5-5 mg CBD" → dose "2.5", unit "mg"
+  const doseMatch = startingDose.match(/(\d+(?:\.\d+)?)/);
+  const unitMatch = startingDose.match(/\d\s*(mg|mcg|g|mL)\b/i);
+
+  // "1-2 times daily" → 1; "Once nightly" → 1; "twice daily" → 2; "3x" → 3
+  let frequencyPerDay: number | null = null;
+  const freqLower = frequency.toLowerCase();
+  if (/\bonce\b|\bnightly\b/.test(freqLower)) frequencyPerDay = 1;
+  else if (/\btwice\b/.test(freqLower)) frequencyPerDay = 2;
+  else {
+    const m = freqLower.match(/(\d+)(?:\s*[-–]\s*\d+)?\s*(?:x\b|times)/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n >= 1 && n <= 12) frequencyPerDay = n;
+    }
+  }
+
+  // The qualifier after the first comma is timing guidance,
+  // e.g. "Once nightly, 1 hour before bed" → "1 hour before bed".
+  const commaIdx = frequency.indexOf(",");
+  const timingInstructions =
+    commaIdx >= 0 ? frequency.slice(commaIdx + 1).trim() || null : null;
+
+  return {
+    id,
+    createdAt: createdAt.toISOString(),
+    productType,
+    dose: doseMatch ? doseMatch[1] : null,
+    unit: unitMatch ? unitMatch[1] : null,
+    frequencyPerDay,
+    timingInstructions,
+    summary: {
+      productType,
+      cannabinoidRatio:
+        typeof payload.cannabinoidRatio === "string" ? payload.cannabinoidRatio : "",
+      startingDoseMg: startingDose,
+      deliveryMethod:
+        typeof payload.deliveryMethod === "string" ? payload.deliveryMethod : "",
+      frequency,
+    },
+  };
 }

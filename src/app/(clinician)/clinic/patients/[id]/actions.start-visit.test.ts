@@ -17,6 +17,7 @@ const hoisted = vi.hoisted(() => {
     note: { findFirst: vi.fn() },
     agentJob: { findMany: vi.fn() },
     provider: { findFirst: vi.fn() },
+    appointment: { findFirst: vi.fn() },
   };
   return {
     mockPrisma,
@@ -100,6 +101,7 @@ beforeEach(() => {
   mockPrisma.encounter.create.mockResolvedValue(scheduledEncounter({ id: "new_enc", status: "in_progress" }));
   mockPrisma.note.findFirst.mockResolvedValue(null);
   mockPrisma.agentJob.findMany.mockResolvedValue([]);
+  mockPrisma.appointment.findFirst.mockResolvedValue(null);
   dispatchMock.mockResolvedValue([]);
 });
 
@@ -137,6 +139,34 @@ describe("startVisit — encounter selection", () => {
     await expect(startVisit("patient_1")).rejects.toThrow(/redirect:/);
 
     expect(mockPrisma.encounter.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("startVisit — modality fidelity (audit minor #2)", () => {
+  it("carries modality from today's confirmed appointment when minting an ad-hoc encounter", async () => {
+    mockPrisma.encounter.findMany.mockResolvedValue([]);
+    mockPrisma.appointment.findFirst.mockResolvedValue({ modality: "video" });
+
+    await expect(startVisit("patient_1")).rejects.toThrow(/redirect:/);
+
+    expect(mockPrisma.encounter.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ modality: "video" }),
+      }),
+    );
+  });
+
+  it("falls back to in_person when no appointment exists today", async () => {
+    mockPrisma.encounter.findMany.mockResolvedValue([]);
+    mockPrisma.appointment.findFirst.mockResolvedValue(null);
+
+    await expect(startVisit("patient_1")).rejects.toThrow(/redirect:/);
+
+    expect(mockPrisma.encounter.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ modality: "in_person" }),
+      }),
+    );
   });
 });
 

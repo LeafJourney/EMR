@@ -33,6 +33,7 @@ import {
 } from "@/lib/domain/notes";
 import { advanceVisitState } from "@/lib/domain/visit-state";
 import type { VisitCompletionReleasePayload } from "@/lib/domain/visit-completion-selection";
+import { deriveFollowUpBooking } from "@/lib/domain/visit-completion";
 
 const blockSchema = z.object({
   heading: z.string(),
@@ -91,7 +92,7 @@ export async function saveNoteBlocks(
   }
 
   // A signed note (finalized or amended) is a locked legal record. The editor
-  // hides the Save button once a note leaves draft/needs_review, but the server
+  // hides the Save button once a note leaves draft, but the server
   // must enforce it too: a direct action call (or a stale client) must not
   // silently mutate a signed note. Mirrors the guard saveObjectiveDocumentation
   // already applies. Amending a signed note is a deliberate, audited flow — not
@@ -712,6 +713,152 @@ Return ONLY the refined text — no JSON, no markdown, no explanation. Just the 
   }
 }
 
+// ---------------------------------------------------------------------------
+// Coding approval — EMR-1097 (B4)
+// ---------------------------------------------------------------------------
+// The Coding Readiness Agent attaches suggestions to a finalized note; nothing
+// downstream (charge extraction → claim construction) may run until the
+// physician approves them here. Approval is recorded on the CodingSuggestion
+// row, audited, and announced via the typed coding.approved event.
+
+const approveCodingSchema = z.object({
+  icd10: z
+    .array(z.object({ code: z.string().min(1), label: z.string().optional() }))
+    .max(50),
+  emLevel: z.string().nullable(),
+  modified: z.boolean(),
+});
+
+export type ApproveCodingResult =
+  | { ok: true; status: "approved" | "modified"; approvedByName: string; approvedAt: string }
+  | { ok: false; error: string };
+
+export async function approveCodingSuggestion(
+  noteId: string,
+  input: {
+    icd10: { code: string; label?: string }[];
+    emLevel: string | null;
+    modified: boolean;
+  },
+): Promise<ApproveCodingResult> {
+  const user = await requireUser();
+
+  // Same gate as finalize — coding approval is a signing-level decision.
+  if (!hasPermission(user, "notes.edit")) {
+    return { ok: false, error: "Forbidden: read-only access to notes" };
+  }
+
+  const parsed = approveCodingSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid coding approval input" };
+  }
+  if (parsed.data.icd10.length === 0 && !parsed.data.emLevel) {
+    return { ok: false, error: "Approve at least one ICD-10 code or an E/M level." };
+  }
+
+  const note = await prisma.note.findUnique({
+    where: { id: noteId },
+    include: { encounter: true },
+  });
+  if (!note) return { ok: false, error: "Note not found" };
+
+  const encounter = await prisma.encounter.findFirst({
+    where: {
+      id: note.encounterId,
+      organizationId: user.organizationId!,
+    },
+  });
+  if (!encounter) return { ok: false, error: "Unauthorized" };
+
+  try {
+    await assertChartAccess(user, encounter.patientId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "Forbidden: chart is restricted" };
+    }
+    throw err;
+  }
+
+  if (note.status !== "finalized" && note.status !== "amended") {
+    return { ok: false, error: "Coding can only be approved on a signed note." };
+  }
+
+  const suggestion = await prisma.codingSuggestion.findUnique({
+    where: { noteId },
+  });
+  if (!suggestion) {
+    return { ok: false, error: "No coding suggestion exists for this note yet." };
+  }
+
+  const approvedAt = new Date();
+  const approvedByName = `${user.firstName} ${user.lastName}`.trim();
+  const status = parsed.data.modified ? "modified" : "approved";
+  const approvedIcd10Payload = parsed.data.icd10.map((c) => ({
+    code: c.code,
+    label: c.label ?? "",
+  }));
+
+  // Idempotent by construction: CodingSuggestion is keyed by noteId, so a
+  // re-approval UPDATES the same decision row rather than duplicating it.
+  await prisma.codingSuggestion.update({
+    where: { noteId },
+    data: {
+      status,
+      approvedById: user.id,
+      approvedByName,
+      approvedAt,
+      approvedIcd10: approvedIcd10Payload,
+      approvedEmLevel: parsed.data.emLevel,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: user.organizationId!,
+      actorUserId: user.id,
+      action: "coding.approved",
+      subjectType: "CodingSuggestion",
+      subjectId: suggestion.id,
+      metadata: {
+        noteId,
+        encounterId: note.encounterId,
+        status,
+        modified: parsed.data.modified,
+        codeCount: approvedIcd10Payload.length,
+        emLevel: parsed.data.emLevel,
+        reapproval: suggestion.status != null && suggestion.status !== "suggested",
+      } as any,
+    },
+  });
+
+  // coding.approved → Encounter Intelligence (charge extraction) + Claim
+  // Construction. Carries the approved codes so billing reconciles against
+  // the physician's decision, not the raw suggestion.
+  await dispatch({
+    name: "coding.approved",
+    noteId,
+    encounterId: note.encounterId,
+    patientId: encounter.patientId,
+    organizationId: user.organizationId!,
+    approvedBy: user.id,
+    approvedIcd10: approvedIcd10Payload.map((c) => c.code),
+    approvedEmLevel: parsed.data.emLevel,
+  });
+
+  // In dev, run the queue inline so charges appear immediately.
+  if (process.env.NODE_ENV !== "production") {
+    await runTick("inline-dev", 4);
+  }
+
+  revalidatePath(`/clinic/patients/${encounter.patientId}`);
+  return {
+    ok: true,
+    status,
+    approvedByName,
+    approvedAt: approvedAt.toISOString(),
+  };
+}
+
 export async function releaseVisitCompletion(
   noteId: string,
   payload: VisitCompletionReleasePayload,
@@ -796,55 +943,122 @@ export async function releaseVisitCompletion(
         });
       }
 
-      // 3. Follow-Up Plan: Create a Task for front-office scheduling
+      // 3. Follow-Up Plan. One-click booking (audit minor #7): when the
+      // physician chose "Book follow-up", create a real pre-filled Appointment
+      // (provider + modality + patient carried from this visit) instead of a
+      // free-text scheduling task — the appointment is `requested` so the front
+      // desk confirms the exact slot. Any other routing (or an unparseable
+      // interval) falls back to the front-office scheduling task.
       const followUpSection = payload.includedSections.find((s) => s.cardId === "follow_up");
       if (followUpSection && followUpSection.labels.length > 0) {
-        await tx.task.create({
-          data: {
-            organizationId: user.organizationId!,
-            patientId: encounter.patientId,
-            title: `Follow-Up: ${followUpSection.labels.join(", ")}`,
-            description: `Follow-up plan released by physician.\n\nNote: ${
-              followUpSection.editNote || followUpSection.confirmationNote || "Approved"
-            }`,
-            status: "open",
-            assigneeRole: "front_office",
-          },
-        });
+        const booking =
+          followUpSection.structuredEdit?.followUpRouting === "book_appointment"
+            ? deriveFollowUpBooking({
+                followUpInterval: followUpSection.structuredEdit.followUpInterval,
+                modality: encounter.modality,
+                now: new Date(),
+              })
+            : null;
+
+        if (booking) {
+          const appointment = await tx.appointment.create({
+            data: {
+              patientId: encounter.patientId,
+              providerId: encounter.providerId ?? encounter.renderingProviderId ?? undefined,
+              startAt: booking.startAt,
+              endAt: booking.endAt,
+              modality: booking.modality,
+              status: "requested",
+              notes: "Follow-up booked from visit wrap-up",
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              organizationId: user.organizationId!,
+              actorUserId: user.id,
+              action: "visit_completion.follow_up.booked",
+              subjectType: "Appointment",
+              subjectId: appointment.id,
+              metadata: {
+                noteId,
+                intervalDays: booking.intervalDays,
+                modality: booking.modality,
+              } as any,
+            },
+          });
+        } else {
+          await tx.task.create({
+            data: {
+              organizationId: user.organizationId!,
+              patientId: encounter.patientId,
+              title: `Follow-Up: ${followUpSection.labels.join(", ")}`,
+              description: `Follow-up plan released by physician.\n\nNote: ${
+                followUpSection.editNote || followUpSection.confirmationNote || "Approved"
+              }`,
+              status: "open",
+              assigneeRole: "front_office",
+            },
+          });
+        }
       }
 
       // 4. Patient Communication: Create a draft Message to the patient
       const commsSection = payload.includedSections.find((s) => s.cardId === "patient_message");
       if (commsSection && commsSection.labels.length > 0) {
-        const thread = await tx.messageThread.findFirst({
-          where: { patientId: encounter.patientId },
-          orderBy: { lastMessageAt: "desc" },
-        });
-        const threadId =
-          thread?.id ??
-          (
-            await tx.messageThread.create({
-              data: {
-                patientId: encounter.patientId,
-                subject: "Care Plan & Next Steps",
-                lastMessageAt: new Date(),
-              },
-            })
-          ).id;
-
-        await tx.message.create({
-          data: {
-            threadId,
-            senderUserId: user.id,
-            status: "draft",
-            body:
-              commsSection.editNote ||
-              commsSection.confirmationNote ||
-              commsSection.labels.join("\n"),
+        // EMR-1101 (M6) dedup rule: the visit-completion release is the
+        // authoritative post-visit patient message — the Patient Outreach
+        // Agent skips when a release exists (see patient-outreach-agent.ts).
+        // But that agent fires on encounter.completed, i.e. usually BEFORE
+        // the physician reaches this release step. If it already drafted a
+        // post-visit message for this patient since the encounter completed,
+        // do not stack a second near-identical draft into the same thread /
+        // approvals queue; the existing draft remains the single outgoing
+        // message awaiting send approval.
+        const existingOutreachDraft = await tx.message.findFirst({
+          where: {
+            thread: { patientId: encounter.patientId },
             aiDrafted: true,
-            sentAt: null,
+            status: "draft",
+            senderAgent: { startsWith: "agent:patientOutreach" },
+            createdAt: {
+              gte:
+                encounter.completedAt ??
+                new Date(Date.now() - 24 * 60 * 60 * 1000),
+            },
           },
+          select: { id: true },
         });
+        if (!existingOutreachDraft) {
+          const thread = await tx.messageThread.findFirst({
+            where: { patientId: encounter.patientId },
+            orderBy: { lastMessageAt: "desc" },
+          });
+          const threadId =
+            thread?.id ??
+            (
+              await tx.messageThread.create({
+                data: {
+                  patientId: encounter.patientId,
+                  subject: "Care Plan & Next Steps",
+                  lastMessageAt: new Date(),
+                },
+              })
+            ).id;
+
+          await tx.message.create({
+            data: {
+              threadId,
+              senderUserId: user.id,
+              status: "draft",
+              body:
+                commsSection.editNote ||
+                commsSection.confirmationNote ||
+                commsSection.labels.join("\n"),
+              aiDrafted: true,
+              sentAt: null,
+            },
+          });
+        }
       }
 
       // 5. Create audit log entry (minimize PHI)

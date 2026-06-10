@@ -24,6 +24,7 @@ export type VisitCompletionProposedActionType =
   | "send_to_staff"
   | "send_to_patient"
   | "text_scheduling_link"
+  | "book_follow_up"
   | "print"
   | "coding_review"
   | "create_staff_task"
@@ -50,6 +51,12 @@ export interface VisitCompletionAction {
   requiresPhysicianApproval: true;
   sideEffect: "none";
   placeholderCopy: string;
+  /**
+   * Optional deep-link target. When set, activating the action navigates
+   * (e.g. "#coding-suggestions" jumps to the note's coding section) instead
+   * of opening the generic details drawer.
+   */
+  href?: string;
 }
 
 export interface VisitCompletionCard {
@@ -95,6 +102,12 @@ export interface VisitCompletionCodingSuggestion {
   icd10: { code: string; label: string; confidence?: number }[];
   emLevel: string | null;
   rationale?: string | null;
+  /** EMR-1097 physician decision: suggested, approved, modified, dismissed. */
+  status?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: Date | string | null;
+  approvedIcd10?: { code: string; label?: string }[] | null;
+  approvedEmLevel?: string | null;
 }
 
 export interface VisitCompletionBlock {
@@ -297,7 +310,10 @@ function buildFollowUpCard(text: string, hasFutureAppointment: boolean): VisitCo
     subtitle: "Recommended next touchpoint and scheduling handoff.",
     items,
     actions: [
-      action("send_to_front_desk", "Send to front desk", "primary", "send_to_staff"),
+      // One-click booking is the primary path; the free-text front-desk task
+      // stays as the fallback for complex scheduling (audit minor #7).
+      action("book_follow_up", "Book follow-up", "primary", "book_follow_up"),
+      action("send_to_front_desk", "Send to front desk", "secondary", "send_to_staff"),
       action("text_scheduling_link", "Text scheduling link", "secondary", "text_scheduling_link"),
       action("edit_interval", "Edit interval", "secondary", "edit"),
       action("defer_item", "Defer", "secondary", "defer"),
@@ -367,35 +383,11 @@ function buildPatientMessageCard(
 function buildPracticeReadinessCard(
   codingSuggestion: VisitCompletionCodingSuggestion | null,
 ): VisitCompletionCard {
-  const items: VisitCompletionItem[] = [
-    item(
-      "practice-readiness-overview",
-      "Practice Readiness feedback: coding, documentation, prior auth, and staff routing checks.",
-      "neutral",
-      "heuristic",
-      "mvp_mock",
-      "view_checks",
-      "AI summarizes operational checks here so the physician can release intent without doing back-office translation.",
-    ),
-    item(
-      "documentation-gap",
-      "Documentation gap: add medication risk discussion if dose changes proceed",
-      "warning",
-      "heuristic",
-      "deterministic_heuristic",
-      "coding_review",
-      "This strengthens billing readiness and makes the clinical reasoning easier for staff to follow.",
-    ),
-    item(
-      "staff-routing",
-      "Staff task draft: confirm pharmacy and monitor prior-auth need before fulfillment",
-      "neutral",
-      "heuristic",
-      "deterministic_heuristic",
-      "create_staff_task",
-      "This turns the physician's plan into a reviewable staff handoff without silently assigning work.",
-    ),
-  ];
+  // EMR-1100 (M5): this card renders the REAL coding state from the
+  // CodingSuggestion the Coding Readiness Agent attached to the note — no
+  // placeholder copy. The "Review coding" action deep-links to the note's
+  // coding section where the physician approves the codes (EMR-1097).
+  const items: VisitCompletionItem[] = [];
 
   if (!codingSuggestion) {
     items.push(
@@ -410,11 +402,56 @@ function buildPracticeReadinessCard(
       ),
     );
   } else {
-    if (codingSuggestion.emLevel) {
+    const approved =
+      codingSuggestion.status === "approved" || codingSuggestion.status === "modified";
+    const suggestedCount = codingSuggestion.icd10.length;
+
+    if (approved) {
+      const approvedDetail = [
+        codingSuggestion.approvedByName
+          ? `Approved by ${codingSuggestion.approvedByName}`
+          : "Approved by the physician",
+        codingSuggestion.approvedAt
+          ? `on ${new Date(codingSuggestion.approvedAt).toLocaleDateString("en-US")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      items.push(
+        item(
+          "coding-approval-status",
+          "Codes approved ✓",
+          "neutral",
+          "coding",
+          "agent_output",
+          "coding_review",
+          `${approvedDetail}. Charges are extracted from the approved codes.`,
+        ),
+      );
+    } else {
+      items.push(
+        item(
+          "coding-approval-status",
+          `Coding review needed — ${suggestedCount} suggested ${
+            suggestedCount === 1 ? "code" : "codes"
+          } awaiting approval`,
+          "warning",
+          "coding",
+          "agent_output",
+          "coding_review",
+          "No charges are created until the physician approves the suggested codes.",
+        ),
+      );
+    }
+
+    const emLevel = approved
+      ? codingSuggestion.approvedEmLevel ?? codingSuggestion.emLevel
+      : codingSuggestion.emLevel;
+    if (emLevel) {
       items.push(
         item(
           "em-level",
-          `Suggested E/M: ${codingSuggestion.emLevel}`,
+          `${approved ? "Approved" : "Suggested"} E/M: ${emLevel}`,
           "neutral",
           "coding",
           "agent_output",
@@ -422,11 +459,18 @@ function buildPracticeReadinessCard(
         ),
       );
     }
-    for (const candidate of codingSuggestion.icd10.slice(0, 2)) {
+
+    const displayCodes =
+      approved && codingSuggestion.approvedIcd10 && codingSuggestion.approvedIcd10.length > 0
+        ? codingSuggestion.approvedIcd10
+        : codingSuggestion.icd10;
+    for (const candidate of displayCodes.slice(0, 4)) {
       items.push(
         item(
           `icd10-${candidate.code}`,
-          `ICD-10 candidate: ${candidate.code} ${candidate.label}`,
+          `${approved ? "ICD-10 approved" : "ICD-10 candidate"}: ${candidate.code} ${
+            candidate.label ?? ""
+          }`.trim(),
           "neutral",
           "coding",
           "agent_output",
@@ -434,6 +478,7 @@ function buildPracticeReadinessCard(
         ),
       );
     }
+
     if (codingSuggestion.rationale) {
       items.push(
         item(
@@ -456,7 +501,8 @@ function buildPracticeReadinessCard(
     items,
     actions: [
       action("view_checks", "View checks", "primary", "view_checks"),
-      action("review_coding", "Review coding", "secondary", "coding_review"),
+      // Deep-link to the coding section of the note (EMR-1097 approval UI).
+      action("review_coding", "Review coding", "secondary", "coding_review", "#coding-suggestions"),
       action("create_staff_tasks", "Create staff tasks", "secondary", "create_staff_task"),
       action("defer_item", "Defer", "secondary", "defer"),
     ],
@@ -508,17 +554,88 @@ const ACTION_DISPOSITION_COPY: Record<VisitCompletionProposedActionType, string>
   send_to_staff: "Stage a front-desk hand-off — created only when you Release Care Plan.",
   send_to_patient: "Stage a patient message — sent only when you Release Care Plan.",
   text_scheduling_link: "Stage a scheduling-link text — sent only when you Release Care Plan.",
+  book_follow_up:
+    "Stage a pre-filled follow-up appointment — booked only when you Release Care Plan.",
   print: "Stage a printout — generated only when you Release Care Plan.",
   coding_review: "Stage coding for review. Nothing is submitted until you Release Care Plan.",
   create_staff_task: "Stage a staff task — created only when you Release Care Plan.",
   view_checks: "View the safety checks behind this card.",
 };
 
+// ───────────────────────────────────────────────────────────────────────────
+// One-click follow-up booking (WS-B / audit minor #7)
+// ───────────────────────────────────────────────────────────────────────────
+// The Follow-Up card's "Book follow-up" action derives a concrete slot from the
+// note's follow-up interval (the same free-text the heuristic already parses)
+// so the visit-completion release can create a real Appointment instead of a
+// free-text front-desk task. Pure + deterministic so both the panel (preview)
+// and the server (authoritative booking) compute the same slot. Returns null
+// when no interval can be parsed — the caller falls back to the front-desk task.
+
+export interface FollowUpBookingProposal {
+  intervalDays: number;
+  modality: string;
+  startAt: Date;
+  endAt: Date;
+}
+
+const FOLLOW_UP_DEFAULT_DURATION_MIN = 30;
+const FOLLOW_UP_DEFAULT_HOUR = 9; // propose a 9am slot; the front desk confirms
+
+/** Parse a free-text follow-up interval ("6 weeks", "10 days", "2 months") to days. */
+export function parseFollowUpIntervalDays(interval: string | null | undefined): number | null {
+  if (!interval) return null;
+  const match = interval.toLowerCase().match(/(\d+)\s*([a-z]+)/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = match[2];
+  if (unit.startsWith("d")) return n; // day / days
+  if (unit.startsWith("w")) return n * 7; // week / weeks / wk
+  if (unit.startsWith("m")) return n * 30; // month / months / mo
+  return null;
+}
+
+function normalizeFollowUpModality(modality: string | null | undefined): string {
+  return modality === "video" || modality === "phone" || modality === "in_person"
+    ? modality
+    : "in_person";
+}
+
+/**
+ * Derive a concrete follow-up appointment slot from the note's interval and the
+ * visit's modality. `now` is injected so the result is deterministic/testable.
+ */
+export function deriveFollowUpBooking(input: {
+  followUpInterval: string | null | undefined;
+  modality: string | null | undefined;
+  now: Date;
+  durationMinutes?: number;
+}): FollowUpBookingProposal | null {
+  const intervalDays = parseFollowUpIntervalDays(input.followUpInterval);
+  if (intervalDays == null) return null;
+
+  const startAt = new Date(input.now);
+  startAt.setDate(startAt.getDate() + intervalDays);
+  startAt.setHours(FOLLOW_UP_DEFAULT_HOUR, 0, 0, 0);
+
+  const durationMinutes = input.durationMinutes ?? FOLLOW_UP_DEFAULT_DURATION_MIN;
+  const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
+
+  return {
+    intervalDays,
+    modality: normalizeFollowUpModality(input.modality),
+    startAt,
+    endAt,
+  };
+}
+
 function action(
   id: string,
   label: string,
   variant: VisitCompletionAction["variant"],
   proposedActionType: VisitCompletionProposedActionType,
+  href?: string,
 ): VisitCompletionAction {
   return {
     id,
@@ -530,5 +647,6 @@ function action(
     placeholderCopy:
       ACTION_DISPOSITION_COPY[proposedActionType] ??
       "Physician review required. This control stages the card disposition; Release Care Plan is the only action that creates reviewed tasks, drafts, and audit records.",
+    ...(href ? { href } : {}),
   };
 }

@@ -13,7 +13,7 @@ export default async function NotesSignOffPage() {
 
   const notes = await prisma.note.findMany({
     where: {
-      status: "needs_review",
+      status: "pending_cosign",
       encounter: { patient: { organizationId: user.organizationId! } },
     },
     orderBy: { updatedAt: "desc" },

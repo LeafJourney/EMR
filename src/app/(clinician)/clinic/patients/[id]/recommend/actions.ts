@@ -4,7 +4,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolveModelClient } from "@/lib/orchestration/model-client";
-import { readFileSync } from "fs";
+import { logger } from "@/lib/observability/log";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 /* ── Types ──────────────────────────────────────────────────── */
@@ -28,7 +29,10 @@ export interface Recommendation {
 }
 
 export type RecommendResult =
-  | { ok: true; recommendation: Recommendation }
+  // EMR-1098 (M1): savedId is the persisted CannabisRecommendation row — used
+  // by "Apply to prescription" to carry the recommendation into /prescribe.
+  // Null only if the audit write failed (the recommendation still displays).
+  | { ok: true; recommendation: Recommendation; savedId: string | null }
   | { ok: false; error: string };
 
 /* ── Corpus loader ──────────────────────────────────────────── */
@@ -54,10 +58,36 @@ interface Corpus {
   symptom_categories: Record<string, CorpusCategory>;
 }
 
+const CORPUS_PATH = join(process.cwd(), "data", "cannabis-research-corpus.json");
+
+/** An empty corpus is a valid input: `findRelevantStudies` simply returns no
+ *  matches and the template recommendation still renders (citation-less). */
+const EMPTY_CORPUS: Corpus = { meta: {}, symptom_categories: {} };
+
+// Startup-time probe (EMR-1100, minor 10): surface a missing/unreadable corpus
+// once at module load instead of only blowing up mid-request. The recommend
+// flow degrades gracefully to template output either way (see `loadCorpus`).
+if (!existsSync(CORPUS_PATH)) {
+  logger.warn({
+    event: "clinic.recommend.corpus_missing",
+    path: CORPUS_PATH,
+    impact: "Recommendations fall back to template guidance with no citations.",
+  });
+}
+
+/**
+ * Load the research corpus. Never throws — a missing or malformed file
+ * degrades to an empty corpus so the template-path recommendation still
+ * works (just without PubMed citations) rather than failing the request.
+ */
 function loadCorpus(): Corpus {
-  const filePath = join(process.cwd(), "data", "cannabis-research-corpus.json");
-  const raw = readFileSync(filePath, "utf-8");
-  return JSON.parse(raw) as Corpus;
+  try {
+    const raw = readFileSync(CORPUS_PATH, "utf-8");
+    return JSON.parse(raw) as Corpus;
+  } catch (err) {
+    logger.warn({ event: "clinic.recommend.corpus_load_failed", path: CORPUS_PATH, err });
+    return EMPTY_CORPUS;
+  }
 }
 
 /* ── Keyword matching ───────────────────────────────────────── */
@@ -326,5 +356,26 @@ export async function generateRecommendation(
     recommendation = buildTemplateRecommendation(concerns, matchedStudies);
   }
 
-  return { ok: true, recommendation };
+  // EMR-1098 (M1): persist the recommendation so there is a durable record of
+  // the decision support shown to the physician (it previously lived only in
+  // React state). A failed write is logged but never blocks the result.
+  let savedId: string | null = null;
+  try {
+    const saved = await prisma.cannabisRecommendation.create({
+      data: {
+        organizationId: user.organizationId!,
+        patientId,
+        createdById: user.id,
+        createdByName:
+          `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || "Provider",
+        inputContext: { concerns, goals, outcomeSummary, assessmentSummary },
+        recommendation: JSON.parse(JSON.stringify(recommendation)),
+      },
+    });
+    savedId = saved.id;
+  } catch (err) {
+    logger.error({ event: "clinic.recommend.persist_failed", err });
+  }
+
+  return { ok: true, recommendation, savedId };
 }

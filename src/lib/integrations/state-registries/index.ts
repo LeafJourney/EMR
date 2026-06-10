@@ -22,6 +22,7 @@ import type {
 export type {
   ProviderCredentials,
   RegistrySubmission,
+  RegistrySubmissionMode,
   RegistrySubmissionResult,
   StateRegistrySubmitter,
 } from "./types";
@@ -52,7 +53,7 @@ export async function submitToStateRegistry(
         (i) => `${i.path.join(".") || "(root)"}: ${i.message}`,
       ),
       submittedAt: new Date().toISOString(),
-      channel: "electronic",
+      mode: "api",
     };
   }
 
@@ -63,7 +64,7 @@ export async function submitToStateRegistry(
       success: false,
       errors: [`No registry integration registered for state: ${code}`],
       submittedAt: new Date().toISOString(),
-      channel: "electronic",
+      mode: "api",
     };
   }
 

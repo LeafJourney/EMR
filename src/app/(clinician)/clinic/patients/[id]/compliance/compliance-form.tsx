@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useTransition } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
@@ -20,15 +20,17 @@ import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import {
   getStateForm,
   type StateFormField,
-  type StateFormTemplate,
 } from "@/lib/domain/state-compliance";
 import { THERAPEUTIC_INDICATIONS } from "@/lib/domain/cannabis-icd10";
+import { getRegistryForState } from "@/lib/domain/state-registry";
 import {
-  submitToRegistry,
-  getRegistryForState,
-  type StateRegistryConfig,
-  type SubmissionResult,
-} from "@/lib/domain/state-registry";
+  saveComplianceForm,
+  signComplianceForm,
+  submitComplianceForm,
+  type ComplianceFormDto,
+  type FieldErrors,
+  type RegistryAttempt,
+} from "./actions";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -48,6 +50,8 @@ interface ComplianceFormViewProps {
   availableStates: { code: string; name: string }[];
   defaultStateCode: string;
   prePopulatedFields: Record<string, string>;
+  /** Latest persisted StateComplianceForm per state code (EMR-1095). */
+  existingForms: Record<string, ComplianceFormDto>;
 }
 
 type FormStatus = "draft" | "complete" | "submitted";
@@ -118,6 +122,19 @@ function ICD10SearchField({
   );
 }
 
+function PrinterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mr-1">
+      <path
+        d="M4 6V2h8v4M4 12H2.5A1.5 1.5 0 011 10.5v-3A1.5 1.5 0 012.5 6h11A1.5 1.5 0 0115 7.5v3a1.5 1.5 0 01-1.5 1.5H12M4 10h8v4H4v-4z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────
 
 export function ComplianceFormView({
@@ -125,97 +142,151 @@ export function ComplianceFormView({
   availableStates,
   defaultStateCode,
   prePopulatedFields,
+  existingForms,
 }: ComplianceFormViewProps) {
   const params = useParams<{ id: string }>();
-  const [selectedState, setSelectedState] = useState(defaultStateCode);
-  const [formValues, setFormValues] = useState<Record<string, string | boolean>>(
-    prePopulatedFields,
-  );
-  const [status, setStatus] = useState<FormStatus>("draft");
-  const [signed, setSigned] = useState(false);
-  const [signedAt, setSignedAt] = useState<string | null>(null);
+  const initial = existingForms[defaultStateCode] ?? null;
 
+  const [selectedState, setSelectedState] = useState(defaultStateCode);
+  const [formId, setFormId] = useState<string | null>(initial?.id ?? null);
+  const [formValues, setFormValues] = useState<Record<string, string | boolean>>(
+    initial ? { ...prePopulatedFields, ...initial.fields } : prePopulatedFields,
+  );
+  const [status, setStatus] = useState<FormStatus>(initial?.status ?? "draft");
+  const [signedAt, setSignedAt] = useState<string | null>(initial?.signedAt ?? null);
+  const [signedBy, setSignedBy] = useState<string | null>(initial?.signedBy ?? null);
+  const [registryAttempt, setRegistryAttempt] = useState<RegistryAttempt | null>(
+    initial?.registrySubmission ?? null,
+  );
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const signed = Boolean(signedAt);
   const template = useMemo(() => getStateForm(selectedState), [selectedState]);
   const registry = useMemo(() => getRegistryForState(selectedState), [selectedState]);
-  const [registrySubmitting, setRegistrySubmitting] = useState(false);
-  const [registryResult, setRegistryResult] = useState<SubmissionResult | null>(null);
-  const [registryError, setRegistryError] = useState<string[] | null>(null);
+
+  // WS-C task 5: dedicated print-ready packet (server-rendered, letterhead) for
+  // manual filing. Available once the form is persisted (has an id); falls back
+  // to the in-page window.print() before then.
+  const printHref = formId
+    ? `/clinic/patients/${patient.id}/compliance/print?formId=${formId}`
+    : null;
 
   // Which fields were auto-populated (read-only)
   const autoPopKeys = useMemo(() => {
     return new Set(Object.keys(prePopulatedFields));
   }, [prePopulatedFields]);
 
-  const handleStateChange = useCallback(
-    (code: string) => {
-      setSelectedState(code);
-      // Reset form but keep auto-populated values
-      setFormValues({ ...prePopulatedFields });
-      setStatus("draft");
-      setSigned(false);
-      setSignedAt(null);
-      setRegistryResult(null);
-      setRegistryError(null);
+  /** Sync all client state from a persisted form row (or reset to a fresh
+   * draft when null). */
+  const hydrate = useCallback(
+    (form: ComplianceFormDto | null) => {
+      setFormId(form?.id ?? null);
+      setFormValues(
+        form
+          ? { ...prePopulatedFields, ...form.fields }
+          : { ...prePopulatedFields },
+      );
+      setStatus(form?.status ?? "draft");
+      setSignedAt(form?.signedAt ?? null);
+      setSignedBy(form?.signedBy ?? null);
+      setRegistryAttempt(form?.registrySubmission ?? null);
+      setFieldErrors({});
+      setActionError(null);
+      setDraftSavedAt(null);
     },
     [prePopulatedFields],
   );
 
+  const handleStateChange = useCallback(
+    (code: string) => {
+      setSelectedState(code);
+      hydrate(existingForms[code] ?? null);
+    },
+    [existingForms, hydrate],
+  );
+
   const updateField = useCallback((key: string, value: string | boolean) => {
     setFormValues((prev) => ({ ...prev, [key]: value }));
+    // Editing a field clears its inline validation error.
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }, []);
+
+  const handleSaveDraft = useCallback(() => {
+    setActionError(null);
+    startTransition(async () => {
+      const res = await saveComplianceForm({
+        patientId: patient.id,
+        stateCode: selectedState,
+        fields: formValues,
+      });
+      if (!res.ok) {
+        setActionError(res.error);
+        setFieldErrors(res.fieldErrors ?? {});
+        return;
+      }
+      setFormId(res.form.id);
+      setStatus(res.form.status);
+      setDraftSavedAt(new Date().toISOString());
+    });
+  }, [patient.id, selectedState, formValues]);
 
   const handleSign = useCallback(() => {
-    setSigned(true);
-    setSignedAt(new Date().toISOString());
-  }, []);
-
-  const handleGenerate = useCallback(() => {
-    if (!template) return;
-    // Validate required fields
-    const missing = template.requiredFields.filter((f) => {
-      if (f.type === "signature") return !signed;
-      const val = formValues[f.key];
-      return f.required && (!val || val === "");
+    setActionError(null);
+    startTransition(async () => {
+      // Persist the current draft first so the signature attaches to
+      // exactly what is on screen.
+      const saved = await saveComplianceForm({
+        patientId: patient.id,
+        stateCode: selectedState,
+        fields: formValues,
+      });
+      if (!saved.ok) {
+        setActionError(saved.error);
+        setFieldErrors(saved.fieldErrors ?? {});
+        return;
+      }
+      setFormId(saved.form.id);
+      const res = await signComplianceForm(saved.form.id);
+      if (!res.ok) {
+        setActionError(res.error);
+        setFieldErrors(res.fieldErrors ?? {});
+        return;
+      }
+      hydrate(res.form);
     });
-    if (missing.length > 0) {
-      alert(
-        `Please complete required fields: ${missing.map((f) => f.label).join(", ")}`,
-      );
-      return;
-    }
-    setStatus("complete");
-  }, [template, formValues, signed]);
+  }, [patient.id, selectedState, formValues, hydrate]);
 
   const handleSubmit = useCallback(() => {
-    setStatus("submitted");
-  }, []);
+    if (!formId) return;
+    setActionError(null);
+    startTransition(async () => {
+      const res = await submitComplianceForm(formId);
+      if (!res.ok) {
+        setFieldErrors(res.fieldErrors ?? {});
+        if (res.form) {
+          // The failed/manual attempt was persisted — render it honestly.
+          setRegistryAttempt(res.form.registrySubmission);
+          setStatus(res.form.status);
+        } else {
+          setActionError(res.error);
+        }
+        return;
+      }
+      hydrate(res.form);
+    });
+  }, [formId, hydrate]);
 
   const handlePrint = useCallback(() => {
     window.print();
   }, []);
-
-  const handleRegistrySubmit = useCallback(async () => {
-    if (!registry) return;
-    setRegistrySubmitting(true);
-    setRegistryError(null);
-    setRegistryResult(null);
-    try {
-      const result = await submitToRegistry(
-        selectedState,
-        formValues as Record<string, string | boolean | number>,
-        { npi: undefined, licenseNumber: undefined, registryId: undefined },
-      );
-      if (result.success) {
-        setRegistryResult(result);
-      } else {
-        setRegistryError(result.errors ?? ["Unknown error occurred."]);
-      }
-    } catch (err) {
-      setRegistryError([err instanceof Error ? err.message : "Submission failed. Please try again."]);
-    } finally {
-      setRegistrySubmitting(false);
-    }
-  }, [registry, selectedState, formValues]);
 
   // ─── Render field based on type ─────────────────────
 
@@ -338,6 +409,7 @@ export function ComplianceFormView({
                   </svg>
                   <span className="text-sm font-medium text-accent">
                     Electronically signed
+                    {signedBy ? ` — ${signedBy}` : ""}
                   </span>
                 </div>
                 {signedAt && (
@@ -351,9 +423,9 @@ export function ComplianceFormView({
                 variant="secondary"
                 size="sm"
                 onClick={handleSign}
-                disabled={status !== "draft"}
+                disabled={status !== "draft" || isPending}
               >
-                Sign electronically
+                {isPending ? "Signing..." : "Sign electronically"}
               </Button>
             )}
           </div>
@@ -488,6 +560,11 @@ export function ComplianceFormView({
                     </div>
                   )}
                   {renderField(field)}
+                  {fieldErrors[field.key] && (
+                    <p className="text-xs text-danger mt-1.5">
+                      {fieldErrors[field.key]}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -495,16 +572,29 @@ export function ComplianceFormView({
 
           <EditorialRule className="mx-6" />
 
+          {actionError && (
+            <div className="mx-6 mt-4 p-3 rounded-xl bg-red-50 border border-red-200">
+              <p className="text-sm text-red-800">{actionError}</p>
+            </div>
+          )}
+
           <CardFooter className="flex-wrap gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {status === "draft" && (
-                <Button onClick={handleGenerate} size="md">
-                  Generate form
-                </Button>
+                <>
+                  <Button onClick={handleSaveDraft} size="md" disabled={isPending}>
+                    {isPending ? "Saving..." : "Save draft"}
+                  </Button>
+                  <span className="text-xs text-text-muted">
+                    {draftSavedAt
+                      ? `Draft saved ${new Date(draftSavedAt).toLocaleTimeString()}`
+                      : "Sign electronically to complete the form."}
+                  </span>
+                </>
               )}
               {status === "complete" && (
-                <Button onClick={handleSubmit} size="md">
-                  Submit form
+                <Button onClick={handleSubmit} size="md" disabled={isPending}>
+                  {isPending ? "Submitting..." : "Submit form"}
                 </Button>
               )}
               {status === "submitted" && (
@@ -576,19 +666,19 @@ export function ComplianceFormView({
                 {/* Electronic submission */}
                 {registry.supportsElectronicSubmission ? (
                   <div>
-                    {!registryResult && !registryError && (
+                    {status !== "submitted" && !registryAttempt && (
                       <Button
-                        onClick={handleRegistrySubmit}
-                        disabled={status !== "complete" || registrySubmitting}
+                        onClick={handleSubmit}
+                        disabled={status !== "complete" || isPending}
                         size="md"
                         className="w-full sm:w-auto"
                       >
-                        {registrySubmitting ? "Submitting..." : "Submit to registry"}
+                        {isPending ? "Submitting..." : "Submit to registry"}
                       </Button>
                     )}
-                    {status === "draft" && !registryResult && (
+                    {status === "draft" && (
                       <p className="text-xs text-text-muted mt-2">
-                        Generate the form first before submitting to the registry.
+                        Sign the form first before submitting to the registry.
                       </p>
                     )}
                   </div>
@@ -604,22 +694,26 @@ export function ComplianceFormView({
                       The patient will need to submit the physician certification along with
                       their application to the state program.
                     </p>
-                    <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-3">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mr-1">
-                        <path
-                          d="M4 6V2h8v4M4 12H2.5A1.5 1.5 0 011 10.5v-3A1.5 1.5 0 012.5 6h11A1.5 1.5 0 0115 7.5v3a1.5 1.5 0 01-1.5 1.5H12M4 10h8v4H4v-4z"
-                          stroke="currentColor"
-                          strokeWidth="1.2"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      Print form
-                    </Button>
+                    {printHref ? (
+                      <Link href={printHref} target="_blank" rel="noopener noreferrer" className="inline-block mt-3">
+                        <Button variant="secondary" size="sm">
+                          <PrinterIcon />
+                          Print packet for filing
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-3">
+                        <PrinterIcon />
+                        Print form
+                      </Button>
+                    )}
                   </div>
                 )}
 
-                {/* Success state */}
-                {registryResult && registryResult.success && (
+                {/* Success state — ONLY a real registry API acceptance is green.
+                    A stubbed/manual result must never look like an electronic
+                    submission (EMR-1096). */}
+                {registryAttempt && registryAttempt.success && registryAttempt.mode === "api" && (
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2">
                     <div className="flex items-center gap-2">
                       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-emerald-600 shrink-0">
@@ -631,37 +725,68 @@ export function ComplianceFormView({
                       </p>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-                      {registryResult.confirmationNumber && (
+                      {registryAttempt.confirmationNumber && (
                         <div>
                           <p className="text-[10px] text-emerald-600 uppercase tracking-wider">Confirmation #</p>
-                          <p className="text-sm font-mono text-emerald-900">{registryResult.confirmationNumber}</p>
+                          <p className="text-sm font-mono text-emerald-900">{registryAttempt.confirmationNumber}</p>
                         </div>
                       )}
-                      {registryResult.registryPatientId && (
+                      {registryAttempt.registryPatientId && (
                         <div>
                           <p className="text-[10px] text-emerald-600 uppercase tracking-wider">Registry patient ID</p>
-                          <p className="text-sm font-mono text-emerald-900">{registryResult.registryPatientId}</p>
+                          <p className="text-sm font-mono text-emerald-900">{registryAttempt.registryPatientId}</p>
                         </div>
                       )}
-                      {registryResult.expirationDate && (
+                      {registryAttempt.expirationDate && (
                         <div>
                           <p className="text-[10px] text-emerald-600 uppercase tracking-wider">Expires</p>
-                          <p className="text-sm text-emerald-900">{registryResult.expirationDate}</p>
+                          <p className="text-sm text-emerald-900">{registryAttempt.expirationDate}</p>
                         </div>
                       )}
                     </div>
                     <p className="text-[10px] text-emerald-600 mt-2">
-                      Submitted at {new Date(registryResult.submittedAt).toLocaleString()}
+                      Submitted at {new Date(registryAttempt.attemptedAt).toLocaleString()}
+                    </p>
+                  </div>
+                )}
+
+                {/* Manual-stub state — the registry API is not connected, so
+                    nothing was transmitted. Amber, no confirmation number. */}
+                {registryAttempt && registryAttempt.success && registryAttempt.mode === "manual_stub" && (
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-2">
+                    <p className="text-sm font-medium text-amber-800">
+                      Manual submission required — registry API not connected
+                    </p>
+                    <p className="text-xs text-amber-700 leading-relaxed">
+                      Form saved and signed; print the packet for manual filing.
+                      No electronic submission was made and no confirmation
+                      number exists.
+                    </p>
+                    {printHref ? (
+                      <Link href={printHref} target="_blank" rel="noopener noreferrer" className="inline-block mt-1">
+                        <Button variant="secondary" size="sm">
+                          <PrinterIcon />
+                          Print packet for filing
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-1">
+                        <PrinterIcon />
+                        Print form
+                      </Button>
+                    )}
+                    <p className="text-[10px] text-amber-600">
+                      Attempt recorded {new Date(registryAttempt.attemptedAt).toLocaleString()}
                     </p>
                   </div>
                 )}
 
                 {/* Error state */}
-                {registryError && (
+                {registryAttempt && !registryAttempt.success && (
                   <div className="p-4 rounded-xl bg-red-50 border border-red-200 space-y-2">
                     <p className="text-sm font-medium text-red-800">Submission failed</p>
                     <ul className="space-y-1">
-                      {registryError.map((err, i) => (
+                      {(registryAttempt.errors ?? ["Unknown error occurred."]).map((err, i) => (
                         <li key={i} className="text-xs text-red-700 flex items-start gap-2">
                           <span className="text-red-400 mt-0.5 shrink-0">-</span>
                           {err}
@@ -669,10 +794,10 @@ export function ComplianceFormView({
                       ))}
                     </ul>
                     <Button
-                      onClick={handleRegistrySubmit}
+                      onClick={handleSubmit}
                       variant="secondary"
                       size="sm"
-                      disabled={registrySubmitting}
+                      disabled={isPending}
                       className="mt-2"
                     >
                       Retry

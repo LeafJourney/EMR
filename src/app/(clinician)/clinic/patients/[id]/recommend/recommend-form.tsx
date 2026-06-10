@@ -48,9 +48,11 @@ function ConfidenceBadge({ level }: { level: Recommendation["confidence"] }) {
 function RecommendationCard({
   rec,
   patientId,
+  savedId,
 }: {
   rec: Recommendation;
   patientId: string;
+  savedId: string | null;
 }) {
   return (
     <Card tone="ambient" className="mt-8">
@@ -118,7 +120,11 @@ function RecommendationCard({
           This is a decision-support tool, not a clinical order. The provider must
           review, adjust, and approve before prescribing.
         </p>
-        <Link href={`/clinic/patients/${patientId}/prescribe`}>
+        {/* EMR-1098 (M2): carry the saved recommendation into the prescribe
+            form so the physician doesn't re-type product type/dose/frequency. */}
+        <Link
+          href={`/clinic/patients/${patientId}/prescribe${savedId ? `?rec=${savedId}` : ""}`}
+        >
           <Button variant="primary" size="md">
             Apply to prescription
           </Button>
@@ -206,6 +212,7 @@ export function RecommendForm({
         <RecommendationCard
           rec={state.recommendation}
           patientId={patientId}
+          savedId={state.savedId}
         />
       )}
     </div>

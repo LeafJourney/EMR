@@ -91,12 +91,34 @@ export async function startVisit(patientId: string) {
       redirect(`/clinic/patients/${patientId}/notes/${existingNote.id}`);
     }
   } else {
+    // Audit minor #2 — modality fidelity. When we mint an ad-hoc encounter
+    // (no front-desk encounter was materialized for today), carry the modality
+    // from today's confirmed appointment so a telehealth/phone visit isn't
+    // silently recorded as in_person. Falls back to in_person when there's no
+    // appointment to read from. Mirrors the day-window + calendar-block
+    // exclusions used by ensure-encounter's bridge.
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date();
+    dayEnd.setHours(23, 59, 59, 999);
+    const todaysAppointment = await prisma.appointment.findFirst({
+      where: {
+        patientId,
+        status: "confirmed",
+        startAt: { gte: dayStart, lte: dayEnd },
+        NOT: { notes: { startsWith: "[CalendarBlock:" } },
+        patient: { organizationId: user.organizationId!, deletedAt: null },
+      },
+      select: { modality: true },
+      orderBy: { startAt: "asc" },
+    });
+
     encounter = await prisma.encounter.create({
       data: {
         organizationId: user.organizationId!,
         patientId,
         status: "in_progress",
-        modality: "in_person",
+        modality: todaysAppointment?.modality ?? "in_person",
         reason: "Visit",
         startedAt: new Date(),
         scheduledFor: new Date(),

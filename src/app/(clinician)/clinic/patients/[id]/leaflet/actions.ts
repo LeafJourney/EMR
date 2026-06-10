@@ -138,6 +138,40 @@ export async function generateLeafletData(
 }
 
 // ---------------------------------------------------------------------------
+// WS-B (audit minor #8): generate a leaflet from a note id, for the
+// visit-completion panel's in-flow "Patient leaflet" preview. Resolves the
+// note's encounter (org-scoped), assembles the leaflet data, and runs the
+// narrative so the physician can preview the after-visit summary without
+// leaving the wrap-up flow. Read-only — nothing is persisted here; the
+// physician edits/saves via the full leaflet editor link-out.
+// ---------------------------------------------------------------------------
+
+export async function generateLeafletForNote(
+  noteId: string,
+): Promise<
+  | { ok: true; narrative: string; data: LeafletData }
+  | { ok: false; error: string }
+> {
+  const user = await requireUser();
+
+  const note = await prisma.note.findFirst({
+    where: { id: noteId, encounter: { organizationId: user.organizationId! } },
+    select: { encounterId: true },
+  });
+  if (!note) return { ok: false, error: "Note not found" };
+
+  const dataResult = await generateLeafletData(note.encounterId);
+  if (!dataResult.ok) return dataResult;
+
+  const narrativeResult = await generateLeafletNarrative(dataResult.data);
+  return {
+    ok: true,
+    narrative: narrativeResult.ok ? narrativeResult.narrative : "",
+    data: dataResult.data,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // EMR-150: AI narrative generation
 // ---------------------------------------------------------------------------
 

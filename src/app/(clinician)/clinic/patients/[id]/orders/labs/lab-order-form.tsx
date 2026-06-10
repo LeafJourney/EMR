@@ -10,20 +10,24 @@ import { LAB_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/toast";
+import { createClinicalOrder, uploadLabOrderAttachment } from "../actions";
 
 type Priority = "stat" | "routine";
 
 interface Props {
+  patientId: string;
   patientName: string;
 }
 
-export function LabOrderForm({ patientName }: Props) {
+export function LabOrderForm({ patientId, patientName }: Props) {
   const [selected, setSelected] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [icd10Query, setIcd10Query] = useState("");
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
   const [priority, setPriority] = useState<Priority>("routine");
   const [attachments, setAttachments] = useState<FileUploadItem[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const grouped = useMemo(() => {
@@ -65,26 +69,60 @@ export function LabOrderForm({ patientName }: Props) {
     .map((code) => LAB_CATALOG.find((l) => l.code === code))
     .filter((l) => l && l.fasting);
 
-  function submit() {
-    if (selected.length === 0) return;
-    const orderId = `LAB-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  async function submit() {
+    if (selected.length === 0 || submitting) return;
+    setSubmitting(true);
 
-    const payload = {
-      orderId,
-      patientName,
-      labs: selected,
-      reason,
-      diagnoses: icd10Selected,
-      priority,
-      attachments: attachments.map(a => a.file.name),
-      timestamp: new Date().toISOString(),
-    };
+    const labs = selected.map((code) => {
+      const lab = LAB_CATALOG.find((l) => l.code === code);
+      return { code, name: lab?.name ?? code };
+    });
 
-    console.log("[Simulation] Lab Order Submitted:", JSON.stringify(payload, null, 2));
+    let result: Awaited<ReturnType<typeof createClinicalOrder>>;
+    try {
+      result = await createClinicalOrder({
+        patientId,
+        orderType: "lab",
+        orderCode: labs.map((l) => l.code).join(","),
+        orderName: labs.map((l) => l.name).join(", "),
+        priority,
+        diagnosisCodes: icd10Selected,
+        payload: {
+          patientName,
+          labs: selected,
+          reason,
+          diagnoses: icd10Selected,
+          priority,
+          // Persisted chart Document references (id + name) for every
+          // supporting file that uploaded successfully — not just filenames.
+          attachments: attachments
+            .filter((a) => a.status === "uploaded" && a.result)
+            .map((a) => ({
+              documentId: a.result!.id,
+              name: a.result!.name ?? a.file.name,
+            })),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {
+      result = { ok: false, error: "Something went wrong placing the order. Please try again." };
+    } finally {
+      setSubmitting(false);
+    }
 
+    if (!result.ok) {
+      toast({
+        title: "Order failed",
+        description: result.error,
+        variant: "error",
+      });
+      return;
+    }
+
+    setPlacedOrderId(result.orderId);
     toast({
-      title: "Order simulated",
-      description: `Lab order simulated & logged for ${patientName}.`,
+      title: "Order placed",
+      description: `Lab order saved to ${patientName}'s chart.`,
       variant: "success",
     });
 
@@ -101,12 +139,30 @@ export function LabOrderForm({ patientName }: Props) {
       <div className="rounded-xl border border-accent/20 bg-accent/[0.03] p-4 flex gap-3 items-start">
         <span className="text-accent text-base mt-0.5">ℹ️</span>
         <div>
-          <p className="text-sm font-medium text-text">Demo mode enabled</p>
+          <p className="text-sm font-medium text-text">External transmission not yet connected</p>
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-            Lab orders are simulated in this sandbox environment. Submitting an order prints the full HL7/FHIR payload to the terminal console log. No real transmission is performed.
+            Submitting an order saves it to the patient&apos;s chart as part of
+            the permanent record. However, electronic transmission to the lab
+            (HL7/FHIR) is not yet connected in this sandbox environment — the
+            requisition must be sent to the lab manually.
           </p>
         </div>
       </div>
+
+      {placedOrderId && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-800">
+            Order placed and saved to the chart
+          </p>
+          <p className="text-xs text-emerald-700 mt-1">
+            Order ID{" "}
+            <span className="font-mono">{placedOrderId}</span> was recorded for{" "}
+            {patientName}. It appears in the placed orders list below. External
+            transmission to the lab is not yet connected — send the requisition
+            manually.
+          </p>
+        </div>
+      )}
       <Card tone="raised">
         <CardHeader>
           <CardTitle className="text-base">Select labs</CardTitle>
@@ -249,15 +305,12 @@ export function LabOrderForm({ patientName }: Props) {
 
             <FieldGroup label="Supporting attachments (optional)">
               <p className="text-[11px] text-text-subtle -mt-1 mb-2">
-                Prior result PDFs, requisition forms, or insurance cards.
-                They&apos;ll travel with the order to the lab.
+                Prior result PDFs, requisition forms, or insurance cards. Each
+                file is saved to the chart as a document and referenced by this
+                order. Requires document storage to be configured — otherwise
+                the upload reports an error instead of silently dropping the
+                file.
               </p>
-              {/*
-                Server-side TODO: there is no /api/labs/orders/[id]/attachments
-                endpoint yet. The handler below resolves locally so the UI
-                ships ready-to-wire — once a real upload route is in place,
-                replace the resolve with `createFetchUploadHandler({ url: ... })`.
-              */}
               <FileUpload
                 accept=".pdf,.png,.jpg,.jpeg,.heic,.webp"
                 maxFiles={5}
@@ -266,13 +319,16 @@ export function LabOrderForm({ patientName }: Props) {
                 label="Drop requisitions or prior results"
                 hint="PDF or image — up to 15 MB per file"
                 onUpload={async (file, { onProgress }) => {
-                  // Local-only: simulate the upload so the queue UI is
-                  // exercisable today. Replace once the server route lands.
-                  for (let p = 0; p <= 100; p += 20) {
-                    onProgress?.(p);
-                    await new Promise((r) => setTimeout(r, 80));
-                  }
-                  return { id: `local-${file.name}`, name: file.name };
+                  // EMR-1103 (WS-D): persist the attachment as a real chart
+                  // Document. Throwing flips the file row to "failed" so a
+                  // storage-not-configured environment is honest, not faked.
+                  const fd = new FormData();
+                  fd.append("patientId", patientId);
+                  fd.append("file", file);
+                  const res = await uploadLabOrderAttachment(fd);
+                  if (!res.ok) throw new Error(res.error);
+                  onProgress?.(100);
+                  return { id: res.documentId, name: res.name };
                 }}
                 onComplete={(items) => setAttachments(items)}
               />
@@ -311,9 +367,9 @@ export function LabOrderForm({ patientName }: Props) {
         </p>
         <Button
           onClick={submit}
-          disabled={selected.length === 0}
+          disabled={selected.length === 0 || submitting}
         >
-          Submit order
+          {submitting ? "Placing order..." : "Submit order"}
         </Button>
       </div>
     </div>

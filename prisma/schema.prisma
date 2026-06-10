@@ -89,6 +89,7 @@ model Organization {
   feeSchedule              FeeScheduleEntry[]
   referrals                Referral[]
   complianceForms          StateComplianceForm[]
+  clinicalOrders           ClinicalOrder[]
   intakeTemplates          IntakeFormTemplate[]
   products                 Product[]
   orders                   Order[]
@@ -374,6 +375,7 @@ model Patient {
   referrals                Referral[]
   signedConsents           SignedConsent[]
   complianceForms          StateComplianceForm[]
+  clinicalOrders           ClinicalOrder[]
   caregiverInvites         CaregiverInvite[]
   surveySubmissions        SurveySubmission[]
   // Marketplace
@@ -652,6 +654,15 @@ model CodingSuggestion {
   emLevel     String?
   rationale   String?
   generatedAt DateTime @default(now())
+
+  // EMR-1097 — physician coding decision. Charges are extracted only after
+  // the physician approves (or modifies) the suggested codes.
+  status          String    @default("suggested") // suggested, approved, modified, dismissed
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  approvedIcd10   Json? // [{ code, label }] as approved/edited by the physician
+  approvedEmLevel String?
 
   note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
 }
@@ -2305,6 +2316,11 @@ model DosingRegimen {
   // a flagged contraindication. Contains: { contraindicationIds, reason,
   // overriddenByUserId, overriddenAt }
   contraindicationOverride Json?
+  // EMR-1099 (M3): pharmacy routing — where the signed Rx is sent. Optional
+  // at the schema level so legacy rows stay valid; the v2 prescribe form
+  // gates "Sign & send" on a pharmacy selection.
+  pharmacyId               String?
+  pharmacyName             String?
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
@@ -2375,6 +2391,27 @@ model PatientMedication {
 // --------------------------------------------------------------
 // Research (stubbed for V1)
 // --------------------------------------------------------------
+
+// EMR-1098 (M1) — persisted AI treatment recommendations. Every generation
+// from clinic/patients/[id]/recommend is saved here so there is a durable
+// record of the decision support the physician saw, and so a saved
+// recommendation can be applied to a prescription (/prescribe?rec={id}).
+model CannabisRecommendation {
+  id             String   @id @default(cuid())
+  organizationId String
+  patientId      String
+  createdById    String // provider user id
+  createdByName  String
+  /// Input context used to generate: { concerns, goals, outcomeSummary, assessmentSummary }
+  inputContext   Json
+  /// Full generated payload (`Recommendation` in recommend/actions.ts):
+  /// { productType, cannabinoidRatio, startingDoseMg, deliveryMethod,
+  ///   frequency, citations, confidence, rationale }
+  recommendation Json
+  createdAt      DateTime @default(now())
+
+  @@index([patientId])
+}
 
 model ResearchQuery {
   id        String   @id @default(cuid())
@@ -2930,6 +2967,35 @@ model StateComplianceForm {
   patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId, stateCode])
+  @@index([organizationId, status])
+}
+
+// --------------------------------------------------------------
+// Clinical Orders (labs + imaging) — EMR-1094
+// --------------------------------------------------------------
+
+model ClinicalOrder {
+  id               String   @id @default(cuid())
+  organizationId   String
+  patientId        String
+  encounterId      String?
+  orderType        String // "lab" | "imaging"
+  orderCode        String
+  orderName        String
+  priority         String   @default("routine") // routine, stat
+  diagnosisCodes   Json // array of ICD-10 codes supporting the order
+  payload          Json // full structured order as built by the order form
+  status           String   @default("placed") // placed, transmitted, resulted, cancelled
+  transmissionMode String   @default("simulated") // "simulated" until an external lab/imaging interface is wired
+  orderedById      String
+  orderedByName    String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, orderType])
   @@index([organizationId, status])
 }
 

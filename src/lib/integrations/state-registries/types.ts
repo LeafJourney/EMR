@@ -21,15 +21,27 @@ export const registrySubmissionSchema = z.object({
 
 export type RegistrySubmission = z.infer<typeof registrySubmissionSchema>;
 
+/**
+ * How the submission was (or wasn't) transmitted.
+ *
+ * - "api"         — a real registry API call was attempted. Confirmation
+ *                   numbers come from the registry, never fabricated.
+ * - "manual_stub" — no registry API is connected for this state (either the
+ *                   state is paper-based or credentials are not configured).
+ *                   NOTHING was transmitted. Callers must surface this as
+ *                   "manual filing required" — never as an electronic
+ *                   submission success, and never with a confirmation number.
+ */
+export type RegistrySubmissionMode = "api" | "manual_stub";
+
 export interface RegistrySubmissionResult {
   success: boolean;
+  mode: RegistrySubmissionMode;
   confirmationNumber?: string;
   registryPatientId?: string;
   expirationDate?: string;
   errors?: string[];
   submittedAt: string;
-  /** "electronic" = real/simulated API call; "manual" = paper-based state */
-  channel: "electronic" | "manual" | "stub";
 }
 
 export type StateRegistrySubmitter = (

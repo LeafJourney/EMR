@@ -13,10 +13,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: vi.fn(),
   }),
+  useParams: () => ({ id: "patient_1", noteId: "note_1" }),
 }));
 
 vi.mock("./actions", () => ({
   releaseVisitCompletion: vi.fn(),
+}));
+
+vi.mock("../../leaflet/actions", () => ({
+  generateLeafletForNote: vi.fn(),
 }));
 
 function dump(node: React.ReactElement | null): string {
@@ -63,8 +68,11 @@ describe("VisitCompletionPanel", () => {
     expect(str).toContain("Progress toward release");
     expect(str).toContain("Next suggested step");
     expect(str).toContain("Review Practice Readiness");
-    expect(str).toContain("Practice Readiness feedback");
-    expect(str).toContain("Documentation gap");
+    // EMR-1100: the Practice Readiness card renders the real coding state,
+    // not placeholder copy.
+    expect(str).toContain("Coding review needed — 1 suggested code awaiting approval");
+    expect(str).toContain("Suggested E/M: 99214");
+    expect(str).toContain("ICD-10 candidate: G89.29 Chronic pain");
     expect(str).toContain(
       "Release creates only reviewed tasks, drafts, and audit records after physician approval.",
     );

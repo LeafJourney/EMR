@@ -9,21 +9,27 @@ import { IMAGING_CATALOG } from "@/lib/domain/clinical-orders";
 import { COMMON_PROBLEMS } from "@/lib/domain/problem-list";
 import { cn } from "@/lib/utils/cn";
 import { useToast } from "@/components/ui/toast";
+import { createClinicalOrder } from "../actions";
 
 interface Props {
+  patientId: string;
   patientName: string;
 }
 
 const MODALITIES = ["X-ray", "MRI", "CT", "US", "DEXA"] as const;
 type Modality = (typeof MODALITIES)[number];
+type Priority = "routine" | "stat";
 
-export function ImagingOrderForm({ patientName }: Props) {
+export function ImagingOrderForm({ patientId, patientName }: Props) {
   const [modality, setModality] = useState<Modality>("X-ray");
   const [studyCode, setStudyCode] = useState<string>("");
   const [indication, setIndication] = useState("");
   const [icd10Query, setIcd10Query] = useState("");
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
+  const [priority, setPriority] = useState<Priority>("routine");
   const [priorAuth, setPriorAuth] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const availableStudies = useMemo(
@@ -51,29 +57,52 @@ export function ImagingOrderForm({ patientName }: Props) {
     setIcd10Selected((prev) => prev.filter((c) => c !== code));
   }
 
-  function submit() {
-    if (!studyCode) return;
+  async function submit() {
+    if (!studyCode || submitting) return;
     const study = IMAGING_CATALOG.find((i) => i.code === studyCode);
     if (!study) return;
-    const orderId = `IMG-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    setSubmitting(true);
 
-    const payload = {
-      orderId,
-      patientName,
-      modality,
-      studyCode,
-      studyName: study.name,
-      indication,
-      diagnoses: icd10Selected,
-      priorAuth,
-      timestamp: new Date().toISOString(),
-    };
+    let result: Awaited<ReturnType<typeof createClinicalOrder>>;
+    try {
+      result = await createClinicalOrder({
+        patientId,
+        orderType: "imaging",
+        orderCode: studyCode,
+        orderName: `${modality} — ${study.name}`,
+        priority,
+        diagnosisCodes: icd10Selected,
+        payload: {
+          patientName,
+          modality,
+          studyCode,
+          studyName: study.name,
+          indication,
+          diagnoses: icd10Selected,
+          priority,
+          priorAuth,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch {
+      result = { ok: false, error: "Something went wrong placing the order. Please try again." };
+    } finally {
+      setSubmitting(false);
+    }
 
-    console.log("[Simulation] Imaging Order Submitted:", JSON.stringify(payload, null, 2));
+    if (!result.ok) {
+      toast({
+        title: "Order failed",
+        description: result.error,
+        variant: "error",
+      });
+      return;
+    }
 
+    setPlacedOrderId(result.orderId);
     toast({
-      title: "Order simulated",
-      description: `Imaging order simulated & logged for ${patientName}.`,
+      title: "Order placed",
+      description: `Imaging order saved to ${patientName}'s chart.`,
       variant: "success",
     });
 
@@ -81,6 +110,7 @@ export function ImagingOrderForm({ patientName }: Props) {
     setStudyCode("");
     setIndication("");
     setIcd10Selected([]);
+    setPriority("routine");
     setPriorAuth(false);
   }
 
@@ -89,12 +119,31 @@ export function ImagingOrderForm({ patientName }: Props) {
       <div className="rounded-xl border border-accent/20 bg-accent/[0.03] p-4 flex gap-3 items-start">
         <span className="text-accent text-base mt-0.5">ℹ️</span>
         <div>
-          <p className="text-sm font-medium text-text">Demo mode enabled</p>
+          <p className="text-sm font-medium text-text">External transmission not yet connected</p>
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-            Imaging orders are simulated in this sandbox environment. Submitting an order prints the full HL7/FHIR payload to the terminal console log. No real transmission is performed.
+            Submitting an order saves it to the patient&apos;s chart as part of
+            the permanent record. However, electronic transmission to the
+            imaging center (HL7/FHIR) is not yet connected in this sandbox
+            environment — the order must be sent to the imaging center
+            manually.
           </p>
         </div>
       </div>
+
+      {placedOrderId && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-800">
+            Order placed and saved to the chart
+          </p>
+          <p className="text-xs text-emerald-700 mt-1">
+            Order ID{" "}
+            <span className="font-mono">{placedOrderId}</span> was recorded for{" "}
+            {patientName}. It appears in the placed orders list below. External
+            transmission to the imaging center is not yet connected — send the
+            order manually.
+          </p>
+        </div>
+      )}
       <Card tone="raised">
         <CardHeader>
           <CardTitle className="text-base">Modality</CardTitle>
@@ -244,6 +293,28 @@ export function ImagingOrderForm({ patientName }: Props) {
               )}
             </div>
 
+            <FieldGroup label="Priority">
+              <div className="flex gap-2">
+                {(["routine", "stat"] as Priority[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPriority(p)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-full border transition-colors",
+                      priority === p
+                        ? p === "stat"
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-surface-raised text-text-muted border-border hover:bg-surface-muted",
+                    )}
+                  >
+                    {p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </FieldGroup>
+
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -266,8 +337,8 @@ export function ImagingOrderForm({ patientName }: Props) {
       </Card>
 
       <div className="flex items-center justify-end gap-3">
-        <Button onClick={submit} disabled={!studyCode}>
-          Submit order
+        <Button onClick={submit} disabled={!studyCode || submitting}>
+          {submitting ? "Placing order..." : "Submit order"}
         </Button>
       </div>
     </div>

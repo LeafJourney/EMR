@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildVisitCompletionBundle } from "./visit-completion";
+import {
+  buildVisitCompletionBundle,
+  deriveFollowUpBooking,
+  parseFollowUpIntervalDays,
+} from "./visit-completion";
 
 const followUpBlocks = [
   {
@@ -50,6 +54,7 @@ describe("buildVisitCompletionBundle", () => {
 
     expect(labelsFor("orders")).toEqual(["Review orders", "Approve", "Remove", "Edit", "Defer"]);
     expect(labelsFor("follow_up")).toEqual([
+      "Book follow-up",
       "Send to front desk",
       "Text scheduling link",
       "Edit interval",
@@ -166,12 +171,74 @@ describe("buildVisitCompletionBundle", () => {
       },
     });
 
-    expect(bundle.cards.find((card) => card.id === "practice_readiness")?.items).toEqual(
+    const items = bundle.cards.find((card) => card.id === "practice_readiness")?.items;
+    expect(items).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          label: "Coding review needed — 2 suggested codes awaiting approval",
+          tone: "warning",
+          source: "coding",
+          dataMode: "agent_output",
+          proposedActionType: "coding_review",
+        }),
         expect.objectContaining({ label: "Suggested E/M: 99214" }),
         expect.objectContaining({ label: "ICD-10 candidate: E11.9 Diabetes mellitus" }),
+        expect.objectContaining({ label: "ICD-10 candidate: I10 Essential hypertension" }),
       ]),
     );
+    // EMR-1100: no mocked placeholder items remain on this card.
+    expect(items?.every((item) => item.dataMode !== "mvp_mock")).toBe(true);
+  });
+
+  it("shows the approved coding state once the physician signs off", () => {
+    const bundle = buildVisitCompletionBundle({
+      patientFirstName: "Miguel",
+      blocks: followUpBlocks,
+      hasFutureAppointment: true,
+      codingSuggestion: {
+        emLevel: "99214",
+        rationale: "Chronic condition management with medication adjustment.",
+        icd10: [{ code: "E11.9", label: "Diabetes mellitus", confidence: 0.91 }],
+        status: "modified",
+        approvedByName: "Asha Patel",
+        approvedAt: "2026-06-09T15:00:00.000Z",
+        approvedIcd10: [{ code: "E11.65", label: "Diabetes with hyperglycemia" }],
+        approvedEmLevel: "99215",
+      },
+    });
+
+    expect(bundle.cards.find((card) => card.id === "practice_readiness")?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Codes approved ✓",
+          tone: "neutral",
+          source: "coding",
+          dataMode: "agent_output",
+          reason: expect.stringContaining("Approved by Asha Patel"),
+        }),
+        expect.objectContaining({ label: "Approved E/M: 99215" }),
+        expect.objectContaining({
+          label: "ICD-10 approved: E11.65 Diabetes with hyperglycemia",
+        }),
+      ]),
+    );
+  });
+
+  it("deep-links the Review coding action to the note's coding section", () => {
+    const bundle = buildVisitCompletionBundle({
+      patientFirstName: "Miguel",
+      blocks: followUpBlocks,
+      codingSuggestion: null,
+      hasFutureAppointment: true,
+    });
+
+    const reviewCoding = bundle.cards
+      .find((card) => card.id === "practice_readiness")
+      ?.actions.find((action) => action.id === "review_coding");
+    expect(reviewCoding).toMatchObject({
+      proposedActionType: "coding_review",
+      href: "#coding-suggestions",
+    });
   });
 
   it("degrades practice readiness when coding is not available yet", () => {
@@ -191,5 +258,73 @@ describe("buildVisitCompletionBundle", () => {
       ]),
     );
     expect(bundle.summary).toContain("billing readiness check");
+  });
+});
+
+describe("parseFollowUpIntervalDays", () => {
+  it("parses days, weeks, and months", () => {
+    expect(parseFollowUpIntervalDays("10 days")).toBe(10);
+    expect(parseFollowUpIntervalDays("6 weeks")).toBe(42);
+    expect(parseFollowUpIntervalDays("2 months")).toBe(60);
+    expect(parseFollowUpIntervalDays("3wk")).toBe(21);
+  });
+
+  it("returns null for unparseable or empty intervals", () => {
+    expect(parseFollowUpIntervalDays("as needed")).toBeNull();
+    expect(parseFollowUpIntervalDays("")).toBeNull();
+    expect(parseFollowUpIntervalDays(null)).toBeNull();
+    expect(parseFollowUpIntervalDays("0 weeks")).toBeNull();
+  });
+});
+
+describe("deriveFollowUpBooking", () => {
+  const now = new Date("2026-06-09T15:00:00.000Z");
+
+  it("derives a slot intervalDays out at the default morning hour", () => {
+    const proposal = deriveFollowUpBooking({
+      followUpInterval: "2 weeks",
+      modality: "video",
+      now,
+    });
+    expect(proposal).not.toBeNull();
+    expect(proposal!.intervalDays).toBe(14);
+    expect(proposal!.modality).toBe("video");
+    // 14 days after Jun 9 → Jun 23, 9am local.
+    expect(proposal!.startAt.getDate()).toBe(23);
+    expect(proposal!.startAt.getHours()).toBe(9);
+    // Default 30-minute slot.
+    expect(proposal!.endAt.getTime() - proposal!.startAt.getTime()).toBe(30 * 60_000);
+  });
+
+  it("normalizes an unknown modality to in_person", () => {
+    const proposal = deriveFollowUpBooking({
+      followUpInterval: "1 week",
+      modality: "async_message",
+      now,
+    });
+    expect(proposal!.modality).toBe("in_person");
+  });
+
+  it("returns null when the interval can't be parsed (caller falls back)", () => {
+    expect(
+      deriveFollowUpBooking({ followUpInterval: "soon", modality: "video", now }),
+    ).toBeNull();
+  });
+});
+
+describe("buildFollowUpCard — one-click booking action", () => {
+  it("exposes a primary 'Book follow-up' action with send-to-front-desk as fallback", () => {
+    const bundle = buildVisitCompletionBundle({
+      patientFirstName: "Miguel",
+      blocks: followUpBlocks,
+      codingSuggestion: null,
+      hasFutureAppointment: false,
+    });
+    const followUp = bundle.cards.find((c) => c.id === "follow_up")!;
+    const book = followUp.actions.find((a) => a.proposedActionType === "book_follow_up");
+    expect(book).toBeDefined();
+    expect(book!.variant).toBe("primary");
+    const frontDesk = followUp.actions.find((a) => a.proposedActionType === "send_to_staff");
+    expect(frontDesk!.variant).toBe("secondary");
   });
 });

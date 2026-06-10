@@ -10,6 +10,7 @@ import {
   saveAndFinalizeNote,
   refineSection,
   saveEmotionalVital,
+  approveCodingSuggestion,
   type RefineMode,
 } from "./actions";
 import {
@@ -32,6 +33,7 @@ import { NoteTemplatePicker, type PickerBlock } from "@/components/clinical/note
 import { AI_CONSENT_DISCLAIMER_HEADING } from "@/lib/clinical/ai-consent-disclaimer";
 import { buildVisitCompletionBundle } from "@/lib/domain/visit-completion";
 import { VisitCompletionPanel } from "./visit-completion-panel";
+import { noteStatusBadge } from "./note-status";
 
 interface NoteBlock {
   type?: NoteBlockType;
@@ -65,6 +67,12 @@ interface NoteEditorProps {
     icd10: { code: string; label: string; confidence: number }[];
     emLevel: string | null;
     rationale: string | null;
+    /** EMR-1097 physician decision: suggested, approved, modified, dismissed. */
+    status?: string | null;
+    approvedByName?: string | null;
+    approvedAt?: string | null;
+    approvedIcd10?: { code: string; label?: string }[] | null;
+    approvedEmLevel?: string | null;
   } | null;
   initialDemeanor?: PatientDemeanor | null;
   releasedPayload?: any;
@@ -160,6 +168,14 @@ export function NoteEditor({
   const [isPending, startTransition] = useTransition();
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState(status);
+  // EMR audit minor #1 — autosave. `dirty` tracks unsaved block edits;
+  // `lastSavedAt` drives the "Saved 12:04" indicator; `autosaving` shows the
+  // in-flight state; `autosaveError` keeps the note dirty (and the beforeunload
+  // guard armed) when a background save fails.
+  const [dirty, setDirty] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [autosaving, setAutosaving] = useState(false);
+  const [autosaveError, setAutosaveError] = useState<string | null>(null);
   const [demeanor, setDemeanor] = useState<PatientDemeanor | null>(initialDemeanor ?? null);
   const [demeanorPending, setDemeanorPending] = useState(false);
   // EMR-131: clinician can acknowledge the grounding review once they've
@@ -181,7 +197,9 @@ export function NoteEditor({
       .finally(() => setDemeanorPending(false));
   }
 
-  const isEditable = currentStatus === "draft" || currentStatus === "needs_review";
+  // Only a draft is freely editable. (`needs_review` was a defined-but-never-set
+  // status — audit minor #5 — so it is no longer part of the editable set.)
+  const isEditable = currentStatus === "draft";
 
   // Only make AI "pre-drafted / already incorporates your talking points"
   // claims when the draft actually has substantive Assessment/Plan content —
@@ -292,12 +310,89 @@ export function NoteEditor({
     setSaveMessage(null);
   }
 
+  // ── Autosave (audit minor #1) ──────────────────────────────────────────
+  // Latest values mirrored into refs so the debounce timer and the save call
+  // always act on current state without re-arming on every keystroke.
+  const blocksRef = useRef(blocks);
+  useEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
+  const isPendingRef = useRef(isPending);
+  useEffect(() => {
+    isPendingRef.current = isPending;
+  }, [isPending]);
+  const autosaveInFlight = useRef(false);
+
+  // Any block mutation after mount marks the note dirty. We skip the very
+  // first render so the initial APSO sort/labeling doesn't count as an edit.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    setDirty(true);
+    setAutosaveError(null);
+  }, [blocks]);
+
+  async function runAutosave() {
+    // Never autosave a signed note (mirrors the server save-lock), and never
+    // race a manual Save / Finalize that's already writing.
+    if (!isEditable || autosaveInFlight.current || isPendingRef.current) return;
+    const snapshot = blocksRef.current;
+    autosaveInFlight.current = true;
+    setAutosaving(true);
+    try {
+      const result = await saveNoteBlocks(noteId, snapshot);
+      if (result.ok) {
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        // Only clear dirty if nothing changed while the save was in flight;
+        // otherwise the debounce re-arms and saves the newer edits.
+        if (blocksRef.current === snapshot) setDirty(false);
+      } else {
+        setAutosaveError(result.error);
+      }
+    } catch {
+      setAutosaveError("Couldn't autosave — your changes are not saved.");
+    } finally {
+      autosaveInFlight.current = false;
+      setAutosaving(false);
+    }
+  }
+
+  // Debounced trigger: 3s after the last edit while the note is dirty + editable.
+  // Re-arms on every block change (debounce); clears once saved.
+  useEffect(() => {
+    if (!isEditable || !dirty) return;
+    const timer = setTimeout(() => {
+      void runAutosave();
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, blocks, isEditable]);
+
+  // Warn before leaving with unsaved changes (audit minor #1).
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
   function handleSave() {
     startTransition(async () => {
       const result = await saveNoteBlocks(noteId, blocks);
       if (result.ok) {
-        setSaveMessage("Saved successfully");
-        setTimeout(() => setSaveMessage(null), 2000);
+        // Manual save shares the persistent "Saved 12:04" indicator with
+        // autosave — single source of truth for save state.
+        setDirty(false);
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        setSaveMessage(null);
       } else {
         setSaveMessage(result.error);
       }
@@ -308,8 +403,20 @@ export function NoteEditor({
     startTransition(async () => {
       const result = await saveAndFinalizeNote(noteId, blocks);
       if (result.ok) {
-        setCurrentStatus("finalized");
-        setSaveMessage("Note finalized and signed");
+        // Finalize persists the blocks too, so the note is no longer dirty.
+        setDirty(false);
+        setLastSavedAt(new Date());
+        setAutosaveError(null);
+        setCurrentStatus(result.status);
+        // Honest messaging for the mid-level co-signature path (audit minor #3):
+        // a note routed for co-signature is NOT yet signed.
+        setSaveMessage(
+          result.status === "pending_cosign"
+            ? "Note routed for physician co-signature"
+            : "Note finalized and signed",
+        );
+        // Auto-clear the finalize toast like the save toast does (audit minor #12).
+        setTimeout(() => setSaveMessage(null), 4000);
         router.refresh();
       } else {
         setSaveMessage(result.error);
@@ -462,16 +569,8 @@ export function NoteEditor({
       {/* Status + AI badges + template picker (EMR-174) */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge
-            tone={
-              currentStatus === "finalized"
-                ? "success"
-                : currentStatus === "needs_review"
-                  ? "warning"
-                  : "neutral"
-            }
-          >
-            {currentStatus}
+          <Badge tone={noteStatusBadge(currentStatus).tone}>
+            {noteStatusBadge(currentStatus).label}
           </Badge>
           {aiDrafted && <Badge tone="highlight">AI-drafted</Badge>}
           {aiConfidence !== null && hasSubstantiveDraft && (
@@ -656,7 +755,7 @@ export function NoteEditor({
 
       {/* Action buttons */}
       {isEditable && (
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-3 pt-2 flex-wrap">
           <Button variant="secondary" onClick={handleSave} disabled={isPending}>
             {isPending ? "Saving..." : "Save draft"}
           </Button>
@@ -668,61 +767,27 @@ export function NoteEditor({
               {scrubMessage(saveMessage)}
             </span>
           )}
+          {/* Autosave / dirty-state indicator (audit minor #1). Always
+              rendered + aria-live so screen readers hear the save state. */}
+          <span className="text-xs text-text-subtle tabular-nums" aria-live="polite">
+            {autosaveError ? (
+              <span className="text-danger">⚠ Autosave failed — changes not saved</span>
+            ) : autosaving ? (
+              "Saving…"
+            ) : dirty ? (
+              "Unsaved changes…"
+            ) : lastSavedAt ? (
+              `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            ) : null}
+          </span>
         </div>
       )}
 
-      {/* Finalized success state with coding suggestions */}
+      {/* Finalized success state with coding suggestions — EMR-1097: the
+          physician approves (or edits then approves) the suggested codes
+          here. Charges are NOT extracted until this approval is recorded. */}
       {currentStatus === "finalized" && codingSuggestion && (
-        <Card tone="ambient" className="mt-6">
-          <CardContent className="pt-6">
-            <h3 className="font-display text-lg font-medium text-text tracking-tight mb-3">
-              Coding Suggestions
-            </h3>
-            {codingSuggestion.icd10 &&
-              Array.isArray(codingSuggestion.icd10) &&
-              codingSuggestion.icd10.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-2">
-                    ICD-10 Codes
-                  </p>
-                  <ul className="space-y-1.5">
-                    {codingSuggestion.icd10.map(
-                      (
-                        code: { code: string; label: string; confidence: number },
-                        i: number
-                      ) => (
-                        <li key={i} className="flex items-center gap-2 text-sm">
-                          <Badge tone="accent">{code.code}</Badge>
-                          <span className="text-text">{code.label}</span>
-                          <span className="text-text-subtle text-xs">
-                            ({Math.round(code.confidence * 100)}%)
-                          </span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                </div>
-              )}
-            {codingSuggestion.emLevel && (
-              <div className="mb-3">
-                <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
-                  E/M Level
-                </p>
-                <Badge tone="info">{codingSuggestion.emLevel}</Badge>
-              </div>
-            )}
-            {codingSuggestion.rationale && (
-              <div>
-                <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
-                  Rationale
-                </p>
-                <p className="text-sm text-text-muted leading-relaxed">
-                  {codingSuggestion.rationale}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <CodingApprovalCard noteId={noteId} suggestion={codingSuggestion} />
       )}
 
       {currentStatus === "finalized" && !codingSuggestion && (
@@ -763,5 +828,267 @@ export function NoteEditor({
         />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coding approval — EMR-1097 (B4)
+// ---------------------------------------------------------------------------
+// The Coding Readiness Agent's suggestions render here for the physician to
+// approve as-is or edit (ICD-10 list + E/M level) and then approve. Approval
+// calls approveCodingSuggestion, which records the decision, audits it, and
+// emits coding.approved — the event that gates billing charge extraction.
+
+type CodingSuggestionProp = NonNullable<NoteEditorProps["codingSuggestion"]>;
+
+function CodingApprovalCard({
+  noteId,
+  suggestion,
+}: {
+  noteId: string;
+  suggestion: CodingSuggestionProp;
+}) {
+  const router = useRouter();
+  const initiallyApproved =
+    suggestion.status === "approved" || suggestion.status === "modified";
+
+  // Editable working set: starts from the approved decision (if one exists)
+  // so re-approval edits build on what the physician already signed off on.
+  const [codes, setCodes] = useState<{ code: string; label: string }[]>(() =>
+    initiallyApproved && suggestion.approvedIcd10 && suggestion.approvedIcd10.length > 0
+      ? suggestion.approvedIcd10.map((c) => ({ code: c.code, label: c.label ?? "" }))
+      : (Array.isArray(suggestion.icd10) ? suggestion.icd10 : []).map((c) => ({
+          code: c.code,
+          label: c.label,
+        })),
+  );
+  const [emLevel, setEmLevel] = useState<string>(
+    (initiallyApproved ? suggestion.approvedEmLevel : null) ?? suggestion.emLevel ?? "",
+  );
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [approval, setApproval] = useState<{
+    byName: string;
+    at: string | null;
+    status: string;
+  } | null>(
+    initiallyApproved
+      ? {
+          byName: suggestion.approvedByName ?? "Physician",
+          at: suggestion.approvedAt ?? null,
+          status: suggestion.status!,
+        }
+      : null,
+  );
+
+  const suggestedConfidence = (code: string) =>
+    (Array.isArray(suggestion.icd10) ? suggestion.icd10 : []).find((c) => c.code === code)
+      ?.confidence;
+
+  function removeCode(index: number) {
+    setCodes((prev) => prev.filter((_, i) => i !== index));
+    setDirty(true);
+  }
+
+  function addCode() {
+    const code = newCode.trim().toUpperCase();
+    if (!code) return;
+    if (codes.some((c) => c.code === code)) {
+      setNewCode("");
+      setNewLabel("");
+      return;
+    }
+    setCodes((prev) => [...prev, { code, label: newLabel.trim() }]);
+    setNewCode("");
+    setNewLabel("");
+    setDirty(true);
+  }
+
+  function handleApprove() {
+    setError(null);
+    startTransition(async () => {
+      const result = await approveCodingSuggestion(noteId, {
+        icd10: codes,
+        emLevel: emLevel.trim() ? emLevel.trim() : null,
+        modified: dirty,
+      });
+      if (result.ok) {
+        setApproval({
+          byName: result.approvedByName,
+          at: result.approvedAt,
+          status: result.status,
+        });
+        setEditing(false);
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  const approvedAtLabel = approval?.at
+    ? new Date(approval.at).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
+
+  return (
+    <Card tone="ambient" className="mt-6" id="coding-suggestions">
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 className="font-display text-lg font-medium text-text tracking-tight">
+            Coding Suggestions
+          </h3>
+          {approval ? (
+            <Badge tone="success">
+              {approval.status === "modified" ? "Approved with edits" : "Approved"}
+            </Badge>
+          ) : (
+            <Badge tone="warning">Awaiting physician approval</Badge>
+          )}
+        </div>
+
+        {approval && (
+          <p className="text-xs text-text-muted mb-3">
+            Approved by {approval.byName}
+            {approvedAtLabel ? ` · ${approvedAtLabel}` : ""}. Approved codes were
+            handed to billing for charge extraction.
+          </p>
+        )}
+        {!approval && (
+          <p className="text-xs text-text-muted mb-3">
+            Review the AI-suggested codes below. No billing charges are created
+            until you approve them — edit first if anything is wrong.
+          </p>
+        )}
+
+        <div className="mb-4">
+          <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-2">
+            ICD-10 Codes
+          </p>
+          {codes.length === 0 && (
+            <p className="text-sm text-text-muted mb-2">No codes selected.</p>
+          )}
+          <ul className="space-y-1.5">
+            {codes.map((code, i) => {
+              const confidence = suggestedConfidence(code.code);
+              return (
+                <li key={code.code} className="flex items-center gap-2 text-sm">
+                  <Badge tone="accent">{code.code}</Badge>
+                  <span className="text-text">{code.label}</span>
+                  {typeof confidence === "number" && (
+                    <span className="text-text-subtle text-xs">
+                      ({Math.round(confidence * 100)}%)
+                    </span>
+                  )}
+                  {editing && (
+                    <button
+                      type="button"
+                      onClick={() => removeCode(i)}
+                      aria-label={`Remove ${code.code}`}
+                      className="ml-1 text-text-subtle hover:text-danger transition-colors text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {editing && (
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={newCode}
+                onChange={(e) => setNewCode(e.target.value)}
+                placeholder="ICD-10 code"
+                aria-label="New ICD-10 code"
+                className="w-28 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+              <input
+                type="text"
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Description"
+                aria-label="New ICD-10 description"
+                className="flex-1 min-w-40 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+              />
+              <Button size="sm" variant="secondary" onClick={addCode} disabled={!newCode.trim()}>
+                Add code
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-3">
+          <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
+            E/M Level
+          </p>
+          {editing ? (
+            <input
+              type="text"
+              value={emLevel}
+              onChange={(e) => {
+                setEmLevel(e.target.value);
+                setDirty(true);
+              }}
+              placeholder="e.g. 99214"
+              aria-label="E/M level"
+              className="w-28 rounded-md border border-border/60 bg-surface px-2 py-1.5 text-sm text-text focus:outline-none focus:border-accent transition-colors"
+            />
+          ) : emLevel ? (
+            <Badge tone="info">{emLevel}</Badge>
+          ) : (
+            <p className="text-sm text-text-muted">No E/M level suggested.</p>
+          )}
+        </div>
+
+        {suggestion.rationale && (
+          <div className="mb-4">
+            <p className="text-xs font-medium text-text-subtle uppercase tracking-wider mb-1">
+              Rationale
+            </p>
+            <p className="text-sm text-text-muted leading-relaxed">
+              {suggestion.rationale}
+            </p>
+          </div>
+        )}
+
+        {error && (
+          <div
+            role="alert"
+            className="mb-3 flex items-start gap-2 rounded-md border border-highlight/30 bg-highlight-soft/50 px-3 py-2 text-[11px] text-[color:var(--highlight-hover)]"
+          >
+            <span aria-hidden="true" className="shrink-0 mt-0.5">⚠</span>
+            <span className="flex-1 leading-relaxed">{error}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-1 flex-wrap">
+          <Button variant="primary" size="sm" onClick={handleApprove} disabled={isPending}>
+            {isPending
+              ? "Approving..."
+              : approval
+                ? "Re-approve codes"
+                : dirty
+                  ? "Approve with edits"
+                  : "Approve codes"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setEditing((prev) => !prev)}
+            disabled={isPending}
+          >
+            {editing ? "Done editing" : "Edit codes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

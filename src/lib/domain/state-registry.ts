@@ -1,10 +1,9 @@
 // State Registry API Integration
 // Connects state compliance forms to real state medical cannabis registry systems.
-// Each state has a different API/portal. This module provides a unified interface
-// for the UI; the per-state submission logic lives in
-// `src/lib/integrations/state-registries/`.
-
-import { submitToStateRegistry } from "@/lib/integrations/state-registries";
+// Each state has a different API/portal. This module provides the registry
+// directory + config the compliance UI reads; the actual per-state submission
+// logic lives in `src/lib/integrations/state-registries/` and is called
+// directly from `compliance/actions.ts` via `submitToStateRegistry`.
 
 export type RegistryStatus = "connected" | "pending" | "error" | "not_configured";
 
@@ -20,15 +19,6 @@ export interface StateRegistryConfig {
   renewalPeriodDays: number;
   status: RegistryStatus;
   notes: string;
-}
-
-export interface SubmissionResult {
-  success: boolean;
-  confirmationNumber?: string;
-  registryPatientId?: string;
-  expirationDate?: string;
-  errors?: string[];
-  submittedAt: string;
 }
 
 // ── State registry configurations ──────────────────────
@@ -124,40 +114,6 @@ export const STATE_REGISTRIES: StateRegistryConfig[] = [
     notes: "California does not require physician registration. Prop 215 recommendations are physician-issued. Optional MMIC through county health departments.",
   },
 ];
-
-/**
- * Submit a certification to a state registry. Delegates to the per-state
- * integration module under `src/lib/integrations/state-registries/`.
- */
-export async function submitToRegistry(
-  stateCode: string,
-  formData: Record<string, string | boolean | number>,
-  providerCredentials: { registryId?: string; npi?: string; licenseNumber?: string }
-): Promise<SubmissionResult> {
-  const registry = STATE_REGISTRIES.find((r) => r.stateCode === stateCode);
-  if (!registry) {
-    return {
-      success: false,
-      errors: [`No registry configuration for state: ${stateCode}`],
-      submittedAt: new Date().toISOString(),
-    };
-  }
-
-  const result = await submitToStateRegistry({
-    stateCode,
-    formData,
-    providerCredentials,
-  });
-
-  return {
-    success: result.success,
-    confirmationNumber: result.confirmationNumber,
-    registryPatientId: result.registryPatientId,
-    expirationDate: result.expirationDate,
-    errors: result.errors,
-    submittedAt: result.submittedAt,
-  };
-}
 
 export function getRegistryForState(stateCode: string): StateRegistryConfig | undefined {
   return STATE_REGISTRIES.find((r) => r.stateCode === stateCode);

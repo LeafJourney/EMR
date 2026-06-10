@@ -10,9 +10,10 @@ const input = z.object({
 });
 
 const output = z.object({
-  draftMessageId: z.string(),
+  draftMessageId: z.string().nullable(),
   subject: z.string(),
   tone: z.string(),
+  skipped: z.boolean().optional(),
 });
 
 const messageResponseSchema = z.object({
@@ -49,6 +50,26 @@ export const patientOutreachAgent: Agent<z.infer<typeof input>, z.infer<typeof o
       where: { id: encounterId },
     });
     if (!encounter) throw new Error(`Encounter not found: ${encounterId}`);
+
+    // EMR-1101 (M6) dedup rule: the physician-reviewed visit-completion
+    // release is the AUTHORITATIVE post-visit patient message. Releasing
+    // visit completion creates a reviewed patient draft in the same
+    // transaction as the VisitCompletion record, so if a release exists for
+    // any note on this encounter, this agent skips — otherwise the patient
+    // thread / approvals queue ends up with two near-identical drafts.
+    // (releaseVisitCompletion applies the mirror-image check for the
+    // opposite ordering, where this agent drafted first.)
+    const existingRelease = await prisma.visitCompletion.findFirst({
+      where: { note: { encounterId } },
+      select: { id: true },
+    });
+    if (existingRelease) {
+      ctx.log("info", "Visit-completion release already drafted a patient message — skipping outreach draft", {
+        encounterId,
+        visitCompletionId: existingRelease.id,
+      });
+      return { draftMessageId: null, subject: "", tone: "warm", skipped: true };
+    }
 
     // Load the latest note for this encounter (if finalized)
     ctx.assertCan("read.note");

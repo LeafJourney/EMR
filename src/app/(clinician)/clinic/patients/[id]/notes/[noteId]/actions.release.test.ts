@@ -9,8 +9,9 @@ const hoisted = vi.hoisted(() => {
     auditLog: { create: vi.fn() },
     visitCompletion: { findUnique: vi.fn(), create: vi.fn() },
     task: { create: vi.fn() },
+    appointment: { create: vi.fn() },
     messageThread: { findFirst: vi.fn(), create: vi.fn() },
-    message: { create: vi.fn() },
+    message: { create: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(async (cb) => cb(mockPrisma)),
   };
   return { mockPrisma, requireUserMock: vi.fn(), recordFeedbackMock: vi.fn() };
@@ -180,9 +181,12 @@ beforeEach(() => {
   mockPrisma.visitCompletion.findUnique.mockResolvedValue(null);
   mockPrisma.visitCompletion.create.mockResolvedValue({ id: "vc_1" });
   mockPrisma.task.create.mockResolvedValue({ id: "task_1" });
+  mockPrisma.appointment.create.mockResolvedValue({ id: "appt_1" });
   mockPrisma.messageThread.findFirst.mockResolvedValue({ id: "thread_1" });
   mockPrisma.messageThread.create.mockResolvedValue({ id: "thread_1" });
   mockPrisma.message.create.mockResolvedValue({ id: "msg_1" });
+  // EMR-1101 dedup probe: no pre-existing outreach draft by default.
+  mockPrisma.message.findFirst.mockResolvedValue(null);
   mockPrisma.auditLog.create.mockResolvedValue({ id: "audit_1" });
   recordFeedbackMock.mockResolvedValue({ id: "feedback_1" });
 });
@@ -402,6 +406,45 @@ describe("releaseVisitCompletion server action", () => {
     });
   });
 
+  it("skips the patient draft when the outreach agent already drafted one for this encounter (EMR-1101 dedup)", async () => {
+    // The Patient Outreach Agent fires on encounter.completed — usually before
+    // the physician reaches the release step. When its draft already exists,
+    // release must not stack a second near-identical draft into the thread.
+    mockPrisma.message.findFirst.mockResolvedValue({ id: "outreach_draft_1" });
+
+    const result = await releaseVisitCompletion("note_1", validPayload());
+
+    expect(result).toEqual({ ok: true });
+
+    // The dedup probe scopes to recent, aiDrafted outreach-agent drafts for
+    // this patient.
+    expect(mockPrisma.message.findFirst).toHaveBeenCalledWith({
+      where: {
+        thread: { patientId: "patient_1" },
+        aiDrafted: true,
+        status: "draft",
+        senderAgent: { startsWith: "agent:patientOutreach" },
+        createdAt: { gte: expect.any(Date) },
+      },
+      select: { id: true },
+    });
+
+    // No second patient draft — but every other release side effect lands.
+    expect(mockPrisma.message.create).not.toHaveBeenCalled();
+    expect(mockPrisma.visitCompletion.create).toHaveBeenCalled();
+    expect(mockPrisma.task.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.auditLog.create).toHaveBeenCalled();
+  });
+
+  it("creates the patient draft when no outreach draft exists for the encounter", async () => {
+    mockPrisma.message.findFirst.mockResolvedValue(null);
+
+    const result = await releaseVisitCompletion("note_1", validPayload());
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.message.create).toHaveBeenCalledTimes(1);
+  });
+
   it("does not fail the care-plan release if feedback persistence fails", async () => {
     recordFeedbackMock.mockRejectedValue(new Error("feedback store unavailable"));
 
@@ -419,5 +462,88 @@ describe("releaseVisitCompletion server action", () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockPrisma.visitCompletion.create).toHaveBeenCalled();
+  });
+
+  describe("one-click follow-up booking (audit #7)", () => {
+    function bookingPayload() {
+      return validPayload({
+        includedSections: [
+          {
+            cardId: "follow_up",
+            title: "Follow-Up Plan",
+            status: "edited",
+            disposition: "include",
+            labels: ["RTC in 2 weeks"],
+            editNote: "Book a follow-up appointment in 2 weeks.",
+            structuredEdit: {
+              followUpInterval: "2 weeks",
+              followUpRouting: "book_appointment",
+            },
+            requiresPhysicianApproval: true,
+          },
+        ],
+      });
+    }
+
+    it("books a pre-filled Appointment instead of a front-desk task when routing is book_appointment", async () => {
+      mockPrisma.encounter.findFirst.mockResolvedValue(
+        encounter({ providerId: "prov_1", modality: "video" }),
+      );
+
+      const result = await releaseVisitCompletion("note_1", bookingPayload());
+      expect(result).toEqual({ ok: true });
+
+      // A real appointment is created, carrying provider + modality from the visit.
+      expect(mockPrisma.appointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            patientId: "patient_1",
+            providerId: "prov_1",
+            modality: "video",
+            status: "requested",
+          }),
+        }),
+      );
+      // ...and NO front-office follow-up task is created for this section.
+      const followUpTask = mockPrisma.task.create.mock.calls.find((c) =>
+        String(c[0]?.data?.title ?? "").startsWith("Follow-Up:"),
+      );
+      expect(followUpTask).toBeUndefined();
+      // Booking is audited.
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: "visit_completion.follow_up.booked" }),
+        }),
+      );
+    });
+
+    it("falls back to a front-desk task when the interval can't be parsed", async () => {
+      const payload = validPayload({
+        includedSections: [
+          {
+            cardId: "follow_up",
+            title: "Follow-Up Plan",
+            status: "edited",
+            disposition: "include",
+            labels: ["Follow up as needed"],
+            structuredEdit: {
+              followUpInterval: "as needed",
+              followUpRouting: "book_appointment",
+            },
+            requiresPhysicianApproval: true,
+          },
+        ],
+      });
+
+      const result = await releaseVisitCompletion("note_1", payload);
+      expect(result).toEqual({ ok: true });
+
+      expect(mockPrisma.appointment.create).not.toHaveBeenCalled();
+      expect(mockPrisma.task.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ assigneeRole: "front_office" }),
+        }),
+      );
+    });
   });
 });

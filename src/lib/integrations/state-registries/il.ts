@@ -1,23 +1,21 @@
 // Illinois — IDPH Medical Cannabis Patient Program
 // https://dph.illinois.gov/topics-services/prevention-wellness/medical-cannabis.html
 //
-// Physician certifications are submitted through the IDPH portal. Stub
-// implementation falls back to a simulated submission when API credentials
-// are not configured.
+// Physician certifications are submitted through the IDPH portal. When API
+// credentials are not configured, nothing is transmitted — the result is an
+// honest manual_stub marker (no fabricated confirmation numbers).
 
 import {
-  buildStubSuccess,
+  buildManualStubResult,
   postToRegistry,
   resolveRegistryEndpoint,
 } from "./client";
 import type { RegistrySubmission, RegistrySubmissionResult } from "./types";
 
-const RENEWAL_DAYS = 365;
-
 export async function submitIL(
   submission: RegistrySubmission,
 ): Promise<RegistrySubmissionResult> {
   const endpoint = resolveRegistryEndpoint("IL");
-  if (!endpoint) return buildStubSuccess("IL", RENEWAL_DAYS);
+  if (!endpoint) return buildManualStubResult();
   return postToRegistry(endpoint, "/mcpp/certifications", submission);
 }

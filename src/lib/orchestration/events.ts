@@ -49,7 +49,10 @@ export type DomainEvent =
   | { name: "prior_auth.obtained"; patientId: string; authNumber: string; organizationId: string }
   | { name: "coding.recommended"; encounterId: string; patientId: string; overallConfidence: number; requiresReview: boolean; organizationId: string }
   | { name: "coding.review_needed"; encounterId: string; patientId: string; reason: string; organizationId: string }
-  | { name: "coding.approved"; encounterId: string; patientId: string; approvedBy: string; organizationId: string }
+  // EMR-1097: emitted when the physician approves (or edits-then-approves) the
+  // coding suggestions on a finalized note. Carries the approved codes so
+  // downstream billing agents reconcile against the physician's decision.
+  | { name: "coding.approved"; noteId: string; encounterId: string; patientId: string; organizationId: string; approvedBy: string; approvedIcd10: string[]; approvedEmLevel: string | null }
   | { name: "claim.scrubbed"; claimId: string; organizationId: string; status: "clean" | "warnings" | "blocked"; scrubResultId: string }
   | { name: "claim.blocked"; claimId: string; organizationId: string; violations: string[] }
   | { name: "clearinghouse.queued"; claimId: string; submissionId: string; organizationId: string; isSecondary: boolean }

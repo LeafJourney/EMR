@@ -49,7 +49,7 @@ export async function MorningBriefView() {
   ] = await Promise.all([
     prisma.note.findMany({
       where: {
-        status: { in: ["draft", "needs_review"] },
+        status: { in: ["draft", "pending_cosign"] },
         encounter: { organizationId: orgId },
         updatedAt: { lt: today },
       },
@@ -200,7 +200,7 @@ export async function MorningBriefView() {
       id: `note-${note.id}`,
       category: "unsigned",
       title: `Unsigned note for ${note.encounter.patient.firstName} ${note.encounter.patient.lastName}`,
-      detail: `${note.status === "needs_review" ? "Needs review" : "Draft"} · updated ${formatRelative(note.updatedAt)}`,
+      detail: `${note.status === "pending_cosign" ? "Awaiting co-signature" : "Draft"} · updated ${formatRelative(note.updatedAt)}`,
       href: `/clinic/patients/${note.encounter.patient.id}/notes/${note.id}`,
       urgency: "high",
     });

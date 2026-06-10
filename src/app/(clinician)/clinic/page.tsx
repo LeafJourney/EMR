@@ -334,7 +334,7 @@ export default async function ClinicHomePage() {
     // 3. Notes needing review (full list for sidebar)
     prisma.note.findMany({
       where: {
-        status: { in: ["draft", "needs_review"] },
+        status: { in: ["draft", "pending_cosign"] },
         encounter: { organizationId },
       },
       include: {
@@ -468,9 +468,9 @@ export default async function ClinicHomePage() {
       })
     ),
 
-    // 16. Notes in needs_review status (for command strip count)
+    // 16. Notes awaiting co-signature (for command strip count)
     prisma.note.count({
-      where: { status: "needs_review", encounter: { organizationId } },
+      where: { status: "pending_cosign", encounter: { organizationId } },
     }),
 
     // 17. Recent agent jobs (fleet bridge — last 24h, succeeded + needs_approval)
@@ -1113,9 +1113,9 @@ export default async function ClinicHomePage() {
                           </p>
                         </div>
                         <Badge
-                          tone={note.status === "needs_review" ? "warning" : "neutral"}
+                          tone={note.status === "pending_cosign" ? "warning" : "neutral"}
                         >
-                          {note.status === "needs_review" ? "Review" : "Draft"}
+                          {note.status === "pending_cosign" ? "Co-sign" : "Draft"}
                         </Badge>
                       </Link>
                     </li>

@@ -332,16 +332,24 @@ export const workflows: WorkflowDefinition[] = [
       },
     ],
   },
-  // encounter.completed → Encounter Intelligence → charge.created
+  // coding.approved → Encounter Intelligence → charge.created
+  // EMR-1097 (B4): this used to fire on encounter.completed, which created
+  // charges BEFORE the physician ever saw the coding suggestions. Charges are
+  // billing artifacts of the physician's coding decision, so extraction now
+  // waits for coding.approved and carries the approved codes so the agent can
+  // reconcile its extraction against them.
   {
     name: "encounter-charge-extraction",
-    on: ["encounter.completed"],
+    on: ["coding.approved"],
     steps: [
       {
         agent: "encounterIntelligence",
         input: (e) => ({
           encounterId: (e as any).encounterId,
           patientId: (e as any).patientId,
+          noteId: (e as any).noteId,
+          approvedIcd10: (e as any).approvedIcd10,
+          approvedEmLevel: (e as any).approvedEmLevel ?? null,
         }),
       },
     ],

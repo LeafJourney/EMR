@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { ImagingOrderForm } from "./imaging-order-form";
+import { OrderHistory } from "../order-history";
 
 interface PageProps {
   params: { id: string };
@@ -53,9 +54,18 @@ export default async function ImagingOrdersPage({ params }: PageProps) {
         </Link>
       </div>
 
-      <ImagingOrderForm
-        patientName={`${patient.firstName} ${patient.lastName}`}
-      />
+      <div className="space-y-6">
+        <ImagingOrderForm
+          patientId={patient.id}
+          patientName={`${patient.firstName} ${patient.lastName}`}
+        />
+
+        <OrderHistory
+          patientId={patient.id}
+          organizationId={user.organizationId!}
+          orderType="imaging"
+        />
+      </div>
     </PageShell>
   );
 }

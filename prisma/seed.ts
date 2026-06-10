@@ -110,6 +110,13 @@ async function cleanIdempotent() {
   await prisma.codingSuggestion.deleteMany({
     where: { note: { encounter: { organizationId: org.id } } },
   });
+  // EMR-1103 (WS-D) — Phase 1 clinical-decision tables. No relation cascades
+  // reach these from the rows above, so clean them explicitly to keep the
+  // seed idempotent (both are cuid-keyed and would otherwise accumulate).
+  await prisma.clinicalOrder.deleteMany({ where: { organizationId: org.id } });
+  await prisma.cannabisRecommendation.deleteMany({
+    where: { organizationId: org.id },
+  });
   await prisma.note.deleteMany({
     where: { encounter: { organizationId: org.id } },
   });
@@ -1666,7 +1673,7 @@ async function main() {
   });
 
   // Maya — Finalized note on the completed encounter
-  await prisma.note.create({
+  const mayaNote = await prisma.note.create({
     data: {
       encounterId: mayaCompletedEncounter.id,
       authorUserId: clinicianUser.id,
@@ -1702,6 +1709,119 @@ async function main() {
         },
       ],
       narrative: null,
+    },
+  });
+
+  // EMR-1103 (WS-D) — Phase 1 clinical-decision sample data so demo orgs
+  // exercise the new chart surfaces: a physician-approved coding suggestion
+  // (drives the billing checkpoint), placed lab + imaging orders (Orders
+  // tab), and a persisted AI recommendation.
+
+  // Maya — coding suggestion, approved by the clinician on the signed note.
+  await prisma.codingSuggestion.create({
+    data: {
+      noteId: mayaNote.id,
+      icd10: [
+        { code: "G89.29", label: "Other chronic pain", confidence: 0.93 },
+        { code: "G47.00", label: "Insomnia, unspecified", confidence: 0.84 },
+      ],
+      emLevel: "99204",
+      rationale:
+        "New patient, moderate-complexity cannabis therapy initiation for chronic pain with secondary insomnia.",
+      generatedAt: daysAgo(7),
+      status: "approved",
+      approvedById: clinicianUser.id,
+      approvedByName: "Dr. Lena Okafor",
+      approvedAt: daysAgo(7),
+      approvedIcd10: [
+        { code: "G89.29", label: "Other chronic pain" },
+        { code: "G47.00", label: "Insomnia, unspecified" },
+      ],
+      approvedEmLevel: "99204",
+    },
+  });
+
+  // Maya — placed lab order (saved to the chart; transmission simulated).
+  await prisma.clinicalOrder.create({
+    data: {
+      organizationId: org.id,
+      patientId: maya.id,
+      encounterId: mayaCompletedEncounter.id,
+      orderType: "lab",
+      orderCode: "CBC,CMP",
+      orderName: "Complete Blood Count, Comprehensive Metabolic Panel",
+      priority: "routine",
+      diagnosisCodes: ["G89.29"],
+      payload: {
+        labs: ["CBC", "CMP"],
+        reason: "Baseline labs before cannabis therapy titration.",
+        diagnoses: ["G89.29"],
+        priority: "routine",
+      },
+      status: "placed",
+      transmissionMode: "simulated",
+      orderedById: clinicianUser.id,
+      orderedByName: "Dr. Lena Okafor",
+      createdAt: daysAgo(7),
+    },
+  });
+
+  // Maya — placed imaging order (STAT, to exercise the priority surface).
+  await prisma.clinicalOrder.create({
+    data: {
+      organizationId: org.id,
+      patientId: maya.id,
+      encounterId: mayaCompletedEncounter.id,
+      orderType: "imaging",
+      orderCode: "72148",
+      orderName: "MRI — Lumbar spine without contrast",
+      priority: "stat",
+      diagnosisCodes: ["G89.29"],
+      payload: {
+        modality: "MRI",
+        studyCode: "72148",
+        studyName: "MRI Lumbar spine without contrast",
+        indication: "Chronic low back pain, evaluate for structural cause.",
+        diagnoses: ["G89.29"],
+        priority: "stat",
+        priorAuth: true,
+      },
+      status: "placed",
+      transmissionMode: "simulated",
+      orderedById: clinicianUser.id,
+      orderedByName: "Dr. Lena Okafor",
+      createdAt: daysAgo(6),
+    },
+  });
+
+  // Maya — persisted AI treatment recommendation (decision-support record).
+  await prisma.cannabisRecommendation.create({
+    data: {
+      organizationId: org.id,
+      patientId: maya.id,
+      createdById: clinicianUser.id,
+      createdByName: "Dr. Lena Okafor",
+      inputContext: {
+        concerns: ["chronic neuropathic pain", "sleep disturbance"],
+        goals: ["improve sleep quality", "reduce daytime pain"],
+        outcomeSummary: "Pain 7/10, sleep 4/10 on intake.",
+        assessmentSummary:
+          "Chronic neuropathic pain with secondary insomnia; prior positive response to tinctures.",
+      },
+      recommendation: {
+        productType: "tincture",
+        cannabinoidRatio: "1:1 THC:CBD",
+        startingDoseMg: 5,
+        deliveryMethod: "sublingual",
+        frequency: "twice daily",
+        citations: [
+          "Whiting et al. (2015) JAMA — cannabinoids for chronic pain",
+        ],
+        confidence: 0.78,
+        rationale:
+          "Balanced 1:1 sublingual tincture at a low starting dose balances analgesia and sleep benefit while limiting daytime somnolence.",
+      },
+      createdAt: daysAgo(7),
     },
   });
 
@@ -2546,6 +2666,9 @@ async function main() {
         "Take 0.5 mL (half a dropper) under the tongue twice daily — once in the morning and once before bed. Hold under tongue for 60 seconds before swallowing. This equals 2.5 mg THC + 2.5 mg CBD per dose (5 mg each per day).",
       clinicianNotes:
         "Starting low dose 1:1 for sleep and pain. Reassess in 2 weeks. May titrate up to 1 mL if tolerated.",
+      // EMR-1099 (M3 / WS-D) — pharmacy routing for the signed Rx.
+      pharmacyId: "pharmacy-green-leaf-lb",
+      pharmacyName: "Green Leaf Pharmacy — Long Beach",
       startDate: daysAgo(3),
     },
   });
