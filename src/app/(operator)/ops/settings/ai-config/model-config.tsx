@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
-import { saveAiConfigAction } from "./actions";
+import { saveAiConfigAction, testAiConnectionAction } from "./actions";
 
 export function ModelConfigPanel({
   initialAiConfig,
@@ -42,6 +42,7 @@ export function ModelConfigPanel({
     initialAiConfig?.defaultModel?.apiKey || initialAiConfig?.defaultModel?.apiKeySet ? "••••••••" : "",
   );
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testMessage, setTestMessage] = useState<string>("");
   const [saved, setSaved] = useState(false);
 
   // Advanced settings
@@ -100,12 +101,20 @@ export function ModelConfigPanel({
     setSaved(false);
   };
 
-  const handleTestConnection = () => {
+  const handleTestConnection = async () => {
     setTestStatus("testing");
-    // Simulated test
-    setTimeout(() => {
-      setTestStatus(apiKey.length > 8 || !selectedProvider.requiresApiKey ? "success" : "error");
-    }, 1500);
+    setTestMessage("");
+    try {
+      const result = await testAiConnectionAction({
+        provider: config.provider,
+        apiKey,
+      });
+      setTestStatus(result.ok ? "success" : "error");
+      setTestMessage(result.message);
+    } catch {
+      setTestStatus("error");
+      setTestMessage("Could not run the connection test.");
+    }
   };
 
   const handleSave = async () => {
@@ -320,13 +329,13 @@ export function ModelConfigPanel({
             {testStatus === "success" && (
               <p className="text-sm text-emerald-600 flex items-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7l3.5 3.5 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                Connection successful
+                {testMessage || "Connection successful"}
               </p>
             )}
             {testStatus === "error" && (
               <p className="text-sm text-red-600 flex items-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-                Connection failed. Check your API key and try again.
+                {testMessage || "Connection failed. Check your API key and try again."}
               </p>
             )}
           </CardContent>

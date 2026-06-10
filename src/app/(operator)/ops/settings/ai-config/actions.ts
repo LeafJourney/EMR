@@ -5,7 +5,14 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
 import { mergeAiConfig } from "@/lib/practice-config/ai-config-merge";
-import { setOrgAiCredential, getOrgAiCredentialView } from "@/lib/ai/credential-store";
+import {
+  setOrgAiCredential,
+  getOrgAiCredentialView,
+  resolveByokApiKey,
+  MASKED_API_KEY,
+} from "@/lib/ai/credential-store";
+import { pingProvider, type ConnectionTestResult } from "@/lib/ai/connection-test";
+import { PROVIDERS } from "@/lib/domain/byok";
 
 export async function saveAiConfigAction(data: {
   defaultModel?: {
@@ -135,4 +142,53 @@ export async function saveAiConfigAction(data: {
   });
 
   revalidatePath("/ops/settings/ai-config");
+}
+
+/** Per-provider env fallback for the managed/platform key. */
+function platformKeyForProvider(provider: string): string | undefined {
+  switch (provider.toLowerCase()) {
+    case "openrouter":
+      return process.env.OPENROUTER_API_KEY;
+    case "openai":
+      return process.env.OPENAI_API_KEY;
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Real connection test. Validates the key against the provider's auth endpoint
+ * (no token spend). Tests the key the operator just typed when one is supplied;
+ * otherwise resolves the stored BYOK key, then the platform key. The key is
+ * resolved and used entirely server-side — it never returns to the client.
+ */
+export async function testAiConnectionAction(input: {
+  provider: string;
+  apiKey?: string;
+}): Promise<ConnectionTestResult> {
+  const user = await requireUser();
+  if (!user.organizationId) {
+    return { ok: false, message: "Unauthorized." };
+  }
+
+  const providerMeta = PROVIDERS.find(
+    (p) => p.provider === input.provider.toLowerCase(),
+  );
+  const requiresApiKey = providerMeta?.requiresApiKey ?? true;
+
+  // A freshly typed key (not the masked sentinel) is tested as-is; otherwise
+  // fall back to the stored encrypted key, then the platform key.
+  const typed =
+    input.apiKey && input.apiKey !== MASKED_API_KEY && input.apiKey.trim() !== ""
+      ? input.apiKey
+      : null;
+  const apiKey =
+    typed ??
+    (await resolveByokApiKey(user.organizationId)) ??
+    platformKeyForProvider(input.provider) ??
+    null;
+
+  return pingProvider({ provider: input.provider, apiKey, requiresApiKey });
 }
