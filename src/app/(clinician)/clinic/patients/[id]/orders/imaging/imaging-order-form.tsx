@@ -18,6 +18,7 @@ interface Props {
 
 const MODALITIES = ["X-ray", "MRI", "CT", "US", "DEXA"] as const;
 type Modality = (typeof MODALITIES)[number];
+type Priority = "routine" | "stat";
 
 export function ImagingOrderForm({ patientId, patientName }: Props) {
   const [modality, setModality] = useState<Modality>("X-ray");
@@ -25,6 +26,7 @@ export function ImagingOrderForm({ patientId, patientName }: Props) {
   const [indication, setIndication] = useState("");
   const [icd10Query, setIcd10Query] = useState("");
   const [icd10Selected, setIcd10Selected] = useState<string[]>([]);
+  const [priority, setPriority] = useState<Priority>("routine");
   const [priorAuth, setPriorAuth] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export function ImagingOrderForm({ patientId, patientName }: Props) {
         orderType: "imaging",
         orderCode: studyCode,
         orderName: `${modality} — ${study.name}`,
-        priority: "routine",
+        priority,
         diagnosisCodes: icd10Selected,
         payload: {
           patientName,
@@ -77,6 +79,7 @@ export function ImagingOrderForm({ patientId, patientName }: Props) {
           studyName: study.name,
           indication,
           diagnoses: icd10Selected,
+          priority,
           priorAuth,
           timestamp: new Date().toISOString(),
         },
@@ -107,6 +110,7 @@ export function ImagingOrderForm({ patientId, patientName }: Props) {
     setStudyCode("");
     setIndication("");
     setIcd10Selected([]);
+    setPriority("routine");
     setPriorAuth(false);
   }
 
@@ -288,6 +292,28 @@ export function ImagingOrderForm({ patientId, patientName }: Props) {
                 </div>
               )}
             </div>
+
+            <FieldGroup label="Priority">
+              <div className="flex gap-2">
+                {(["routine", "stat"] as Priority[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPriority(p)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-full border transition-colors",
+                      priority === p
+                        ? p === "stat"
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-surface-raised text-text-muted border-border hover:bg-surface-muted",
+                    )}
+                  >
+                    {p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </FieldGroup>
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input

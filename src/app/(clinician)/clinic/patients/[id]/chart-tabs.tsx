@@ -28,6 +28,10 @@ const TABS = [
   { key: "private_notes", label: "Private notes", dot: "bg-danger", group: "Clinical", hidden: true },
   { key: "labs", label: "Labs, Scores & Vitals", dot: "bg-[color:var(--success)]", group: "Clinical" },
   { key: "images", label: "Images", dot: "bg-[color:var(--info)]", group: "Clinical" },
+  // EMR-1103 (WS-D) — placed lab + imaging orders (ClinicalOrder). Pending
+  // orders surface here during pre-visit chart review; the panel links out
+  // to the per-modality order pages for placing new ones.
+  { key: "orders", label: "Orders", dot: "bg-[color:var(--success)]", group: "Clinical" },
   { key: "rx", label: "Rx", dot: "bg-[color:var(--highlight)]", group: "Clinical" },
   { key: "records", label: "Records", dot: "bg-accent", group: "Documents" },
   { key: "correspondence", label: "Correspondence", dot: "bg-[color:var(--info)]", group: "Documents" },

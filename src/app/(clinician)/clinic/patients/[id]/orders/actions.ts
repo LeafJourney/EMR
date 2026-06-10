@@ -9,6 +9,13 @@ import {
   requirePermission,
   ForbiddenError,
 } from "@/lib/rbac/permissions";
+import { dispatch } from "@/lib/orchestration/dispatch";
+import { uploadDocument, storageIsConfigured } from "@/lib/storage/documents";
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILE_SIZE_BYTES,
+  inferKind,
+} from "@/lib/storage/document-types";
 
 // EMR-1094: persist lab + imaging orders to the chart. Previously the
 // order forms console.logged a payload and pretended to submit; now every
@@ -105,4 +112,96 @@ export async function createClinicalOrder(
   revalidatePath(`/clinic/patients/${parsed.data.patientId}`);
 
   return { ok: true, orderId: order.id };
+}
+
+// EMR-1103 (WS-D): honest attachment persistence for lab requisitions.
+// The lab order form previously simulated the upload client-side and only
+// recorded filenames — reload and the "attachment" was gone. This persists
+// each supporting file as a real chart Document (same storage + Document
+// pattern as the clinician document upload), returning the document id so
+// the order payload references durable artifacts. When object storage is
+// not configured we say so plainly rather than faking success.
+
+export type UploadOrderAttachmentResult =
+  | { ok: true; documentId: string; name: string }
+  | { ok: false; error: string };
+
+export async function uploadLabOrderAttachment(
+  formData: FormData,
+): Promise<UploadOrderAttachmentResult> {
+  const user = await requireUser();
+
+  if (!storageIsConfigured()) {
+    return {
+      ok: false,
+      error:
+        "Document storage is not configured, so attachments can't be saved yet. Send supporting documents to the lab manually.",
+    };
+  }
+
+  const patientId = formData.get("patientId");
+  if (typeof patientId !== "string" || patientId.length === 0) {
+    return { ok: false, error: "Missing patient." };
+  }
+
+  try {
+    requirePermission(user, "labs.sign");
+    await assertChartAccess(user, patientId);
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { ok: false, error: "You don't have permission to place orders." };
+    }
+    throw err;
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No file selected." };
+  }
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return { ok: false, error: "File is over the size limit." };
+  }
+  if (file.type && !ALLOWED_MIME_TYPES.has(file.type)) {
+    return { ok: false, error: `Unsupported file type: ${file.type}` };
+  }
+
+  const mimeType = file.type || "application/octet-stream";
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  const storageKey = await uploadDocument({
+    organizationId: user.organizationId!,
+    patientId,
+    filename: file.name,
+    contentType: mimeType,
+    body: buffer,
+  });
+
+  const document = await prisma.document.create({
+    data: {
+      organizationId: user.organizationId!,
+      patientId,
+      uploadedById: user.id,
+      kind: inferKind(mimeType),
+      originalName: file.name.slice(0, 200),
+      mimeType,
+      sizeBytes: file.size,
+      storageKey,
+      tags: ["lab-order-attachment"],
+    },
+  });
+
+  await dispatch({
+    name: "document.uploaded",
+    documentId: document.id,
+    patientId,
+    organizationId: user.organizationId!,
+  });
+
+  revalidatePath(`/clinic/patients/${patientId}`);
+
+  return {
+    ok: true,
+    documentId: document.id,
+    name: document.originalName,
+  };
 }

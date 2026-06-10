@@ -4,6 +4,7 @@ const hoisted = vi.hoisted(() => {
   const mockPrisma = {
     clinicalOrder: { create: vi.fn() },
     auditLog: { create: vi.fn() },
+    document: { create: vi.fn() },
   };
   const mockUser = {
     id: "user_1",
@@ -29,6 +30,11 @@ const hoisted = vi.hoisted(() => {
       reason: null,
     })),
     ForbiddenError,
+    storageIsConfiguredMock: vi.fn((..._args: any[]) => true),
+    uploadDocumentMock: vi.fn(
+      async (..._args: any[]) => "docs/org_1/patient_1/file.pdf",
+    ),
+    dispatchMock: vi.fn(async (..._args: any[]) => undefined),
   };
 });
 
@@ -52,7 +58,16 @@ vi.mock("@/lib/rbac/permissions", () => ({
   ForbiddenError: hoisted.ForbiddenError,
 }));
 
-import { createClinicalOrder } from "./actions";
+vi.mock("@/lib/orchestration/dispatch", () => ({
+  dispatch: (...args: any[]) => hoisted.dispatchMock(...args),
+}));
+
+vi.mock("@/lib/storage/documents", () => ({
+  storageIsConfigured: () => hoisted.storageIsConfiguredMock(),
+  uploadDocument: (...args: any[]) => hoisted.uploadDocumentMock(...args),
+}));
+
+import { createClinicalOrder, uploadLabOrderAttachment } from "./actions";
 
 const { mockPrisma } = hoisted;
 
@@ -132,5 +147,79 @@ describe("createClinicalOrder", () => {
 
     expect(result).toEqual({ ok: false, error: "Invalid order." });
     expect(mockPrisma.clinicalOrder.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("uploadLabOrderAttachment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The createClinicalOrder suite leaves requirePermission throwing; reset it.
+    hoisted.requirePermissionMock.mockReset();
+    hoisted.storageIsConfiguredMock.mockReturnValue(true);
+    hoisted.uploadDocumentMock.mockResolvedValue("docs/org_1/patient_1/file.pdf");
+    hoisted.dispatchMock.mockResolvedValue(undefined);
+    mockPrisma.document.create.mockResolvedValue({
+      id: "doc_1",
+      originalName: "prior-results.pdf",
+    });
+  });
+
+  function formDataWithFile() {
+    const fd = new FormData();
+    fd.append("patientId", "patient_1");
+    fd.append(
+      "file",
+      new File(["%PDF-1.4 fake"], "prior-results.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    return fd;
+  }
+
+  it("persists the attachment as a chart document and returns its id", async () => {
+    const result = await uploadLabOrderAttachment(formDataWithFile());
+
+    expect(result).toEqual({
+      ok: true,
+      documentId: "doc_1",
+      name: "prior-results.pdf",
+    });
+    expect(hoisted.uploadDocumentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ patientId: "patient_1", organizationId: "org_1" }),
+    );
+    expect(mockPrisma.document.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          patientId: "patient_1",
+          organizationId: "org_1",
+          storageKey: "docs/org_1/patient_1/file.pdf",
+          tags: ["lab-order-attachment"],
+        }),
+      }),
+    );
+    expect(hoisted.dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "document.uploaded", documentId: "doc_1" }),
+    );
+  });
+
+  it("is honest (no fake success) when document storage is not configured", async () => {
+    hoisted.storageIsConfiguredMock.mockReturnValue(false);
+
+    const result = await uploadLabOrderAttachment(formDataWithFile());
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not configured/i);
+    expect(mockPrisma.document.create).not.toHaveBeenCalled();
+    expect(hoisted.uploadDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects when no file is attached", async () => {
+    const fd = new FormData();
+    fd.append("patientId", "patient_1");
+
+    const result = await uploadLabOrderAttachment(fd);
+
+    expect(result).toEqual({ ok: false, error: "No file selected." });
+    expect(mockPrisma.document.create).not.toHaveBeenCalled();
   });
 });

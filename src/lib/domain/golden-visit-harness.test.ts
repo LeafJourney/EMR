@@ -73,6 +73,8 @@ const h = vi.hoisted(() => {
     notes: [] as any[],
     auditLogs: [] as any[],
     agentJobs: [] as any[],
+    codingSuggestions: [] as any[],
+    charges: [] as any[],
   };
 
   const fixture = {
@@ -436,6 +438,43 @@ const h = vi.hoisted(() => {
         return clone(row);
       }),
     },
+    // EMR-1097 (B4) coding-approval control point. CodingSuggestion is keyed
+    // by noteId; the physician's approve/modify decision lands here and is
+    // what unblocks charge extraction.
+    codingSuggestion: {
+      findUnique: vi.fn(async (args?: any) =>
+        firstFrom(db.codingSuggestions, args, (row) => clone(row)),
+      ),
+      update: vi.fn(async ({ where, data }: any) =>
+        updateRow(db.codingSuggestions, where, data, (row) => clone(row)),
+      ),
+      create: vi.fn(async ({ data }: any) => {
+        const row = {
+          id: data.id ?? `cs_golden_${db.codingSuggestions.length + 1}`,
+          status: "suggested",
+          generatedAt: new Date(),
+          ...clone(data),
+        };
+        db.codingSuggestions.push(row);
+        return clone(row);
+      }),
+    },
+    // Charges are extracted by the encounter-intelligence agent. In the real
+    // system the coding.approved event enqueues that job; the harness collapses
+    // the queue hop into the dispatch mock (mirroring the scribe simulation),
+    // so a charge appears here only once coding.approved has fired.
+    charge: {
+      findMany: vi.fn(async (args?: any) => manyFrom(db.charges, args, (row) => clone(row))),
+      create: vi.fn(async ({ data }: any) => {
+        const row = {
+          id: data.id ?? `charge_golden_${db.charges.length + 1}`,
+          createdAt: new Date(),
+          ...clone(data),
+        };
+        db.charges.push(row);
+        return clone(row);
+      }),
+    },
     $transaction: vi.fn(async (callback: any) => callback(prisma)),
   };
 
@@ -451,6 +490,25 @@ const h = vi.hoisted(() => {
   });
   const dispatch = vi.fn(async (event: any) => {
     fixture.dispatchEvents.push(clone(event));
+
+    // EMR-1097 (B4): the encounter-charge-extraction workflow is wired to
+    // coding.approved (NOT encounter.completed), so charges only ever
+    // materialize after the physician approves codes. Simulate that
+    // workflow here — same approach as the scribe-job simulation below.
+    if (event.name === "coding.approved") {
+      db.charges.push({
+        id: `charge_golden_${db.charges.length + 1}`,
+        organizationId: event.organizationId,
+        encounterId: event.encounterId,
+        patientId: event.patientId,
+        cptCode: event.approvedEmLevel,
+        icd10Codes: clone(event.approvedIcd10 ?? []),
+        source: "coding.approved",
+        createdAt: new Date(),
+      });
+      return [];
+    }
+
     if (event.name !== "encounter.note.draft.requested") return [];
     const id = "job_golden_1";
     if (!db.agentJobs.some((job) => job.id === id)) {
@@ -499,6 +557,8 @@ const h = vi.hoisted(() => {
     db.notes.splice(0);
     db.auditLogs.splice(0);
     db.agentJobs.splice(0);
+    db.codingSuggestions.splice(0);
+    db.charges.splice(0);
     fixture.dispatchEvents.splice(0);
     fixture.session.currentUser = users.patient;
 
@@ -624,7 +684,11 @@ import { bookAppointment } from "@/app/(patient)/portal/schedule/actions";
 import { kioskCheckIn, kioskVerifyDob } from "@/app/kiosk/(console)/actions";
 import { moveQueueEncounter, saveRoomingHandoff } from "@/app/(operator)/ops/queue/actions";
 import { startVisit } from "@/app/(clinician)/clinic/patients/[id]/actions";
-import { saveAndFinalizeNote } from "@/app/(clinician)/clinic/patients/[id]/notes/[noteId]/actions";
+import {
+  saveAndFinalizeNote,
+  approveCodingSuggestion,
+} from "@/app/(clinician)/clinic/patients/[id]/notes/[noteId]/actions";
+import { workflows } from "@/lib/orchestration/workflows";
 import { ensureEncounterForAppointment } from "./ensure-encounter";
 import { buildVisitCompletionBundle } from "./visit-completion";
 import {
@@ -903,6 +967,83 @@ describe("Golden Visit harness", () => {
       noteFinalizedDispatchCount: 1,
       encounterCompletedDispatchCount: 1,
       closeoutReady: true,
+    });
+  });
+
+  // EMR-1097 (B4 / WS-D) — the physician-in-control billing checkpoint. The
+  // golden visit must finalize WITHOUT auto-creating charges; a charge only
+  // appears after the physician approves the suggested codes.
+  it("gates charge creation on coding approval — no charge is created on finalize, only after the physician approves codes", async () => {
+    // Structural guarantee: charge extraction is bound to coding.approved and
+    // NOT encounter.completed. This is the control point that the wiring move
+    // in EMR-1097 established; assert it can't silently regress.
+    const chargeWorkflow = workflows.find(
+      (w) => w.name === "encounter-charge-extraction",
+    );
+    expect(chargeWorkflow, "encounter-charge-extraction workflow exists").toBeDefined();
+    expect(chargeWorkflow?.on).toContain("coding.approved");
+    expect(chargeWorkflow?.on).not.toContain("encounter.completed");
+
+    // Walk the full happy path through finalize (fires encounter.completed).
+    await runGoldenVisit();
+
+    // The note is signed and the encounter completed, but the physician has
+    // not yet seen/approved the coding suggestions — so NO charge exists and
+    // coding.approved has not fired.
+    expect(dispatchCount("encounter.completed")).toBe(1);
+    expect(dispatchCount("coding.approved")).toBe(0);
+    expect(fixture.db.charges, "no charge before approval").toHaveLength(0);
+
+    // The coding-readiness agent's suggestion is present on the signed note,
+    // awaiting the physician's decision.
+    await h.prisma.codingSuggestion.create({
+      data: {
+        id: "cs_golden_1",
+        noteId: NOTE_ID,
+        icd10: [
+          { code: "G89.29", label: "Other chronic pain", confidence: 0.95 },
+        ],
+        emLevel: "99214",
+        rationale: "Established follow-up, chronic pain management.",
+        status: "suggested",
+      },
+    });
+
+    // Physician approves the suggested codes.
+    fixture.session.currentUser = fixture.users.physician;
+    const approval = await approveCodingSuggestion(NOTE_ID, {
+      icd10: [{ code: "G89.29", label: "Other chronic pain" }],
+      emLevel: "99214",
+      modified: false,
+    });
+    expect(approval).toMatchObject({ ok: true, status: "approved" });
+
+    // The decision is recorded on the (noteId-keyed) suggestion row.
+    const suggestion = fixture.db.codingSuggestions.find(
+      (s) => s.noteId === NOTE_ID,
+    );
+    expect(suggestion).toMatchObject({
+      status: "approved",
+      approvedById: PHYSICIAN_USER_ID,
+      approvedEmLevel: "99214",
+    });
+
+    // coding.approved fires exactly once, carrying the approved codes.
+    expect(dispatchCount("coding.approved")).toBe(1);
+    const approvedEvent = fixture.dispatchEvents.find(
+      (e) => e.name === "coding.approved",
+    );
+    expect(approvedEvent).toMatchObject({
+      encounterId: ENCOUNTER_ID,
+      approvedEmLevel: "99214",
+      approvedIcd10: ["G89.29"],
+    });
+
+    // ...and only now does a charge exist, derived from the approved E/M.
+    expect(fixture.db.charges, "charge created after approval").toHaveLength(1);
+    expect(fixture.db.charges[0]).toMatchObject({
+      encounterId: ENCOUNTER_ID,
+      cptCode: "99214",
     });
   });
 });
