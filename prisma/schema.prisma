@@ -81,6 +81,7 @@ model Organization {
   refillRequests           RefillRequest[]
   auditLogs                AuditLog[]
   agentJobs                AgentJob[]
+  agentOutcomes            AgentOutcome[]
   agentFeedback            AgentFeedback[]
   escalationCases          EscalationCase[]
   launchStatus             PracticeLaunchStatus?
@@ -226,6 +227,7 @@ model User {
   sentMessages              Message[]                   @relation("MessageSender")
   auditLogs                 AuditLog[]
   approvedJobs              AgentJob[]                  @relation("JobApprovedBy")
+  agentOutcomeDecisions     AgentOutcome[]              @relation("AgentOutcomeDecider")
   notifications             Notification[]
   communicationPreference   CommunicationPreference?
   signedLabResults          LabResult[]                 @relation("LabResultSigner")
@@ -1906,6 +1908,7 @@ model AgentJob {
 
   organization Organization? @relation(fields: [organizationId], references: [id])
   approvedBy   User?         @relation("JobApprovedBy", fields: [approvedById], references: [id])
+  outcomes     AgentOutcome[]
 
   @@index([status, runAfter])
   @@index([organizationId, status])
@@ -1919,6 +1922,72 @@ model AgentJob {
   // createdAt ASC. The (status, runAfter) index covers the claim WHERE but not
   // the createdAt sort, so add a dedicated covering index.
   @@index([status, createdAt])
+}
+
+// What a human (or the auto-decision path) did with an agent's output.
+//   accepted            — used as-is.
+//   accepted_with_edits — used after editing (still net time saved).
+//   rejected            — discarded; the agent's work was not usable.
+//   dismissed           — acknowledged and closed without acting (e.g. an
+//                         informational nudge).
+//   auto_applied        — applied without human review (high-confidence path).
+enum AgentOutcomeDecision {
+  accepted
+  accepted_with_edits
+  rejected
+  dismissed
+  auto_applied
+}
+
+// Phase 0 telemetry — the acceptance / time-saved ledger.
+//
+// Activity telemetry (AgentJob status, LlmUsage cost) answers "did the fleet
+// run, and what did it cost?". This table answers the harder question that
+// proves real workflow advantage: "did a human actually use what the agent
+// produced, and how much time did it save?". Phase 3's review inbox writes a
+// row here on every accept/reject/edit; rollups turn that into an acceptance
+// rate and an estimated-minutes-saved figure per agent.
+//
+// Append-only: one row per decision. We never mutate a prior decision — a
+// later override is a new row, so the ledger stays auditable.
+model AgentOutcome {
+  id             String               @id @default(cuid())
+  organizationId String
+  // The job that produced the output, when the outcome traces to one. Nullable
+  // because some surfaced outputs (e.g. ambient suggestions) predate a job row.
+  agentJobId     String?
+  // Denormalized agent identifier so per-agent rollups never need the join.
+  agentName      String
+  // The kind of artifact the decision was about: "note" | "coding" | "claim" |
+  // "message_draft" | "task" | ... Kept as a string (not an enum) so new
+  // surfaces don't require a migration.
+  subjectType    String
+  // The artifact's id (Note.id, Claim.id, ...), when there is a concrete one.
+  subjectId      String?
+  decision       AgentOutcomeDecision
+  // Estimated minutes of human work saved by accepting this output. Null when
+  // we have no estimate (e.g. a rejection, or an agent with no baseline).
+  estimatedMinutesSaved Int?
+  // The user who made the decision; null for the auto_applied path.
+  decidedById    String?
+  // Free-text reviewer note / rejection reason. Not PHI by contract.
+  note           String?
+  metadata       Json?
+  decidedAt      DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agentJob     AgentJob?    @relation(fields: [agentJobId], references: [id], onDelete: SetNull)
+  decidedBy    User?        @relation("AgentOutcomeDecider", fields: [decidedById], references: [id])
+
+  // Per-org rollups window by createdAt.
+  @@index([organizationId, createdAt])
+  // Per-agent acceptance-rate / minutes-saved rollups within an org.
+  @@index([organizationId, agentName])
+  // Look up the outcome(s) for a given produced artifact (dedupe / display).
+  @@index([subjectType, subjectId])
+  // Trace a job to its outcome.
+  @@index([agentJobId])
 }
 
 // --------------------------------------------------------------
