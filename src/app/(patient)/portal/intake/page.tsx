@@ -10,6 +10,7 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { EditorialRule } from "@/components/ui/ornament";
 import { IntakeForm } from "./intake-form";
@@ -65,6 +66,53 @@ export default async function IntakePage() {
   });
   if (!patient) redirect("/portal");
 
+  // EMR-1114 (PJ-2): surface what registration already captured so the
+  // patient never re-types contact/insurance details here, and so we can
+  // point her back to registration if it's unfinished.
+  const intakeAnswers =
+    (patient.intakeAnswers as Record<string, unknown> | null) ?? null;
+  const registrationComplete = Boolean(intakeAnswers?.registrationCompletedAt);
+  const coverage =
+    intakeAnswers?.selfPay === true
+      ? "Self-pay"
+      : typeof intakeAnswers?.insurancePayer === "string" &&
+          intakeAnswers.insurancePayer
+        ? `${intakeAnswers.insurancePayer}${
+            typeof intakeAnswers?.insuranceMemberId === "string" &&
+            intakeAnswers.insuranceMemberId
+              ? ` · member ${intakeAnswers.insuranceMemberId}`
+              : ""
+          }`
+        : null;
+  const knownDetails: Array<{ label: string; value: string | null }> = [
+    {
+      label: "Name",
+      value:
+        [patient.firstName, patient.lastName].filter(Boolean).join(" ") || null,
+    },
+    {
+      label: "Date of birth",
+      value: patient.dateOfBirth
+        ? patient.dateOfBirth.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            timeZone: "UTC",
+          })
+        : null,
+    },
+    { label: "Email", value: patient.email },
+    { label: "Phone", value: patient.phone },
+    {
+      label: "Address",
+      value:
+        [patient.addressLine1, patient.city, patient.state, patient.postalCode]
+          .filter(Boolean)
+          .join(", ") || null,
+    },
+    { label: "Coverage", value: coverage },
+  ];
+
   return (
     <PageShell maxWidth="max-w-[880px]">
       <PatientSectionNav section="account" />
@@ -89,6 +137,48 @@ export default async function IntakePage() {
 
       {/* Step indicator */}
       <StepIndicator />
+
+      {/* ---------- Auto-populated context from registration ---------- */}
+      <Card tone="ambient" className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Your details, already on file</CardTitle>
+              <CardDescription>
+                {registrationComplete
+                  ? "Pre-filled from your registration — no need to re-type anything here."
+                  : "We pre-fill what we can. Finish registration to complete contact, insurance and consents."}
+              </CardDescription>
+            </div>
+            <Link
+              href="/portal/registration"
+              className="text-sm text-accent hover:underline whitespace-nowrap"
+            >
+              {registrationComplete ? "Update details" : "Finish registration"}
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+            {knownDetails.map((d) => (
+              <div key={d.label} className="flex items-baseline gap-2 min-w-0">
+                <dt className="text-xs uppercase tracking-wide text-text-subtle w-24 shrink-0">
+                  {d.label}
+                </dt>
+                <dd
+                  className={
+                    d.value
+                      ? "text-sm text-text truncate"
+                      : "text-sm text-text-subtle italic"
+                  }
+                >
+                  {d.value ?? "Not on file yet"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </CardContent>
+      </Card>
 
       {/* ---------- Section 1: About you ---------- */}
       <Card>
@@ -127,6 +217,7 @@ export default async function IntakePage() {
                     | undefined
                 )?.join(", ") ?? "",
             }}
+            registrationComplete={registrationComplete}
           />
         </CardContent>
       </Card>
