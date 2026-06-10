@@ -14,6 +14,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx --conditions=react-server prisma/seed.ts && tsx --conditions=react-server scripts/sync-clerk-seed.ts",
+    "db:seed-staff": "tsx --conditions=react-server scripts/seed-staff-accounts.ts",
     "db:seed-cfo": "tsx --conditions=react-server scripts/seed-cfo.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
