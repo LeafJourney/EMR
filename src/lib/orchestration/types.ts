@@ -58,6 +58,13 @@ export interface ModelCallOptions {
   temperature?: number;
   /** Abort the underlying HTTP request when this signal fires. */
   signal?: AbortSignal;
+  /**
+   * Patient/person names to scrub from the prompt before it leaves for the
+   * external model. Structured PHI (SSN/phone/email/MRN/DOB) is redacted
+   * automatically at the context chokepoint; names are free-text, so an agent
+   * that interpolates them must pass them here. See `withPhiRedaction`.
+   */
+  redactNames?: string[];
 }
 
 /** Minimal LLM interface. Providers implement this; agents are provider-agnostic. */

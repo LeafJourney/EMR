@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
+import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
+import { mergeAiConfig } from "@/lib/practice-config/ai-config-merge";
 
 export async function saveAiConfigAction(data: {
   defaultModel?: {
@@ -51,7 +53,11 @@ export async function saveAiConfigAction(data: {
         physicianShellTemplateId: "physician-default",
         patientShellTemplateId: "patient-default",
         regulatoryFlags: {
-          aiConfig: {},
+          // Ship inert (EMR-757): new practices default agents OFF; practices
+          // predating the cutoff are grandfathered ON.
+          aiConfig: {
+            fleetDefaultEnabled: defaultFleetEnabledForPractice(practice.createdAt),
+          },
         },
       },
     });
@@ -60,33 +66,13 @@ export async function saveAiConfigAction(data: {
   const existingFlags = (practiceConfig.regulatoryFlags ?? {}) as Record<string, any>;
   const existingAiConfig = existingFlags.aiConfig ?? {};
 
-  // Merge defaultModel settings
-  let defaultModel = existingAiConfig.defaultModel ?? {};
-  if (data.defaultModel) {
-    // If the API key is the masked placeholder, do not overwrite it
-    const apiKey = data.defaultModel.apiKey === "••••••••"
-      ? defaultModel.apiKey
-      : data.defaultModel.apiKey;
-
-    defaultModel = {
-      provider: data.defaultModel.provider,
-      modelId: data.defaultModel.modelId,
-      apiKey: apiKey ?? "",
-      maxTokens: data.defaultModel.maxTokens,
-      temperature: data.defaultModel.temperature,
-    };
-  }
-
-  // Merge fleet overrides
-  const fleet = {
-    ...(existingAiConfig.fleet ?? {}),
-    ...(data.fleet ?? {}),
-  };
-
-  const updatedAiConfig = {
-    defaultModel,
-    fleet,
-  };
+  // Merge the edit onto the existing config WITHOUT dropping untouched keys.
+  // (Rebuilding as { defaultModel, fleet } used to erase fleetDefaultEnabled —
+  // the ship-inert flag — re-enabling the whole fleet on the first save.)
+  const updatedAiConfig = mergeAiConfig(existingAiConfig, {
+    defaultModel: data.defaultModel,
+    fleet: data.fleet,
+  });
 
   await prisma.practiceConfiguration.update({
     where: { id: practiceConfig.id },
@@ -107,8 +93,8 @@ export async function saveAiConfigAction(data: {
       subjectType: "PracticeConfiguration",
       subjectId: practiceConfig.id,
       metadata: {
-        defaultModelProvider: defaultModel.provider,
-        defaultModelId: defaultModel.modelId,
+        defaultModelProvider: updatedAiConfig.defaultModel.provider,
+        defaultModelId: updatedAiConfig.defaultModel.modelId,
         fleetUpdatedCount: Object.keys(data.fleet ?? {}).length,
       },
     },

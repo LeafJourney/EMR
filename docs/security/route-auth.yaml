@@ -429,6 +429,7 @@ routes:
     owner: leafmart
     notes: "Clears Leafmart session cookies."
 
+
   # ── Marketplace ───────────────────────────────────────────
   marketplace/age-gate/confirm:
     methods: [POST]
@@ -583,6 +584,7 @@ routes:
     auth: required
     owner: integrations
     notes: "Closed 2026-05-12 via find-and-fix pass 4. Probe returned 401 unauthorized — gate exists."
+
 
   dev/logout:
     methods: [GET]

@@ -516,6 +516,7 @@ The newMemory field is optional but important. If this message reveals something
       raw = await ctx.model.complete(prompt, {
         maxTokens: 1024,
         temperature: 0.35,
+        redactNames: [thread.patient.firstName, thread.patient.lastName].filter(Boolean),
       });
       usedLLM = raw.length > 50 && !raw.startsWith("[stub");
       trace.step("llm call complete", { usedLLM, rawLen: raw.length });

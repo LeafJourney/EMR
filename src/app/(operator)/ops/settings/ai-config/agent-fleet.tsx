@@ -54,9 +54,15 @@ import { saveAiConfigAction } from "./actions";
 export function AgentFleetPanel({ initialAiConfig }: { initialAiConfig: any }) {
   const [fleet, setFleet] = useState<FleetState>(() => {
     const savedFleet = initialAiConfig?.fleet ?? {};
+    // Ship inert (EMR-757): an agent with no explicit override shows the
+    // practice's fleet default. Absent ⇒ enabled (grandfathered practices).
+    const fleetDefaultEnabled = initialAiConfig?.fleetDefaultEnabled ?? true;
     return Object.fromEntries(
       AGENT_CATALOG.map((a) => {
-        const saved = savedFleet[a.id] ?? { enabled: true, modelId: null };
+        const saved = savedFleet[a.id] ?? {
+          enabled: fleetDefaultEnabled,
+          modelId: null,
+        };
         return [a.id, saved];
       }),
     );

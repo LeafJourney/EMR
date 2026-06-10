@@ -6,12 +6,15 @@
 
 import { prisma } from "../lib/db/prisma";
 import { dispatch } from "../lib/orchestration/dispatch";
+import { reapStuckJobs } from "../lib/orchestration/queue";
 import { sendDueVisitReminders } from "../lib/scheduling/send-reminders";
 import { getDefaultAdapter } from "../lib/billing/clearinghouse/gateway";
 import { parse999, parse277CA, decide277Actions } from "../lib/billing/clearinghouse-ack";
 import { recordDeadLetter } from "../lib/billing/clearinghouse/dead-letter";
 import { derivePrimaryControlNumbers } from "../lib/agents/billing/clearinghouse-submission-agent";
 import { writeAgentAudit } from "../lib/orchestration/context";
+import { reconcileThrottleState } from "../lib/billing/cost-guardrails";
+import { sumTokensMTD, llmUsageAvailable } from "../lib/ai/usage-repository";
 
 function resolvePrevisitPortalUrl(env: NodeJS.ProcessEnv): string | null {
   return env.PREVISIT_PORTAL_URL ?? env.NEXT_PUBLIC_APP_URL ?? env.APP_URL ?? null;
@@ -140,6 +143,61 @@ async function main() {
 
   // 6. Clearinghouse functional/payer acknowledgment polling
   await pollClearinghouseGateway();
+
+  // 7. Reconcile AI cost-guardrail throttle state (EMR-756) from the real
+  //    LlmUsage ledger — flips PracticeSubscription.throttled when a practice
+  //    crosses its monthly token allowance (manual overrides win).
+  await reconcileAiThrottles();
+
+  // 8. Reap AgentJob rows orphaned by a dead worker (visibility timeout), so a
+  //    crashed/rescheduled worker can't strand a clinical job forever.
+  try {
+    const reaped = await reapStuckJobs();
+    if (reaped.reclaimed || reaped.failed) {
+      console.log(
+        `[scheduler] reaped jobs: reclaimed=${reaped.reclaimed} failed=${reaped.failed}`,
+      );
+    }
+  } catch (err) {
+    console.error("[scheduler] job reaper failed", err);
+  }
+}
+
+async function reconcileAiThrottles(): Promise<void> {
+  // If the LlmUsage table isn't present yet (the pre-`db push` window), usage
+  // sums are 0 for "no data" — reconciling would compute usedTokensMTD=0 and
+  // un-throttle every legitimately-capped practice. Skip until the table lands.
+  if (!llmUsageAvailable()) {
+    console.log("[scheduler] ai-throttle reconcile skipped — LlmUsage table absent");
+    return;
+  }
+  // Reach the PracticeSubscription delegate defensively — same pattern as
+  // cost-guardrails, since it may not be in older generated clients.
+  const subs = (prisma as unknown as Record<string, any>)["practiceSubscription"];
+  if (!subs?.findMany) return;
+  let reconciled = 0;
+  let flipped = 0;
+  try {
+    const rows: Array<{ organizationId: string }> = await subs.findMany({
+      where: { includedMonthlyTokens: { not: null } },
+      select: { organizationId: true },
+    });
+    for (const row of rows) {
+      const usedTokensMTD = await sumTokensMTD(row.organizationId);
+      const result = await reconcileThrottleState({
+        prisma,
+        organizationId: row.organizationId,
+        usedTokensMTD,
+      });
+      reconciled++;
+      if (result.flipped) flipped++;
+    }
+  } catch (err) {
+    console.error("[scheduler] AI throttle reconcile failed", err);
+  }
+  console.log(
+    `[scheduler] ai-throttle reconciled=${reconciled} flipped=${flipped}`,
+  );
 }
 
 export async function pollClearinghouseGateway() {

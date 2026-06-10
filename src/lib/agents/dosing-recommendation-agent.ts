@@ -247,6 +247,7 @@ Return ONLY valid JSON matching this structure:
       raw = await ctx.model.complete(prompt, {
         maxTokens: 2000,
         temperature: 0.3,
+        redactNames: [patient.firstName, patient.lastName].filter(Boolean),
       });
     } catch (err) {
       ctx.log("warn", "LLM call failed — using deterministic fallback", {

@@ -456,6 +456,7 @@ export const preVisitIntelligenceAgent: Agent<
       raw = await ctx.model.complete(prompt, {
         maxTokens: 1024,
         temperature: 0.2,
+        redactNames: [patient.firstName, patient.lastName].filter(Boolean),
       });
       trace.step("llm briefing complete", { rawLen: raw.length });
     } catch (llmErr) {

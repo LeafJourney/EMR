@@ -101,6 +101,50 @@ function backoffMs(attempts: number): number {
   return Math.min(5000 * Math.pow(4, attempts), 5 * 60 * 1000);
 }
 
+/** How long a job may sit 'claimed'/'running' before it's presumed orphaned. */
+const DEFAULT_JOB_VISIBILITY_MS =
+  Number(process.env.AGENT_JOB_VISIBILITY_MS) || 5 * 60 * 1000;
+
+/**
+ * Reap jobs orphaned by a dead worker. claimNextJob only ever selects
+ * status='pending', so a row stuck in 'claimed'/'running' (worker crash, OOM,
+ * pod reschedule, or a hung inline run) would otherwise strand forever —
+ * silently dropping a clinical job with no retry and no alert. Rows past the
+ * visibility timeout are reclaimed to 'pending' (if attempts remain) or marked
+ * 'failed'. Run on a cron INDEPENDENT of the workers (a dead worker can't reap
+ * itself). attempts is incremented at claim time, so a reclaimed job correctly
+ * consumes an attempt and can't loop forever.
+ *
+ * updateMany can't express the column-to-column `attempts < maxAttempts`, so
+ * this uses raw SQL (same approach as claimNextJob).
+ */
+export async function reapStuckJobs(
+  visibilityMs: number = DEFAULT_JOB_VISIBILITY_MS,
+): Promise<{ reclaimed: number; failed: number }> {
+  const cutoff = new Date(Date.now() - visibilityMs);
+
+  const reclaimed = await prisma.$executeRaw`
+    UPDATE "AgentJob"
+    SET status = 'pending', "runAfter" = NOW(), "claimedBy" = NULL,
+        "claimedAt" = NULL, "startedAt" = NULL,
+        "lastError" = 'reaped: worker presumed dead (reclaimed for retry)'
+    WHERE status IN ('claimed', 'running')
+      AND "claimedAt" < ${cutoff}
+      AND attempts < "maxAttempts"
+  `;
+
+  const failed = await prisma.$executeRaw`
+    UPDATE "AgentJob"
+    SET status = 'failed', "completedAt" = NOW(),
+        "lastError" = 'reaped: worker presumed dead (attempts exhausted)'
+    WHERE status IN ('claimed', 'running')
+      AND "claimedAt" < ${cutoff}
+      AND attempts >= "maxAttempts"
+  `;
+
+  return { reclaimed, failed };
+}
+
 /**
  * Cancel a job terminally without marking it a failure (EMR-974).
  *
