@@ -43,6 +43,15 @@ interface Props {
     memberId: string;
     groupNumber: string;
   };
+  /**
+   * EMR-1103 (WS-D) — per-field flag: the displayed value was prefilled from
+   * the patient's intake answers because the structured chart record was
+   * empty (one-way). Keyed by field name (firstName, email, providerName…).
+   * Flagged fields render a subtle "from intake" hint; editing + saving
+   * commits the value to the structured record (and clears the hint on
+   * reload).
+   */
+  intakeHints?: Record<string, boolean>;
 }
 
 function unwrap<T extends { ok: true } | { ok: false; error: string }>(
@@ -56,6 +65,7 @@ export function InlineDemographicsCard({
   canEdit,
   initial,
   insurance,
+  intakeHints,
 }: Props) {
   const makeDemo =
     (field: Parameters<typeof updatePatientDemographicField>[1]) =>
@@ -77,7 +87,7 @@ export function InlineDemographicsCard({
           Demographics
         </h3>
         <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-y-1 text-sm">
-          <Row label="First name">
+          <Row label="First name" hint={intakeHints?.firstName}>
             <InlineEdit
               value={initial.firstName}
               onSave={makeDemo("firstName")}
@@ -87,7 +97,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="Last name">
+          <Row label="Last name" hint={intakeHints?.lastName}>
             <InlineEdit
               value={initial.lastName}
               onSave={makeDemo("lastName")}
@@ -97,7 +107,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="DOB">
+          <Row label="DOB" hint={intakeHints?.dateOfBirth}>
             <InlineEdit
               value={initial.dateOfBirth}
               onSave={makeDemo("dateOfBirth")}
@@ -109,7 +119,7 @@ export function InlineDemographicsCard({
               renderDisplay={(v) => v || "Add DOB"}
             />
           </Row>
-          <Row label="Email">
+          <Row label="Email" hint={intakeHints?.email}>
             <div className="flex items-center gap-1.5">
               <div className="min-w-0 flex-1">
                 <InlineEdit
@@ -135,7 +145,7 @@ export function InlineDemographicsCard({
               )}
             </div>
           </Row>
-          <Row label="Phone">
+          <Row label="Phone" hint={intakeHints?.phone}>
             <div className="flex items-center gap-1.5">
               <div className="min-w-0 flex-1">
                 <InlineEdit
@@ -161,7 +171,7 @@ export function InlineDemographicsCard({
               )}
             </div>
           </Row>
-          <Row label="Address">
+          <Row label="Address" hint={intakeHints?.addressLine1}>
             <InlineEdit
               value={initial.addressLine1}
               onSave={makeDemo("addressLine1")}
@@ -170,7 +180,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="Apt / Suite">
+          <Row label="Apt / Suite" hint={intakeHints?.addressLine2}>
             <InlineEdit
               value={initial.addressLine2}
               onSave={makeDemo("addressLine2")}
@@ -179,7 +189,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="City">
+          <Row label="City" hint={intakeHints?.city}>
             <InlineEdit
               value={initial.city}
               onSave={makeDemo("city")}
@@ -188,7 +198,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="State">
+          <Row label="State" hint={intakeHints?.state}>
             <InlineEdit
               value={initial.state}
               onSave={makeDemo("state")}
@@ -197,7 +207,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="ZIP">
+          <Row label="ZIP" hint={intakeHints?.postalCode}>
             <InlineEdit
               value={initial.postalCode}
               onSave={makeDemo("postalCode")}
@@ -215,7 +225,7 @@ export function InlineDemographicsCard({
           Insurance
         </h3>
         <dl className="grid grid-cols-[7rem_minmax(0,1fr)] gap-y-1 text-sm">
-          <Row label="Carrier">
+          <Row label="Carrier" hint={intakeHints?.providerName}>
             <InlineEdit
               value={insurance.providerName}
               onSave={makeIns("providerName")}
@@ -224,7 +234,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="Member ID">
+          <Row label="Member ID" hint={intakeHints?.memberId}>
             <InlineEdit
               value={insurance.memberId}
               onSave={makeIns("memberId")}
@@ -233,7 +243,7 @@ export function InlineDemographicsCard({
               disabled={!canEdit}
             />
           </Row>
-          <Row label="Group #">
+          <Row label="Group #" hint={intakeHints?.groupNumber}>
             <InlineEdit
               value={insurance.groupNumber}
               onSave={makeIns("groupNumber")}
@@ -250,16 +260,36 @@ export function InlineDemographicsCard({
 
 function Row({
   label,
+  hint,
   children,
 }: {
   label: string;
+  /** EMR-1103 (WS-D) — show the "from intake" prefill hint under this field. */
+  hint?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <>
       <dt className="text-xs text-text-subtle py-1 self-center">{label}</dt>
-      <dd className="min-w-0 py-0.5">{children}</dd>
+      <dd className="min-w-0 py-0.5">
+        {children}
+        {hint && <FromIntakeHint />}
+      </dd>
     </>
+  );
+}
+
+// EMR-1103 (WS-D) — subtle marker that a value was prefilled from intake and
+// is not yet committed to the structured chart record.
+function FromIntakeHint() {
+  return (
+    <span
+      title="Prefilled from the patient's intake answers. Edit to save it to the chart record."
+      className="mt-0.5 inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-text-subtle/80"
+    >
+      <span className="h-1 w-1 rounded-full bg-accent/60" aria-hidden="true" />
+      from intake
+    </span>
   );
 }
 

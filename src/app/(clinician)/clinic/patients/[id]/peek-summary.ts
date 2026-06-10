@@ -25,6 +25,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   timeline: "Timeline",
   records: "Records",
   images: "Images",
+  orders: "Orders",
   labs: "Labs",
   notes: "Notes",
   // EMR-588 — Private clinician-only notes never feed the peek summary

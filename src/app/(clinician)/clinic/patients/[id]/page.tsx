@@ -84,6 +84,7 @@ import { sexColorKey, SEX_BUBBLE_CLASSES } from "@/lib/clinical/chart-bubbles";
 import { CINDY_PREFIX } from "@/lib/clinical/cindy-says";
 import { RecordsTab, type ChartDoc } from "./records-tab";
 import { ImagesTab } from "./images-tab";
+import { OrdersTab, type ChartOrder } from "./orders/orders-chart-panel";
 import { LsvTab, type LsvLabMarker } from "./lsv-tab";
 import { NotesTab } from "./notes-tab";
 import { PrivateNotesButton } from "./private-notes-button";
@@ -160,6 +161,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     "prescribe",
     "labs",
     "imaging",
+    // EMR-1103 (WS-D) — the chart Orders tab lists placed lab/imaging
+    // orders; clinical-tier, so front-office bounces to demographics.
+    "orders",
     "problems",
     // EMR-588 — private clinician-only notes are clinical-tier and must
     // bounce front-office users back to demographics like the rest.
@@ -193,6 +197,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     pastConditions,
     pastSurgeries,
     labResults,
+    clinicalOrders,
   ] = await Promise.all([
     prisma.patient.findFirst({
       where: {
@@ -329,6 +334,13 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         abnormalFlag: true,
       },
     }),
+    // EMR-1103 (WS-D) — placed lab + imaging orders for the chart Orders tab.
+    // 50 most recent is well past what the panel renders before scroll.
+    prisma.clinicalOrder.findMany({
+      where: { patientId: params.id, organizationId: user.organizationId! },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
   ]);
 
   if (!patient) notFound();
@@ -339,6 +351,25 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
   );
   const imageDocs = patient.documents.filter((d) => d.kind === "image");
   const labDocs = patient.documents.filter((d) => d.kind === "lab");
+
+  // EMR-1103 (WS-D) — serialize placed orders for the Orders tab panel
+  // (plain JSON so the presentational component carries no Prisma/Date deps).
+  const chartOrders: ChartOrder[] = clinicalOrders.map((o) => ({
+    id: o.id,
+    orderType: o.orderType === "imaging" ? "imaging" : "lab",
+    orderCode: o.orderCode,
+    orderName: o.orderName,
+    priority: o.priority,
+    status: o.status,
+    transmissionMode: o.transmissionMode,
+    diagnosisCodes: Array.isArray(o.diagnosisCodes)
+      ? (o.diagnosisCodes as unknown[]).filter(
+          (d): d is string => typeof d === "string",
+        )
+      : [],
+    orderedByName: o.orderedByName,
+    createdAt: o.createdAt.toISOString(),
+  }));
 
   /* ── Tab counts ───────────────────────────────────────────── */
   const activeRegimens = dosingRegimens.filter((r: any) => r.active);
@@ -415,6 +446,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     timeline: timelineCount,
     records: recordDocs.length,
     images: imageDocs.length,
+    orders: clinicalOrders.length,
     labs: labDocs.length + assessmentResponses.length,
     notes: allNotes.length,
     private_notes: privateNotes.length,
@@ -468,6 +500,12 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       title: d.originalName || "Untitled image",
       meta: formatRelative(d.createdAt),
       href: `/clinic/patients/${params.id}?tab=images`,
+    })),
+    orders: clinicalOrders.slice(0, 5).map((o: any) => ({
+      id: o.id,
+      title: o.orderName || o.orderCode,
+      meta: `${o.orderType} · ${o.status} · ${formatRelative(o.createdAt)}`,
+      href: `/clinic/patients/${params.id}/orders/${o.orderType === "imaging" ? "imaging" : "labs"}`,
     })),
     correspondence: threads.slice(0, 5).map((t: any) => ({
       id: t.id,
@@ -976,6 +1014,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       {tab === "images" && (
         <ImagesTab documents={imageDocs.map(toChartDoc)} patientId={params.id} />
       )}
+      {tab === "orders" && (
+        <OrdersTab patientId={params.id} orders={chartOrders} />
+      )}
       {tab === "labs" && (
         <LsvTab
           patientId={params.id}
@@ -1093,6 +1134,71 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
    Demographics tab (EMR-019)
    ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * EMR-1103 (WS-D) — read contact/identity values out of the patient's intake
+ * answers, checking the shapes intake has used over time (flat keys, a nested
+ * `demographics` object, and a nested `address`). Used to prefill the chart
+ * demographics card when the structured column is empty. Defensive like the
+ * chart-demographics formatters — never throws on odd JSON.
+ */
+function intakeContactPrefill(intake: Record<string, any>) {
+  const demo =
+    intake.demographics && typeof intake.demographics === "object"
+      ? (intake.demographics as Record<string, any>)
+      : {};
+  const addr =
+    demo.address && typeof demo.address === "object"
+      ? (demo.address as Record<string, any>)
+      : intake.address && typeof intake.address === "object"
+        ? (intake.address as Record<string, any>)
+        : {};
+  const pick = (...vals: unknown[]): string => {
+    for (const v of vals) {
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "number") return String(v);
+    }
+    return "";
+  };
+  return {
+    firstName: pick(intake.firstName, demo.firstName),
+    lastName: pick(intake.lastName, demo.lastName),
+    dateOfBirth: pick(intake.dateOfBirth, demo.dateOfBirth),
+    email: pick(intake.email, intake.emailAddress, demo.email),
+    phone: pick(
+      intake.phone,
+      intake.phoneNumber,
+      intake.mobile,
+      demo.phone,
+      demo.phoneNumber,
+    ),
+    addressLine1: pick(
+      intake.addressLine1,
+      intake.address1,
+      demo.addressLine1,
+      addr.line1,
+      addr.addressLine1,
+      addr.street,
+    ),
+    addressLine2: pick(
+      intake.addressLine2,
+      demo.addressLine2,
+      addr.line2,
+      addr.addressLine2,
+      addr.unit,
+    ),
+    city: pick(intake.city, demo.city, addr.city),
+    state: pick(intake.state, demo.state, addr.state),
+    postalCode: pick(
+      intake.postalCode,
+      intake.zip,
+      intake.zipCode,
+      demo.postalCode,
+      addr.postalCode,
+      addr.zip,
+    ),
+  };
+}
+
 function DemographicsTab({
   patient,
   medications,
@@ -1133,6 +1239,51 @@ function DemographicsTab({
   const insurancePlan = formatInsurancePlan(intake);
   const insuranceId = formatInsuranceMemberId(intake);
   const emergencyContact = formatEmergencyContact(intake.emergencyContact);
+
+  // EMR-1103 (WS-D) — prefill the editable identity/contact fields from intake
+  // where the structured chart column is empty (one-way; a physician edit
+  // commits it and clears the hint on reload).
+  const structuredContact = {
+    firstName: patient.firstName ?? "",
+    lastName: patient.lastName ?? "",
+    dateOfBirth: dob ? dob.toISOString().slice(0, 10) : "",
+    email: patient.email ?? "",
+    phone: patient.phone ?? "",
+    addressLine1: patient.addressLine1 ?? "",
+    addressLine2: patient.addressLine2 ?? "",
+    city: patient.city ?? "",
+    state: patient.state ?? "",
+    postalCode: patient.postalCode ?? "",
+  };
+  const intakePrefill = intakeContactPrefill(intake);
+  const demographicsInitial = { ...structuredContact };
+  const intakeHints: Record<string, boolean> = {};
+  for (const key of Object.keys(
+    structuredContact,
+  ) as (keyof typeof structuredContact)[]) {
+    if (!structuredContact[key] && intakePrefill[key]) {
+      demographicsInitial[key] = intakePrefill[key];
+      intakeHints[key] = true;
+    }
+  }
+  const insuranceInitial = {
+    providerName:
+      ((intake.insurance as any)?.providerName as string) ??
+      (typeof intake.insurance === "string"
+        ? (intake.insurance as string)
+        : "") ??
+      "",
+    memberId:
+      ((intake.insurance as any)?.memberId as string) ??
+      (intake.memberId as string) ??
+      "",
+    groupNumber: ((intake.insurance as any)?.groupNumber as string) ?? "",
+  };
+  // Insurance has no structured chart column — every populated value here is
+  // self-reported from intake, so flag it as such.
+  if (insuranceInitial.providerName) intakeHints.providerName = true;
+  if (insuranceInitial.memberId) intakeHints.memberId = true;
+  if (insuranceInitial.groupNumber) intakeHints.groupNumber = true;
 
   return (
     <div className="space-y-6">
@@ -1234,30 +1385,9 @@ function DemographicsTab({
             <InlineDemographicsCard
               patientId={patient.id}
               canEdit={canEditDemographics}
-              initial={{
-                firstName: patient.firstName ?? "",
-                lastName: patient.lastName ?? "",
-                dateOfBirth: dob ? dob.toISOString().slice(0, 10) : "",
-                email: patient.email ?? "",
-                phone: patient.phone ?? "",
-                addressLine1: patient.addressLine1 ?? "",
-                addressLine2: patient.addressLine2 ?? "",
-                city: patient.city ?? "",
-                state: patient.state ?? "",
-                postalCode: patient.postalCode ?? "",
-              }}
-              insurance={{
-                providerName:
-                  ((intake.insurance as any)?.providerName as string) ??
-                  (typeof intake.insurance === "string" ? (intake.insurance as string) : "") ??
-                  "",
-                memberId:
-                  ((intake.insurance as any)?.memberId as string) ??
-                  (intake.memberId as string) ??
-                  "",
-                groupNumber:
-                  ((intake.insurance as any)?.groupNumber as string) ?? "",
-              }}
+              initial={demographicsInitial}
+              insurance={insuranceInitial}
+              intakeHints={intakeHints}
             />
             <div className="grid grid-cols-1 gap-y-3 text-sm">
               <DemoField label="Sex" value={sex} />
