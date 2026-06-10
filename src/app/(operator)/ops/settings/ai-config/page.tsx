@@ -54,6 +54,13 @@ export default async function AiConfigPage() {
   const flags = (practiceConfig.regulatoryFlags ?? {}) as Record<string, any>;
   const aiConfig = flags.aiConfig ?? {};
 
+  // The per-account markup (set at account setup) drives the predictive fee the
+  // practice sees. Null falls back to the platform default (2×) in code.
+  const subscription = await prisma.practiceSubscription.findUnique({
+    where: { organizationId },
+    select: { aiMarkupMultiplier: true },
+  });
+
   return (
     <PageShell maxWidth="max-w-[1080px]">
       <PageHeader
@@ -62,7 +69,10 @@ export default async function AiConfigPage() {
         description="Pick a practice-wide default, then tune any agent in the fleet."
       />
 
-      <AiConfigTabs initialAiConfig={aiConfig} />
+      <AiConfigTabs
+        initialAiConfig={aiConfig}
+        markupMultiplier={subscription?.aiMarkupMultiplier ?? null}
+      />
     </PageShell>
   );
 }

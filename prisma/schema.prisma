@@ -5541,6 +5541,10 @@ model PracticeSubscription {
   /// Token allowance per calendar month (EMR-756 soft/hard caps work
   /// off this number). Null = no allowance enforced.
   includedMonthlyTokens Int?
+  /// Per-account markup over reference token cost, set at account setup.
+  /// Customer price = referenceRawCost × this (floored). Null = platform
+  /// default (2× keystone). Resolved via resolveMarkupPolicy().
+  aiMarkupMultiplier    Float?
   stripeCustomerId      String?
   stripeSubscriptionId  String?   @unique
   currentPeriodStart    DateTime?

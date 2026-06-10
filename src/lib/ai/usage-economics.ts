@@ -48,6 +48,31 @@ export const DEFAULT_MARKUP_POLICY: MarkupPolicy = {
   floorUsd: LEAFJOURNEY_PRICE_FLOOR_USD,
 };
 
+/**
+ * Resolve the markup policy for an account. The multiplier is a per-account
+ * commercial term set at account setup (PracticeSubscription.aiMarkupMultiplier)
+ * — null/undefined falls back to the platform default (2×). A non-positive or
+ * non-finite override is ignored rather than trusted, so a bad value can never
+ * zero out or invert a customer's price.
+ */
+export function resolveMarkupPolicy(
+  override?: { multiplier?: number | null; floorUsd?: number | null },
+): MarkupPolicy {
+  const multiplier =
+    override?.multiplier != null &&
+    Number.isFinite(override.multiplier) &&
+    override.multiplier > 0
+      ? override.multiplier
+      : DEFAULT_MARKUP_POLICY.multiplier;
+  const floorUsd =
+    override?.floorUsd != null &&
+    Number.isFinite(override.floorUsd) &&
+    override.floorUsd >= 0
+      ? override.floorUsd
+      : DEFAULT_MARKUP_POLICY.floorUsd;
+  return { multiplier, floorUsd };
+}
+
 export type PriceBasis = "floor" | "markup";
 
 /** Customer-facing monthly price from a reference (list) raw monthly cost. */

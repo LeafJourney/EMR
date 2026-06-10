@@ -9,7 +9,7 @@ import {
   type ModelConfig,
   type ProviderOption,
 } from "@/lib/domain/byok";
-import { projectMonthlyForModel } from "@/lib/ai/usage-economics";
+import { projectMonthlyForModel, resolveMarkupPolicy } from "@/lib/ai/usage-economics";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,13 @@ import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import { saveAiConfigAction } from "./actions";
 
-export function ModelConfigPanel({ initialAiConfig }: { initialAiConfig: any }) {
+export function ModelConfigPanel({
+  initialAiConfig,
+  markupMultiplier = null,
+}: {
+  initialAiConfig: any;
+  markupMultiplier?: number | null;
+}) {
   const [config, setConfig] = useState<ModelConfig>(() => {
     if (initialAiConfig?.defaultModel) {
       return {
@@ -54,8 +60,12 @@ export function ModelConfigPanel({ initialAiConfig }: { initialAiConfig: any }) 
   // This is the flat, predictable price the practice pays — derived from the
   // catalog, not a hardcoded guess.
   const projection = useMemo(
-    () => projectMonthlyForModel({ costPer1kTokens: selectedModel.costPer1kTokens }),
-    [selectedModel],
+    () =>
+      projectMonthlyForModel(
+        { costPer1kTokens: selectedModel.costPer1kTokens },
+        { policy: resolveMarkupPolicy({ multiplier: markupMultiplier }) },
+      ),
+    [selectedModel, markupMultiplier],
   );
 
   const leafjourneyPrice = projection.customerPriceUsd;

@@ -5,6 +5,7 @@ import {
   customerMonthlyPrice,
   priceBasis,
   projectMonthlyForModel,
+  resolveMarkupPolicy,
 } from "./usage-economics";
 
 const keystone: MarkupPolicy = { multiplier: 2, floorUsd: 20 };
@@ -63,6 +64,31 @@ describe("computeEconomics", () => {
     });
     expect(e.customerPriceUsd).toBe(0);
     expect(e.grossMarginPct).toBe(0);
+  });
+});
+
+describe("resolveMarkupPolicy", () => {
+  it("falls back to the 2x platform default when unset", () => {
+    expect(resolveMarkupPolicy().multiplier).toBe(2);
+    expect(resolveMarkupPolicy({ multiplier: null }).multiplier).toBe(2);
+    expect(resolveMarkupPolicy({}).floorUsd).toBe(20);
+  });
+
+  it("honors a valid per-account override (e.g. 1.5x at setup)", () => {
+    const p = resolveMarkupPolicy({ multiplier: 1.5 });
+    expect(p.multiplier).toBe(1.5);
+    expect(customerMonthlyPrice(200, p)).toBe(300);
+  });
+
+  it("ignores a non-positive or non-finite multiplier rather than trusting it", () => {
+    expect(resolveMarkupPolicy({ multiplier: 0 }).multiplier).toBe(2);
+    expect(resolveMarkupPolicy({ multiplier: -3 }).multiplier).toBe(2);
+    expect(resolveMarkupPolicy({ multiplier: Number.NaN }).multiplier).toBe(2);
+  });
+
+  it("allows a per-account floor override", () => {
+    expect(resolveMarkupPolicy({ floorUsd: 50 }).floorUsd).toBe(50);
+    expect(resolveMarkupPolicy({ floorUsd: -1 }).floorUsd).toBe(20);
   });
 });
 
