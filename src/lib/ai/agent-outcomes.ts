@@ -61,6 +61,59 @@ export function estimatedMinutesSavedFor(
   return OUTCOME_MINUTES_SAVED_BASELINE[subjectType] ?? DEFAULT_MINUTES_SAVED;
 }
 
+/**
+ * Best-effort mapping from an agent's registry name to the artifact type it
+ * produces, used to pick a minutes-saved baseline. Heuristic (substring) so a
+ * new agent slots into a sensible bucket without a code change; anything
+ * unmatched falls back to "task".
+ */
+export function subjectTypeForAgent(agentName: string): string {
+  const n = agentName.toLowerCase();
+  if (n.includes("scrib") || n.includes("note")) return "note";
+  if (n.includes("cod")) return "coding";
+  if (n.includes("claim") || n.includes("charge") || n.includes("scrub"))
+    return "claim";
+  if (n.includes("messag") || n.includes("correspond")) return "message_draft";
+  if (n.includes("summar") || n.includes("fairytale")) return "summary";
+  return "task";
+}
+
+/**
+ * Record the outcome of an approval-queue decision. Approving a paused job
+ * means the human reviewed the agent's proposed action and let it proceed
+ * (accepted); rejecting means they discarded it (rejected). Loads the job to
+ * recover its agent + subject; entirely best-effort so it never disturbs the
+ * approval flow.
+ */
+export async function recordApprovalOutcome(params: {
+  jobId: string;
+  decision: "approve" | "reject";
+  organizationId: string;
+  decidedById: string;
+}): Promise<void> {
+  try {
+    const job = await prisma.agentJob.findUnique({
+      where: { id: params.jobId },
+      select: { agentName: true },
+    });
+    if (!job) return;
+    await recordAgentOutcome({
+      organizationId: params.organizationId,
+      agentName: job.agentName,
+      subjectType: subjectTypeForAgent(job.agentName),
+      decision: params.decision === "approve" ? "accepted" : "rejected",
+      agentJobId: params.jobId,
+      decidedById: params.decidedById,
+    });
+  } catch (err) {
+    logger.warn({
+      event: "agent.outcome.approval_capture_failed",
+      jobId: params.jobId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export interface RecordOutcomeInput {
   organizationId: string;
   agentName: string;

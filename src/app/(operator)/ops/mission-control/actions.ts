@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Role } from "@prisma/client";
 import { requireUser, type AuthedUser } from "@/lib/auth/session";
 import { approveJob, rejectJob } from "@/lib/orchestration/queue";
+import { recordApprovalOutcome } from "@/lib/ai/agent-outcomes";
 import { prisma } from "@/lib/db/prisma";
 
 // Roles permitted to drive Mission Control. The route group's layout already
@@ -33,6 +34,12 @@ export async function approveJobAction(jobId: string) {
       organizationId: user.organizationId ?? undefined,
     },
   });
+  await recordApprovalOutcome({
+    jobId,
+    decision: "approve",
+    organizationId,
+    decidedById: user.id,
+  });
   revalidatePath("/ops/mission-control");
   revalidatePath("/ops");
 }
@@ -49,6 +56,12 @@ export async function rejectJobAction(jobId: string) {
       subjectId: jobId,
       organizationId: user.organizationId ?? undefined,
     },
+  });
+  await recordApprovalOutcome({
+    jobId,
+    decision: "reject",
+    organizationId,
+    decidedById: user.id,
   });
   revalidatePath("/ops/mission-control");
   revalidatePath("/ops");
@@ -112,6 +125,12 @@ export async function bulkDecisionAction(
           },
         });
       }
+      await recordApprovalOutcome({
+        jobId: job.id,
+        decision,
+        organizationId,
+        decidedById: user.id,
+      });
       count += 1;
     } catch {
       // Skip the bad job; keep draining the rest of the queue.
