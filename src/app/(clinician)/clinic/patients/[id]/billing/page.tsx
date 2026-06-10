@@ -78,6 +78,15 @@ export default async function PatientBillingPage({ params }: PageProps) {
     }),
   ]);
 
+  // FO-M7 (EMR-1109) — surface the most recent payer eligibility snapshot
+  // (written by the eligibility agent) on the insurance card's data check.
+  const eligibilitySnapshot = coverage
+    ? await prisma.eligibilitySnapshot.findFirst({
+        where: { patientId: params.id, coverageId: coverage.id },
+        orderBy: { checkedAt: "desc" },
+      })
+    : null;
+
   // Pre-format events for the collapsible client log (EMR-910) so the client
   // component never imports the billing/prisma layer.
   const eventItems: EventLogItem[] = events.map((event) => {
@@ -393,8 +402,8 @@ export default async function PatientBillingPage({ params }: PageProps) {
             <CardTitle className="text-base">Insurance & benefits</CardTitle>
             <CardDescription>
               {coverage?.eligibilityLastCheckedAt
-                ? `Last verified ${formatRelative(coverage.eligibilityLastCheckedAt)}`
-                : "Not yet verified"}
+                ? `Coverage on file, last updated ${formatRelative(coverage.eligibilityLastCheckedAt)}`
+                : "Coverage on file — not yet checked against the payer"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -429,8 +438,11 @@ export default async function PatientBillingPage({ params }: PageProps) {
                       value={`${formatMoney(coverage.outOfPocketMetCents)} / ${formatMoney(coverage.outOfPocketMaxCents)}`}
                     />
                   )}
-                  {coverage.coinsurancePct != null && (
-                    <DetailRow label="Coinsurance" value={`${coverage.coinsurancePct}%`} />
+                  {(coverage.coinsurancePct ?? eligibilitySnapshot?.coinsurancePct) != null && (
+                    <DetailRow
+                      label="Coinsurance"
+                      value={`${coverage.coinsurancePct ?? eligibilitySnapshot?.coinsurancePct}%`}
+                    />
                   )}
                 </div>
                 {coverage.deductibleCents && (
@@ -463,8 +475,32 @@ export default async function PatientBillingPage({ params }: PageProps) {
                     practiceName="This practice"
                     lastCheckedLabel={
                       coverage.eligibilityLastCheckedAt
-                        ? `Last verified ${formatRelative(coverage.eligibilityLastCheckedAt)}`
-                        : "Not yet verified"
+                        ? `Coverage last updated ${formatRelative(coverage.eligibilityLastCheckedAt)}`
+                        : "Coverage not yet checked against a payer"
+                    }
+                    coinsurancePct={coverage.coinsurancePct}
+                    snapshot={
+                      eligibilitySnapshot
+                        ? {
+                            checkedAtLabel: formatRelative(eligibilitySnapshot.checkedAt),
+                            eligible: eligibilitySnapshot.eligible,
+                            planStatus: eligibilitySnapshot.planStatus,
+                            networkStatus: eligibilitySnapshot.networkStatus,
+                            copayLabel:
+                              eligibilitySnapshot.copayAmountCents != null
+                                ? formatMoney(eligibilitySnapshot.copayAmountCents)
+                                : null,
+                            coinsurancePct: eligibilitySnapshot.coinsurancePct,
+                            deductibleRemainingLabel:
+                              eligibilitySnapshot.deductibleRemainingCents != null
+                                ? formatMoney(eligibilitySnapshot.deductibleRemainingCents)
+                                : null,
+                            oopRemainingLabel:
+                              eligibilitySnapshot.oopRemainingCents != null
+                                ? formatMoney(eligibilitySnapshot.oopRemainingCents)
+                                : null,
+                          }
+                        : null
                     }
                   />
                 </div>

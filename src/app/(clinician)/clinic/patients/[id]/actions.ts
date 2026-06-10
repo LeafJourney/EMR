@@ -315,7 +315,10 @@ export async function updatePatientDemographicField(
   if (!INLINE_DEMOGRAPHIC_FIELDS.has(field)) {
     return { ok: false, error: "Unsupported field" };
   }
-  if (!hasPermission(user, "notes.edit")) {
+  // FO-B2 (EMR-1109) — demographics edits gate on the role's namesake
+  // permission, not notes.edit. Front office holds this; see the matrix
+  // in src/lib/rbac/permissions.ts.
+  if (!hasPermission(user, "patient.demographics.edit")) {
     return { ok: false, error: "Read-only access to chart" };
   }
 
@@ -397,7 +400,9 @@ export async function updatePatientInsuranceField(
   rawValue: string,
 ): Promise<InlineUpdateResult> {
   const user = await requireUser();
-  if (!hasPermission(user, "notes.edit")) {
+  // FO-B2 (EMR-1109) — insurance fields are demographics, not clinical
+  // notes; gate on patient.demographics.edit so front office can work.
+  if (!hasPermission(user, "patient.demographics.edit")) {
     return { ok: false, error: "Read-only access to chart" };
   }
   const patient = await prisma.patient.findFirst({

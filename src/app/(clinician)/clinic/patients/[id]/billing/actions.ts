@@ -256,6 +256,22 @@ export async function collectCopay(
 ): Promise<CollectResult> {
   const user = await requireUser();
 
+  // EMR-1111 — same desk-collection allowlist as collectPayment above.
+  // Copays are money-affecting; an authenticated session is not enough.
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "back_office" ||
+        r === "operator" ||
+        r === "practice_owner" ||
+        r === "practice_admin" ||
+        r === "clinician",
+    )
+  ) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
   // ── Validate inputs ──────────────────────────────────────────────────
   const parsed = copaySchema.safeParse({ patientId, amountCents, method });
   if (!parsed.success) {
@@ -355,7 +371,17 @@ export async function createPaymentPlanAction(
 ): Promise<PaymentPlanResult> {
   const user = await requireUser();
 
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner" || r === "operator")) {
+  // FO-M5 (EMR-1109) — desk enrollment is a normal front-office function;
+  // front_office holds billing.edit, so it belongs on this allowlist.
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "clinician" ||
+        r === "practice_owner" ||
+        r === "operator",
+    )
+  ) {
     return { ok: false, error: "Unauthorized" };
   }
 

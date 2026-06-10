@@ -208,8 +208,18 @@ export function PaymentPlanForm({
           {validationError && (
             <p className="text-xs text-[color:var(--warning)]">{validationError}</p>
           )}
+          {/* Server action result — surfaced loudly so a denial (e.g. role
+              not on the allowlist) never fails silently (FO-M5). */}
           {state?.ok === false && (
-            <p className="text-xs text-danger">{state.error}</p>
+            <div
+              role="alert"
+              className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2"
+            >
+              <p className="text-xs font-medium text-danger">
+                Couldn&apos;t create the plan
+              </p>
+              <p className="text-xs text-danger/90 mt-0.5">{state.error}</p>
+            </div>
           )}
 
           <PlanSubmitButton disabled={!!validationError} />
