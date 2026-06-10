@@ -42,6 +42,20 @@ export default async function OutcomesPage() {
     );
   }
 
+  // EMR-1113 (PJ-1): surface the outcome-tracker's check-in tasks (3d/7d
+  // cadence, assigneeRole "patient") — they used to be created and never
+  // shown anywhere the patient could see them.
+  const upNextTasks = await prisma.task.findMany({
+    where: {
+      patientId: patient.id,
+      status: "open",
+      OR: [{ assigneeRole: "patient" }, { assigneeUserId: user.id }],
+    },
+    orderBy: { dueAt: "asc" },
+    take: 3,
+    select: { id: true, title: true, dueAt: true },
+  });
+
   // Recent logs (newest first) for the history list
   const recentLogs = [...patient.outcomeLogs]
     .sort((a, b) => b.loggedAt.getTime() - a.loggedAt.getTime())
@@ -69,6 +83,55 @@ export default async function OutcomesPage() {
           <Button size="lg">Log a check-in</Button>
         </Link>
       </div>
+
+      {/* ---- Up next: open check-in tasks from the outcome tracker ---- */}
+      {upNextTasks.length > 0 && (
+        <Card tone="raised" className="mb-6 border-accent/30">
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">📋</span>
+              <p className="text-sm font-semibold text-text">Up next</p>
+            </div>
+            <ul className="space-y-2">
+              {upNextTasks.map((task) => {
+                const overdue = task.dueAt && task.dueAt.getTime() < Date.now();
+                return (
+                  <li key={task.id}>
+                    <Link
+                      href="/portal/outcomes/new"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 hover:border-accent transition-colors group"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-text truncate">
+                          {task.title}
+                        </p>
+                        {task.dueAt && (
+                          <p className="text-[11px] text-text-muted mt-0.5">
+                            {overdue ? "Due " : "By "}
+                            {task.dueAt.toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      <span className="flex items-center gap-2 shrink-0">
+                        {overdue && <Badge tone="warning">Due</Badge>}
+                        <span className="text-sm text-accent group-hover:underline">
+                          Check in →
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-[11px] text-text-subtle mt-3">
+              Completing a check-in clears the matching task automatically.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* EMR-185: metric cards condensed onto a 4-up grid (was 2x2) so
           all four pillars fit on one row on tablet+ — turns a 2-screen

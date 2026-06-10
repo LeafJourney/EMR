@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker, toISODate } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils/cn";
+import { createGoal, setGoalStatus } from "./actions";
 
 // Goal target dates should be in the future. Capture once per render.
 const GOALS_TODAY = toISODate(new Date());
@@ -19,6 +21,8 @@ import {
 export interface GoalSeed {
   goal: TreatmentGoal;
   currentValue: number;
+  /** Demo seed shown only while the patient has no goals of their own. */
+  isExample?: boolean;
 }
 
 interface Props {
@@ -29,16 +33,13 @@ interface Props {
 const METRIC_KEYS = Object.keys(GOAL_METRIC_LABELS) as GoalMetric[];
 
 export function GoalsView({ seeds, latestByMetric }: Props) {
-  const [items, setItems] = useState<GoalSeed[]>(seeds);
+  // EMR-1113 (PJ-1): the server is the source of truth — goals persist via
+  // the createGoal action and arrive back through props after refresh.
   const [showForm, setShowForm] = useState(false);
 
-  const active = items.filter((it) => it.goal.status === "active");
-  const achieved = items.filter((it) => it.goal.status === "achieved");
-
-  function addGoal(seed: GoalSeed) {
-    setItems((prev) => [seed, ...prev]);
-    setShowForm(false);
-  }
+  const active = seeds.filter((it) => it.goal.status === "active");
+  const achieved = seeds.filter((it) => it.goal.status === "achieved");
+  const hasExamples = seeds.some((it) => it.isExample);
 
   return (
     <div className="space-y-6">
@@ -53,9 +54,16 @@ export function GoalsView({ seeds, latestByMetric }: Props) {
       {showForm && (
         <NewGoalForm
           onCancel={() => setShowForm(false)}
-          onCreate={addGoal}
+          onCreated={() => setShowForm(false)}
           latestByMetric={latestByMetric}
         />
+      )}
+
+      {hasExamples && !showForm && (
+        <p className="text-center text-[13px] text-text-muted">
+          These are <span className="font-medium text-text">examples</span> of
+          what goals look like — set your own and they'll take their place.
+        </p>
       )}
 
       {active.length === 0 && !showForm && (
@@ -95,8 +103,29 @@ export function GoalsView({ seeds, latestByMetric }: Props) {
 }
 
 function GoalCard({ seed, achieved }: { seed: GoalSeed; achieved?: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<"achieved" | "abandoned" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const progress = calculateGoalProgress(seed.goal, seed.currentValue);
   const meta = GOAL_METRIC_LABELS[seed.goal.metric];
+
+  async function updateStatus(status: "achieved" | "abandoned") {
+    if (busy) return;
+    setBusy(status);
+    setError(null);
+    try {
+      const result = await setGoalStatus({ goalId: seed.goal.id, status });
+      if (result.ok) {
+        router.refresh();
+      } else {
+        setError(result.error);
+      }
+    } catch {
+      setError("Couldn't update the goal — try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   const trendBarColor =
     progress.trend === "improving"
@@ -120,13 +149,16 @@ function GoalCard({ seed, achieved }: { seed: GoalSeed; achieved?: boolean }) {
               </p>
             </div>
           </div>
-          {achieved ? (
-            <Badge tone="success">Achieved ✨</Badge>
-          ) : progress.isOnTrack ? (
-            <Badge tone="success">On track</Badge>
-          ) : (
-            <Badge tone="warning">Needs attention</Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {seed.isExample && <Badge tone="neutral">Example</Badge>}
+            {achieved ? (
+              <Badge tone="success">Achieved ✨</Badge>
+            ) : progress.isOnTrack ? (
+              <Badge tone="success">On track</Badge>
+            ) : (
+              <Badge tone="warning">Needs attention</Badge>
+            )}
+          </div>
         </div>
 
         <div className="mb-3">
@@ -154,6 +186,37 @@ function GoalCard({ seed, achieved }: { seed: GoalSeed; achieved?: boolean }) {
           <p className="text-[11px] text-text-subtle text-center mt-3">
             Target by {new Date(seed.goal.targetDate).toLocaleDateString()}
           </p>
+        )}
+
+        {/* EMR-1113: complete / archive controls for real (persisted) goals */}
+        {!seed.isExample && !achieved && (
+          <>
+            {error && (
+              <p className="text-center text-xs text-danger mt-3" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-center gap-2 mt-4">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null}
+                onClick={() => updateStatus("achieved")}
+                className="rounded-xl text-accent"
+              >
+                {busy === "achieved" ? "Saving…" : "🎉 Mark achieved"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null}
+                onClick={() => updateStatus("abandoned")}
+                className="rounded-xl text-text-muted"
+              >
+                {busy === "abandoned" ? "Archiving…" : "Archive"}
+              </Button>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -192,40 +255,57 @@ function Pill({
 
 function NewGoalForm({
   onCancel,
-  onCreate,
+  onCreated,
   latestByMetric,
 }: {
   onCancel: () => void;
-  onCreate: (seed: GoalSeed) => void;
+  onCreated: () => void;
   latestByMetric: Record<string, number>;
 }) {
+  const router = useRouter();
   const [metric, setMetric] = useState<GoalMetric>("pain");
   const [baseline, setBaseline] = useState(7);
   const [target, setTarget] = useState(3);
   const [targetDate, setTargetDate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const meta = GOAL_METRIC_LABELS[metric];
-  const direction: "decrease" | "increase" = useMemo(
-    () => (target < baseline ? "decrease" : "increase"),
-    [baseline, target]
-  );
 
-  function submit() {
-    const seed: GoalSeed = {
-      goal: {
-        id: `goal-${Date.now()}`,
-        patientId: "self",
+  // Pre-fill "today's level" from the patient's latest check-in when they
+  // switch metrics (auto-population directive — smart defaults, less typing).
+  function pickMetric(m: GoalMetric) {
+    setMetric(m);
+    const latest = latestByMetric[m];
+    if (latest !== undefined) {
+      setBaseline(Math.min(10, Math.max(1, Math.round(latest))));
+    }
+  }
+
+  // EMR-1113 (PJ-1): persist via the createGoal server action; the refreshed
+  // server payload re-renders the list with the real goal.
+  async function submit() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await createGoal({
         metric,
-        direction,
         baseline,
         target,
-        startedAt: new Date().toISOString(),
-        targetDate: targetDate ? new Date(targetDate).toISOString() : undefined,
-        status: "active",
-      },
-      currentValue: latestByMetric[metric] ?? baseline,
-    };
-    onCreate(seed);
+        targetDate: targetDate || null,
+      });
+      if (result.ok) {
+        router.refresh();
+        onCreated();
+      } else {
+        setError(result.error);
+      }
+    } catch {
+      setError("Couldn't save your goal — try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -248,7 +328,7 @@ function NewGoalForm({
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setMetric(m)}
+                  onClick={() => pickMetric(m)}
                   className={cn(
                     "flex flex-col items-center gap-1 p-3 rounded-2xl border-2 transition-all active:scale-95",
                     isActive
@@ -293,12 +373,18 @@ function NewGoalForm({
           />
         </div>
 
+        {error && (
+          <p className="text-sm text-danger mb-4" role="alert">
+            {error}
+          </p>
+        )}
+
         <div className="flex gap-3 justify-end">
-          <Button variant="ghost" onClick={onCancel} className="rounded-xl">
+          <Button variant="ghost" onClick={onCancel} disabled={saving} className="rounded-xl">
             Cancel
           </Button>
-          <Button onClick={submit} className="rounded-xl px-6">
-            Save goal
+          <Button onClick={submit} disabled={saving} className="rounded-xl px-6">
+            {saving ? "Saving…" : "Save goal"}
           </Button>
         </div>
       </CardContent>

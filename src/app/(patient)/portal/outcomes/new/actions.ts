@@ -65,6 +65,34 @@ export async function submitOutcomeAction(
 
   const result = await recordDailyCheckIn(patient.id);
 
+  // EMR-1113 (PJ-1): completing a check-in clears the matching open
+  // outcome-tracker task (the 3d/7d "patient" check-in prompts surfaced in
+  // the "Up next" strip on /portal/outcomes). One task per check-in — the
+  // earliest due one — so a day-3 check-in doesn't swallow the day-7 prompt.
+  try {
+    const openPatientTasks = await prisma.task.findMany({
+      where: {
+        patientId: patient.id,
+        status: "open",
+        OR: [{ assigneeRole: "patient" }, { assigneeUserId: user.id }],
+      },
+      orderBy: { dueAt: "asc" },
+      select: { id: true, title: true },
+    });
+    const checkInTask = openPatientTasks.find((t) =>
+      /check-?in|feeling|symptom/i.test(t.title)
+    );
+    if (checkInTask) {
+      await prisma.task.update({
+        where: { id: checkInTask.id },
+        data: { status: "done", completedAt: new Date() },
+      });
+    }
+  } catch (err) {
+    // Never fail the check-in over task bookkeeping.
+    console.error("Failed to complete check-in task", err);
+  }
+
   revalidatePath("/portal/outcomes");
   revalidatePath("/portal");
 

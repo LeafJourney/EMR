@@ -65,6 +65,48 @@ export const SIDE_EFFECT_OPTIONS: SideEffectOption[] = [
   { id: "euphoric", label: "Euphoric", emoji: "🥳" },
 ];
 
+// ── Emoji → score mapping (EMR-1113) ───────────────────
+// 1-5 ordinal score for the emoji row; doubles as the `emoji=` marker value
+// in the structured `[post_dose_feeling]` note convention.
+
+export const EMOJI_RATING_SCORE: Record<EmojiRating, 1 | 2 | 3 | 4 | 5> = {
+  terrible: 1,
+  bad: 2,
+  neutral: 3,
+  good: 4,
+  great: 5,
+};
+
+/**
+ * Convert the 1-5 emoji rating into a 0-10 mood-style value so it lines up
+ * with the rest of the OutcomeLog series (same mapping createFollowUpLog uses):
+ * 1=terrible -> 1, 2=bad -> 3, 3=neutral -> 5, 4=good -> 7, 5=great -> 9.
+ */
+export function emojiRatingToMoodValue(rating: EmojiRating): number {
+  return EMOJI_RATING_SCORE[rating] * 2 - 1;
+}
+
+export function getSideEffectOption(id: string): SideEffectOption | undefined {
+  return SIDE_EFFECT_OPTIONS.find((o) => o.id === id);
+}
+
+// ── Post-dose scale → OutcomeLog conversion (EMR-1113) ─
+// The quick-dose scales are *relief/quality* framed (10 = best outcome), but
+// the OutcomeLog `pain` and `anxiety` metrics are *severity* framed
+// (10 = worst) — see /portal/outcomes badge thresholds. Sleep is quality
+// framed on both sides. Convert so post-dose points land correctly on the
+// shared trend charts; the raw relief value is preserved in the note marker.
+
+export const POST_DOSE_SCALE_METRICS = ["pain", "sleep", "anxiety"] as const;
+export type PostDoseScaleMetric = (typeof POST_DOSE_SCALE_METRICS)[number];
+
+export function postDoseScaleToOutcomeValue(
+  metric: PostDoseScaleMetric,
+  reliefValue: number
+): number {
+  return metric === "sleep" ? reliefValue : 10 - reliefValue;
+}
+
 // ── Quick dose log structure ───────────────────────────
 
 export interface QuickDoseLog {
