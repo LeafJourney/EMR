@@ -1,8 +1,9 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
-import { useEffect, useRef, useState } from "react";
-import { sendClinicReplyAction } from "./actions";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { sendClinicReplyAction, requestAiDraftAction } from "./actions";
 import type { ReplyResult } from "./actions";
 import { Button } from "@/components/ui/button";
 import { DictationTextarea } from "@/components/ui/dictation-input";
@@ -20,6 +21,49 @@ function ClinicReplySubmitButton() {
   return (
     <Button type="submit" size="sm" disabled={pending}>
       {pending ? "Sending..." : "Send"}
+    </Button>
+  );
+}
+
+/**
+ * "Draft with AI" — asks the Messaging Assistant agent to draft a reply for
+ * this patient. The draft lands inline in the thread (and in the Approvals
+ * inbox) for the clinician to review and send; nothing is sent automatically.
+ */
+function DraftWithAiButton({ threadId }: { threadId: string }) {
+  const [pending, startTransition] = useTransition();
+  const { toast } = useToast();
+  const router = useRouter();
+
+  function onClick() {
+    startTransition(async () => {
+      const result = await requestAiDraftAction(threadId);
+      if (result.ok) {
+        toast({
+          title: "AI is drafting a reply",
+          description: "The draft will appear here and in Approvals for your review.",
+          variant: "success",
+        });
+        router.refresh();
+      } else {
+        toast({
+          title: "Couldn't request a draft",
+          description: result.error,
+          variant: "error",
+        });
+      }
+    });
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      onClick={onClick}
+      disabled={pending}
+    >
+      {pending ? "Drafting…" : "✨ Draft with AI"}
     </Button>
   );
 }
@@ -71,7 +115,8 @@ export function ClinicReplyCompose({ threadId }: { threadId: string }) {
             placeholder="Type your reply, use the toolbar to format, or / for block commands…"
             aria-label="Reply body"
           />
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <DraftWithAiButton threadId={threadId} />
             <ClinicReplySubmitButton />
           </div>
         </div>
@@ -89,6 +134,7 @@ export function ClinicReplyCompose({ threadId }: { threadId: string }) {
               aria-label="Reply body"
             />
           </div>
+          <DraftWithAiButton threadId={threadId} />
           <ClinicReplySubmitButton />
         </div>
       )}
