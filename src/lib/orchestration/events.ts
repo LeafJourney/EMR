@@ -19,8 +19,28 @@ export type DomainEvent =
   | { name: "message.draft.requested"; patientId: string; intent: string; organizationId: string }
   | { name: "message.sent"; messageId: string; threadId: string }
   | { name: "message.received"; messageId: string; threadId: string; patientId: string; organizationId: string }
-  | { name: "appointment.created"; appointmentId: string }
-  | { name: "appointment.cancelled"; appointmentId: string }
+  // EMR-1115 (PJ-3) — appointment lifecycle comms. `source` records which side
+  // of the relationship initiated the change so downstream copy can differ.
+  | {
+      name: "appointment.created";
+      appointmentId: string;
+      patientId: string;
+      organizationId: string;
+      startAt: Date;
+      modality: string;
+      source: "patient" | "staff";
+    }
+  // The extra fields are optional for backward compatibility: the clinic-side
+  // cancel (clinic/schedule/calendar/actions.ts) emits only `appointmentId`;
+  // the consumer agent re-derives patient/org/reason from the DB + AuditLog.
+  | {
+      name: "appointment.cancelled";
+      appointmentId: string;
+      patientId?: string;
+      organizationId?: string;
+      reason?: string | null;
+      source?: "patient" | "staff";
+    }
   | { name: "dosing.regimen.created"; regimenId: string; patientId: string; productId: string; organizationId: string; prescribedById: string }
   | { name: "adherence.checkup.requested"; patientId: string; organizationId: string }
   | { name: "research.query.submitted"; queryId: string; query: string; patientId?: string }

@@ -2335,6 +2335,27 @@ model DosingRegimen {
   @@index([patientId, startDate])
 }
 
+// EMR-1113 (PJ-1) — patient-authored treatment goals ("less pain by July").
+// Standalone model (plain-string ids, no @relation) so the migration is purely
+// additive and doesn't touch Patient/Organization — same pattern as
+// CannabisRecommendation (EMR-1103). Progress is computed at read time from
+// the patient's OutcomeLog series for the matching metric.
+model TreatmentGoal {
+  id             String    @id @default(cuid())
+  organizationId String
+  patientId      String
+  metric         String // OutcomeMetric-compatible: "pain" | "sleep" | "anxiety" | "mood" | "energy" | "nausea" | "appetite"
+  label          String // patient-facing goal label, e.g. "Less pain"
+  baselineValue  Int // 1-10 at goal creation
+  targetValue    Int // 1-10 target
+  targetDate     DateTime?
+  status         String    @default("active") // "active" | "achieved" | "abandoned"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([patientId])
+}
+
 model DoseLog {
   id             String         @id @default(cuid())
   patientId      String
@@ -2347,6 +2368,9 @@ model DoseLog {
   route          DeliveryRoute?
   // Context
   note           String?
+  // EMR-1113 (PJ-1) — side-effect ids from the post-dose quick-pick grid
+  // (emoji-outcomes.ts SIDE_EFFECT_OPTIONS), stored as a JSON string array.
+  sideEffects    Json?
   loggedAt       DateTime       @default(now())
 
   patient Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)

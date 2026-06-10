@@ -12,7 +12,10 @@ import {
 } from "@/components/ui/card";
 import { EditorialRule, Eyebrow } from "@/components/ui/ornament";
 import { ProfileForm, type ProfileValues } from "./profile-form";
-import { CommunicationPreferences } from "./communication-preferences";
+import {
+  CommunicationPreferences,
+  type CommunicationPreferencesInitial,
+} from "./communication-preferences";
 import { PortalAvatarUpload } from "./portal-avatar-upload";
 
 export const metadata = { title: "Profile" };
@@ -29,6 +32,72 @@ export default async function ProfilePage() {
   }
 
   const intake = (patient.intakeAnswers as Record<string, unknown>) ?? {};
+
+  // EMR-1116 (PJ-M2): hydrate communication preferences from the persisted
+  // CommunicationPreference row so the form reflects what is actually saved.
+  const commPrefRow = await prisma.communicationPreference.findUnique({
+    where: { userId: user.id },
+  });
+
+  const prefsJson =
+    commPrefRow?.preferences &&
+    typeof commPrefRow.preferences === "object" &&
+    !Array.isArray(commPrefRow.preferences)
+      ? (commPrefRow.preferences as Record<string, unknown>)
+      : {};
+
+  const categoryToggles: Record<string, { email?: boolean; sms?: boolean }> = {};
+  for (const id of ["appointments", "messages", "labs", "dosing", "billing"]) {
+    const block = prefsJson[id];
+    if (block && typeof block === "object" && !Array.isArray(block)) {
+      const b = block as Record<string, unknown>;
+      categoryToggles[id] = {
+        email: typeof b.email === "boolean" ? b.email : undefined,
+        sms: typeof b.sms === "boolean" ? b.sms : undefined,
+      };
+    }
+  }
+
+  const general =
+    prefsJson.general && typeof prefsJson.general === "object" && !Array.isArray(prefsJson.general)
+      ? (prefsJson.general as Record<string, unknown>)
+      : {};
+
+  function pickEnum<T extends string>(
+    value: unknown,
+    allowed: readonly T[],
+    fallback: T,
+  ): T {
+    return typeof value === "string" && (allowed as readonly string[]).includes(value)
+      ? (value as T)
+      : fallback;
+  }
+
+  const commPrefsInitial: CommunicationPreferencesInitial = {
+    smsOptIn: commPrefRow?.smsOptIn ?? true,
+    emailFrequency: pickEnum(
+      commPrefRow?.emailFrequency,
+      ["instant", "daily", "weekly", "off"] as const,
+      "instant",
+    ),
+    quietStart: commPrefRow?.quietHoursStart ?? "22:00",
+    quietEnd: commPrefRow?.quietHoursEnd ?? "07:00",
+    categories: categoryToggles,
+    contactWindow: pickEnum(
+      general.contactWindow,
+      ["anytime", "business_hours", "no_weekends"] as const,
+      "anytime",
+    ),
+    language: pickEnum(
+      general.language,
+      ["en", "es", "fr", "zh", "ko", "vi", "ar", "ht"] as const,
+      "en",
+    ),
+    emergencyOverride:
+      typeof general.emergencyOverride === "boolean" ? general.emergencyOverride : true,
+    marketingOptOut:
+      typeof general.marketingOptOut === "boolean" ? general.marketingOptOut : false,
+  };
 
   const initial: ProfileValues = {
     firstName: patient.firstName,
@@ -123,7 +192,7 @@ export default async function ProfilePage() {
         </CardContent>
       </Card>
 
-      <CommunicationPreferences />
+      <CommunicationPreferences initial={commPrefsInitial} />
     </PageShell>
   );
 }

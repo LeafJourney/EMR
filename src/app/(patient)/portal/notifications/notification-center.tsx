@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,12 @@ import type {
   NotificationChannel,
   NotificationPreference,
 } from "@/lib/domain/notifications";
+import { NOTIFICATION_CONFIG } from "@/lib/domain/notifications";
 import {
-  NOTIFICATION_CONFIG,
-  getDefaultPreferences,
-} from "@/lib/domain/notifications";
+  markAllNotificationsReadAction,
+  markNotificationReadAction,
+  saveNotificationPreferencesAction,
+} from "./actions";
 
 // ── Helpers ────────────────────────────────────────────
 
@@ -63,15 +65,29 @@ const FILTER_TABS: { label: string; value: FilterValue }[] = [
 
 // ── Main component ────────────────────────────────────
 
-export function NotificationCenter() {
-  // EMR-806: no fabricated demo notifications. There is no real per-patient
-  // notification feed wired yet, so start empty and render the honest
-  // "all caught up" empty state rather than the same demo list for everyone.
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+interface NotificationCenterProps {
+  /** Real Notification rows fetched server-side, newest first. */
+  initialNotifications: Notification[];
+  /** Persisted per-type preferences hydrated from CommunicationPreference. */
+  initialPreferences: NotificationPreference[];
+}
+
+export function NotificationCenter({
+  initialNotifications,
+  initialPreferences,
+}: NotificationCenterProps) {
+  // EMR-1116 (PJ-M2): the feed is the patient's real Notification rows.
+  // Read state mutates optimistically here and persists via server actions.
+  const [notifications, setNotifications] =
+    useState<Notification[]>(initialNotifications);
   const [activeFilter, setActiveFilter] = useState<FilterValue>("all");
-  const [preferences, setPreferences] = useState<NotificationPreference[]>(
-    getDefaultPreferences()
-  );
+  const [preferences, setPreferences] =
+    useState<NotificationPreference[]>(initialPreferences);
+  const [prefsDirty, setPrefsDirty] = useState(false);
+  const [prefsSavedAt, setPrefsSavedAt] = useState<string | null>(null);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
+  const [isSavingPrefs, startSavePrefs] = useTransition();
+  const [, startMarkRead] = useTransition();
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -82,11 +98,16 @@ export function NotificationCenter() {
   }, [notifications, activeFilter]);
 
   function markAsRead(id: string) {
+    const target = notifications.find((n) => n.id === id);
+    if (!target || target.read) return;
     setNotifications((prev) =>
       prev.map((n) =>
         n.id === id ? { ...n, read: true, readAt: new Date().toISOString() } : n
       )
     );
+    startMarkRead(async () => {
+      await markNotificationReadAction(id);
+    });
   }
 
   function markAllAsRead() {
@@ -95,9 +116,13 @@ export function NotificationCenter() {
         n.read ? n : { ...n, read: true, readAt: new Date().toISOString() }
       )
     );
+    startMarkRead(async () => {
+      await markAllNotificationsReadAction();
+    });
   }
 
   function toggleChannel(type: NotificationType, channel: NotificationChannel) {
+    setPrefsDirty(true);
     setPreferences((prev) =>
       prev.map((p) => {
         if (p.type !== type) return p;
@@ -110,11 +135,25 @@ export function NotificationCenter() {
   }
 
   function toggleEnabled(type: NotificationType) {
+    setPrefsDirty(true);
     setPreferences((prev) =>
       prev.map((p) =>
         p.type === type ? { ...p, enabled: !p.enabled } : p
       )
     );
+  }
+
+  function savePreferences() {
+    setPrefsError(null);
+    startSavePrefs(async () => {
+      const result = await saveNotificationPreferencesAction(preferences);
+      if (result.ok) {
+        setPrefsSavedAt(result.savedAt);
+        setPrefsDirty(false);
+      } else {
+        setPrefsError(result.error);
+      }
+    });
   }
 
   return (
@@ -330,6 +369,29 @@ export function NotificationCenter() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Save footer — honest persisted state, saved-at from the server */}
+            <div className="flex items-center gap-3 pt-5 mt-4 border-t border-border">
+              <Button
+                size="sm"
+                onClick={savePreferences}
+                disabled={isSavingPrefs || !prefsDirty}
+              >
+                {isSavingPrefs ? "Saving..." : "Save preferences"}
+              </Button>
+              {prefsError && (
+                <span className="text-sm text-danger">{prefsError}</span>
+              )}
+              {!prefsError && prefsSavedAt && !prefsDirty && (
+                <Badge tone="success">
+                  Saved{" "}
+                  {new Date(prefsSavedAt).toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </Badge>
+              )}
             </div>
           </CardContent>
         </Card>

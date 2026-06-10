@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useFormState } from "react-dom";
 import { saveIntakeAction, type IntakeResult } from "./actions";
 import { Input, Textarea, FieldGroup } from "@/components/ui/input";
@@ -13,7 +14,14 @@ interface InitialValues {
   reportedBenefits: string;
 }
 
-export function IntakeForm({ initial }: { initial: InitialValues }) {
+export function IntakeForm({
+  initial,
+  registrationComplete = true,
+}: {
+  initial: InitialValues;
+  /** Drives the "what happens next" panel after save (EMR-1114 / PJ-2). */
+  registrationComplete?: boolean;
+}) {
   const [state, formAction] = useFormState<IntakeResult | null, FormData>(
     saveIntakeAction,
     null
@@ -94,10 +102,43 @@ export function IntakeForm({ initial }: { initial: InitialValues }) {
       {state?.ok === false && (
         <p className="text-sm text-danger">{state.error}</p>
       )}
+
       {state?.ok && (
-        <p className="text-sm text-success">
-          Saved. Your chart summary has been updated.
-        </p>
+        <div className="p-4 rounded-lg bg-emerald-50/60 border border-emerald-200/60">
+          <p className="text-sm font-medium text-emerald-800 mb-2">
+            Saved — your chart summary has been updated.
+          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-emerald-700 mb-2">
+            What happens next
+          </p>
+          <ul className="text-sm text-emerald-900/90 space-y-1.5 list-disc pl-5">
+            <li>
+              Your care team reviews your intake before your visit, so the
+              time is spent on what matters to you.
+            </li>
+            <li>
+              <Link
+                href="/portal/schedule"
+                className="font-medium underline underline-offset-2 hover:text-emerald-700"
+              >
+                Book a visit
+              </Link>{" "}
+              — pick a time that works for you.
+            </li>
+            {!registrationComplete && (
+              <li>
+                <Link
+                  href="/portal/registration"
+                  className="font-medium underline underline-offset-2 hover:text-emerald-700"
+                >
+                  Finish registration
+                </Link>{" "}
+                — contact, insurance and consents take just a couple of
+                minutes.
+              </li>
+            )}
+          </ul>
+        </div>
       )}
 
       <div className="flex items-center justify-end gap-2 pt-2">

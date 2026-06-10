@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
+import { saveCommunicationPreferencesAction } from "./actions";
 
 type EmailFrequency = "instant" | "daily" | "weekly" | "off";
 type ContactWindow = "anytime" | "business_hours" | "no_weekends";
@@ -88,21 +89,58 @@ const DEFAULT_CATEGORIES: NotificationCategory[] = [
   },
 ];
 
-export function CommunicationPreferences() {
-  const [smsOptIn, setSmsOptIn] = useState(true);
-  const [emailFrequency, setEmailFrequency] =
-    useState<EmailFrequency>("instant");
-  const [categories, setCategories] =
-    useState<NotificationCategory[]>(DEFAULT_CATEGORIES);
-  const [quietStart, setQuietStart] = useState("22:00");
-  const [quietEnd, setQuietEnd] = useState("07:00");
+export interface CommunicationPreferencesInitial {
+  smsOptIn: boolean;
+  emailFrequency: EmailFrequency;
+  quietStart: string;
+  quietEnd: string;
+  /** Per-category email/sms toggles keyed by category id. */
+  categories: Record<string, { email?: boolean; sms?: boolean }>;
+  contactWindow: ContactWindow;
+  language: LanguagePref;
+  emergencyOverride: boolean;
+  marketingOptOut: boolean;
+}
+
+export function CommunicationPreferences({
+  initial,
+}: {
+  initial?: CommunicationPreferencesInitial;
+}) {
+  // EMR-1116 (PJ-M2): hydrated from the patient's persisted
+  // CommunicationPreference row; saves go through a real server action.
+  const [smsOptIn, setSmsOptIn] = useState(initial?.smsOptIn ?? true);
+  const [emailFrequency, setEmailFrequency] = useState<EmailFrequency>(
+    initial?.emailFrequency ?? "instant"
+  );
+  const [categories, setCategories] = useState<NotificationCategory[]>(() =>
+    DEFAULT_CATEGORIES.map((cat) => {
+      const saved = initial?.categories[cat.id];
+      return {
+        ...cat,
+        email: saved?.email ?? cat.email,
+        sms: saved?.sms ?? cat.sms,
+      };
+    })
+  );
+  const [quietStart, setQuietStart] = useState(initial?.quietStart ?? "22:00");
+  const [quietEnd, setQuietEnd] = useState(initial?.quietEnd ?? "07:00");
   // EMR-175 additions — stored in the CommunicationPreference.preferences JSON.
-  const [contactWindow, setContactWindow] = useState<ContactWindow>("anytime");
-  const [language, setLanguage] = useState<LanguagePref>("en");
-  const [emergencyOverride, setEmergencyOverride] = useState(true);
-  const [marketingOptOut, setMarketingOptOut] = useState(false);
+  const [contactWindow, setContactWindow] = useState<ContactWindow>(
+    initial?.contactWindow ?? "anytime"
+  );
+  const [language, setLanguage] = useState<LanguagePref>(
+    initial?.language ?? "en"
+  );
+  const [emergencyOverride, setEmergencyOverride] = useState(
+    initial?.emergencyOverride ?? true
+  );
+  const [marketingOptOut, setMarketingOptOut] = useState(
+    initial?.marketingOptOut ?? false
+  );
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function toggleCategory(
     id: string,
@@ -115,15 +153,36 @@ export function CommunicationPreferences() {
     );
   }
 
-  function handleSave() {
+  async function handleSave() {
     setSaving(true);
-    setSaved(false);
-    // Simulated save
-    setTimeout(() => {
+    setSavedAt(null);
+    setError(null);
+    try {
+      const result = await saveCommunicationPreferencesAction({
+        smsOptIn,
+        emailFrequency,
+        quietHoursStart: quietStart || null,
+        quietHoursEnd: quietEnd || null,
+        categories: categories.map((c) => ({
+          id: c.id,
+          email: c.email,
+          sms: c.sms,
+        })),
+        contactWindow,
+        language,
+        emergencyOverride,
+        marketingOptOut,
+      });
+      if (result.ok) {
+        setSavedAt(result.savedAt);
+      } else {
+        setError(result.error);
+      }
+    } catch {
+      setError("Could not save preferences. Please try again.");
+    } finally {
       setSaving(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    }, 800);
+    }
   }
 
   return (
@@ -408,8 +467,15 @@ export function CommunicationPreferences() {
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save preferences"}
           </Button>
-          {saved && (
-            <Badge tone="success">Preferences saved</Badge>
+          {error && <span className="text-sm text-danger">{error}</span>}
+          {!error && savedAt && (
+            <Badge tone="success">
+              Saved{" "}
+              {new Date(savedAt).toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </Badge>
           )}
         </div>
       </CardContent>

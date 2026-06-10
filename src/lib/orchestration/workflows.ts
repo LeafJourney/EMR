@@ -87,15 +87,43 @@ export const workflows: WorkflowDefinition[] = [
   },
   {
     name: "message-draft",
-    on: ["message.draft.requested"],
+    // EMR-1114 (PJ-2/PJ-M5) — patient.intake.stalled now routes to the same
+    // approval-gated draft flow (WORKFLOWS.md always documented this pairing).
+    // The scheduler emits it with intent "intake_nudge"; default it here too
+    // so a bare event still drafts the right nudge.
+    on: ["message.draft.requested", "patient.intake.stalled"],
     steps: [
       {
         agent: "messagingAssistant",
         input: (e) => ({
           patientId: (e as any).patientId,
-          intent: (e as any).intent ?? "follow_up",
+          intent:
+            (e as any).intent ??
+            (e.name === "patient.intake.stalled" ? "intake_nudge" : "follow_up"),
         }),
         requiresApproval: true,
+      },
+    ],
+  },
+  // ─────────────────────────────────────────────────────────────────
+  // EMR-1115 (PJ-3) — appointment lifecycle comms. Booking/cancelling
+  // (either side) writes a portal Notification + a patient-visible
+  // confirmation/cancellation Message. Auto-runs (no approval): the copy
+  // is deterministic template text, not LLM output.
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: "appointment-lifecycle",
+    on: ["appointment.created", "appointment.cancelled"],
+    steps: [
+      {
+        agent: "appointmentLifecycle",
+        input: (e) => ({
+          appointmentId: (e as any).appointmentId,
+          type: e.name === "appointment.created" ? "created" : "cancelled",
+          reason: (e as any).reason ?? null,
+          source: (e as any).source ?? null,
+        }),
+        requiresApproval: false,
       },
     ],
   },

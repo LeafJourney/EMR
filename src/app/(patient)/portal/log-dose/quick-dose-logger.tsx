@@ -13,7 +13,7 @@ import {
   type EmojiRating,
   type QuickDoseLog,
 } from "@/lib/domain/emoji-outcomes";
-import { createFollowUpLog } from "./actions";
+import { createFollowUpLog, logDose } from "./actions";
 import { InhalationDoseEstimator } from "@/components/prescription/inhalation-dose-estimator";
 import { isInhaledProductType } from "@/lib/domain/inhalation-dose";
 
@@ -61,6 +61,9 @@ export function QuickDoseLogger({ patientId, products }: Props) {
     estimatedThcMg: number;
     estimatedCbdMg: number;
   } | null>(null);
+  // EMR-1113 (PJ-1): Save now persists DoseLog + OutcomeLogs server-side.
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const visibleProducts =
     productFilter === "all"
@@ -82,6 +85,44 @@ export function QuickDoseLogger({ patientId, products }: Props) {
     setScales({});
     setSelectedEffects([]);
     setInhaledDose(null);
+    setSaving(false);
+    setSaveError(null);
+  }
+
+  // EMR-1113 (PJ-1): persist the whole flow (DoseLog + emoji/scale
+  // OutcomeLogs). Celebration only fires on a confirmed save.
+  async function save() {
+    if (!selectedProduct || !emoji || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await logDose({
+        regimenId: selectedProduct.regimenId,
+        feeling: emoji,
+        scales: Object.entries(scales)
+          .filter(([metric]) =>
+            metric === "pain" || metric === "sleep" || metric === "anxiety"
+          )
+          .map(([metric, value]) => ({
+            metric: metric as "pain" | "sleep" | "anxiety",
+            value,
+          })),
+        sideEffects: selectedEffects,
+        inhaled:
+          inhaledDose && inhaledDose.puffs > 0
+            ? inhaledDose
+            : null,
+      });
+      if (result.ok) {
+        setStep("done");
+      } else {
+        setSaveError(result.error);
+      }
+    } catch {
+      setSaveError("Couldn't save your dose — check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   /* ── Step 1: Pick product ─────────────────────────────── */
@@ -365,15 +406,27 @@ export function QuickDoseLogger({ patientId, products }: Props) {
             ))}
           </div>
 
+          {saveError && (
+            <p className="text-center text-sm text-danger mt-6" role="alert">
+              {saveError}
+            </p>
+          )}
+
           <div className="flex justify-center gap-3 mt-8">
-            <Button variant="ghost" onClick={() => setStep("scales")} className="rounded-xl">
+            <Button
+              variant="ghost"
+              onClick={() => setStep("scales")}
+              disabled={saving}
+              className="rounded-xl"
+            >
               Back
             </Button>
             <Button
-              onClick={() => setStep("done")}
+              onClick={save}
+              disabled={saving}
               className="rounded-xl px-8"
             >
-              Save
+              {saving ? "Saving…" : "Save"}
             </Button>
           </div>
         </CardContent>

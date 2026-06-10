@@ -16,6 +16,11 @@ import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatDate } from "@/lib/utils/format";
 import { DosingDisplay } from "@/components/prescription/dosing-display";
 import { detectSubstitution } from "@/lib/domain/medication-substitution";
+import {
+  RefillRequestPanel,
+  type PharmacyOption,
+  type RefillStatusInfo,
+} from "./refill-request";
 
 export const metadata = { title: "My Medications & Dosing Plan" };
 
@@ -82,6 +87,42 @@ export default async function MedicationsPage() {
         take: 5,
       })
     : [];
+
+  // EMR-1116 (PJ-M3): refill round trip. Portal requests bridge through a
+  // cannabis PatientMedication named after the regimen's product, so the
+  // latest request per product name is the regimen card's refill status.
+  const [refillRequests, pharmacyContacts] = patient
+    ? await Promise.all([
+        prisma.refillRequest.findMany({
+          where: { patientId: patient.id },
+          orderBy: { receivedAt: "desc" },
+          take: 50,
+          select: {
+            status: true,
+            receivedAt: true,
+            deniedReason: true,
+            medication: { select: { name: true, type: true } },
+          },
+        }),
+        prisma.pharmacyContact.findMany({
+          where: { organizationId: patient.organizationId, active: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+
+  const latestRefillByMedName = new Map<string, RefillStatusInfo>();
+  for (const r of refillRequests) {
+    if (r.medication.type !== "cannabis") continue;
+    if (latestRefillByMedName.has(r.medication.name)) continue;
+    latestRefillByMedName.set(r.medication.name, {
+      status: r.status,
+      receivedAt: r.receivedAt.toISOString(),
+      deniedReason: r.deniedReason,
+    });
+  }
+  const pharmacyOptions: PharmacyOption[] = pharmacyContacts;
 
   const substitution = detectSubstitution(
     [...regimens, ...recentRegimensForSubCheck].map((r: any) => ({
@@ -378,6 +419,17 @@ export default async function MedicationsPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* ── Refill request (EMR-1116 / PJ-M3) ──── */}
+                    <RefillRequestPanel
+                      regimenId={regimen.id}
+                      pharmacies={pharmacyOptions}
+                      latestRequest={
+                        latestRefillByMedName.get(
+                          product?.name ?? "Cannabis product",
+                        ) ?? null
+                      }
+                    />
 
                     {/* ── Actions ────────────────────────────── */}
                     <div className="pt-2 flex items-center gap-3 flex-wrap">

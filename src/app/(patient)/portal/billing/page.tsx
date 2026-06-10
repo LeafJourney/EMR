@@ -121,6 +121,17 @@ export default async function PortalBillingPage() {
               </p>
             </>
           )}
+          {/* EMR-1116 (PJ-4 minor): disputes were filed-able but unfindable
+              from the main billing card. */}
+          <p className="mt-6 text-sm text-text-muted">
+            Something looks wrong?{" "}
+            <Link
+              href="/portal/billing/disputes"
+              className="text-accent underline underline-offset-2 hover:text-accent/80"
+            >
+              View disputes
+            </Link>
+          </p>
         </CardContent>
       </Card>
 

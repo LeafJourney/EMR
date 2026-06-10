@@ -114,6 +114,122 @@ export async function saveProfileAction(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// EMR-1116 (PJ-4 / PJ-M2) — communication preferences, persisted for real.
+// Dedicated CommunicationPreference columns hold smsOptIn / emailFrequency /
+// quiet hours; the per-category channel toggles and EMR-175 extras live in
+// the `preferences` JSON, MERGED with whatever other blocks already exist
+// (reminders, previsit, notificationTypes) so nothing else gets clobbered.
+// The category shape `preferences.<id> = { email, sms }` is exactly what the
+// pre-visit reminder channel resolver consumes (lib/scheduling/previsit-channels).
+// ---------------------------------------------------------------------------
+
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const commPrefsSchema = z.object({
+  smsOptIn: z.boolean(),
+  emailFrequency: z.enum(["instant", "daily", "weekly", "off"]),
+  quietHoursStart: z.string().regex(timePattern).nullable(),
+  quietHoursEnd: z.string().regex(timePattern).nullable(),
+  categories: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(40),
+        email: z.boolean(),
+        sms: z.boolean(),
+      }),
+    )
+    .max(20),
+  contactWindow: z.enum(["anytime", "business_hours", "no_weekends"]),
+  language: z.enum(["en", "es", "fr", "zh", "ko", "vi", "ar", "ht"]),
+  emergencyOverride: z.boolean(),
+  marketingOptOut: z.boolean(),
+});
+
+export type CommunicationPreferencesInput = z.infer<typeof commPrefsSchema>;
+
+export type SaveCommunicationPreferencesResult =
+  | { ok: true; savedAt: string }
+  | { ok: false; error: string };
+
+export async function saveCommunicationPreferencesAction(
+  input: CommunicationPreferencesInput,
+): Promise<SaveCommunicationPreferencesResult> {
+  const user = await requireRole("patient");
+
+  const parsed = commPrefsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid preferences." };
+  }
+  const prefs = parsed.data;
+
+  const patient = await prisma.patient.findUnique({
+    where: { userId: user.id },
+    select: { id: true, organizationId: true },
+  });
+  if (!patient) return { ok: false, error: "No patient profile found." };
+
+  const existing = await prisma.communicationPreference.findUnique({
+    where: { userId: user.id },
+    select: { preferences: true },
+  });
+  const base =
+    existing?.preferences &&
+    typeof existing.preferences === "object" &&
+    !Array.isArray(existing.preferences)
+      ? (existing.preferences as Record<string, unknown>)
+      : {};
+
+  const categoryBlocks: Record<string, { email: boolean; sms: boolean }> = {};
+  for (const cat of prefs.categories) {
+    categoryBlocks[cat.id] = { email: cat.email, sms: cat.sms };
+  }
+
+  const mergedPreferences = {
+    ...base,
+    ...categoryBlocks,
+    general: {
+      contactWindow: prefs.contactWindow,
+      language: prefs.language,
+      emergencyOverride: prefs.emergencyOverride,
+      marketingOptOut: prefs.marketingOptOut,
+    },
+  };
+
+  const data = {
+    smsOptIn: prefs.smsOptIn,
+    emailFrequency: prefs.emailFrequency,
+    quietHoursStart: prefs.quietHoursStart,
+    quietHoursEnd: prefs.quietHoursEnd,
+    preferences: mergedPreferences as any,
+  };
+
+  await prisma.communicationPreference.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id, ...data },
+    update: data,
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: patient.organizationId,
+      actorUserId: user.id,
+      action: "patient.communicationPreferences.updated",
+      subjectType: "CommunicationPreference",
+      subjectId: user.id,
+      metadata: {
+        smsOptIn: prefs.smsOptIn,
+        emailFrequency: prefs.emailFrequency,
+        marketingOptOut: prefs.marketingOptOut,
+        categories: Object.keys(categoryBlocks),
+      },
+    },
+  });
+
+  revalidatePath("/portal/profile");
+  return { ok: true, savedAt: new Date().toISOString() };
+}
+
 export async function savePatientPortalPhoto(base64Data: string) {
   const user = await requireRole("patient");
   const patient = await prisma.patient.findUnique({

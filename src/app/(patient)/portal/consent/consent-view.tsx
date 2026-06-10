@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useTransition } from "react";
 import {
   Card,
   CardContent,
@@ -16,12 +16,9 @@ import { cn } from "@/lib/utils/cn";
 import type {
   ConsentTemplate,
   ConsentField,
-  SignedConsent,
 } from "@/lib/domain/consent-forms";
-import {
-  DEFAULT_TEMPLATES,
-  getTemplatesByCategory,
-} from "@/lib/domain/consent-forms";
+import { DEFAULT_TEMPLATES } from "@/lib/domain/consent-forms";
+import { signConsent, type SignedConsentSummary } from "./actions";
 
 // ── Category config ─────────────────────────────────
 
@@ -263,11 +260,20 @@ function ConsentFieldRenderer({
 
 // ── Main Component ──────────────────────────────────
 
-export function ConsentView() {
+export function ConsentView({
+  initialSignedConsents = [],
+}: {
+  initialSignedConsents?: SignedConsentSummary[];
+}) {
   const [selectedTemplate, setSelectedTemplate] = useState<ConsentTemplate | null>(null);
   const [responses, setResponses] = useState<Record<string, string | boolean>>({});
-  const [signedConsents, setSignedConsents] = useState<SignedConsent[]>([]);
+  // Hydrated from the DB (includes consents signed during registration); new
+  // signatures are appended only after the server confirms persistence.
+  const [signedConsents, setSignedConsents] =
+    useState<SignedConsentSummary[]>(initialSignedConsents);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const templates = DEFAULT_TEMPLATES;
 
@@ -278,6 +284,7 @@ export function ConsentView() {
     if (isTemplateSigned(template.id)) return;
     setSelectedTemplate(template);
     setResponses({});
+    setSubmitError(null);
     setShowSuccess(false);
   }
 
@@ -298,23 +305,41 @@ export function ConsentView() {
   }
 
   function handleSubmit() {
-    if (!selectedTemplate || !isFormComplete()) return;
+    if (!selectedTemplate || !isFormComplete() || isPending) return;
 
-    const signed: SignedConsent = {
-      id: `sc-${Date.now()}`,
-      templateId: selectedTemplate.id,
-      templateName: selectedTemplate.name,
-      patientId: "current-patient",
-      patientName: "Current Patient",
-      responses,
-      signedAt: new Date().toISOString(),
-      signatureData: (responses[
-        selectedTemplate.fields.find((f) => f.type === "signature")?.id ?? ""
-      ] as string) || undefined,
-    };
+    const template = selectedTemplate;
+    const signatureFieldId = template.fields.find((f) => f.type === "signature")?.id;
+    const signatureData =
+      (signatureFieldId && (responses[signatureFieldId] as string)) || undefined;
 
-    setSignedConsents((prev) => [...prev, signed]);
-    setShowSuccess(true);
+    // Don't store the signature image twice — it travels in signatureData.
+    const cleanResponses: Record<string, string | boolean> = { ...responses };
+    if (signatureFieldId && signatureFieldId in cleanResponses) {
+      cleanResponses[signatureFieldId] = true;
+    }
+
+    setSubmitError(null);
+    startTransition(async () => {
+      try {
+        const result = await signConsent({
+          templateId: template.id,
+          responses: cleanResponses,
+          signatureData,
+        });
+        if (!result.ok) {
+          setSubmitError(result.error);
+          return;
+        }
+        setSignedConsents((prev) =>
+          prev.some((sc) => sc.templateId === result.consent.templateId)
+            ? prev
+            : [...prev, result.consent]
+        );
+        setShowSuccess(true);
+      } catch {
+        setSubmitError("Something went wrong saving your consent. Please try again.");
+      }
+    });
   }
 
   // ── Template list view ───────────────────────
@@ -510,20 +535,26 @@ export function ConsentView() {
                 field={field}
                 value={responses[field.id] ?? (field.type === "acknowledgment" ? false : "")}
                 onChange={(val) => handleFieldChange(field.id, val)}
+                disabled={isPending}
               />
             ))}
           </div>
         </CardContent>
 
         <CardFooter>
-          <p className="text-[10px] text-text-subtle italic">
-            By submitting, you agree to the terms above.
-          </p>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] text-text-subtle italic">
+              By submitting, you agree to the terms above.
+            </p>
+            {submitError && (
+              <p className="text-sm text-danger mt-1">{submitError}</p>
+            )}
+          </div>
           <Button
             onClick={handleSubmit}
-            disabled={!isFormComplete()}
+            disabled={!isFormComplete() || isPending}
           >
-            Submit consent
+            {isPending ? "Saving…" : "Submit consent"}
           </Button>
         </CardFooter>
       </Card>

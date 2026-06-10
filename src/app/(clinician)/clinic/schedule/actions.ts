@@ -57,18 +57,51 @@ export async function createPatientAppointmentAction(
     return { ok: false, error: "Invalid dates." };
   }
 
-  // Get active provider for user
-  const provider = await prisma.provider.findFirst({
+  // Resolve the provider: the caller's own profile when they have one
+  // (providers booking their own column), else fall back so front-office
+  // staff aren't dead-ended — the patient's usual provider, then the org's
+  // sole provider. Multi-provider orgs without history route to the booking
+  // flow, which has an explicit provider picker.
+  let providerId: string | null = null;
+  const ownProvider = await prisma.provider.findFirst({
     where: { userId: user.id, organizationId: user.organizationId! },
     select: { id: true },
   });
-  if (!provider) return { ok: false, error: "No provider profile found for current user." };
+  if (ownProvider) {
+    providerId = ownProvider.id;
+  } else {
+    const lastAppointment = await prisma.appointment.findFirst({
+      where: {
+        patientId,
+        provider: { organizationId: user.organizationId! },
+        status: { not: "cancelled" },
+      },
+      orderBy: { startAt: "desc" },
+      select: { providerId: true },
+    });
+    providerId = lastAppointment?.providerId ?? null;
+    if (!providerId) {
+      const orgProviders = await prisma.provider.findMany({
+        where: { organizationId: user.organizationId! },
+        select: { id: true },
+        take: 2,
+      });
+      if (orgProviders.length === 1) providerId = orgProviders[0].id;
+    }
+  }
+  if (!providerId) {
+    return {
+      ok: false,
+      error:
+        "Couldn't determine a provider for this visit. Use Scheduling → Book to pick the provider.",
+    };
+  }
 
   // Check conflicts — cancelled appointments don't block the slot.
   if (!force) {
     const conflict = await prisma.appointment.findFirst({
       where: {
-        providerId: provider.id,
+        providerId,
         status: { in: [...ACTIVE_STATUSES] },
         startAt: { lt: endAt },
         endAt: { gt: startAt },
@@ -86,7 +119,7 @@ export async function createPatientAppointmentAction(
   const appointment = await prisma.appointment.create({
     data: {
       patientId,
-      providerId: provider.id,
+      providerId,
       startAt,
       endAt,
       notes,
