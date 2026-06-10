@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { AiConfigTabs } from "./tabs";
 import { prisma } from "@/lib/db/prisma";
+import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
 
 export const metadata = { title: "AI Model Configuration" };
 
@@ -40,7 +41,11 @@ export default async function AiConfigPage() {
         physicianShellTemplateId: "physician-default",
         patientShellTemplateId: "patient-default",
         regulatoryFlags: {
-          aiConfig: {},
+          // Ship inert (EMR-757): new practices default agents OFF; practices
+          // predating the cutoff are grandfathered ON.
+          aiConfig: {
+            fleetDefaultEnabled: defaultFleetEnabledForPractice(practice.createdAt),
+          },
         },
       },
     });

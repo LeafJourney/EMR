@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
+import { persistLlmUsage } from "@/lib/ai/usage-repository";
+import { resolveFleetEnabled } from "./fleet";
 import type { ModelCallOptions, ModelClient } from "./types";
 
 
@@ -14,6 +16,7 @@ import type { ModelCallOptions, ModelClient } from "./types";
  *   server_error   — 5xx / provider hiccup
  *   empty_response — provider returned 200 but no content
  *   network        — fetch itself failed
+ *   timeout        — request exceeded the client timeout
  *   unknown        — fallback
  */
 export type ModelErrorCode =
@@ -24,6 +27,7 @@ export type ModelErrorCode =
   | "server_error"
   | "empty_response"
   | "network"
+  | "timeout"
   | "unknown";
 
 export class ModelError extends Error {
@@ -158,6 +162,41 @@ const FREE_MODEL_CANDIDATES = [
  *   OPENROUTER_SITE_URL    — optional, for OpenRouter attribution
  *   OPENROUTER_APP_NAME    — optional, for OpenRouter attribution
  */
+/**
+ * Request timeout + retry policy. Without these a hung provider connection
+ * blocks the worker forever — no agent passes an abort signal, so the client
+ * must enforce its own deadline. Overridable via env for ops tuning.
+ */
+const DEFAULT_MODEL_TIMEOUT_MS = Number(process.env.AGENT_MODEL_TIMEOUT_MS) || 45_000;
+const DEFAULT_MODEL_MAX_RETRIES =
+  process.env.AGENT_MODEL_MAX_RETRIES != null
+    ? Math.max(0, Number(process.env.AGENT_MODEL_MAX_RETRIES) || 0)
+    : 2;
+
+/**
+ * Whether to silently fall back to a free community `:free` model on a 402/429.
+ * OFF by default: free models carry no BAA, so a PHI-bearing clinical prompt
+ * must never be silently rerouted to one. Opt in (AGENT_ALLOW_FREE_FALLBACK=true)
+ * only for non-PHI demo/dev environments.
+ */
+const DEFAULT_ALLOW_FREE_FALLBACK = process.env.AGENT_ALLOW_FREE_FALLBACK === "true";
+
+/** Sleep that rejects early if the caller's abort signal fires. */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("aborted"));
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new Error("aborted"));
+    };
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export class OpenRouterModelClient implements ModelClient {
   private readonly endpoint = "https://openrouter.ai/api/v1/chat/completions";
   private readonly model: string;
@@ -167,12 +206,30 @@ export class OpenRouterModelClient implements ModelClient {
   private readonly appName: string;
   private readonly defaultMaxTokens: number | undefined;
   private readonly defaultTemperature: number | undefined;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly allowFreeFallback: boolean;
+  private readonly onUsage?: (u: {
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    latencyMs: number;
+  }) => void;
 
   constructor(options?: {
     apiKey?: string;
     model?: string;
     maxTokens?: number;
     temperature?: number;
+    timeoutMs?: number;
+    maxRetries?: number;
+    allowFreeFallback?: boolean;
+    onUsage?: (u: {
+      model: string;
+      tokensIn: number;
+      tokensOut: number;
+      latencyMs: number;
+    }) => void;
   }) {
     const apiKey = options?.apiKey || process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -186,6 +243,10 @@ export class OpenRouterModelClient implements ModelClient {
     this.appName = process.env.OPENROUTER_APP_NAME ?? "Leafjourney";
     this.defaultMaxTokens = options?.maxTokens;
     this.defaultTemperature = options?.temperature;
+    this.timeoutMs = options?.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+    this.maxRetries = options?.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
+    this.allowFreeFallback = options?.allowFreeFallback ?? DEFAULT_ALLOW_FREE_FALLBACK;
+    this.onUsage = options?.onUsage;
   }
 
 
@@ -193,17 +254,18 @@ export class OpenRouterModelClient implements ModelClient {
     prompt: string,
     options?: ModelCallOptions
   ): Promise<string> {
-    // Try primary model first
+    // Try primary model first (with timeout + transient-error retry)
     try {
-      return await this._call(this.model, prompt, options);
+      return await this._callWithRetry(this.model, prompt, options);
     } catch (err) {
-      // On credit-limit (402) or rate-limit (429), fall back to free model
-      if (isModelError(err) && (err.code === "credit_limit" || err.code === "rate_limited")) {
+      // On credit-limit (402) or rate-limit (429), optionally fall back to a
+      // free model — gated, since free models have no BAA (see DEFAULT_ALLOW_FREE_FALLBACK).
+      if (this.allowFreeFallback && isModelError(err) && (err.code === "credit_limit" || err.code === "rate_limited")) {
         console.warn(
           `[OpenRouter] Primary model ${this.model} blocked (${err.code}). Falling back to free model: ${this.freeModel}`
         );
         try {
-          return await this._call(this.freeModel, prompt, options);
+          return await this._callWithRetry(this.freeModel, prompt, options);
         } catch (freeErr) {
           // If the free model also fails, throw the original error
           // with extra context so the UI knows what happened.
@@ -216,6 +278,40 @@ export class OpenRouterModelClient implements ModelClient {
       }
       throw err;
     }
+  }
+
+  /**
+   * Wrap `_call` with bounded retry + exponential backoff for TRANSIENT
+   * failures only (5xx, network, timeout). Deterministic errors (4xx, empty)
+   * are not retried; credit_limit/rate_limited bubble up so `complete()` can
+   * run its free-model fallback.
+   */
+  private async _callWithRetry(
+    model: string,
+    prompt: string,
+    options?: ModelCallOptions
+  ): Promise<string> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await this._call(model, prompt, options);
+      } catch (err) {
+        lastErr = err;
+        const transient =
+          isModelError(err) &&
+          (err.code === "server_error" ||
+            err.code === "network" ||
+            err.code === "timeout");
+        if (!transient || attempt === this.maxRetries) throw err;
+        // 300ms, 600ms, 1200ms … capped at 3s.
+        const backoff = Math.min(3000, 300 * 2 ** attempt);
+        console.warn(
+          `[OpenRouter] ${model} ${(err as ModelError).code} — retry ${attempt + 1}/${this.maxRetries} in ${backoff}ms`
+        );
+        await delay(backoff, options?.signal);
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -236,6 +332,7 @@ export class OpenRouterModelClient implements ModelClient {
       }
     } catch (err) {
       if (
+        this.allowFreeFallback &&
         !yielded &&
         isModelError(err) &&
         (err.code === "credit_limit" || err.code === "rate_limited")
@@ -252,7 +349,7 @@ export class OpenRouterModelClient implements ModelClient {
     }
   }
 
-  /** Low-level call to a specific model. No fallback logic. */
+  /** Low-level call to a specific model. No fallback logic; enforces timeout. */
   private async _call(
     model: string,
     prompt: string,
@@ -268,55 +365,109 @@ export class OpenRouterModelClient implements ModelClient {
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
-    let response: Response;
+    const t0 = Date.now();
+
+    // Total-request timeout combined with any caller-provided signal. Without
+    // this a hung provider connection blocks the worker indefinitely.
+    const controller = new AbortController();
+    let timedOut = false;
+    const onCallerAbort = () => controller.abort();
+    if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    const timeoutError = (where: string) =>
+      new ModelError({
+        code: "timeout",
+        friendly:
+          "The AI provider took too long to respond. Try again in a moment.",
+        providerBody: `${where} timed out after ${this.timeoutMs}ms`,
+        model,
+        requestedMaxTokens,
+      });
+
     try {
-      response = await fetch(this.endpoint, {
-        method: "POST",
-        headers,
-        signal: options?.signal,
-        body: JSON.stringify({
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: requestedMaxTokens,
+            temperature: requestedTemperature,
+          }),
+        });
+      } catch (err) {
+        if (timedOut) throw timeoutError("request");
+        throw new ModelError({
+          code: "network",
+          friendly:
+            "Couldn't reach the AI provider. Check your connection and try again.",
+          providerBody: err instanceof Error ? err.message : String(err),
           model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: requestedMaxTokens,
-          temperature: requestedTemperature,
-        }),
-      });
+          requestedMaxTokens,
+        });
+      }
 
-    } catch (err) {
-      throw new ModelError({
-        code: "network",
-        friendly:
-          "Couldn't reach the AI provider. Check your connection and try again.",
-        providerBody: err instanceof Error ? err.message : String(err),
-        model,
-        requestedMaxTokens,
-      });
-    }
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw classifyOpenRouterError(
+          response.status,
+          body,
+          model,
+          requestedMaxTokens,
+        );
+      }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw classifyOpenRouterError(
-        response.status,
-        body,
-        model,
-        requestedMaxTokens,
-      );
-    }
+      let json: {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      try {
+        json = (await response.json()) as typeof json;
+      } catch (err) {
+        if (timedOut) throw timeoutError("response body");
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned a malformed response. Try again in a moment.",
+          providerBody: err instanceof Error ? err.message : String(err),
+          model,
+          requestedMaxTokens,
+        });
+      }
 
-    const json = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = json.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || content.length === 0) {
-      throw new ModelError({
-        code: "empty_response",
-        friendly:
-          "The AI provider returned an empty response. Try again — if it keeps happening, try a different refinement mode.",
+      const content = json.choices?.[0]?.message?.content;
+      if (typeof content !== "string" || content.length === 0) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned an empty response. Try again — if it keeps happening, try a different refinement mode.",
+          model,
+          requestedMaxTokens,
+        });
+      }
+      // Surface token usage so callers (ConfigurableModelClient) can persist an
+      // LlmUsage row for spend accounting + cost-guardrail reconciliation.
+      this.onUsage?.({
         model,
-        requestedMaxTokens,
+        tokensIn: json.usage?.prompt_tokens ?? 0,
+        tokensOut: json.usage?.completion_tokens ?? 0,
+        latencyMs: Date.now() - t0,
       });
+      return content;
+    } finally {
+      clearTimeout(timer);
+      options?.signal?.removeEventListener("abort", onCallerAbort);
     }
-    return content;
   }
 
   /**
@@ -339,87 +490,149 @@ export class OpenRouterModelClient implements ModelClient {
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
 
-    let response: Response;
+    // Inactivity timeout: abort if the connection or the stream stalls for
+    // longer than timeoutMs, reset on every chunk so a long but live stream
+    // isn't killed. Combined with any caller-provided signal.
+    const controller = new AbortController();
+    let stalled = false;
+    const onCallerAbort = () => controller.abort();
+    if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const armTimer = () => {
+      timer = setTimeout(() => {
+        stalled = true;
+        controller.abort();
+      }, this.timeoutMs);
+    };
+    const resetTimer = () => {
+      clearTimeout(timer);
+      armTimer();
+    };
+    armTimer();
+
+    const t0 = Date.now();
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let outputChars = 0;
+
     try {
-      response = await fetch(this.endpoint, {
-        method: "POST",
-        headers,
-        signal: options?.signal,
-        body: JSON.stringify({
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: requestedMaxTokens,
+            temperature: requestedTemperature,
+            stream: true,
+            // Ask OpenRouter to emit a final usage frame so streamed calls are
+            // recorded in LlmUsage (otherwise they'd undercount spend to zero).
+            stream_options: { include_usage: true },
+          }),
+        });
+      } catch (err) {
+        if (stalled) {
+          throw new ModelError({
+            code: "timeout",
+            friendly:
+              "The AI provider took too long to respond. Try again in a moment.",
+            providerBody: `stream timed out after ${this.timeoutMs}ms`,
+            model,
+            requestedMaxTokens,
+          });
+        }
+        throw new ModelError({
+          code: "network",
+          friendly:
+            "Couldn't reach the AI provider. Check your connection and try again.",
+          providerBody: err instanceof Error ? err.message : String(err),
           model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: requestedMaxTokens,
-          temperature: requestedTemperature,
-          stream: true,
-        }),
-      });
+          requestedMaxTokens,
+        });
+      }
 
-    } catch (err) {
-      throw new ModelError({
-        code: "network",
-        friendly:
-          "Couldn't reach the AI provider. Check your connection and try again.",
-        providerBody: err instanceof Error ? err.message : String(err),
-        model,
-        requestedMaxTokens,
-      });
-    }
+      if (!response.ok || !response.body) {
+        const body = response.body ? await response.text().catch(() => "") : "";
+        throw classifyOpenRouterError(
+          response.status,
+          body,
+          model,
+          requestedMaxTokens,
+        );
+      }
 
-    if (!response.ok || !response.body) {
-      const body = response.body ? await response.text().catch(() => "") : "";
-      throw classifyOpenRouterError(
-        response.status,
-        body,
-        model,
-        requestedMaxTokens,
-      );
-    }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let sawContent = false;
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let sawContent = false;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          resetTimer();
+          buffer += decoder.decode(value, { stream: true });
 
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE framing: events separated by blank lines, each line prefixed with "data: ".
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl).replace(/\r$/, "");
-          buffer = buffer.slice(nl + 1);
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(payload) as {
-              choices?: Array<{ delta?: { content?: string } }>;
-            };
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (typeof delta === "string" && delta.length > 0) {
-              sawContent = true;
-              yield delta;
+          // SSE framing: events separated by blank lines, each "data: "-prefixed.
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).replace(/\r$/, "");
+            buffer = buffer.slice(nl + 1);
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(payload) as {
+                choices?: Array<{ delta?: { content?: string } }>;
+                usage?: { prompt_tokens?: number; completion_tokens?: number };
+              };
+              if (parsed.usage) {
+                tokensIn = parsed.usage.prompt_tokens ?? tokensIn;
+                tokensOut = parsed.usage.completion_tokens ?? tokensOut;
+              }
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (typeof delta === "string" && delta.length > 0) {
+                sawContent = true;
+                outputChars += delta.length;
+                yield delta;
+              }
+            } catch {
+              // Provider sometimes inserts comment lines (": OPENROUTER PROCESSING") — ignore.
             }
-          } catch {
-            // Provider sometimes inserts comment lines (": OPENROUTER PROCESSING") — ignore.
           }
         }
+      } finally {
+        reader.releaseLock();
       }
-    } finally {
-      reader.releaseLock();
-    }
 
-    if (!sawContent) {
-      throw new ModelError({
-        code: "empty_response",
-        friendly:
-          "The AI provider returned an empty stream. Try again in a moment.",
+      if (!sawContent) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly:
+            "The AI provider returned an empty stream. Try again in a moment.",
+          model,
+          requestedMaxTokens,
+        });
+      }
+
+      // Record usage symmetric with _call. If the provider omitted the usage
+      // frame, fall back to a chars/4 estimate so a streamed call is never
+      // silently recorded as zero-cost.
+      this.onUsage?.({
         model,
-        requestedMaxTokens,
+        tokensIn: tokensIn || Math.ceil(prompt.length / 4),
+        tokensOut: tokensOut || Math.ceil(outputChars / 4),
+        latencyMs: Date.now() - t0,
       });
+    } finally {
+      clearTimeout(timer);
+      options?.signal?.removeEventListener("abort", onCallerAbort);
     }
   }
 }
@@ -597,7 +810,6 @@ export class ConfigurableModelClient implements ModelClient {
       }
 
       const defaultModel = aiConfig?.defaultModel;
-      const fleetOverrides = aiConfig?.fleet;
 
       let provider = defaultModel?.provider || process.env.AGENT_MODEL_CLIENT || "stub";
       let modelId = defaultModel?.modelId;
@@ -605,23 +817,24 @@ export class ConfigurableModelClient implements ModelClient {
       let maxTokens = defaultModel?.maxTokens;
       let temperature = defaultModel?.temperature;
 
-      // Apply fleet overrides if matching agentName
-      if (this.agentName && fleetOverrides && fleetOverrides[this.agentName]) {
-        const override = fleetOverrides[this.agentName];
-        if (override.enabled === false) {
-          return new StubModelClient();
-        }
-        if (override.modelId) {
-          modelId = override.modelId;
-          try {
-            const { findModel } = await import("@/lib/domain/byok");
-            const found = findModel(modelId);
-            if (found) {
-              provider = found.provider;
-            }
-          } catch (e) {
-            console.error("Failed to dynamically import @/lib/domain/byok or find model:", e);
+      // Fleet gating (EMR-757 — ship inert). An agent runs only if explicitly
+      // enabled, or if the practice's fleet default is enabled. New practices
+      // seed fleetDefaultEnabled:false; practices predating the field are
+      // grandfathered (absent ⇒ enabled). Explicit per-agent override wins.
+      const fleet = resolveFleetEnabled(aiConfig, this.agentName);
+      if (!fleet.enabled) {
+        return new StubModelClient();
+      }
+      if (fleet.modelId) {
+        modelId = fleet.modelId;
+        try {
+          const { findModel } = await import("@/lib/domain/byok");
+          const found = findModel(fleet.modelId);
+          if (found) {
+            provider = found.provider;
           }
+        } catch (e) {
+          console.error("Failed to dynamically import @/lib/domain/byok or find model:", e);
         }
       }
 
@@ -631,11 +844,28 @@ export class ConfigurableModelClient implements ModelClient {
           console.warn("OpenRouter API key missing in ConfigurableModelClient. Falling back to StubModelClient.");
           return new StubModelClient();
         }
+        const usageOrgId = orgId;
+        const usageAgentName = this.agentName ?? "unknown";
         return new OpenRouterModelClient({
           apiKey: finalApiKey,
           model: modelId,
           maxTokens: maxTokens ? Number(maxTokens) : undefined,
           temperature: temperature ? Number(temperature) : undefined,
+          onUsage: (u) => {
+            // Fire-and-forget: a usage write must never block or fail the model
+            // call. Skip when the call isn't org-scoped (nothing to bill to).
+            if (!usageOrgId) return;
+            void persistLlmUsage({
+              organizationId: usageOrgId,
+              agentBucket: "uncategorized",
+              agentName: usageAgentName,
+              model: u.model,
+              tokensIn: u.tokensIn,
+              tokensOut: u.tokensOut,
+              latencyMs: u.latencyMs,
+              ok: true,
+            });
+          },
         });
       }
 

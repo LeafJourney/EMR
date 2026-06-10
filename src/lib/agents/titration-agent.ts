@@ -130,7 +130,11 @@ Guidelines:
 
     let raw = "";
     try {
-      raw = await ctx.model.complete(prompt, { maxTokens: 400, temperature: 0.2 });
+      raw = await ctx.model.complete(prompt, {
+        maxTokens: 400,
+        temperature: 0.2,
+        redactNames: [regimen.patient.firstName, regimen.patient.lastName].filter(Boolean),
+      });
     } catch (err) {
       ctx.log("warn", "Model call failed; falling back to deterministic heuristic", {
         error: err instanceof Error ? err.message : String(err),

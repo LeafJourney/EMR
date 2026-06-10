@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     });
 
     let missedOpportunitiesFound = 0;
+    const recommendations: Array<{ claimId: string; suggestions: string[] }> = [];
 
     for (const claim of draftClaims) {
       if (!claim.encounter?.reason) continue;
@@ -49,29 +50,28 @@ export async function POST(req: Request) {
         }
       }
 
-      // 3. Flag Claim for review
+      // ADVISORY ONLY — never change claim status. The previous version flipped
+      // the claim to "scrub_blocked" (a real blocking status) off mock substring
+      // rules with no human in the loop; repeated calls could stall the entire
+      // billing pipeline. Collect suggestions for a coder to review/apply.
       if (suggestions.length > 0) {
-        await prisma.claim.update({
-          where: { id: claim.id },
-          data: {
-            status: "scrub_blocked",
-            // Assume we can append suggestions to notes
-          }
-        });
-
-        logger.info({ 
-          event: "agents.coding_auditor.missed_revenue_found", 
-          claimId: claim.id, 
-          suggestions 
+        recommendations.push({ claimId: claim.id, suggestions });
+        logger.info({
+          event: "agents.coding_auditor.missed_revenue_found",
+          claimId: claim.id,
+          suggestions,
         });
         missedOpportunitiesFound++;
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
       claimsAudited: draftClaims.length,
-      missedOpportunitiesFound
+      missedOpportunitiesFound,
+      recommendations,
     });
 
   } catch (error) {

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 
 // EMR-075: Patient Treatment Protocol Generator
@@ -31,24 +30,22 @@ export async function POST(req: Request) {
       milestones: ["Week 4 Check-in", "Week 12 Efficacy Evaluation"]
     };
 
-    // 2. Save the Protocol to the database (Assuming a structured JSON field or Protocol table)
-    // We will attach it to the patient's record as a draft for provider review
-    await prisma.patient.update({
-      where: { id: payload.patientId },
-      data: {
-        treatmentGoals: JSON.stringify(protocolDraft)
-      }
+    // ADVISORY ONLY — this agent must NOT write to the chart. The previous
+    // version overwrote patient.treatmentGoals wholesale with a hardcoded
+    // titration protocol (destroying the clinician's existing goals) off mock
+    // logic, presented as validated guidance. Return the draft protocol for
+    // clinician review/acceptance; persist nothing.
+    logger.info({
+      event: "agents.protocol_generator.suggested",
+      patientId: payload.patientId,
+      diagnosis: payload.primaryDiagnosis,
     });
 
-    logger.info({ 
-      event: "agents.protocol_generator.completed", 
-      patientId: payload.patientId, 
-      diagnosis: payload.primaryDiagnosis 
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      protocol: protocolDraft
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
+      protocol: protocolDraft,
     });
 
   } catch (error) {

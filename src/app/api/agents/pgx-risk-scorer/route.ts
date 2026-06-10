@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
 
 // EMR-077: Pharmacogenomics (PGx) Risk Scorer
@@ -44,27 +43,22 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Alert Provider Context
-    if (flags.length > 0) {
-      // Append these permanent PGx warnings to the patient's briefing context or clinical warnings
-      await prisma.patient.update({
-        where: { id: patientId },
-        data: {
-          // We assume a `pgxWarnings` JSON column or appending to `presentingConcerns`
-          cannabisHistory: { pgxFlags: flags }
-        }
-      });
-    }
-
-    logger.info({ 
-      event: "agents.pgx_scorer.completed", 
-      patientId, 
-      flagsFound: flags.length 
+    // ADVISORY ONLY — this agent must NOT write to the chart. The previous
+    // version overwrote patient.cannabisHistory wholesale with mock PGx flags
+    // (a "75% dose reduction" off hardcoded CYP2C9/3A4 logic), clobbering the
+    // real cannabis-history field and presenting unvalidated guidance as fact.
+    // Return the flags for clinician review; persist nothing.
+    logger.info({
+      event: "agents.pgx_scorer.suggested",
+      patientId,
+      flagsFound: flags.length,
     });
 
-    return NextResponse.json({ 
-      success: true, 
-      flags
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
+      flags,
     });
 
   } catch (error) {

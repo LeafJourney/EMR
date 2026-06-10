@@ -187,6 +187,7 @@ If drafting a message reveals or teaches you something new that we should rememb
       raw = await ctx.model.complete(prompt, {
         maxTokens: 512,
         temperature: 0.35,
+        redactNames: [patient.firstName, patient.lastName].filter(Boolean),
       });
       usedLLM = raw.length > 50 && !raw.startsWith("[stub");
       trace.step("llm call complete", { usedLLM, rawLen: raw.length });

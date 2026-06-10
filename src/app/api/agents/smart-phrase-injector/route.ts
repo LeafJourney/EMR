@@ -34,34 +34,42 @@ export async function POST(req: Request) {
       smartPhrase = "Patient has intractable symptoms unresponsive to standard first-line therapies. Risks and benefits of medical cannabis discussed at length.";
     }
 
+    // ADVISORY ONLY — this agent must NOT write to the chart. Auto-injecting
+    // medical-necessity language a clinician never authored (e.g. "failed >3
+    // months of conservative therapy") is a documentation-integrity and
+    // billing-compliance hazard. We return the suggested phrase for the
+    // clinician to review and accept in the UI; we never mutate Encounter.reason.
+    // (Was: prisma.encounter.update — see EMR-115 follow-up to wire real review.)
     if (smartPhrase) {
-      // 2. Inject phrase into Encounter Plan
-      const encounter = await prisma.encounter.findUnique({ where: { id: payload.encounterId } });
-      
-      if (encounter) {
-        const updatedReason = encounter.reason ? `${encounter.reason}\n\n[Medical Necessity]\n${smartPhrase}` : `[Medical Necessity]\n${smartPhrase}`;
-        
-        await prisma.encounter.update({
-          where: { id: payload.encounterId },
-          data: { reason: updatedReason }
-        });
+      // Confirm the encounter exists so the suggestion is scoped to a real
+      // chart, but perform no write.
+      const encounter = await prisma.encounter.findUnique({
+        where: { id: payload.encounterId },
+        select: { id: true },
+      });
 
-        logger.info({ 
-          event: "agents.smart_phrase.injected", 
-          encounterId: payload.encounterId, 
-          icd10Code: payload.icd10Code 
-        });
-      }
+      logger.info({
+        event: "agents.smart_phrase.suggested",
+        encounterId: payload.encounterId,
+        icd10Code: payload.icd10Code,
+        encounterFound: Boolean(encounter),
+      });
 
-      return NextResponse.json({ 
-        success: true, 
-        injectedPhrase: smartPhrase
+      return NextResponse.json({
+        success: true,
+        advisory: true,
+        applied: false,
+        encounterFound: Boolean(encounter),
+        suggestedPhrase: smartPhrase,
+        requiresClinicianReview: true,
       });
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      injectedPhrase: null
+    return NextResponse.json({
+      success: true,
+      advisory: true,
+      applied: false,
+      suggestedPhrase: null,
     });
 
   } catch (error) {
