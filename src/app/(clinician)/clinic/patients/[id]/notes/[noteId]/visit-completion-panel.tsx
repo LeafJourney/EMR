@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
+  CalendarPlus,
   Check,
   ClipboardCheck,
   Clock3,
@@ -31,6 +32,7 @@ import type {
   VisitCompletionStatus,
   VisitCompletionTone,
 } from "@/lib/domain/visit-completion";
+import { deriveFollowUpBooking } from "@/lib/domain/visit-completion";
 import {
   applyVisitCompletionAction,
   buildVisitCompletionReleasePayload,
@@ -64,6 +66,7 @@ const actionIcons: Record<string, React.ComponentType<{ className?: string }>> =
   remove_item: X,
   edit_item: Pencil,
   defer_item: Clock3,
+  book_follow_up: CalendarPlus,
   send_to_front_desk: UserRoundCheck,
   text_scheduling_link: Send,
   edit_interval: Pencil,
@@ -139,8 +142,9 @@ const detailCopy: Record<
     instruction: "Confirm interval, routing, scheduling handoff, and any patient link.",
     question: "Is this follow-up handoff clinically and operationally correct?",
     confirmNote: "Follow-up plan reviewed in the card detail panel.",
-    releaseWillDo: "Creates a front-office scheduling task from the reviewed follow-up plan.",
-    releaseWillNotDo: "Does not book an appointment or text the patient automatically.",
+    releaseWillDo:
+      "Books a pre-filled follow-up appointment (front desk confirms the slot) or, as a fallback, creates a front-office scheduling task.",
+    releaseWillNotDo: "Does not text the patient or finalize the slot automatically.",
   },
   patient_message: {
     instruction: "Preview the patient-facing plan, channel, print needs, and translation needs.",
@@ -354,6 +358,24 @@ export function VisitCompletionPanel({
         setEditDraft("");
         openCardDetails(card.id, "edit");
         return;
+      case "book_follow_up": {
+        // One-click booking: stage the follow-up as a real appointment using the
+        // interval inferred from the note, then open the drawer so the physician
+        // sees the proposed slot. The Appointment is created on Release Care Plan
+        // (see releaseVisitCompletion); "Send to front desk" remains the fallback.
+        const interval = inferFollowUpInterval(card);
+        applyLocalAction({
+          type: "edit_card",
+          cardId: card.id,
+          note: `Book a follow-up appointment in ${interval}.`,
+          structuredEdit: {
+            followUpInterval: interval,
+            followUpRouting: "book_appointment",
+          },
+        });
+        openCardDetails(card.id, "edit");
+        return;
+      }
       case "coding_review":
         // EMR-1100: "Review coding" deep-links to the note's coding section
         // (the EMR-1097 approval UI) rather than the generic drawer. Fall
@@ -1007,11 +1029,29 @@ function VisitCompletionStructuredEditForm({
                 }))
               }
             >
+              <option value="book_appointment">Book follow-up appointment</option>
               <option value="front_desk">Front desk scheduling task</option>
               <option value="scheduling_link">Text scheduling link</option>
               <option value="no_handoff">No scheduling handoff</option>
             </select>
           </label>
+          {draft.followUpRouting === "book_appointment" && (
+            <p className="md:col-span-2 text-xs leading-relaxed text-text-muted">
+              {(() => {
+                const proposal = deriveFollowUpBooking({
+                  followUpInterval: draft.followUpInterval,
+                  modality: null,
+                  now: new Date(),
+                });
+                return proposal
+                  ? `Releasing will book a pre-filled appointment around ${proposal.startAt.toLocaleDateString(
+                      "en-US",
+                      { weekday: "short", month: "short", day: "numeric", year: "numeric" },
+                    )} (front desk confirms the exact slot).`
+                  : "Enter an interval like “6 weeks” to propose a slot; otherwise this routes to the front desk.";
+              })()}
+            </p>
+          )}
         </div>
       )}
 
@@ -1276,6 +1316,7 @@ const followUpRoutingLabel: Record<
   NonNullable<VisitCompletionStructuredEdit["followUpRouting"]>,
   string
 > = {
+  book_appointment: "book follow-up appointment",
   front_desk: "front desk scheduling task",
   scheduling_link: "text scheduling link",
   no_handoff: "no scheduling handoff",
@@ -1807,6 +1848,22 @@ function structuredReleaseDetailsForSection(
   }
   if (edit.followUpRouting) {
     details.push(`Handoff: ${followUpRoutingLabel[edit.followUpRouting]}`);
+  }
+  if (edit.followUpRouting === "book_appointment") {
+    const proposal = deriveFollowUpBooking({
+      followUpInterval: edit.followUpInterval,
+      modality: null,
+      now: new Date(),
+    });
+    if (proposal) {
+      details.push(
+        `Proposed: ${proposal.startAt.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}`,
+      );
+    }
   }
   if (edit.patientMessageChannel) {
     details.push(`Channel: ${patientMessageChannelLabel[edit.patientMessageChannel]}`);

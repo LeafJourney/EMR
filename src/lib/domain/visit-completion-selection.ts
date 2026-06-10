@@ -27,7 +27,7 @@ export interface VisitCompletionStructuredEdit {
   customLabels?: string[];
   physicianNote?: string;
   followUpInterval?: string;
-  followUpRouting?: "front_desk" | "scheduling_link" | "no_handoff";
+  followUpRouting?: "front_desk" | "scheduling_link" | "no_handoff" | "book_appointment";
   patientMessageDraft?: string;
   patientMessageChannel?: "portal" | "print" | "sms" | "translation";
   practiceReadinessOwner?: "back_office" | "front_office" | "clinician" | "billing";

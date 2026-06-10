@@ -33,6 +33,7 @@ import {
 } from "@/lib/domain/notes";
 import { advanceVisitState } from "@/lib/domain/visit-state";
 import type { VisitCompletionReleasePayload } from "@/lib/domain/visit-completion-selection";
+import { deriveFollowUpBooking } from "@/lib/domain/visit-completion";
 
 const blockSchema = z.object({
   heading: z.string(),
@@ -943,21 +944,63 @@ export async function releaseVisitCompletion(
         });
       }
 
-      // 3. Follow-Up Plan: Create a Task for front-office scheduling
+      // 3. Follow-Up Plan. One-click booking (audit minor #7): when the
+      // physician chose "Book follow-up", create a real pre-filled Appointment
+      // (provider + modality + patient carried from this visit) instead of a
+      // free-text scheduling task — the appointment is `requested` so the front
+      // desk confirms the exact slot. Any other routing (or an unparseable
+      // interval) falls back to the front-office scheduling task.
       const followUpSection = payload.includedSections.find((s) => s.cardId === "follow_up");
       if (followUpSection && followUpSection.labels.length > 0) {
-        await tx.task.create({
-          data: {
-            organizationId: user.organizationId!,
-            patientId: encounter.patientId,
-            title: `Follow-Up: ${followUpSection.labels.join(", ")}`,
-            description: `Follow-up plan released by physician.\n\nNote: ${
-              followUpSection.editNote || followUpSection.confirmationNote || "Approved"
-            }`,
-            status: "open",
-            assigneeRole: "front_office",
-          },
-        });
+        const booking =
+          followUpSection.structuredEdit?.followUpRouting === "book_appointment"
+            ? deriveFollowUpBooking({
+                followUpInterval: followUpSection.structuredEdit.followUpInterval,
+                modality: encounter.modality,
+                now: new Date(),
+              })
+            : null;
+
+        if (booking) {
+          const appointment = await tx.appointment.create({
+            data: {
+              patientId: encounter.patientId,
+              providerId: encounter.providerId ?? encounter.renderingProviderId ?? undefined,
+              startAt: booking.startAt,
+              endAt: booking.endAt,
+              modality: booking.modality,
+              status: "requested",
+              notes: "Follow-up booked from visit wrap-up",
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              organizationId: user.organizationId!,
+              actorUserId: user.id,
+              action: "visit_completion.follow_up.booked",
+              subjectType: "Appointment",
+              subjectId: appointment.id,
+              metadata: {
+                noteId,
+                intervalDays: booking.intervalDays,
+                modality: booking.modality,
+              } as any,
+            },
+          });
+        } else {
+          await tx.task.create({
+            data: {
+              organizationId: user.organizationId!,
+              patientId: encounter.patientId,
+              title: `Follow-Up: ${followUpSection.labels.join(", ")}`,
+              description: `Follow-up plan released by physician.\n\nNote: ${
+                followUpSection.editNote || followUpSection.confirmationNote || "Approved"
+              }`,
+              status: "open",
+              assigneeRole: "front_office",
+            },
+          });
+        }
       }
 
       // 4. Patient Communication: Create a draft Message to the patient

@@ -24,6 +24,7 @@ export type VisitCompletionProposedActionType =
   | "send_to_staff"
   | "send_to_patient"
   | "text_scheduling_link"
+  | "book_follow_up"
   | "print"
   | "coding_review"
   | "create_staff_task"
@@ -309,7 +310,10 @@ function buildFollowUpCard(text: string, hasFutureAppointment: boolean): VisitCo
     subtitle: "Recommended next touchpoint and scheduling handoff.",
     items,
     actions: [
-      action("send_to_front_desk", "Send to front desk", "primary", "send_to_staff"),
+      // One-click booking is the primary path; the free-text front-desk task
+      // stays as the fallback for complex scheduling (audit minor #7).
+      action("book_follow_up", "Book follow-up", "primary", "book_follow_up"),
+      action("send_to_front_desk", "Send to front desk", "secondary", "send_to_staff"),
       action("text_scheduling_link", "Text scheduling link", "secondary", "text_scheduling_link"),
       action("edit_interval", "Edit interval", "secondary", "edit"),
       action("defer_item", "Defer", "secondary", "defer"),
@@ -550,11 +554,81 @@ const ACTION_DISPOSITION_COPY: Record<VisitCompletionProposedActionType, string>
   send_to_staff: "Stage a front-desk hand-off — created only when you Release Care Plan.",
   send_to_patient: "Stage a patient message — sent only when you Release Care Plan.",
   text_scheduling_link: "Stage a scheduling-link text — sent only when you Release Care Plan.",
+  book_follow_up:
+    "Stage a pre-filled follow-up appointment — booked only when you Release Care Plan.",
   print: "Stage a printout — generated only when you Release Care Plan.",
   coding_review: "Stage coding for review. Nothing is submitted until you Release Care Plan.",
   create_staff_task: "Stage a staff task — created only when you Release Care Plan.",
   view_checks: "View the safety checks behind this card.",
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// One-click follow-up booking (WS-B / audit minor #7)
+// ───────────────────────────────────────────────────────────────────────────
+// The Follow-Up card's "Book follow-up" action derives a concrete slot from the
+// note's follow-up interval (the same free-text the heuristic already parses)
+// so the visit-completion release can create a real Appointment instead of a
+// free-text front-desk task. Pure + deterministic so both the panel (preview)
+// and the server (authoritative booking) compute the same slot. Returns null
+// when no interval can be parsed — the caller falls back to the front-desk task.
+
+export interface FollowUpBookingProposal {
+  intervalDays: number;
+  modality: string;
+  startAt: Date;
+  endAt: Date;
+}
+
+const FOLLOW_UP_DEFAULT_DURATION_MIN = 30;
+const FOLLOW_UP_DEFAULT_HOUR = 9; // propose a 9am slot; the front desk confirms
+
+/** Parse a free-text follow-up interval ("6 weeks", "10 days", "2 months") to days. */
+export function parseFollowUpIntervalDays(interval: string | null | undefined): number | null {
+  if (!interval) return null;
+  const match = interval.toLowerCase().match(/(\d+)\s*([a-z]+)/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = match[2];
+  if (unit.startsWith("d")) return n; // day / days
+  if (unit.startsWith("w")) return n * 7; // week / weeks / wk
+  if (unit.startsWith("m")) return n * 30; // month / months / mo
+  return null;
+}
+
+function normalizeFollowUpModality(modality: string | null | undefined): string {
+  return modality === "video" || modality === "phone" || modality === "in_person"
+    ? modality
+    : "in_person";
+}
+
+/**
+ * Derive a concrete follow-up appointment slot from the note's interval and the
+ * visit's modality. `now` is injected so the result is deterministic/testable.
+ */
+export function deriveFollowUpBooking(input: {
+  followUpInterval: string | null | undefined;
+  modality: string | null | undefined;
+  now: Date;
+  durationMinutes?: number;
+}): FollowUpBookingProposal | null {
+  const intervalDays = parseFollowUpIntervalDays(input.followUpInterval);
+  if (intervalDays == null) return null;
+
+  const startAt = new Date(input.now);
+  startAt.setDate(startAt.getDate() + intervalDays);
+  startAt.setHours(FOLLOW_UP_DEFAULT_HOUR, 0, 0, 0);
+
+  const durationMinutes = input.durationMinutes ?? FOLLOW_UP_DEFAULT_DURATION_MIN;
+  const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
+
+  return {
+    intervalDays,
+    modality: normalizeFollowUpModality(input.modality),
+    startAt,
+    endAt,
+  };
+}
 
 function action(
   id: string,
