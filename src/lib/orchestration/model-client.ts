@@ -838,8 +838,38 @@ export class ConfigurableModelClient implements ModelClient {
         }
       }
 
+      // Membership entitlement gate (Phase 1). Don't spend on an org whose
+      // subscription isn't current; degrade to the stub instead. Best-effort:
+      // any failure fails open so a transient lookup never strands the fleet.
+      if (orgId) {
+        try {
+          const { isOrgAiEntitled } = await import("@/lib/ai/ai-entitlement");
+          const ent = await isOrgAiEntitled(orgId);
+          if (!ent.entitled) {
+            console.warn(
+              `AI call gated for org ${orgId} (${ent.reason ?? "not_entitled"}); using stub.`,
+            );
+            return new StubModelClient();
+          }
+        } catch {
+          // fail open — entitlement lookup must not break clinical calls
+        }
+      }
+
       if (provider.toLowerCase() === "openrouter") {
-        const finalApiKey = apiKey || process.env.OPENROUTER_API_KEY;
+        // Key resolution order: the org's encrypted BYOK key → legacy plaintext
+        // from the config blob (pre-migration only) → the platform key. The
+        // BYOK key is decrypted server-side here and never reaches the client.
+        let finalApiKey: string | undefined;
+        if (orgId) {
+          try {
+            const { resolveByokApiKey } = await import("@/lib/ai/credential-store");
+            finalApiKey = (await resolveByokApiKey(orgId)) ?? undefined;
+          } catch {
+            // fall through to legacy / platform key
+          }
+        }
+        finalApiKey = finalApiKey || apiKey || process.env.OPENROUTER_API_KEY;
         if (!finalApiKey) {
           console.warn("OpenRouter API key missing in ConfigurableModelClient. Falling back to StubModelClient.");
           return new StubModelClient();

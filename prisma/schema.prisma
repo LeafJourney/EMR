@@ -82,6 +82,7 @@ model Organization {
   auditLogs                AuditLog[]
   agentJobs                AgentJob[]
   agentOutcomes            AgentOutcome[]
+  aiCredential             OrgAiCredential?
   agentFeedback            AgentFeedback[]
   escalationCases          EscalationCase[]
   launchStatus             PracticeLaunchStatus?
@@ -228,6 +229,7 @@ model User {
   auditLogs                 AuditLog[]
   approvedJobs              AgentJob[]                  @relation("JobApprovedBy")
   agentOutcomeDecisions     AgentOutcome[]              @relation("AgentOutcomeDecider")
+  aiCredentialsSet          OrgAiCredential[]           @relation("AiCredentialKeySetBy")
   notifications             Notification[]
   communicationPreference   CommunicationPreference?
   signedLabResults          LabResult[]                 @relation("LabResultSigner")
@@ -1988,6 +1990,41 @@ model AgentOutcome {
   @@index([subjectType, subjectId])
   // Trace a job to its outcome.
   @@index([agentJobId])
+}
+
+// Managed (platform key) vs BYOK (practice's own key) AI credential mode.
+enum OrgAiMode {
+  managed
+  byok
+}
+
+// Phase 1 — per-org AI credential, separate from the general config blob.
+//
+// Secrets must NOT live in PracticeConfiguration.regulatoryFlags (a JSON blob
+// that gets logged, diffed, and serialized to clients). This dedicated row
+// holds the credential so reads can be scoped server-only and the key never
+// reaches the browser.
+//
+//   managed: encryptedApiKey is null — the org uses LeafJourney's platform key
+//            (held in the secrets manager) and is metered + marked up.
+//   byok:    encryptedApiKey holds an AES-256-GCM envelope (encryptString) of
+//            the practice's own provider key, bound to the org via AAD.
+model OrgAiCredential {
+  id              String    @id @default(cuid())
+  organizationId  String    @unique
+  mode            OrgAiMode @default(managed)
+  provider        String?
+  modelId         String?
+  /// AES-256-GCM envelope of the BYOK provider key. Null for managed accounts.
+  /// Never selected into client components; decrypted only in the call path.
+  encryptedApiKey String?
+  keySetAt        DateTime?
+  keySetById      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  keySetBy     User?        @relation("AiCredentialKeySetBy", fields: [keySetById], references: [id])
 }
 
 // --------------------------------------------------------------

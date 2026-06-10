@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
 import { mergeAiConfig } from "@/lib/practice-config/ai-config-merge";
+import { setOrgAiCredential, getOrgAiCredentialView } from "@/lib/ai/credential-store";
 
 export async function saveAiConfigAction(data: {
   defaultModel?: {
@@ -66,13 +67,46 @@ export async function saveAiConfigAction(data: {
   const existingFlags = (practiceConfig.regulatoryFlags ?? {}) as Record<string, any>;
   const existingAiConfig = existingFlags.aiConfig ?? {};
 
+  // The API key is a secret — it must never land in the regulatoryFlags blob.
+  // Strip it before the merge; the real key is routed to the encrypted
+  // OrgAiCredential store below.
+  const modelForBlob = data.defaultModel
+    ? { ...data.defaultModel, apiKey: undefined }
+    : undefined;
+
   // Merge the edit onto the existing config WITHOUT dropping untouched keys.
   // (Rebuilding as { defaultModel, fleet } used to erase fleetDefaultEnabled —
   // the ship-inert flag — re-enabling the whole fleet on the first save.)
   const updatedAiConfig = mergeAiConfig(existingAiConfig, {
-    defaultModel: data.defaultModel,
+    defaultModel: modelForBlob,
     fleet: data.fleet,
   });
+
+  // Persist the credential (provider/model/mode + encrypted key) out-of-band.
+  // setOrgAiCredential leaves the stored key untouched when the UI sends the
+  // masked sentinel or no key, and only encrypts when a real key is supplied.
+  if (data.defaultModel) {
+    try {
+      await setOrgAiCredential({
+        organizationId: user.organizationId,
+        provider: data.defaultModel.provider,
+        modelId: data.defaultModel.modelId,
+        apiKeyPlaintext: data.defaultModel.apiKey,
+        setById: user.id,
+      });
+    } catch {
+      throw new Error(
+        "Could not securely store the API key. Encryption is not configured (EMR_PHI_KEK).",
+      );
+    }
+  }
+
+  // Reflect "key on file" in the blob for the UI's masked state — never the key.
+  const credView = await getOrgAiCredentialView(user.organizationId);
+  if (updatedAiConfig.defaultModel) {
+    updatedAiConfig.defaultModel.apiKey = "";
+    updatedAiConfig.defaultModel.apiKeySet = !!credView?.apiKeySet;
+  }
 
   await prisma.practiceConfiguration.update({
     where: { id: practiceConfig.id },

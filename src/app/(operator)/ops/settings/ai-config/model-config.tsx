@@ -30,7 +30,7 @@ export function ModelConfigPanel({
         provider: initialAiConfig.defaultModel.provider,
         modelId: initialAiConfig.defaultModel.modelId,
         displayName: "",
-        apiKeySet: !!initialAiConfig.defaultModel.apiKey,
+        apiKeySet: !!(initialAiConfig.defaultModel.apiKey || initialAiConfig.defaultModel.apiKeySet),
         isDefault: false,
         maxTokens: initialAiConfig.defaultModel.maxTokens ?? 1024,
         temperature: initialAiConfig.defaultModel.temperature ?? 0.3,
@@ -38,7 +38,9 @@ export function ModelConfigPanel({
     }
     return getDefaultConfig();
   });
-  const [apiKey, setApiKey] = useState(() => (initialAiConfig?.defaultModel?.apiKey ? "••••••••" : ""));
+  const [apiKey, setApiKey] = useState(() =>
+    initialAiConfig?.defaultModel?.apiKey || initialAiConfig?.defaultModel?.apiKeySet ? "••••••••" : "",
+  );
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [saved, setSaved] = useState(false);
 

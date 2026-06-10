@@ -3,6 +3,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { AiConfigTabs } from "./tabs";
 import { prisma } from "@/lib/db/prisma";
 import { defaultFleetEnabledForPractice } from "@/lib/orchestration/fleet";
+import { getOrgAiCredentialView } from "@/lib/ai/credential-store";
 
 export const metadata = { title: "AI Model Configuration" };
 
@@ -52,7 +53,24 @@ export default async function AiConfigPage() {
   }
 
   const flags = (practiceConfig.regulatoryFlags ?? {}) as Record<string, any>;
-  const aiConfig = flags.aiConfig ?? {};
+  let aiConfig = flags.aiConfig ?? {};
+
+  // Overlay the credential store (the source of truth for provider/model + the
+  // "key on file" flag) so the UI shows the masked state without the secret —
+  // the encrypted key itself is never loaded here.
+  const credView = await getOrgAiCredentialView(organizationId);
+  if (credView) {
+    aiConfig = {
+      ...aiConfig,
+      defaultModel: {
+        ...(aiConfig.defaultModel ?? {}),
+        provider: aiConfig.defaultModel?.provider ?? credView.provider,
+        modelId: aiConfig.defaultModel?.modelId ?? credView.modelId,
+        apiKey: "",
+        apiKeySet: credView.apiKeySet,
+      },
+    };
+  }
 
   // The per-account markup (set at account setup) drives the predictive fee the
   // practice sees. Null falls back to the platform default (2×) in code.
