@@ -51,6 +51,8 @@ import { staleClaimMonitorAgent } from "./billing/stale-claim-monitor-agent";
 import { wellnessCoachAgent } from "./wellness-coach-agent";
 import { refillReminderAgent } from "./refill-reminder-agent";
 import { appointmentReminderAgent } from "./appointment-reminder-agent";
+// EMR-1115 (PJ-3) — appointment lifecycle comms (confirmations + cancellations)
+import { appointmentLifecycleAgent } from "./appointment-lifecycle-agent";
 import { labFollowupAgent } from "./lab-followup-agent";
 import { retentionRiskAgent } from "./retention-risk-agent";
 import { contentCreationAgent } from "./content-creation-agent";
@@ -174,6 +176,7 @@ export const agentRegistry = {
   wellnessCoach: wellnessCoachAgent,
   refillReminder: refillReminderAgent,
   appointmentReminder: appointmentReminderAgent,
+  appointmentLifecycle: appointmentLifecycleAgent,
   labFollowup: labFollowupAgent,
   retentionRisk: retentionRiskAgent,
   contentCreation: contentCreationAgent,

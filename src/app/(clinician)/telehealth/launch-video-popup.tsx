@@ -89,9 +89,11 @@ export function LaunchVideoPopup() {
     setOpen(false);
     // The patient telehealth surface owns room creation + token issuance
     // and (per EMR-652) the in-call ambient-scribe toggle that displays a
-    // "scribe is recording" indicator. The doc-2 spec also calls for
-    // emailing the patient a HIPAA-compliant clickable telemed link;
-    // that send fires server-side when the room is provisioned.
+    // "scribe is recording" indicator. When the room is provisioned
+    // (startTelehealthVisit, EMR-1115) the patient's join link is delivered
+    // as a secure portal message + notification, and a "Join video visit"
+    // button appears on their portal Appointments page. There is no email
+    // send — delivery is in-portal.
     router.push(`/clinic/patients/${p.id}/telehealth`);
   }
 
@@ -115,8 +117,9 @@ export function LaunchVideoPopup() {
           <DialogHeader>
             <DialogTitle>Launch video visit</DialogTitle>
             <p className="text-sm text-text-muted mt-1">
-              Search by name, phone, date of birth, or email. The patient
-              will receive a HIPAA-compliant clickable telemed link.
+              Search by name, phone, date of birth, or email. When you start
+              the visit, the patient gets a secure join link in their portal
+              messages and a Join button on their Appointments page.
             </p>
           </DialogHeader>
 

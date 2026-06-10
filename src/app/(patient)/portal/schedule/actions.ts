@@ -9,6 +9,7 @@ import {
   syncEncounterScheduleForAppointment,
 } from "@/lib/domain/ensure-encounter";
 import type { AppointmentType } from "@/lib/domain/scheduling";
+import { dispatch } from "@/lib/orchestration/dispatch";
 import { zonedTimeToUtc, DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
 
 interface BookAppointmentInput {
@@ -122,6 +123,34 @@ export async function bookAppointment(
     },
   });
 
+  // EMR-1115 (PJ-B4) — the success screen promises "a confirmation message
+  // shortly"; this event is what makes that true. The appointment-lifecycle
+  // workflow turns it into a portal Notification + care-team Message.
+  await dispatch({
+    name: "appointment.created",
+    appointmentId: appointment.id,
+    patientId: patient.id,
+    organizationId: patient.organizationId,
+    startAt,
+    modality,
+    source: "patient",
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: patient.organizationId,
+      actorUserId: user.id,
+      action: "appointment.created",
+      subjectType: "Appointment",
+      subjectId: appointment.id,
+      metadata: {
+        source: "patient",
+        modality,
+        startAt: startAt.toISOString(),
+      },
+    },
+  });
+
   revalidatePath("/portal/schedule");
   return { ok: true, id: appointment.id };
 }
@@ -139,6 +168,9 @@ export async function cancelAppointment(
     where: {
       id: parsed.data.appointmentId,
       patient: { userId: user.id, deletedAt: null },
+    },
+    include: {
+      patient: { select: { id: true, organizationId: true } },
     },
   });
   if (!appt) return { ok: false, error: "Appointment not found." };
@@ -159,6 +191,33 @@ export async function cancelAppointment(
   // If this appointment had already materialized a (still-scheduled) Encounter,
   // cancel it too so it doesn't linger as a ghost card on the queue board.
   await cancelEncounterForAppointment(appt.id);
+
+  // EMR-1115 (PJ-B4) — patient-side cancel now emits the same event the
+  // clinic-side cancel does, so the lifecycle workflow sends the
+  // cancellation notice regardless of who cancelled.
+  await dispatch({
+    name: "appointment.cancelled",
+    appointmentId: appt.id,
+    patientId: appt.patient.id,
+    organizationId: appt.patient.organizationId,
+    reason: null,
+    source: "patient",
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: appt.patient.organizationId,
+      actorUserId: user.id,
+      action: "appointment.cancelled",
+      subjectType: "Appointment",
+      subjectId: appt.id,
+      metadata: {
+        previousStatus: appt.status,
+        source: "patient",
+        reason: null,
+      },
+    },
+  });
 
   revalidatePath("/portal/schedule");
   return { ok: true };

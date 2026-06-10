@@ -9,6 +9,7 @@ import {
 } from "@/lib/domain/telehealth-sdk";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { deliverMessage } from "@/lib/messaging/deliver";
 
 export interface TelehealthVisitResult {
   room: DailyRoom;
@@ -39,7 +40,13 @@ export async function startTelehealthVisit(
       modality: "video",
       patient: { deletedAt: null },
     },
-    select: { id: true, patientId: true, organizationId: true },
+    select: {
+      id: true,
+      patientId: true,
+      organizationId: true,
+      briefingContext: true,
+      patient: { select: { userId: true, firstName: true } },
+    },
   });
 
   if (!encounter) throw new Error("Telehealth encounter not found");
@@ -66,6 +73,75 @@ export async function startTelehealthVisit(
 
   const providerJoinUrl = `${room.url}?t=${providerToken.token}`;
   const patientJoinUrl = `${room.url}?t=${patientToken.token}`;
+
+  // ── EMR-1115 (PJ-B3) — actually deliver the patient join link ──────
+  // The room + token used to evaporate with this function's return value;
+  // nothing patient-facing ever carried the URL. Persist it three ways:
+  //
+  // 1. Encounter.briefingContext.telehealth — briefingContext is the
+  //    established merge-don't-overwrite Json metadata bag on Encounter
+  //    (rooming handoff, patientConfirmedAt, demeanor all live there); the
+  //    portal Appointments page reads it to render the "Join video visit"
+  //    button. No schema change needed.
+  // 2. A portal Message in the patient's care-team thread (the durable,
+  //    patient-visible copy of the link).
+  // 3. A Notification row so the portal notification feed surfaces it.
+  const existingContext =
+    encounter.briefingContext && typeof encounter.briefingContext === "object"
+      ? (encounter.briefingContext as Record<string, unknown>)
+      : {};
+  await prisma.encounter.update({
+    where: { id: encounter.id },
+    data: {
+      briefingContext: {
+        ...existingContext,
+        telehealth: {
+          patientJoinUrl,
+          roomName: room.name,
+          createdAt: new Date().toISOString(),
+        },
+      } as any,
+    },
+  });
+
+  const thread = await prisma.messageThread.findFirst({
+    where: { patientId },
+    orderBy: { lastMessageAt: "desc" },
+    select: { id: true },
+  });
+  const threadId =
+    thread?.id ??
+    (
+      await prisma.messageThread.create({
+        data: { patientId, subject: "Care team" },
+        select: { id: true },
+      })
+    ).id;
+
+  await deliverMessage({
+    threadId,
+    channel: "portal",
+    senderUserId: user.id,
+    organizationId: user.organizationId,
+    body:
+      `Hi ${encounter.patient.firstName} — your video visit room is ready. ` +
+      `Join here when you're set: ${patientJoinUrl}\n\n` +
+      `If the link doesn't open, the Join button on your Appointments page works too.`,
+  });
+
+  if (encounter.patient.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: encounter.patient.userId,
+        type: "telehealth_join",
+        priority: "urgent",
+        title: "Your video visit is ready",
+        body: "Your provider has opened the video room. Tap to join from your Appointments page.",
+        href: "/portal/appointments",
+        metadata: { encounterId: encounter.id, roomName: room.name },
+      },
+    });
+  }
 
   return {
     room,
