@@ -4,13 +4,12 @@ import { useState, useMemo } from "react";
 import {
   PROVIDERS,
   getDefaultConfig,
-  leafjourneyMonthlyPrice,
-  leafjourneyPriceBasis,
   LEAFJOURNEY_PRICE_FLOOR_USD,
   TIER_LABELS,
   type ModelConfig,
   type ProviderOption,
 } from "@/lib/domain/byok";
+import { projectMonthlyForModel } from "@/lib/ai/usage-economics";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,16 +49,17 @@ export function ModelConfigPanel({ initialAiConfig }: { initialAiConfig: any }) 
     [selectedProvider, config.modelId],
   );
 
-  const estimatedMonthlyCostRaw = useMemo(() => {
-    // Rough estimate: ~2M tokens/month for a small practice
-    const tokensPerMonth = 2_000_000;
-    const costPer1k = selectedModel.costPer1kTokens;
-    return (tokensPerMonth / 1000) * costPer1k;
-  }, [selectedModel]);
+  // Predictive monthly fee: project the full agent fleet's calibrated token
+  // volume onto the chosen foundation model, then apply the keystone markup.
+  // This is the flat, predictable price the practice pays — derived from the
+  // catalog, not a hardcoded guess.
+  const projection = useMemo(
+    () => projectMonthlyForModel({ costPer1kTokens: selectedModel.costPer1kTokens }),
+    [selectedModel],
+  );
 
-  const estimatedMonthlyCost = estimatedMonthlyCostRaw.toFixed(2);
-  const leafjourneyPrice = leafjourneyMonthlyPrice(estimatedMonthlyCostRaw);
-  const priceBasis = leafjourneyPriceBasis(estimatedMonthlyCostRaw);
+  const leafjourneyPrice = projection.customerPriceUsd;
+  const projectedTokensLabel = `~${(projection.projectedTokens / 1_000_000).toFixed(1)}M tokens/month`;
 
   const handleProviderSelect = (provider: ProviderOption) => {
     const firstModel = provider.models[0];
@@ -404,7 +404,7 @@ export function ModelConfigPanel({ initialAiConfig }: { initialAiConfig: any }) 
                 <span className="text-sm text-text-muted font-sans">/mo</span>
               </p>
               <p className="text-xs text-text-subtle mt-0.5">
-                ~2M tokens/month
+                {projectedTokensLabel}
               </p>
             </div>
           </div>
