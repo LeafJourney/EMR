@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import {
   CalendarPlus,
   Check,
@@ -46,6 +47,8 @@ import {
   type VisitCompletionStructuredEdit,
 } from "@/lib/domain/visit-completion-selection";
 import { releaseVisitCompletion } from "./actions";
+import { generateLeafletForNote } from "../../leaflet/actions";
+import type { LeafletData } from "@/lib/domain/leaflet";
 
 interface VisitCompletionPanelProps {
   bundle: VisitCompletionBundle;
@@ -485,6 +488,10 @@ export function VisitCompletionPanel({
         ))}
       </div>
 
+      <div className="px-5 pb-1">
+        <PatientLeafletCard noteId={noteId} />
+      </div>
+
       {activeCard && activeCardState && (
         <VisitCompletionDetailsDrawer
           card={activeCard}
@@ -569,6 +576,88 @@ export function VisitCompletionPanel({
         </Badge>
       </div>
     </section>
+  );
+}
+
+/**
+ * Patient leaflet (after-visit summary) affordance inside the wrap-up flow
+ * (audit minor #8). Generates + previews the AI after-visit summary in place so
+ * the physician doesn't have to leave the visit-completion panel; the full
+ * leaflet editor (edit + save to chart) is one click away. Read-only here —
+ * generating a preview persists nothing.
+ */
+function PatientLeafletCard({ noteId }: { noteId: string }) {
+  const params = useParams();
+  const patientId = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined);
+  const [pending, startTransition] = React.useTransition();
+  const [preview, setPreview] = React.useState<{ narrative: string; data: LeafletData } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  function generate() {
+    setError(null);
+    startTransition(async () => {
+      const result = await generateLeafletForNote(noteId);
+      if (result.ok) {
+        setPreview({ narrative: result.narrative, data: result.data });
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-muted/35 px-4 py-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-text">Patient leaflet</p>
+          <p className="mt-1 text-xs leading-relaxed text-text-muted">
+            Preview the plain-language after-visit summary without leaving the wrap-up.
+            Open the editor to adjust the tone, edit, and save it to the chart.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={generate} disabled={pending}>
+            {pending ? "Generating…" : preview ? "Regenerate preview" : "Generate preview"}
+          </Button>
+          {patientId && (
+            <Link
+              href={`/clinic/patients/${patientId}/leaflet`}
+              className="text-sm font-medium text-accent hover:underline"
+            >
+              Open leaflet editor →
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+
+      {preview && (
+        <div className="mt-3 space-y-3 rounded-md border border-border bg-surface px-4 py-3">
+          {preview.narrative && (
+            <p className="text-sm leading-relaxed text-text">{preview.narrative}</p>
+          )}
+          {preview.data.nextSteps.length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle">
+                Next steps
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-text">
+                {preview.data.nextSteps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {preview.data.followUp && (
+            <p className="text-xs leading-relaxed text-text-muted">{preview.data.followUp}</p>
+          )}
+          <p className="text-[11px] text-text-subtle">
+            Preview only — nothing is sent or saved until you open the leaflet editor.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 

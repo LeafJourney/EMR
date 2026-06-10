@@ -13,10 +13,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     refresh: vi.fn(),
   }),
+  useParams: () => ({ id: "patient_1", noteId: "note_1" }),
 }));
 
 vi.mock("./actions", () => ({
   releaseVisitCompletion: vi.fn(),
+}));
+
+vi.mock("../../leaflet/actions", () => ({
+  generateLeafletForNote: vi.fn(),
 }));
 
 function dump(node: React.ReactElement | null): string {
