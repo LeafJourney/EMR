@@ -48,6 +48,7 @@ import { ADMINISTRATION_METHODS } from "@/lib/clinical/methods-of-administration
 import type { ModuleFlags } from "@/lib/clinical/module-opt-in";
 import {
   checkInteractions,
+  inferCannabinoidsFromName,
   type DrugInteraction,
 } from "@/lib/domain/drug-interactions";
 import {
@@ -55,6 +56,10 @@ import {
   DEA_SCHEDULE_LABEL,
   DEA_SCHEDULE_TONE,
 } from "@/lib/domain/dea-schedule";
+import {
+  assessHighRiskAttestation,
+  psychiatricComorbidityLabels,
+} from "./high-risk-attestation";
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -130,6 +135,9 @@ export interface PrescribeFormV2Props {
   patientPhone: string | null;
   patientPhotoUrl: string | null;
   patientState?: string;
+  /** Patient age in years (WS-C task 3 — gates the high-risk attestation for
+   *  older adults). Null when DOB is unknown. */
+  patientAge?: number | null;
   providerName: string;
   deaNumber: string;
   moduleFlags: ModuleFlags;
@@ -220,6 +228,7 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     patientPhone,
     patientPhotoUrl,
     patientState,
+    patientAge = null,
     providerName,
     deaNumber,
     moduleFlags,
@@ -425,15 +434,23 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
 
   /* ── Interactions / Safety check (EMR-888) ────────────────── */
   const cannabinoidsForCheck = useMemo(() => {
-    const c: string[] = [];
     if (selectedProduct) {
+      const c: string[] = [];
       if ((selectedProduct.thcConcentration ?? 0) > 0) c.push("THC");
       if ((selectedProduct.cbdConcentration ?? 0) > 0) c.push("CBD");
       if ((selectedProduct.cbnConcentration ?? 0) > 0) c.push("CBN");
       if ((selectedProduct.cbgConcentration ?? 0) > 0) c.push("CBG");
+      return c;
     }
-    return c;
-  }, [selectedProduct]);
+    // WS-C task 2: custom/free-text products have no structured profile —
+    // infer a best-effort one from the name + "open to" hints so the same
+    // interaction screen (and acknowledgment gate) runs as for formulary
+    // products. Mirrors the server in createPrescriptionAction.
+    if (customProductName.trim()) {
+      return inferCannabinoidsFromName(customProductName, openCannabinoids);
+    }
+    return [];
+  }, [selectedProduct, customProductName, openCannabinoids]);
 
   const interactions = useMemo<DrugInteraction[]>(() => {
     if (cannabinoidsForCheck.length === 0 || medications.length === 0) return [];
@@ -533,6 +550,47 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
   }
   const curesAcknowledged = isControlled ? curesChecked.every(Boolean) : true;
 
+  /* ── High-risk attestation (WS-C task 3) ──────────────────────
+     A documented acknowledgment is owed for high-risk NON-controlled Rx too
+     (high-dose THC, age ≥ 65, psychiatric comorbidity). Controlled substances
+     are already covered by the CURES attestation above, so we only surface
+     this gate when the Rx is not controlled. Mirrors the server gate in
+     createPrescriptionAction; the server re-validates the acknowledgment. */
+  const thcMgPerDayForRisk = useMemo(() => {
+    if (!selectedProduct) return null;
+    if (
+      selectedProduct.concentrationUnit !== "mg/mL" &&
+      selectedProduct.concentrationUnit !== "mg/unit"
+    )
+      return null;
+    const conc = selectedProduct.thcConcentration ?? 0;
+    const dose = parseFloat(doseValue);
+    if (conc <= 0 || !(dose > 0)) return null;
+    return conc * dose * frequencyPerDay;
+  }, [selectedProduct, doseValue, frequencyPerDay]);
+
+  const psychiatricLabels = useMemo(
+    () =>
+      psychiatricComorbidityLabels(
+        contraindicationMatches.map((m) => ({ id: m.id, label: m.label })),
+      ),
+    [contraindicationMatches],
+  );
+
+  const highRiskReasons = useMemo(
+    () =>
+      isControlled
+        ? []
+        : assessHighRiskAttestation({
+            thcMgPerDay: thcMgPerDayForRisk,
+            patientAge,
+            psychiatricComorbidities: psychiatricLabels,
+          }),
+    [isControlled, thcMgPerDayForRisk, patientAge, psychiatricLabels],
+  );
+  const highRiskAttestationRequired = highRiskReasons.length > 0;
+  const [highRiskAcknowledged, setHighRiskAcknowledged] = useState(false);
+
   /* ── Submit gating ────────────────────────────────────────── */
   const mustAckContraindication =
     hasBlockingContraindication &&
@@ -553,7 +611,8 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     !pharmacy ||
     unresolvedRed ||
     mustAckContraindication ||
-    (isControlled && !curesAcknowledged);
+    (isControlled && !curesAcknowledged) ||
+    (highRiskAttestationRequired && !highRiskAcknowledged);
 
   /* ── Preview modal (EMR-893) ──────────────────────────────── */
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -571,6 +630,9 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     <form action={formAction} className="space-y-4">
       {/* ── Hidden inputs preserving the action contract ──────── */}
       <input type="hidden" name="patientId" value={patientId} />
+      {/* WS-C task 1: marks this as the v2 path so the server enforces the
+          pharmacy routing target (legacy v1 / batch flows are exempt). */}
+      <input type="hidden" name="rxFormVersion" value="v2" />
       {selectedProductId && (
         <input type="hidden" name="productId" value={selectedProductId} />
       )}
@@ -604,6 +666,16 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
       )}
       {interactionAcknowledged && (
         <input type="hidden" name="interactionAcknowledged" value="true" />
+      )}
+      {highRiskAttestationRequired && highRiskAcknowledged && (
+        <>
+          <input type="hidden" name="highRiskAttestationAcknowledged" value="true" />
+          <input
+            type="hidden"
+            name="highRiskReasons"
+            value={JSON.stringify(highRiskReasons.map((r) => r.kind))}
+          />
+        </>
       )}
       {isControlled && curesAcknowledged && (
         <>
@@ -1294,6 +1366,62 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
             >
               Store your CURES credentials in Settings →
             </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── WS-C task 3: high-risk clinical attestation (non-controlled) ── */}
+      {highRiskAttestationRequired && (
+        <Card className="rounded-2xl bg-amber-50/60 border-amber-200 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-amber-900">
+              High-risk prescription — clinical attestation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-amber-800">
+              This prescription is flagged high-risk for the reason
+              {highRiskReasons.length === 1 ? "" : "s"} below. Acknowledge that
+              you have weighed the risks and benefits before signing.
+            </p>
+            <ul className="space-y-1.5">
+              {highRiskReasons.map((r) => (
+                <li
+                  key={r.kind}
+                  className="flex items-start gap-2 text-sm text-amber-900"
+                >
+                  <Badge tone="warning" className="text-[10px] shrink-0 mt-0.5">
+                    {r.label}
+                  </Badge>
+                  <span className="text-amber-800">{r.detail}</span>
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-start gap-2 text-sm text-amber-900 rounded-lg border border-amber-300 bg-white/70 px-3 py-2 cursor-pointer hover:bg-white">
+              <input
+                type="checkbox"
+                checked={highRiskAcknowledged}
+                onChange={() => {
+                  setHighRiskAcknowledged((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      ledger.record({
+                        kind: "acknowledge",
+                        source: "High-risk attestation",
+                        subject: highRiskReasons.map((r) => r.label).join(", "),
+                        justification: "Clinician acknowledged high-risk prescription",
+                      });
+                    }
+                    return next;
+                  });
+                }}
+                className="mt-0.5 h-4 w-4 rounded border-amber-400 accent-amber-600"
+              />
+              <span>
+                I have reviewed the risks and benefits and judge this
+                prescription clinically appropriate for this patient.
+              </span>
+            </label>
           </CardContent>
         </Card>
       )}

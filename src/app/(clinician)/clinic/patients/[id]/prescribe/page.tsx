@@ -124,6 +124,14 @@ export default async function PrescribePage({ params, searchParams }: PageProps)
 
   const patientState = patient.state ?? undefined;
 
+  // WS-C task 3: patient age gates the high-risk attestation for older adults.
+  const patientAge = patient.dateOfBirth
+    ? Math.floor(
+        (Date.now() - new Date(patient.dateOfBirth).getTime()) /
+          (365.25 * 24 * 60 * 60 * 1000),
+      )
+    : null;
+
   // EMR-883 — module gating. Cannabis is on by default for LeafJourney, but
   // when the org has opted out we scrub the word "Cannabis" from titles and
   // gate the psilocybin medication class on its own opt-in flag (EMR-885).
@@ -148,6 +156,7 @@ export default async function PrescribePage({ params, searchParams }: PageProps)
         patientPhone={patient.phone}
         patientPhotoUrl={null}
         patientState={patientState}
+        patientAge={patientAge}
         providerName={providerName}
         deaNumber={deaNumber}
         moduleFlags={moduleFlags}
