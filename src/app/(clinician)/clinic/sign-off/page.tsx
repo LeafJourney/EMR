@@ -30,7 +30,7 @@ export default async function SignOffPage() {
     }),
     prisma.note.findMany({
       where: {
-        status: "needs_review",
+        status: "pending_cosign",
         encounter: { patient: { organizationId: orgId } },
       },
       orderBy: { updatedAt: "desc" },

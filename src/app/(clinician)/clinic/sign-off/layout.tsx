@@ -29,11 +29,11 @@ export default async function SignOffLayout({
       where: { organizationId: orgId, signedAt: null, status: "flagged" },
     }),
     prisma.note.count({
-      where: { status: "needs_review", encounter: { patient: { organizationId: orgId } } },
+      where: { status: "pending_cosign", encounter: { patient: { organizationId: orgId } } },
     }),
     prisma.note.count({
       where: {
-        status: "needs_review",
+        status: "pending_cosign",
         aiConfidence: { lt: 0.6 },
         encounter: { patient: { organizationId: orgId } },
       },
