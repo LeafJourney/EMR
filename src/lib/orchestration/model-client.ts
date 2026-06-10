@@ -198,7 +198,10 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export class OpenRouterModelClient implements ModelClient {
-  private readonly endpoint = "https://openrouter.ai/api/v1/chat/completions";
+  // Default OpenRouter endpoint. Overridable so this same OpenAI-compatible
+  // client can talk directly to OpenAI (api.openai.com) — same wire format.
+  private readonly endpoint: string;
+  private readonly sendAttribution: boolean;
   private readonly model: string;
   private readonly freeModel: string;
   private readonly apiKey: string;
@@ -224,6 +227,10 @@ export class OpenRouterModelClient implements ModelClient {
     timeoutMs?: number;
     maxRetries?: number;
     allowFreeFallback?: boolean;
+    /** Override the OpenAI-compatible chat-completions endpoint. */
+    endpoint?: string;
+    /** Send OpenRouter attribution headers (X-Title / HTTP-Referer). */
+    sendAttribution?: boolean;
     onUsage?: (u: {
       model: string;
       tokensIn: number;
@@ -236,6 +243,9 @@ export class OpenRouterModelClient implements ModelClient {
       throw new Error("OPENROUTER_API_KEY is required for OpenRouterModelClient");
     }
     this.apiKey = apiKey;
+    this.endpoint =
+      options?.endpoint || "https://openrouter.ai/api/v1/chat/completions";
+    this.sendAttribution = options?.sendAttribution ?? true;
     this.model = options?.model || process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
     this.freeModel =
       process.env.OPENROUTER_FREE_MODEL ?? FREE_MODEL_CANDIDATES[0];
@@ -358,9 +368,11 @@ export class OpenRouterModelClient implements ModelClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
-      "X-Title": this.appName,
     };
-    if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
+    if (this.sendAttribution) {
+      headers["X-Title"] = this.appName;
+      if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
+    }
 
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
@@ -483,9 +495,11 @@ export class OpenRouterModelClient implements ModelClient {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      "X-Title": this.appName,
     };
-    if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
+    if (this.sendAttribution) {
+      headers["X-Title"] = this.appName;
+      if (this.siteUrl) headers["HTTP-Referer"] = this.siteUrl;
+    }
 
     const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
     const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
@@ -762,6 +776,178 @@ function classifyOpenRouterError(
   });
 }
 
+/**
+ * Anthropic direct client (Messages API). Anthropic is NOT OpenAI-wire-
+ * compatible — different endpoint, headers (x-api-key + anthropic-version),
+ * request body (top-level max_tokens, messages) and response shape
+ * (content[].text, usage.input_tokens/output_tokens) — so it gets its own
+ * client rather than reusing the OpenAI-compatible one. Enforces the same
+ * timeout + bounded transient-retry contract and reports usage for billing.
+ */
+export class AnthropicModelClient implements ModelClient {
+  private readonly endpoint = "https://api.anthropic.com/v1/messages";
+  private readonly version = "2023-06-01";
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly defaultMaxTokens: number | undefined;
+  private readonly defaultTemperature: number | undefined;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly onUsage?: (u: {
+    model: string;
+    tokensIn: number;
+    tokensOut: number;
+    latencyMs: number;
+  }) => void;
+
+  constructor(options?: {
+    apiKey?: string;
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+    timeoutMs?: number;
+    maxRetries?: number;
+    onUsage?: (u: {
+      model: string;
+      tokensIn: number;
+      tokensOut: number;
+      latencyMs: number;
+    }) => void;
+  }) {
+    const apiKey = options?.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error("ANTHROPIC_API_KEY is required for AnthropicModelClient");
+    }
+    this.apiKey = apiKey;
+    this.model = options?.model || "claude-sonnet-4-6";
+    this.defaultMaxTokens = options?.maxTokens;
+    this.defaultTemperature = options?.temperature;
+    this.timeoutMs = options?.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+    this.maxRetries = options?.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES;
+    this.onUsage = options?.onUsage;
+  }
+
+  async complete(prompt: string, options?: ModelCallOptions): Promise<string> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await this._call(prompt, options);
+      } catch (err) {
+        lastErr = err;
+        const transient =
+          isModelError(err) &&
+          (err.code === "server_error" ||
+            err.code === "network" ||
+            err.code === "timeout");
+        if (!transient || attempt === this.maxRetries) throw err;
+        const backoff = Math.min(3000, 300 * 2 ** attempt);
+        console.warn(
+          `[Anthropic] ${this.model} ${(err as ModelError).code} — retry ${attempt + 1}/${this.maxRetries} in ${backoff}ms`,
+        );
+        await delay(backoff, options?.signal);
+      }
+    }
+    throw lastErr;
+  }
+
+  private async _call(prompt: string, options?: ModelCallOptions): Promise<string> {
+    const requestedMaxTokens = options?.maxTokens ?? this.defaultMaxTokens ?? 1024;
+    const requestedTemperature = options?.temperature ?? this.defaultTemperature ?? 0.3;
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const onCallerAbort = () => controller.abort();
+    if (options?.signal) {
+      if (options.signal.aborted) controller.abort();
+      else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    const t0 = Date.now();
+    try {
+      let response: Response;
+      try {
+        response = await fetch(this.endpoint, {
+          method: "POST",
+          headers: {
+            "x-api-key": this.apiKey,
+            "anthropic-version": this.version,
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: requestedMaxTokens,
+            temperature: requestedTemperature,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+      } catch (err) {
+        if (timedOut) {
+          throw new ModelError({
+            code: "timeout",
+            friendly: "The AI provider took too long to respond. Try again in a moment.",
+            providerBody: `request timed out after ${this.timeoutMs}ms`,
+            model: this.model,
+            requestedMaxTokens,
+          });
+        }
+        throw new ModelError({
+          code: "network",
+          friendly: "Couldn't reach the AI provider. Check your connection and try again.",
+          providerBody: err instanceof Error ? err.message : String(err),
+          model: this.model,
+          requestedMaxTokens,
+        });
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw classifyOpenRouterError(response.status, body, this.model, requestedMaxTokens);
+      }
+
+      let json: {
+        content?: Array<{ type?: string; text?: string }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      try {
+        json = (await response.json()) as typeof json;
+      } catch (err) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly: "The AI provider returned a malformed response. Try again in a moment.",
+          providerBody: err instanceof Error ? err.message : String(err),
+          model: this.model,
+          requestedMaxTokens,
+        });
+      }
+
+      const content = json.content?.find((b) => b.type === "text")?.text ?? json.content?.[0]?.text;
+      if (typeof content !== "string" || content.length === 0) {
+        throw new ModelError({
+          code: "empty_response",
+          friendly: "The AI provider returned an empty response. Try again in a moment.",
+          model: this.model,
+          requestedMaxTokens,
+        });
+      }
+      this.onUsage?.({
+        model: this.model,
+        tokensIn: json.usage?.input_tokens ?? 0,
+        tokensOut: json.usage?.output_tokens ?? 0,
+        latencyMs: Date.now() - t0,
+      });
+      return content;
+    } finally {
+      clearTimeout(timer);
+      options?.signal?.removeEventListener("abort", onCallerAbort);
+    }
+  }
+}
+
 export class ConfigurableModelClient implements ModelClient {
   private resolvedClientPromise: Promise<ModelClient> | null = null;
   private resolvedClient: ModelClient | null = null;
@@ -856,50 +1042,92 @@ export class ConfigurableModelClient implements ModelClient {
         }
       }
 
-      if (provider.toLowerCase() === "openrouter") {
-        // Key resolution order: the org's encrypted BYOK key → legacy plaintext
-        // from the config blob (pre-migration only) → the platform key. The
-        // BYOK key is decrypted server-side here and never reaches the client.
-        let finalApiKey: string | undefined;
-        if (orgId) {
-          try {
-            const { resolveByokApiKey } = await import("@/lib/ai/credential-store");
-            finalApiKey = (await resolveByokApiKey(orgId)) ?? undefined;
-          } catch {
-            // fall through to legacy / platform key
-          }
+      const p = provider.toLowerCase();
+      if (p !== "openrouter" && p !== "openai" && p !== "anthropic") {
+        // local / stub / unknown — no real client wired.
+        return new StubModelClient();
+      }
+
+      // Key resolution order, for whichever provider was chosen: the org's
+      // encrypted BYOK key → legacy plaintext from the config blob (pre-
+      // migration only) → the platform key for that provider. The BYOK key is
+      // decrypted server-side here and never reaches the client.
+      let finalApiKey: string | undefined;
+      if (orgId) {
+        try {
+          const { resolveByokApiKey } = await import("@/lib/ai/credential-store");
+          finalApiKey = (await resolveByokApiKey(orgId)) ?? undefined;
+        } catch {
+          // fall through to legacy / platform key
         }
-        finalApiKey = finalApiKey || apiKey || process.env.OPENROUTER_API_KEY;
-        if (!finalApiKey) {
-          console.warn("OpenRouter API key missing in ConfigurableModelClient. Falling back to StubModelClient.");
-          return new StubModelClient();
-        }
-        const usageOrgId = orgId;
-        const usageAgentName = this.agentName ?? "unknown";
-        return new OpenRouterModelClient({
+      }
+      const platformKey =
+        p === "openrouter"
+          ? process.env.OPENROUTER_API_KEY
+          : p === "openai"
+            ? process.env.OPENAI_API_KEY
+            : process.env.ANTHROPIC_API_KEY;
+      finalApiKey = finalApiKey || apiKey || platformKey;
+      if (!finalApiKey) {
+        console.warn(
+          `No API key for provider "${p}" in ConfigurableModelClient. Falling back to StubModelClient.`,
+        );
+        return new StubModelClient();
+      }
+
+      // Shared usage sink: fire-and-forget so a billing write never blocks or
+      // fails the model call. Skipped when the call isn't org-scoped.
+      const usageOrgId = orgId;
+      const usageAgentName = this.agentName ?? "unknown";
+      const onUsage = (u: {
+        model: string;
+        tokensIn: number;
+        tokensOut: number;
+        latencyMs: number;
+      }) => {
+        if (!usageOrgId) return;
+        void persistLlmUsage({
+          organizationId: usageOrgId,
+          agentBucket: "uncategorized",
+          agentName: usageAgentName,
+          model: u.model,
+          tokensIn: u.tokensIn,
+          tokensOut: u.tokensOut,
+          latencyMs: u.latencyMs,
+          ok: true,
+        });
+      };
+
+      const numMaxTokens = maxTokens ? Number(maxTokens) : undefined;
+      const numTemperature = temperature ? Number(temperature) : undefined;
+
+      if (p === "anthropic") {
+        return new AnthropicModelClient({
           apiKey: finalApiKey,
           model: modelId,
-          maxTokens: maxTokens ? Number(maxTokens) : undefined,
-          temperature: temperature ? Number(temperature) : undefined,
-          onUsage: (u) => {
-            // Fire-and-forget: a usage write must never block or fail the model
-            // call. Skip when the call isn't org-scoped (nothing to bill to).
-            if (!usageOrgId) return;
-            void persistLlmUsage({
-              organizationId: usageOrgId,
-              agentBucket: "uncategorized",
-              agentName: usageAgentName,
-              model: u.model,
-              tokensIn: u.tokensIn,
-              tokensOut: u.tokensOut,
-              latencyMs: u.latencyMs,
-              ok: true,
-            });
-          },
+          maxTokens: numMaxTokens,
+          temperature: numTemperature,
+          onUsage,
         });
       }
 
-      return new StubModelClient();
+      // openrouter (default) or openai — both speak the OpenAI wire format, so
+      // the same client serves both; OpenAI gets its own endpoint and no
+      // OpenRouter attribution / free-model fallback.
+      return new OpenRouterModelClient({
+        apiKey: finalApiKey,
+        model: modelId,
+        maxTokens: numMaxTokens,
+        temperature: numTemperature,
+        onUsage,
+        ...(p === "openai"
+          ? {
+              endpoint: "https://api.openai.com/v1/chat/completions",
+              sendAttribution: false,
+              allowFreeFallback: false,
+            }
+          : {}),
+      });
     })();
 
     this.resolvedClient = await this.resolvedClientPromise;

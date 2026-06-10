@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { OpenRouterModelClient, isModelError } from "./model-client";
+import {
+  AnthropicModelClient,
+  OpenRouterModelClient,
+  isModelError,
+} from "./model-client";
 
 // Build a minimal fetch Response stand-in for the non-streaming path.
 function fakeResponse(status: number, body: unknown): Response {
@@ -179,6 +183,26 @@ describe("OpenRouterModelClient — credit fallback + classification", () => {
     expect(seen[0]).toMatchObject({ tokensIn: 20, tokensOut: 9 });
   });
 
+  it("OpenAI-direct uses the OpenAI endpoint and omits attribution headers", async () => {
+    const fetchMock = vi.fn(async () => fakeResponse(200, okBody("hi from openai")));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new OpenRouterModelClient({
+      apiKey: "test-key",
+      model: "gpt-4o",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      sendAttribution: false,
+      maxRetries: 0,
+      timeoutMs: 5000,
+    });
+    const out = await client.complete("hi");
+    expect(out).toBe("hi from openai");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(url).toBe("https://api.openai.com/v1/chat/completions");
+    expect(init.headers["X-Title"]).toBeUndefined();
+    expect(init.headers["HTTP-Referer"]).toBeUndefined();
+    expect(init.headers["Authorization"]).toBe("Bearer test-key");
+  });
+
   it.each([
     [401, "unauthorized"],
     [429, "rate_limited"],
@@ -197,5 +221,69 @@ describe("OpenRouterModelClient — credit fallback + classification", () => {
     });
     const err = await client.complete("hi").catch((e) => e);
     expect(err.code).toBe(code);
+  });
+});
+
+describe("AnthropicModelClient", () => {
+  function anthropicBody(text: string, usage?: { input_tokens: number; output_tokens: number }) {
+    return { content: [{ type: "text", text }], usage };
+  }
+
+  it("calls the Anthropic Messages API with x-api-key + version and parses content", async () => {
+    const fetchMock = vi.fn(async () =>
+      fakeResponse(200, anthropicBody("hello from claude", { input_tokens: 11, output_tokens: 4 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: Array<{ tokensIn: number; tokensOut: number }> = [];
+    const client = new AnthropicModelClient({
+      apiKey: "sk-ant-test",
+      model: "claude-sonnet-4-6",
+      maxRetries: 0,
+      timeoutMs: 5000,
+      onUsage: (u) => seen.push(u),
+    });
+    const out = await client.complete("hi");
+    expect(out).toBe("hello from claude");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string>; body: string },
+    ];
+    expect(url).toBe("https://api.anthropic.com/v1/messages");
+    expect(init.headers["x-api-key"]).toBe("sk-ant-test");
+    expect(init.headers["anthropic-version"]).toBe("2023-06-01");
+    // Anthropic body shape: top-level max_tokens + messages.
+    const body = JSON.parse(init.body);
+    expect(body.model).toBe("claude-sonnet-4-6");
+    expect(body.max_tokens).toBeGreaterThan(0);
+    expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+    // Usage mapped from input_tokens/output_tokens.
+    expect(seen[0]).toMatchObject({ tokensIn: 11, tokensOut: 4 });
+  });
+
+  it("classifies a 401 as unauthorized", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => fakeResponse(401, { error: { message: "bad key" } })));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = new AnthropicModelClient({ apiKey: "x", maxRetries: 0, timeoutMs: 5000 });
+    const err = await client.complete("hi").catch((e) => e);
+    expect(isModelError(err)).toBe(true);
+    expect(err.code).toBe("unauthorized");
+  });
+
+  it("retries a transient 5xx and then succeeds", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls++;
+        return calls === 1
+          ? fakeResponse(503, { error: { message: "overloaded" } })
+          : fakeResponse(200, anthropicBody("recovered"));
+      }),
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = new AnthropicModelClient({ apiKey: "x", maxRetries: 2, timeoutMs: 5000 });
+    expect(await client.complete("hi")).toBe("recovered");
+    expect(calls).toBe(2);
   });
 });
