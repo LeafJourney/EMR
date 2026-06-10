@@ -12,9 +12,23 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { ingestVoicemailTranscript } from "@/lib/communications/voicemail";
+
+// EMR-1111 (FO-M4) — recordVoicemailAction previously had no role gate at
+// all; front desk could log voicemails only "by accident". This explicit
+// allowlist makes desk access policy, not luck, and shuts the door on
+// patient / kiosk / platform logins calling the action directly.
+const VOICEMAIL_LOG_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "front_office",
+  "back_office",
+  "clinician",
+  "midlevel",
+  "practice_owner",
+  "operator",
+]);
 
 const recordSchema = z.object({
   fromNumber: z
@@ -40,6 +54,9 @@ export async function recordVoicemailAction(
   const user = await requireUser();
   if (!user.organizationId) {
     return { ok: false, error: "No organization context." };
+  }
+  if (!user.roles.some((r) => VOICEMAIL_LOG_ROLES.has(r))) {
+    return { ok: false, error: "You don't have permission to log voicemails." };
   }
 
   const parsed = recordSchema.safeParse({

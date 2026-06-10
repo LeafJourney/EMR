@@ -6,6 +6,7 @@ import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { SplitWorkspace } from "@/components/shell/SplitWorkspace";
 import { ContextPane } from "@/components/shell/ContextPane";
 import { homeForRoles } from "@/lib/rbac/roles";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { BreathingBreak } from "@/components/clinical/BreathingBreak";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
@@ -54,6 +55,31 @@ export default async function ClinicianLayout({
     redirect(homeForRoles(user.roles));
   }
 
+  // EMR-1111 (FO-M8) — role-aware navigation. The nav is no longer
+  // role-blind: clinical surfaces (sign-off, command center, telehealth,
+  // brief, audit) are hidden from roles without the matching permission,
+  // and the desk worklist entries (Tasks, Front desk) are shown to the
+  // staff roles that work them.
+  const canReadNotes = hasPermission(user, "notes.read");
+  const canEditNotes = hasPermission(user, "notes.edit");
+  const DESK_WORKLIST_ROLES: Array<(typeof user.roles)[number]> = [
+    "front_office",
+    "back_office",
+    "clinician",
+    "practice_owner",
+  ];
+  const canSeeDeskWorklists = user.roles.some((r) =>
+    DESK_WORKLIST_ROLES.includes(r),
+  );
+  // The front-desk board's page guard mirrors QUEUE_STATE_ROLES, which
+  // excludes clinician/midlevel — the nav must match or the link bounces.
+  const FRONT_DESK_ROLES: Array<(typeof user.roles)[number]> = [
+    "front_office",
+    "back_office",
+    "practice_owner",
+  ];
+  const canSeeFrontDesk = user.roles.some((r) => FRONT_DESK_ROLES.includes(r));
+
   const safeCount = async (fn: () => Promise<number>) => {
     try {
       return await fn();
@@ -77,7 +103,9 @@ export default async function ClinicianLayout({
     refillsPendingCount,
   ] = await (async () => {
     const orgId = user.organizationId;
-    if (!orgId) return [0, 0, 0, 0, 0] as const;
+    // The sign-off badge counts are clinical workload signals — skip the
+    // queries entirely for roles that can't see the sign-off queue.
+    if (!orgId || !canReadNotes) return [0, 0, 0, 0, 0] as const;
     return Promise.all([
       safeCount(() =>
         prisma.message.count({
@@ -129,9 +157,19 @@ export default async function ClinicianLayout({
       icon: "clipboard-check",
       items: [
         { label: "Overview", href: "/clinic" },
-        { label: "Command Center", href: "/clinic/command" },
+        // Command center is built around clinical counters/drafts.
+        ...(canReadNotes
+          ? [{ label: "Command Center", href: "/clinic/command" }]
+          : []),
         { label: "Schedule", href: "/clinic/schedule" },
-        { label: "Telehealth", href: "/telehealth" },
+        // Telehealth visits are conducted by providers (notes.edit roles).
+        ...(canEditNotes ? [{ label: "Telehealth", href: "/telehealth" }] : []),
+        // EMR-1111 (FO-B1): clinic-side task worklist + front-desk board —
+        // visible to the staff roles that work them.
+        ...(canSeeDeskWorklists ? [{ label: "Tasks", href: "/clinic/tasks" }] : []),
+        ...(canSeeFrontDesk
+          ? [{ label: "Front desk", href: "/clinic/front-desk" }]
+          : []),
       ],
     },
     {
@@ -148,15 +186,19 @@ export default async function ClinicianLayout({
       icon: "inbox",
       items: [
         { label: "Messages", href: "/clinic/messages" },
-        // EMR-165: unified sign-off queue rolls up labs + refills +
-        // notes + messages — clinician's single place to clear the day.
-        {
-          label: "Sign-off",
-          href: "/clinic/sign-off",
-          badge: computeApprovalsBadge({ pendingCount, emergencyCount }) // Or a combined badge
-        },
-        // EMR-915: kiosk→phone lobby intake/consent waiting to be accepted into the chart.
-        { label: "Lobby submissions", href: "/clinic/lobby-submissions" },
+        ...(canReadNotes
+          ? [
+              // EMR-165: unified sign-off queue rolls up labs + refills +
+              // notes + messages — clinician's single place to clear the day.
+              {
+                label: "Sign-off",
+                href: "/clinic/sign-off",
+                badge: computeApprovalsBadge({ pendingCount, emergencyCount }), // Or a combined badge
+              },
+              // EMR-915: kiosk→phone lobby intake/consent waiting to be accepted into the chart.
+              { label: "Lobby submissions", href: "/clinic/lobby-submissions" },
+            ]
+          : []),
       ],
     },
     {
@@ -164,21 +206,30 @@ export default async function ClinicianLayout({
       pillar: "reference",
       icon: "book-open",
       items: [
-        { label: "Providers", href: "/clinic/providers" },
-        { label: "Research", href: "/clinic/research" },
-        { label: "Library", href: "/clinic/library" },
+        ...(canReadNotes
+          ? [
+              { label: "Providers", href: "/clinic/providers" },
+              { label: "Research", href: "/clinic/research" },
+              { label: "Library", href: "/clinic/library" },
+            ]
+          : []),
         { label: "Communications", href: "/clinic/communications" },
       ],
     },
-    {
-      label: "Admin",
-      pillar: "admin",
-      icon: "settings",
-      items: [
-        { label: "Audit", href: "/clinic/audit-trail" },
-        { label: "Brief", href: "/clinic/morning-brief" },
-      ],
-    },
+    // Admin (audit trail + clinical brief) is clinical/leadership surface.
+    ...(canReadNotes
+      ? [
+          {
+            label: "Admin",
+            pillar: "admin",
+            icon: "settings",
+            items: [
+              { label: "Audit", href: "/clinic/audit-trail" },
+              { label: "Brief", href: "/clinic/morning-brief" },
+            ],
+          } satisfies NavSection,
+        ]
+      : []),
   ];
 
   for (const section of sections) {

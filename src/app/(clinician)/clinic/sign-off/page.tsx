@@ -1,11 +1,19 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { SignOffTreeView, type SignOffRow } from "./sign-off-tree-view";
 
 export const metadata = { title: "Sign-Off Queue" };
 
 export default async function SignOffPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — clinical sign-off queue requires notes.read. Pages
+  // render in parallel with the layout, so this page must gate itself
+  // BEFORE its own PHI fan-out, not rely on the layout's redirect.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
+
   const orgId = user.organizationId!;
 
   const [labs, refills, notes, messages] = await Promise.all([

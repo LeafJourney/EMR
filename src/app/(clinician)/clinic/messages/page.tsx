@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import {
   triageThread,
@@ -167,8 +168,12 @@ export default async function ClinicMessagesPage({
 
   // EMR-657 — fetch active meds for all patients so the avatar tooltip can
   // show "Current Meds" on hover without a separate round-trip.
+  // EMR-1111 (FO-M3) — medications are prescription data: now that front
+  // office works this inbox, only roles with prescriptions.read get the
+  // meds tooltip; others get an empty map (the tooltip simply doesn't show).
   const uniquePatientIds = [...new Set(threads.map((t) => t.patient.id))];
-  const activeMeds = uniquePatientIds.length > 0
+  const activeMeds = uniquePatientIds.length > 0 &&
+    hasPermission(user, "prescriptions.read")
     ? await prisma.patientMedication.findMany({
         where: { patientId: { in: uniquePatientIds }, active: true },
         select: { patientId: true, name: true, dosage: true },

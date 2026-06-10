@@ -17,6 +17,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { formatDate } from "@/lib/utils/format";
 import {
   PrintDocument,
@@ -68,6 +70,9 @@ function rangeLabel(m: MarkerValue): string {
 
 export default async function LabPrintPage({ params }: PageProps) {
   const user = await requireUser();
+  // EMR-1111 (FO-B5): direct-URL print views carry the same PHI as the
+  // sign-off queue and must gate themselves, not rely on the layout.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
 
   const lab = await prisma.labResult.findFirst({
     where: {

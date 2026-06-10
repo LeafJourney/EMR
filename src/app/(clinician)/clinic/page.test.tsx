@@ -36,7 +36,7 @@ describe("ClinicHomePage Server Component", () => {
   });
 
   it("renders the fallback gracefully when the database queries hang (EMR-205 regression test)", async () => {
-    vi.mocked(session.requireUser).mockResolvedValue({ id: "user-123", organizationId: "org-123", firstName: "Test" } as any);
+    vi.mocked(session.requireUser).mockResolvedValue({ id: "user-123", organizationId: "org-123", firstName: "Test", roles: ["clinician"] } as any);
 
     // Mock Prisma to return a Promise that NEVER resolves
     vi.mocked(prisma.encounter.findMany).mockImplementation(() => new Promise(() => {}) as any);

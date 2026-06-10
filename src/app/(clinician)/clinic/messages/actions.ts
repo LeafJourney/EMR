@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { deliverMessage } from "@/lib/messaging/deliver";
@@ -9,6 +10,34 @@ import { sendEmail } from "@/lib/email/resend";
 import { getSmsAdapter, normalizePhone } from "@/lib/sms/adapter";
 import { dispatch } from "@/lib/orchestration/dispatch";
 import { logger } from "@/lib/observability/log";
+
+// ---------- Routine-messaging policy (EMR-1111 / FO-M3) ----------
+//
+// Routine patient messaging (compose AND reply) is a whole-clinic-floor
+// function: front office confirms appointments and answers logistics
+// questions just as legitimately as a clinician answers clinical ones.
+// Previously compose was ungated while reply was clinician-only — staff
+// could *start* conversations they were forbidden to continue. This
+// explicit allowlist makes the policy coherent: every clinic-floor role
+// can handle routine threads; everything else (patient, kiosk, operator,
+// platform roles) is denied. Clinical sign-off surfaces (AI drafts,
+// thread resolution) remain clinician/practice_owner-only below, and
+// sensitive-content masking (`sensitive_diagnoses.read`) still governs
+// what each role sees wherever chart content renders.
+const ROUTINE_MESSAGING_ROLES: ReadonlySet<Role> = new Set<Role>([
+  "clinician",
+  "midlevel",
+  "back_office",
+  "front_office",
+  "practice_owner",
+]);
+
+function canHandleRoutineMessaging(user: { roles: Role[] }): boolean {
+  return user.roles.some((r) => ROUTINE_MESSAGING_ROLES.has(r));
+}
+
+const ROUTINE_MESSAGING_DENIED =
+  "Unauthorized — your role can't send patient messages.";
 
 // ---------- Reply to a thread ----------
 
@@ -25,9 +54,10 @@ export async function sendClinicReplyAction(
 ): Promise<ReplyResult> {
   const user = await requireUser();
 
-  // Only clinicians and practice owners can send clinical messages
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
-    return { ok: false, error: "Unauthorized — clinician role required." };
+  // EMR-1111 (FO-M3) — routine replies are a clinic-floor function, not
+  // clinician-only. See ROUTINE_MESSAGING_ROLES above.
+  if (!canHandleRoutineMessaging(user)) {
+    return { ok: false, error: ROUTINE_MESSAGING_DENIED };
   }
 
   const parsed = replySchema.safeParse({
@@ -132,10 +162,10 @@ export async function requestAiDraftAction(
 // Two server actions exist because two UIs (with two different auth surfaces)
 // both open a fresh patient thread:
 //   - composeMessage (EMR-656) is invoked from the New Message modal on
-//     /clinic/messages. Open to any signed-in EMR user.
+//     /clinic/messages.
 //   - composePatientMessage (EMR-658) is invoked from the Gmail-style docked
-//     composer that mounts on a patient chart. Restricted to clinician /
-//     practice_owner roles since the compose UI is embedded in the chart.
+//     composer that mounts on a patient chart.
+// Both are gated by ROUTINE_MESSAGING_ROLES (EMR-1111 / FO-M3).
 
 const composeSchema = z.object({
   patientId: z.string().min(1),
@@ -152,6 +182,12 @@ export async function composeMessage(
   formData: FormData
 ): Promise<ComposeResult> {
   const user = await requireUser();
+
+  // EMR-1111 (FO-M3) — was ungated; now the explicit routine-messaging
+  // allowlist (any authenticated user could previously open a thread).
+  if (!canHandleRoutineMessaging(user)) {
+    return { ok: false, error: ROUTINE_MESSAGING_DENIED };
+  }
 
   const parsed = composeSchema.safeParse({
     patientId: formData.get("patientId") as string,
@@ -195,8 +231,10 @@ export async function composePatientMessage(
 ): Promise<ComposeResult> {
   const user = await requireUser();
 
-  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
-    return { ok: false, error: "Unauthorized — clinician role required." };
+  // EMR-1111 (FO-M3) — same routine-messaging allowlist as composeMessage;
+  // the docked chart composer is no longer clinician-only.
+  if (!canHandleRoutineMessaging(user)) {
+    return { ok: false, error: ROUTINE_MESSAGING_DENIED };
   }
 
   const parsed = composeSchema.safeParse({
@@ -292,6 +330,12 @@ export async function sendReply(
   formData: FormData
 ): Promise<ReplyResult> {
   const user = await requireUser();
+
+  // EMR-1111 (FO-M3) — was ungated; same routine-messaging allowlist as
+  // sendClinicReplyAction (this is the Smart Inbox reply path).
+  if (!canHandleRoutineMessaging(user)) {
+    return { ok: false, error: ROUTINE_MESSAGING_DENIED };
+  }
 
   const parsed = sendReplySchema.safeParse({
     threadId: formData.get("threadId") as string,

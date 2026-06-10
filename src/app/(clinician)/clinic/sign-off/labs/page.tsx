@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LabsReviewView, type LabRow } from "./labs-review-view";
@@ -17,6 +19,11 @@ export const metadata = { title: "Lab Review" };
 
 export default async function LabsReviewPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — the lab review queue is clinical PHI; gate on
+  // notes.read before any query runs.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
+
   const organizationId = user.organizationId!;
 
   const pending = await prisma.labResult.findMany({

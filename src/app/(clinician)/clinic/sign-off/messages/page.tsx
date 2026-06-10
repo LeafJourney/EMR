@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ApprovalsInboxList, type ApprovalItem } from "./approvals-list";
@@ -23,6 +25,10 @@ export const metadata = { title: "Approvals" };
  */
 export default async function ClinicApprovalsPage() {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — AI draft review is clinical sign-off work; gate on
+  // notes.read before any query runs.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
 
   // ── Load every message draft in the org, newest first ─────────
   const drafts = await prisma.message.findMany({

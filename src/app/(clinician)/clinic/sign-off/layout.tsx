@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/rbac/permissions";
 import { SignOffNav, type NavSection } from "./sign-off-nav";
 import { PageTransition } from "@/components/ui/page-transition";
 
@@ -9,6 +11,12 @@ export default async function SignOffLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
+
+  // EMR-1111 (FO-B5) — the sign-off queue is clinical PHI (notes, labs,
+  // refills, message drafts). Gate on `notes.read` BEFORE any query runs:
+  // front_office and other non-clinical roles are redirected home.
+  if (!hasPermission(user, "notes.read")) redirect("/clinic");
+
   const orgId = user.organizationId!;
 
   const [
