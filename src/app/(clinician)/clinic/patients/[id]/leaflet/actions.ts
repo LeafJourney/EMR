@@ -1,7 +1,9 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
+import { uploadDocument, storageIsConfigured } from "@/lib/storage/documents";
 import { createLightContext } from "@/lib/orchestration/context";
 import { formatDateOnly, formatDateInZone, fullName } from "@/lib/utils/format";
 import { DEFAULT_TIME_ZONE } from "@/lib/utils/timezone";
@@ -226,8 +228,91 @@ Return ONLY the narrative text, no JSON, no markdown.`;
 }
 
 // ---------------------------------------------------------------------------
-// EMR-152: Save to chart
+// EMR-152 + EMR-1116 (PJ-M4): Save to chart AND deliver to the patient.
+//
+// Storage decision (cheapest honest option): the leaflet is rendered to a
+// self-contained HTML file and uploaded through the SAME storage helper the
+// portal/records upload flow uses, so the Document's storageKey is a real
+// object and the existing /portal/records/[id]/view signed-URL route just
+// works. Document has no inline-content column, so a fabricated storageKey
+// (the previous behaviour) produced a row whose View button 404'd. When
+// storage is NOT configured we skip the dead Document and instead deliver
+// the full leaflet text inline in the portal message — the patient still
+// receives the content either way.
 // ---------------------------------------------------------------------------
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderLeafletHtml(data: LeafletData, narrative: string): string {
+  const meds = data.carePlan
+    .map(
+      (m) =>
+        `<li><strong>${escapeHtml(m.name)}</strong>${m.dosage ? ` — ${escapeHtml(m.dosage)}` : ""}${
+          m.instructions ? `<br/><em>${escapeHtml(m.instructions)}</em>` : ""
+        }</li>`,
+    )
+    .join("\n");
+  const steps = data.nextSteps.map((s) => `<li>${escapeHtml(s)}</li>`).join("\n");
+  const allergies =
+    data.allergies.length > 0
+      ? `<p><strong>Allergies:</strong> ${data.allergies.map(escapeHtml).join(", ")}</p>`
+      : "";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>After Visit Summary — ${escapeHtml(data.visit.date)}</title>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", Georgia, serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1C1A15; line-height: 1.6; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; color: #3E6B4A; margin-top: 1.6rem; }
+  .meta { color: #6b6557; font-size: 0.9rem; }
+  .narrative { font-style: italic; background: #f4f7f3; border-radius: 8px; padding: 1rem; }
+</style>
+</head>
+<body>
+<h1>Leafjourney — After Visit Summary</h1>
+<p class="meta">${escapeHtml(data.patientName)}${data.patientDOB ? ` · DOB ${escapeHtml(data.patientDOB)}` : ""}</p>
+<p class="meta">${escapeHtml(data.visit.date)} · ${escapeHtml(formatVisitModality(data.visit.modality))} with ${escapeHtml(data.visit.provider)}</p>
+${allergies}
+${narrative ? `<div class="narrative">${escapeHtml(narrative)}</div>` : ""}
+<h2>What we discussed</h2>
+<p>${escapeHtml(data.discussed)}</p>
+<h2>Your care plan</h2>
+<p>${escapeHtml(data.carePlanNotes)}</p>
+${meds ? `<ul>${meds}</ul>` : ""}
+<h2>What to do next</h2>
+<ol>${steps}</ol>
+<h2>Follow-up</h2>
+<p>${escapeHtml(data.followUp)}</p>
+<p class="meta">Generated ${escapeHtml(new Date(data.generatedAt).toLocaleDateString())}. Questions? Message your care team in the patient portal.</p>
+</body>
+</html>`;
+}
+
+function renderLeafletText(data: LeafletData, narrative: string): string {
+  const lines: string[] = [
+    `After-visit summary — ${data.visit.date}`,
+    `${formatVisitModality(data.visit.modality)} with ${data.visit.provider}`,
+    "",
+  ];
+  if (narrative) lines.push(narrative, "");
+  lines.push("What we discussed:", data.discussed, "");
+  lines.push("Your care plan:", data.carePlanNotes);
+  for (const m of data.carePlan) {
+    lines.push(`- ${m.name}${m.dosage ? ` — ${m.dosage}` : ""}${m.instructions ? ` (${m.instructions})` : ""}`);
+  }
+  lines.push("", "What to do next:");
+  data.nextSteps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
+  lines.push("", `Follow-up: ${data.followUp}`);
+  return lines.join("\n");
+}
 
 export async function saveLeafletToChart(
   encounterId: string,
@@ -243,20 +328,102 @@ export async function saveLeafletToChart(
 
   if (!encounter) return { ok: false, error: "Encounter not found" };
 
-  await prisma.document.create({
+  // 1. Persist the leaflet as a real, patient-visible Document when storage
+  //    is available (kind "letter" so it lands under the Letters tab of
+  //    /portal/records).
+  let documentId: string | null = null;
+  if (storageIsConfigured()) {
+    try {
+      const html = renderLeafletHtml(leafletData, narrative);
+      const body = Buffer.from(html, "utf8");
+      const storageKey = await uploadDocument({
+        organizationId: encounter.organizationId,
+        patientId: encounter.patientId,
+        filename: `after-visit-summary-${Date.now()}.html`,
+        contentType: "text/html",
+        body,
+      });
+      const document = await prisma.document.create({
+        data: {
+          organizationId: encounter.organizationId,
+          patientId: encounter.patientId,
+          kind: "letter",
+          originalName: `After-visit summary — ${leafletData.visit.date}.html`,
+          mimeType: "text/html",
+          sizeBytes: body.byteLength,
+          storageKey,
+          tags: ["leaflet", "after-visit-summary"],
+          uploadedById: user.id,
+          encounterId,
+        },
+        select: { id: true },
+      });
+      documentId = document.id;
+    } catch {
+      // Fall through to inline message delivery below — the patient still
+      // gets the content even if object storage hiccups.
+      documentId = null;
+    }
+  }
+
+  // 2. Deliver: a SENT portal message pointing the patient at the document
+  //    (or carrying the full leaflet text when no document could be stored).
+  const now = new Date();
+  const body = documentId
+    ? `Your after-visit summary from ${leafletData.visit.date} is ready. ` +
+      `You can read and download it any time under My Records: /portal/records/${documentId}/view`
+    : renderLeafletText(leafletData, narrative);
+
+  const existingThread = await prisma.messageThread.findFirst({
+    where: { patientId: encounter.patientId },
+    orderBy: { lastMessageAt: "desc" },
+    select: { id: true },
+  });
+  const threadId =
+    existingThread?.id ??
+    (
+      await prisma.messageThread.create({
+        data: {
+          patientId: encounter.patientId,
+          subject: "Your after-visit summary",
+          lastMessageAt: now,
+        },
+        select: { id: true },
+      })
+    ).id;
+
+  await prisma.message.create({
     data: {
-      organizationId: encounter.organizationId,
-      patientId: encounter.patientId,
-      kind: "other",
-      originalName: `Leaflet — ${leafletData.visit.date}.json`,
-      mimeType: "application/json",
-      sizeBytes: JSON.stringify({ ...leafletData, narrative }).length,
-      storageKey: `leaflets/${encounter.patientId}/${encounterId}/${Date.now()}.json`,
-      tags: ["leaflet", "after-visit-summary"],
-      uploadedById: user.id,
-      encounterId,
+      threadId,
+      senderUserId: user.id,
+      status: "sent",
+      channel: "portal",
+      delivery: "recorded",
+      body,
+      sentAt: now,
     },
   });
+  await prisma.messageThread.update({
+    where: { id: threadId },
+    data: { lastMessageAt: now },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      organizationId: encounter.organizationId,
+      actorUserId: user.id,
+      action: "leaflet.delivered",
+      subjectType: "Encounter",
+      subjectId: encounterId,
+      metadata: {
+        documentId,
+        delivery: documentId ? "document+message" : "message-inline",
+      },
+    },
+  });
+
+  revalidatePath("/portal/records");
+  revalidatePath("/portal/messages");
 
   return { ok: true };
 }

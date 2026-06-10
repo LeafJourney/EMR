@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
@@ -121,13 +122,44 @@ export default async function PatientLayout({
     redirect(homeForRoles(user.roles));
   }
 
+  // EMR-1116 (PJ-M2): unread-notification count badge on the nav item.
+  // Best-effort — a DB hiccup must never take down the whole portal shell.
+  let unreadNotifications = 0;
+  try {
+    unreadNotifications = await prisma.notification.count({
+      where: { userId: user.id, read: false },
+    });
+  } catch {
+    // Silent: nav simply renders without a badge.
+  }
+
+  const sections: NavSection[] =
+    unreadNotifications > 0
+      ? PATIENT_SECTIONS.map((section) =>
+          section.pillar === "account"
+            ? {
+                ...section,
+                items: section.items.map((item) =>
+                  item.href === "/portal/notifications"
+                    ? {
+                        ...item,
+                        count: unreadNotifications,
+                        countTone: "accent" as const,
+                      }
+                    : item,
+                ),
+              }
+            : section,
+        )
+      : PATIENT_SECTIONS;
+
   return (
     <PortalCustomizationProvider patientId={user.id}>
       <ServiceWorkerRegister />
       <AppShell
         user={user}
         activeRole="patient"
-        sections={PATIENT_SECTIONS}
+        sections={sections}
         roleLabel="Patient portal"
         showNavPrefs={false}
       >
