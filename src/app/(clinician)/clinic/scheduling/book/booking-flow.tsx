@@ -25,17 +25,32 @@ export interface ProviderOption {
   specialties: string[];
 }
 
+// EMR-1110 (FO-M2) — patient option for the staff on-behalf step.
+export interface BookablePatient {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  email: string | null;
+  dateOfBirthIso: string | null;
+}
+
 interface Props {
   visitTypes: VisitTypeOption[];
   providers: ProviderOption[];
   slotsByProvider: Record<string, string[]>;
   horizonStartIso: string;
+  /** Staff mode adds a leading "Patient" step and books on their behalf. */
+  staffMode?: boolean;
+  patients?: BookablePatient[];
 }
 
-type Step = "visit_type" | "provider" | "slot" | "insurance" | "confirm" | "done";
+type Step = "patient" | "visit_type" | "provider" | "slot" | "insurance" | "confirm" | "done";
 
-const STEPS: Step[] = ["visit_type", "provider", "slot", "insurance", "confirm"];
+const SELF_SERVE_STEPS: Step[] = ["visit_type", "provider", "slot", "insurance", "confirm"];
+const STAFF_STEPS: Step[] = ["patient", ...SELF_SERVE_STEPS];
 const STEP_LABEL: Record<Step, string> = {
+  patient: "Patient",
   visit_type: "Visit type",
   provider: "Provider",
   slot: "Time",
@@ -44,8 +59,16 @@ const STEP_LABEL: Record<Step, string> = {
   done: "Confirmed",
 };
 
-export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
-  const [step, setStep] = useState<Step>("visit_type");
+export function BookingFlow({
+  visitTypes,
+  providers,
+  slotsByProvider,
+  staffMode = false,
+  patients = [],
+}: Props) {
+  const steps = staffMode ? STAFF_STEPS : SELF_SERVE_STEPS;
+  const [step, setStep] = useState<Step>(steps[0]);
+  const [patient, setPatient] = useState<BookablePatient | null>(null);
   const [visitType, setVisitType] = useState<VisitTypeOption | null>(null);
   const [providerId, setProviderId] = useState<string | "first_available" | null>(null);
   const [slotIso, setSlotIso] = useState<string | null>(null);
@@ -63,9 +86,10 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const stepIndex = STEPS.indexOf(step);
+  const stepIndex = steps.indexOf(step);
   const canAdvance = useMemo(() => {
     switch (step) {
+      case "patient": return !!patient;
       case "visit_type": return !!visitType;
       case "provider": return !!providerId;
       case "slot": return !!slotIso;
@@ -73,19 +97,20 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
         return insurance.selfPay || (insurance.payer.trim() !== "" && insurance.memberId.trim() !== "");
       default: return false;
     }
-  }, [step, visitType, providerId, slotIso, insurance]);
+  }, [step, patient, visitType, providerId, slotIso, insurance]);
 
   const advance = () => {
-    const next = STEPS[stepIndex + 1];
+    const next = steps[stepIndex + 1];
     if (next) setStep(next);
   };
   const back = () => {
-    const prev = STEPS[stepIndex - 1];
+    const prev = steps[stepIndex - 1];
     if (prev) setStep(prev);
   };
 
   const handleConfirm = () => {
     if (!visitType || !providerId || !slotIso) return;
+    if (staffMode && !patient) return;
     setError(null);
     const payload: ConfirmBookingInput = {
       visitTypeId: visitType.id,
@@ -93,6 +118,9 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
       modality: visitType.modality,
       providerId: providerId === "first_available" ? null : providerId,
       slotStartIso: slotIso,
+      // Staff book on the selected patient's behalf; self-serve omits the
+      // id and the server resolves the caller's own patient record.
+      ...(staffMode && patient ? { patientId: patient.id } : {}),
       insurance: insurance.selfPay
         ? { selfPay: true }
         : { selfPay: false, payer: insurance.payer, memberId: insurance.memberId, notes: insurance.notes },
@@ -109,13 +137,23 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
   };
 
   if (step === "done" && confirmation) {
-    return <ConfirmedScreen confirmation={confirmation} visitType={visitType!} slotIso={slotIso!} />;
+    return (
+      <ConfirmedScreen
+        confirmation={confirmation}
+        visitType={visitType!}
+        slotIso={slotIso!}
+        patientName={staffMode && patient ? `${patient.firstName} ${patient.lastName}` : null}
+      />
+    );
   }
 
   return (
     <div className="space-y-6">
-      <Stepper step={step} />
+      <Stepper step={step} steps={steps} />
 
+      {step === "patient" && (
+        <PatientStep patients={patients} selected={patient} onSelect={setPatient} />
+      )}
       {step === "visit_type" && (
         <VisitTypeStep options={visitTypes} selected={visitType} onSelect={setVisitType} />
       )}
@@ -149,6 +187,7 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
           provider={providers.find((p) => p.id === providerId) ?? null}
           slotIso={slotIso}
           insurance={insurance}
+          patientName={staffMode && patient ? `${patient.firstName} ${patient.lastName}` : null}
         />
       )}
 
@@ -176,14 +215,123 @@ export function BookingFlow({ visitTypes, providers, slotsByProvider }: Props) {
   );
 }
 
-function Stepper({ step }: { step: Step }) {
-  const idx = STEPS.indexOf(step);
+function Stepper({ step, steps }: { step: Step; steps: Step[] }) {
+  const idx = steps.indexOf(step);
   return (
     <UiStepper
-      steps={STEPS.map((s) => STEP_LABEL[s])}
+      steps={steps.map((s) => STEP_LABEL[s])}
       current={idx}
       aria-label="Booking progress"
     />
+  );
+}
+
+// EMR-1110 (FO-M2) — staff patient search/select, same pattern as the
+// schedule's right-click "Schedule Patient" modal.
+function PatientStep({
+  patients,
+  selected,
+  onSelect,
+}: {
+  patients: BookablePatient[];
+  selected: BookablePatient | null;
+  onSelect: (p: BookablePatient | null) => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return [];
+    const q = search.toLowerCase();
+    return patients
+      .filter((p) => {
+        const name = `${p.firstName} ${p.lastName}`.toLowerCase();
+        return (
+          name.includes(q) ||
+          (p.phone ?? "").toLowerCase().includes(q) ||
+          (p.email ?? "").toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 8);
+  }, [search, patients]);
+
+  if (selected) {
+    return (
+      <Card tone="raised">
+        <CardContent className="pt-6 pb-6 flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-lg text-text">
+              {selected.firstName} {selected.lastName}
+            </h3>
+            <p className="text-sm text-text-muted mt-0.5">
+              {selected.dateOfBirthIso
+                ? `DOB ${new Date(selected.dateOfBirthIso).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    timeZone: "UTC",
+                  })}`
+                : "DOB on file: none"}
+              {selected.phone ? ` · ${selected.phone}` : ""}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => onSelect(null)}>
+            Change patient
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card tone="raised">
+      <CardContent className="pt-6 pb-6 space-y-3">
+        <div>
+          <h3 className="font-display text-lg text-text mb-1">Who is this visit for?</h3>
+          <p className="text-sm text-text-muted">
+            Search by name, phone, or email — the booking lands on their chart.
+          </p>
+        </div>
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Type a name, phone number, or email…"
+          autoFocus
+        />
+        {filtered.length > 0 && (
+          <div className="border border-border rounded-lg divide-y divide-border/50 overflow-hidden">
+            {filtered.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onSelect(p)}
+                className="w-full text-left px-4 py-3 hover:bg-surface-muted transition-colors"
+              >
+                <p className="text-sm font-semibold text-text">
+                  {p.firstName} {p.lastName}
+                </p>
+                <p className="text-[11px] text-text-subtle mt-0.5">
+                  {p.dateOfBirthIso
+                    ? `DOB ${new Date(p.dateOfBirthIso).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })}`
+                    : "DOB —"}
+                  {p.phone ? ` · ${p.phone}` : ""}
+                  {p.email ? ` · ${p.email}` : ""}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+        {search.trim() !== "" && filtered.length === 0 && (
+          <p className="text-sm text-text-muted">
+            No matching patients. Enroll them first from the patient roster.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -418,16 +566,19 @@ function ConfirmStep({
   provider,
   slotIso,
   insurance,
+  patientName,
 }: {
   visitType: VisitTypeOption;
   provider: ProviderOption | null;
   slotIso: string;
   insurance: { payer: string; memberId: string; selfPay: boolean };
+  patientName?: string | null;
 }) {
   return (
     <Card tone="raised">
       <CardContent className="pt-6 pb-6 space-y-4">
         <h3 className="font-display text-xl text-text">Review and confirm</h3>
+        {patientName && <Row label="Patient" value={patientName} />}
         <Row label="Visit" value={`${visitType.label} (${visitType.durationMinutes} min)`} />
         <Row label="Modality" value={visitType.modality === "video" ? "Video" : "In-person"} />
         <Row label="Provider" value={provider?.name ?? "First available"} />
@@ -445,10 +596,12 @@ function ConfirmedScreen({
   confirmation,
   visitType,
   slotIso,
+  patientName,
 }: {
   confirmation: { appointmentId: string; icsDataUrl: string; icsFileName: string };
   visitType: VisitTypeOption;
   slotIso: string;
+  patientName?: string | null;
 }) {
   // EMR-388 — Google Calendar invite link alongside the iCal download.
   const gcalUrl = googleCalendarUrl({
@@ -463,10 +616,14 @@ function ConfirmedScreen({
     <Card tone="ambient">
       <CardContent className="pt-8 pb-8 text-center">
         <div className="text-3xl mb-3">✓</div>
-        <h2 className="font-display text-2xl text-text mb-2">You're booked.</h2>
+        <h2 className="font-display text-2xl text-text mb-2">
+          {patientName ? `${patientName} is booked.` : "You're booked."}
+        </h2>
         <p className="text-sm text-text-muted mb-6">
           {visitType.label} on {formatDayHeader(slotIso.slice(0, 10))} at {formatTime(slotIso)}.
-          We've sent a confirmation to your secure inbox.
+          {patientName
+            ? " A confirmation went to the patient's secure inbox."
+            : " We've sent a confirmation to your secure inbox."}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           {/* EMR-388 — iCal (.ics) + Google Calendar share */}

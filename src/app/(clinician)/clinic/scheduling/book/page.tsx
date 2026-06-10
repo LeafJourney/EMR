@@ -4,7 +4,22 @@ import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow, EditorialRule } from "@/components/ui/ornament";
 import { Badge } from "@/components/ui/badge";
-import { BookingFlow, type VisitTypeOption, type ProviderOption } from "./booking-flow";
+import {
+  BookingFlow,
+  type VisitTypeOption,
+  type ProviderOption,
+  type BookablePatient,
+} from "./booking-flow";
+
+// Staff roles that may pick a patient and book on their behalf — must
+// match STAFF_BOOKING_ROLES in ./actions.ts.
+const STAFF_BOOKING_ROLES = new Set([
+  "front_office",
+  "back_office",
+  "clinician",
+  "practice_owner",
+  "operator",
+]);
 
 export const metadata = { title: "Book a Visit" };
 
@@ -27,11 +42,40 @@ export default async function BookVisitPage() {
   const user = await requireUser();
   const orgId = user.organizationId!;
 
+  // EMR-1110 (FO-M2) — staff get a real patient-select step so the front
+  // desk can book on a patient's behalf; patient users keep the self-serve
+  // flow (their own record is resolved server-side).
+  const isStaff = user.roles.some((role) => STAFF_BOOKING_ROLES.has(role));
+
   const providers = await prisma.provider.findMany({
     where: { organizationId: orgId, active: true },
     include: { user: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "asc" },
   });
+
+  const bookablePatients: BookablePatient[] = isStaff
+    ? (
+        await prisma.patient.findMany({
+          where: { organizationId: orgId, deletedAt: null },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            email: true,
+            dateOfBirth: true,
+          },
+          orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        })
+      ).map((p) => ({
+        id: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        phone: p.phone,
+        email: p.email,
+        dateOfBirthIso: p.dateOfBirth?.toISOString() ?? null,
+      }))
+    : [];
 
   // Existing appointments — used to mask out booked slots in the synthetic grid.
   const horizonStart = new Date();
@@ -116,10 +160,20 @@ export default async function BookVisitPage() {
           <CardContent className="pt-6 pb-6">
             <div className="flex items-start gap-4">
               <div className="flex-1">
-                <Eyebrow className="mb-2">Self-serve</Eyebrow>
+                <Eyebrow className="mb-2">{isStaff ? "Front desk" : "Self-serve"}</Eyebrow>
                 <p className="text-sm text-text-muted leading-relaxed">
-                  This page is the same flow patients see at <span className="font-medium text-text">leafjourney.com/book</span>.
-                  You can use it on a patient's behalf — switch the patient context in the command palette first.
+                  {isStaff ? (
+                    <>
+                      This is the same flow patients see at{" "}
+                      <span className="font-medium text-text">leafjourney.com/book</span> — start by
+                      picking the patient you're booking for.
+                    </>
+                  ) : (
+                    <>
+                      This page is the same flow patients see at{" "}
+                      <span className="font-medium text-text">leafjourney.com/book</span>.
+                    </>
+                  )}
                 </p>
               </div>
               <Badge tone="accent">14-day horizon</Badge>
@@ -133,6 +187,8 @@ export default async function BookVisitPage() {
         providers={providerOptions}
         slotsByProvider={slotsByProvider}
         horizonStartIso={horizonStart.toISOString()}
+        staffMode={isStaff}
+        patients={bookablePatients}
       />
 
       <div className="mt-12">

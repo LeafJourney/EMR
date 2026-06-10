@@ -4,7 +4,20 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
+import { requireUser, type AuthedUser } from "@/lib/auth/session";
+
+// EMR-1110 (FO-M4) — explicit allowlist, matching the schedule actions.
+const SCHEDULING_ROLES = new Set([
+  "front_office",
+  "back_office",
+  "clinician",
+  "practice_owner",
+  "operator",
+]);
+
+function canManageSchedule(user: AuthedUser): boolean {
+  return user.roles.some((role) => SCHEDULING_ROLES.has(role));
+}
 
 const CreateSeriesSchema = z.object({
   title: z.string().min(2).max(120),
@@ -14,6 +27,10 @@ const CreateSeriesSchema = z.object({
   cadence: z.enum(["once", "weekly", "biweekly", "monthly"]),
   sessionCount: z.number().int().min(1).max(26),
   maxSeats: z.number().int().min(2).max(50),
+  // EMR-1110 (FO-M4, minor 2) — explicit series lead. Optional for callers
+  // who ARE a provider (their own profile is used); required otherwise so
+  // we never silently write providerId: null.
+  providerId: z.string().min(1).optional(),
 });
 
 export type CreateGroupSeriesInput = z.infer<typeof CreateSeriesSchema>;
@@ -36,14 +53,36 @@ export async function createGroupSeriesAction(
   const user = await requireUser();
   const orgId = user.organizationId;
   if (!orgId) return { ok: false, error: "No organization on session." };
+  if (!canManageSchedule(user)) {
+    return { ok: false, error: "You don't have permission to compose group series." };
+  }
   const parsed = CreateSeriesSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid series details." };
   const data = parsed.data;
 
-  const provider = await prisma.provider.findFirst({
-    where: { organizationId: orgId, userId: user.id, active: true },
-    select: { id: true },
-  });
+  // Resolve the series lead. An explicit providerId (org-scoped) wins;
+  // otherwise the caller's own provider profile. A caller with neither
+  // (e.g. front office) must pick a provider — no more silent
+  // providerId: null "Unassigned" series.
+  let provider: { id: string } | null = null;
+  if (data.providerId) {
+    provider = await prisma.provider.findFirst({
+      where: { id: data.providerId, organizationId: orgId, active: true },
+      select: { id: true },
+    });
+    if (!provider) return { ok: false, error: "Selected provider not found in your organization." };
+  } else {
+    provider = await prisma.provider.findFirst({
+      where: { organizationId: orgId, userId: user.id, active: true },
+      select: { id: true },
+    });
+    if (!provider) {
+      return {
+        ok: false,
+        error: "You don't have a provider profile — choose the provider who will lead this series.",
+      };
+    }
+  }
 
   // Need a placeholder patient for the holder row — we'll use the first
   // active patient in the org. Group enrollment will replace this when
@@ -95,7 +134,7 @@ export async function createGroupSeriesAction(
       prisma.appointment.create({
         data: {
           patientId: holder.id,
-          providerId: provider?.id ?? null,
+          providerId: provider.id,
           startAt: s.startAt,
           endAt: s.endAt,
           modality: "video",

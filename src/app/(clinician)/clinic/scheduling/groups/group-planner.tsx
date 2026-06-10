@@ -10,7 +10,15 @@ import { createGroupSeriesAction, type CreateGroupSeriesInput } from "./actions"
 
 type Cadence = "once" | "weekly" | "biweekly" | "monthly";
 
-export function GroupSeriesPlanner() {
+type ProviderOption = { id: string; name: string };
+
+export function GroupSeriesPlanner({
+  providers,
+  viewerProviderId,
+}: {
+  providers: ProviderOption[];
+  viewerProviderId: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
@@ -19,6 +27,9 @@ export function GroupSeriesPlanner() {
   const [cadence, setCadence] = useState<Cadence>("once");
   const [sessionCount, setSessionCount] = useState(1);
   const [maxSeats, setMaxSeats] = useState(8);
+  // EMR-1110 (FO-M4, minor 2) — explicit series lead. Defaults to the
+  // viewer's own provider profile when they have one.
+  const [providerId, setProviderId] = useState<string>(viewerProviderId ?? "");
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -26,6 +37,10 @@ export function GroupSeriesPlanner() {
     setFeedback(null);
     if (!title.trim() || !firstStart) {
       setFeedback("Title and first session start are required.");
+      return;
+    }
+    if (!providerId) {
+      setFeedback("Choose the provider who will lead this series.");
       return;
     }
     const payload: CreateGroupSeriesInput = {
@@ -36,6 +51,7 @@ export function GroupSeriesPlanner() {
       cadence,
       sessionCount: cadence === "once" ? 1 : sessionCount,
       maxSeats,
+      providerId,
     };
     startTransition(async () => {
       const r = await createGroupSeriesAction(payload);
@@ -90,6 +106,21 @@ export function GroupSeriesPlanner() {
               onChange={(e) => setTopic(e.target.value)}
               placeholder="Pain regimen group"
             />
+          </FieldGroup>
+          <FieldGroup label="Led by" hint="Sessions are attributed to this provider">
+            <select
+              value={providerId}
+              onChange={(e) => setProviderId(e.target.value)}
+              className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              <option value="">Select provider…</option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.id === viewerProviderId ? " (you)" : ""}
+                </option>
+              ))}
+            </select>
           </FieldGroup>
           <FieldGroup label="First session starts at">
             <Input

@@ -61,6 +61,35 @@ export default async function ClinicianSchedulePage({
     },
   });
 
+  // EMR-1112 (FO-5) — outstanding balance + copay per patient on the week,
+  // derived the same way the financial cockpit's "Patient due" is
+  // (getPatientFinancialSummary): open statements' amountDue minus paidToDate.
+  // Batched across the week's patients so the popover chip is free to render.
+  const patientIds = Array.from(new Set(appointments.map((a) => a.patientId)));
+  const [openStatements, coverages] = await Promise.all([
+    prisma.statement.findMany({
+      where: {
+        patientId: { in: patientIds },
+        status: { notIn: ["paid", "voided"] },
+      },
+      select: { patientId: true, amountDueCents: true, paidToDateCents: true },
+    }),
+    prisma.patientCoverage.findMany({
+      where: { patientId: { in: patientIds }, type: "primary", active: true },
+      select: { patientId: true, copayCents: true },
+    }),
+  ]);
+
+  const balanceByPatient = new Map<string, number>();
+  for (const s of openStatements) {
+    balanceByPatient.set(
+      s.patientId,
+      (balanceByPatient.get(s.patientId) ?? 0) + (s.amountDueCents - s.paidToDateCents),
+    );
+  }
+  const copayByPatient = new Map<string, number | null>();
+  for (const c of coverages) copayByPatient.set(c.patientId, c.copayCents);
+
   const dtos: AppointmentDTO[] = appointments.map((a) => ({
     id: a.id,
     patientId: a.patient.id,
@@ -73,6 +102,8 @@ export default async function ClinicianSchedulePage({
     status: a.status,
     modality: a.modality,
     notes: a.notes,
+    balanceDueCents: Math.max(0, balanceByPatient.get(a.patientId) ?? 0),
+    copayCents: copayByPatient.get(a.patientId) ?? null,
   }));
 
   return (
