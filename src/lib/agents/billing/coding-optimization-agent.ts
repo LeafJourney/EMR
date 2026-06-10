@@ -90,7 +90,7 @@ export const codingOptimizationAgent: Agent<
       where: { id: encounterId },
       include: {
         notes: {
-          where: { status: { in: ["finalized", "needs_review"] } },
+          where: { status: { in: ["finalized", "pending_cosign"] } },
           orderBy: { createdAt: "desc" },
           take: 2,
         },

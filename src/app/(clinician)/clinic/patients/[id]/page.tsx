@@ -1060,7 +1060,7 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
               preview: firstBlock
                 ? `${firstBlock.heading ?? ""}: ${(firstBlock.body ?? "").slice(0, 280)}`
                 : (n.narrative ?? "").slice(0, 280),
-              pendingAttestation: n.status === "needs_review",
+              pendingAttestation: n.status === "pending_cosign",
             };
           })}
         />
