@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDate, formatModality } from "@/lib/utils/format";
 import { NoteEditor } from "./note-editor";
@@ -14,6 +15,8 @@ import { hasPermission, canDocumentObjective } from "@/lib/rbac/permissions";
 import { coerceVitals } from "@/lib/clinical/objective-vitals";
 import { buildVisitCompletionBundle } from "@/lib/domain/visit-completion";
 import { VisitCompletionPanel } from "./visit-completion-panel";
+import { noteStatusBadge } from "./note-status";
+import { AgentJobStrip, type AgentJobLite } from "./agent-job-strip";
 
 interface PageProps {
   params: { id: string; noteId: string };
@@ -130,21 +133,12 @@ export default async function NoteDetailPage({ params }: PageProps) {
         }
       : null;
 
-  // Parse coding suggestion. `icd10` is a JSON column — runtime-validate
-  // that it's actually an array before handing it to the client, otherwise
-  // a legacy/malformed row will crash the editor on render.
+  // Parse coding suggestion. `icd10` / `approvedIcd10` are JSON columns —
+  // runtime-validate they're actually arrays before handing them to the
+  // client, otherwise a legacy/malformed row will crash the editor on render.
   // EMR-1097: also surface the physician approval decision so the editor and
-  // the Practice Readiness card render the real coding state. The cast covers
-  // the new approval columns until `prisma generate` runs.
-  const codingRow = note.codingSuggestion as
-    | (typeof note.codingSuggestion & {
-        status?: string | null;
-        approvedByName?: string | null;
-        approvedAt?: Date | null;
-        approvedIcd10?: unknown;
-        approvedEmLevel?: string | null;
-      })
-    | null;
+  // the Practice Readiness card render the real coding state.
+  const codingRow = note.codingSuggestion;
   const codingSuggestion = codingRow
     ? {
         icd10: Array.isArray(codingRow.icd10)
@@ -173,6 +167,48 @@ export default async function NoteDetailPage({ params }: PageProps) {
   const releasedPayload = note.visitCompletion
     ? (note.visitCompletion.payload as any)
     : null;
+
+  // Post-finalize agent strip (audit minor #6): the downstream agents that fire
+  // when this note is signed. coding-readiness keys its job input by noteId;
+  // patient-outreach by encounterId; outcome-tracker carries only patientId, so
+  // scope that one to jobs created at/after this note was finalized.
+  const showAgentStrip = note.status === "finalized" || note.status === "amended";
+  const agentJobs: AgentJobLite[] = showAgentStrip
+    ? (
+        await prisma.agentJob.findMany({
+          where: {
+            agentName: {
+              in: ["codingReadiness", "patientOutreach", "outcomeTracker"],
+            },
+            OR: [
+              { input: { path: ["noteId"], equals: note.id } },
+              { input: { path: ["encounterId"], equals: note.encounterId } },
+              {
+                agentName: "outcomeTracker",
+                input: { path: ["patientId"], equals: note.encounter.patientId },
+                ...(note.finalizedAt ? { createdAt: { gte: note.finalizedAt } } : {}),
+              },
+            ],
+          },
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            agentName: true,
+            status: true,
+            lastError: true,
+            completedAt: true,
+          },
+        })
+      ).map((j) => ({
+        id: j.id,
+        agentName: j.agentName,
+        status: j.status,
+        lastError: j.lastError,
+        completedAt: j.completedAt ? j.completedAt.toISOString() : null,
+      }))
+    : [];
+
+  const headerStatus = noteStatusBadge(note.status);
   return (
     <PageShell maxWidth="max-w-[900px]">
       <PageHeader
@@ -181,6 +217,10 @@ export default async function NoteDetailPage({ params }: PageProps) {
         description={`${patient.firstName} ${patient.lastName} · ${formatModality(note.encounter.modality)} visit`}
         actions={
           <div className="flex items-center gap-2">
+            {/* Note lifecycle status, surfaced in the header (audit minor:
+                status visibility) so the physician sees draft / awaiting
+                co-sign / signed / amended without scrolling below the fold. */}
+            <Badge tone={headerStatus.tone}>{headerStatus.label}</Badge>
             {/* ux/print-stylesheets-clinical — single-note SOAP printout */}
             <Link
               href={`/clinic/patients/${params.id}/notes/${params.noteId}/print`}
@@ -250,6 +290,9 @@ export default async function NoteDetailPage({ params }: PageProps) {
           noteId={note.id}
         />
       )}
+
+      {/* Post-finalize downstream-agent status (audit minor #6) */}
+      {showAgentStrip && <AgentJobStrip jobs={agentJobs} />}
 
       {/* ux/comments-mentions-collab — inline collaboration on chart notes */}
       <div className="mt-8">

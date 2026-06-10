@@ -31,8 +31,14 @@ export interface NoteLite {
 
 function statusTone(status: string): "active" | "mild" | "beige" {
   if (status === "finalized" || status === "amended") return "active";
-  if (status === "needs_review") return "mild";
+  if (status === "pending_cosign") return "mild";
   return "beige";
+}
+
+// Finalized/amended notes are signed legal records — they open read-only, so
+// the action reads "View"; drafts open the editor, so it reads "Open to edit".
+function isSignedStatus(status: string): boolean {
+  return status === "finalized" || status === "amended";
 }
 
 export function NotesTab({
@@ -67,8 +73,9 @@ export function NotesTab({
           </span>
         </div>
         <form action={startVisitAction}>
+          {/* This creates an encounter, not just a note — label it honestly. */}
           <Button type="submit" size="sm">
-            Draft a note
+            Start visit
           </Button>
         </form>
       </div>
@@ -134,7 +141,7 @@ export function NotesTab({
                     </div>
                     <Link href={`/clinic/patients/${patientId}/notes/${selected.id}`}>
                       <Button variant="secondary" size="sm">
-                        Open to edit
+                        {isSignedStatus(selected.status) ? "View" : "Open to edit"}
                       </Button>
                     </Link>
                   </div>
