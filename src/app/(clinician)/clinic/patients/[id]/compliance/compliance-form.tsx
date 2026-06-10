@@ -122,6 +122,19 @@ function ICD10SearchField({
   );
 }
 
+function PrinterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mr-1">
+      <path
+        d="M4 6V2h8v4M4 12H2.5A1.5 1.5 0 011 10.5v-3A1.5 1.5 0 012.5 6h11A1.5 1.5 0 0115 7.5v3a1.5 1.5 0 01-1.5 1.5H12M4 10h8v4H4v-4z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────
 
 export function ComplianceFormView({
@@ -153,6 +166,13 @@ export function ComplianceFormView({
   const signed = Boolean(signedAt);
   const template = useMemo(() => getStateForm(selectedState), [selectedState]);
   const registry = useMemo(() => getRegistryForState(selectedState), [selectedState]);
+
+  // WS-C task 5: dedicated print-ready packet (server-rendered, letterhead) for
+  // manual filing. Available once the form is persisted (has an id); falls back
+  // to the in-page window.print() before then.
+  const printHref = formId
+    ? `/clinic/patients/${patient.id}/compliance/print?formId=${formId}`
+    : null;
 
   // Which fields were auto-populated (read-only)
   const autoPopKeys = useMemo(() => {
@@ -674,17 +694,19 @@ export function ComplianceFormView({
                       The patient will need to submit the physician certification along with
                       their application to the state program.
                     </p>
-                    <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-3">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mr-1">
-                        <path
-                          d="M4 6V2h8v4M4 12H2.5A1.5 1.5 0 011 10.5v-3A1.5 1.5 0 012.5 6h11A1.5 1.5 0 0115 7.5v3a1.5 1.5 0 01-1.5 1.5H12M4 10h8v4H4v-4z"
-                          stroke="currentColor"
-                          strokeWidth="1.2"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      Print form
-                    </Button>
+                    {printHref ? (
+                      <Link href={printHref} target="_blank" rel="noopener noreferrer" className="inline-block mt-3">
+                        <Button variant="secondary" size="sm">
+                          <PrinterIcon />
+                          Print packet for filing
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-3">
+                        <PrinterIcon />
+                        Print form
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -740,9 +762,19 @@ export function ComplianceFormView({
                       No electronic submission was made and no confirmation
                       number exists.
                     </p>
-                    <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-1">
-                      Print form
-                    </Button>
+                    {printHref ? (
+                      <Link href={printHref} target="_blank" rel="noopener noreferrer" className="inline-block mt-1">
+                        <Button variant="secondary" size="sm">
+                          <PrinterIcon />
+                          Print packet for filing
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={handlePrint} className="mt-1">
+                        <PrinterIcon />
+                        Print form
+                      </Button>
+                    )}
                     <p className="text-[10px] text-amber-600">
                       Attempt recorded {new Date(registryAttempt.attemptedAt).toLocaleString()}
                     </p>
