@@ -195,8 +195,20 @@ export async function runJob(job: AgentJob, workerId: string): Promise<void> {
       }
     }
 
+    // A no-op skip — the agent decided there was nothing to do (e.g. the
+    // patient-outreach M6 dedup, which stands down when the physician-reviewed
+    // visit-completion release already drafted the post-visit message) — is not
+    // an artifact awaiting human sign-off. Routing it to needs_approval leaves a
+    // phantom zero-action item in the physician's approvals surfaces (the clinic
+    // dashboard needs_approval count + fleet activity feed). Resolve it as a
+    // benign success so the inbox only shows actionable drafts.
+    const isNoOpSkip =
+      output != null &&
+      typeof output === "object" &&
+      (output as { skipped?: unknown }).skipped === true;
+
     const finalLogs = drainLogs();
-    if (!mustApprove) {
+    if (!mustApprove || isNoOpSkip) {
       await markSucceeded(job.id, output, finalLogs);
     } else if (resolved) {
       await applyDefaultDecision(
