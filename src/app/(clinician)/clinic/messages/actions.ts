@@ -7,6 +7,8 @@ import { requireUser } from "@/lib/auth/session";
 import { deliverMessage } from "@/lib/messaging/deliver";
 import { sendEmail } from "@/lib/email/resend";
 import { getSmsAdapter, normalizePhone } from "@/lib/sms/adapter";
+import { dispatch } from "@/lib/orchestration/dispatch";
+import { logger } from "@/lib/observability/log";
 
 // ---------- Reply to a thread ----------
 
@@ -52,6 +54,74 @@ export async function sendClinicReplyAction(
     body: parsed.data.body,
     senderUserId: user.id,
   });
+
+  revalidatePath("/clinic/messages");
+  return { ok: true };
+}
+
+// ---------- Request an AI-drafted reply (EMR-1103 audit #14) ----------
+//
+// Wires the previously-dead Messaging Assistant agent to a real surface. The
+// `message.draft.requested` domain event was defined and mapped to the
+// messagingAssistant workflow, but nothing ever emitted it — so the agent was
+// unreachable. The "Draft with AI" control in the thread view emits it here.
+//
+// The agent loads the patient's chart + longitudinal memory, drafts an
+// approval-gated `draft` Message, and that draft surfaces both inline in this
+// thread and in the clinician Approvals inbox for sign-off (it is NEVER sent
+// automatically). We best-effort run the enqueued job inline (mirroring
+// startVisit) so the draft appears promptly; on timeout the worker finishes it.
+
+const aiDraftSchema = z.object({
+  threadId: z.string().min(1),
+  intent: z.string().min(1).max(40).optional(),
+});
+
+export type AiDraftResult = { ok: true } | { ok: false; error: string };
+
+export async function requestAiDraftAction(
+  threadId: string,
+  intent: string = "follow_up",
+): Promise<AiDraftResult> {
+  const user = await requireUser();
+
+  if (!user.roles.some((r) => r === "clinician" || r === "practice_owner")) {
+    return { ok: false, error: "Unauthorized — clinician role required." };
+  }
+
+  const parsed = aiDraftSchema.safeParse({ threadId, intent });
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+
+  const thread = await prisma.messageThread.findFirst({
+    where: {
+      id: parsed.data.threadId,
+      patient: { organizationId: user.organizationId! },
+    },
+    select: { patient: { select: { id: true } } },
+  });
+  if (!thread) return { ok: false, error: "Thread not found." };
+
+  const jobs = await dispatch({
+    name: "message.draft.requested",
+    patientId: thread.patient.id,
+    intent: parsed.data.intent ?? "follow_up",
+    organizationId: user.organizationId!,
+  });
+
+  // Best-effort inline run so the draft shows up without waiting on the worker.
+  try {
+    if (jobs.length > 0) {
+      const jobRows = await prisma.agentJob.findMany({ where: { id: { in: jobs } } });
+      const { runJob } = await import("@/lib/orchestration/runner");
+      await Promise.race([
+        Promise.all(jobRows.map((job) => runJob(job, "inline-message-draft"))),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 15000)),
+      ]);
+    }
+  } catch (err) {
+    // Timeout or error — the job stays queued for the worker to finish.
+    logger.error({ event: "clinic.messages.ai_draft.inline_failed", err });
+  }
 
   revalidatePath("/clinic/messages");
   return { ok: true };
