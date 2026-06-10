@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { logger } from "@/lib/observability/log";
+import { priceUsageMicroCents } from "@/lib/ai/pricing";
 
 // EMR-755 — LlmUsage ledger access.
 //
@@ -18,6 +19,12 @@ export interface LlmUsageRow {
   latencyMs: number;
   ok: boolean;
   errorCode?: string | null;
+  /**
+   * Integer cost in micro-cents (1e-8 USD). Optional: when omitted, the sink
+   * prices the call from the byok catalog so callers never have to. Pass an
+   * explicit value (including null) only to override the catalog price.
+   */
+  costMicroCents?: number | null;
 }
 
 interface LlmUsageDelegate {
@@ -50,12 +57,21 @@ export function llmUsageAvailable(): boolean {
  * into the model call path — a telemetry write must not fail a clinical call.
  */
 export async function persistLlmUsage(row: LlmUsageRow): Promise<void> {
-  logger.info({ event: "llm.usage", ...row });
+  // Price the call from the byok catalog unless the caller supplied a cost.
+  // `undefined` means "price it for me"; an explicit `null` is preserved as
+  // an intentional "uncosted" marker.
+  const costMicroCents =
+    row.costMicroCents === undefined
+      ? priceUsageMicroCents(row.model, row.tokensIn, row.tokensOut)
+      : row.costMicroCents;
+  const priced: LlmUsageRow = { ...row, costMicroCents };
+
+  logger.info({ event: "llm.usage", ...priced });
   const delegate = llmUsageDelegate();
   if (!delegate) return; // table not present in this generated client yet
   try {
     await delegate.create({
-      data: { ...row, errorCode: row.errorCode ?? null },
+      data: { ...priced, errorCode: priced.errorCode ?? null },
     });
   } catch (err) {
     logger.warn({
