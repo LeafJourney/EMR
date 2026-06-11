@@ -4,6 +4,13 @@ import { EmptyIllustration } from "@/components/ui/ornament";
 import { Button } from "@/components/ui/button";
 import { useReportError } from "@/components/error-pages/use-report-error";
 
+// Hook usage lives in a child so the boundary component itself stays
+// hook-free — unit tests invoke it as a plain function (no React render).
+function ReportToSentry({ error }: { error: Error & { digest?: string } }) {
+  useReportError(error);
+  return null;
+}
+
 export default function Error({
   error,
   reset,
@@ -11,10 +18,9 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useReportError(error);
-
   return (
     <div className="px-6 lg:px-12 py-10">
+      <ReportToSentry error={error} />
       <div className="mx-auto w-full max-w-[800px] flex flex-col items-center text-center py-16">
         <EmptyIllustration size={120} />
         <h1 className="font-display text-3xl text-text tracking-tight mt-4">
