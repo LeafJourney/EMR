@@ -31,9 +31,14 @@ export type Appearance = {
  */
 
 const variables: NonNullable<Appearance["variables"]> = {
-  colorPrimary: "var(--accent)",
-  colorDanger: "var(--danger)",
-  colorSuccess: "var(--success)",
+  // Literal hex values, NOT var() references: Clerk parses these to compute
+  // derived shades (button gradients, hover states). A var() string is
+  // unparseable, and the garbage gradient it produced painted OVER our
+  // Tailwind bg-accent — the invisible "Continue" button on /sign-in.
+  // Light-theme values; the auth card renders on the light surface.
+  colorPrimary: "#1F4D37",
+  colorDanger: "#B83B2E",
+  colorSuccess: "#2A6E4C",
   borderRadius: "0.75rem",
   fontFamily: "var(--font-sans), Inter, system-ui, sans-serif",
   fontFamilyButtons: "var(--font-sans), Inter, system-ui, sans-serif",
@@ -58,8 +63,11 @@ const sharedElements: NonNullable<Appearance["elements"]> = {
   formFieldErrorText: "text-danger text-sm mt-1",
   formFieldSuccessText: "text-success text-sm mt-1",
 
+  // !bg-none kills Clerk's injected gradient (background-image) which
+  // otherwise paints over background-color; !bg-accent wins the cascade tie
+  // against Clerk's runtime-injected stylesheet, which loads after ours.
   formButtonPrimary:
-    "bg-accent hover:bg-accent-hover text-accent-ink rounded-xl h-11 font-semibold normal-case text-sm shadow-sm hover:shadow transition-all duration-200 active:scale-[0.98]",
+    "!bg-none !bg-accent hover:!bg-accent-hover !text-accent-ink rounded-xl h-11 font-semibold normal-case text-sm shadow-sm hover:shadow transition-all duration-200 active:scale-[0.98]",
   formButtonReset: "text-text-muted hover:text-text normal-case transition-colors",
 
   otpCodeFieldInput: "border-border text-text rounded-xl focus:border-accent focus:ring-1 focus:ring-accent/20",
