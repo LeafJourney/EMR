@@ -2,6 +2,7 @@
 
 import { EmptyIllustration } from "@/components/ui/ornament";
 import { Button } from "@/components/ui/button";
+import { useReportError } from "@/components/error-pages/use-report-error";
 
 export default function Error({
   error,
@@ -10,6 +11,8 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useReportError(error);
+
   return (
     <div className="px-6 lg:px-12 py-10">
       <div className="mx-auto w-full max-w-[800px] flex flex-col items-center text-center py-16">
@@ -21,6 +24,11 @@ export default function Error({
           We ran into an unexpected issue loading the operations dashboard. This
           has been logged. Try refreshing, or go back to ops.
         </p>
+        {error.digest && (
+          <p className="text-xs text-text-subtle mt-3 font-mono">
+            Error ID: {error.digest}
+          </p>
+        )}
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={() => reset()} variant="secondary">
             Try again
