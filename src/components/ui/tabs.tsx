@@ -402,11 +402,19 @@ export const Trigger = React.forwardRef<HTMLButtonElement, TriggerProps>(
 
     // Register / unregister with the root. We re-register whenever
     // disabled flips, so keyboard nav can skip disabled triggers.
+    //
+    // Depend on the stable registerTrigger callback — NOT the whole ctx.
+    // Registration bumps layoutToken, which is part of ctx; with ctx in the
+    // deps every registration invalidated the context and re-ran every
+    // trigger's effect, which re-registered and bumped the token again —
+    // an unconditional update loop (React #185) that took down every Tabs
+    // surface on the client.
+    const { registerTrigger } = ctx;
     React.useEffect(() => {
       const el = localRef.current;
       if (!el) return;
-      return ctx.registerTrigger({ value, el, disabled: !!disabled });
-    }, [ctx, value, disabled]);
+      return registerTrigger({ value, el, disabled: !!disabled });
+    }, [registerTrigger, value, disabled]);
 
     const isActive = ctx.value === value;
     const triggerId = `${ctx.baseId}-trigger-${value}`;
