@@ -2,6 +2,14 @@
 
 import { EmptyIllustration } from "@/components/ui/ornament";
 import { Button } from "@/components/ui/button";
+import { useReportError } from "@/components/error-pages/use-report-error";
+
+// Hook usage lives in a child so the boundary component itself stays
+// hook-free — unit tests invoke it as a plain function (no React render).
+function ReportToSentry({ error }: { error: Error & { digest?: string } }) {
+  useReportError(error);
+  return null;
+}
 
 export default function Error({
   error,
@@ -12,6 +20,7 @@ export default function Error({
 }) {
   return (
     <div className="px-6 lg:px-12 py-10">
+      <ReportToSentry error={error} />
       <div className="mx-auto w-full max-w-[800px] flex flex-col items-center text-center py-16">
         <EmptyIllustration size={120} />
         <h1 className="font-display text-3xl text-text tracking-tight mt-4">
@@ -21,6 +30,11 @@ export default function Error({
           We ran into an unexpected issue loading the operations dashboard. This
           has been logged. Try refreshing, or go back to ops.
         </p>
+        {error.digest && (
+          <p className="text-xs text-text-subtle mt-3 font-mono">
+            Error ID: {error.digest}
+          </p>
+        )}
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={() => reset()} variant="secondary">
             Try again
