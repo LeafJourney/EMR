@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
+import { useReportError } from "@/components/error-pages/use-report-error";
 
 export default function PatientChartError({
   error,
@@ -14,6 +15,7 @@ export default function PatientChartError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useReportError(error);
   useEffect(() => {
     console.error("[patient chart] error:", error);
   }, [error]);
@@ -29,6 +31,11 @@ export default function PatientChartError({
           <p className="text-sm text-text-muted mt-3 max-w-md mx-auto leading-relaxed">
             {error.message || "An unexpected error occurred loading this patient chart."}
           </p>
+          {error.digest && (
+            <p className="text-xs text-text-subtle mt-3 font-mono">
+              Error ID: {error.digest}
+            </p>
+          )}
           <div className="mt-6 flex justify-center gap-3">
             <Button onClick={reset}>Try again</Button>
             <Link href="/clinic/patients">
