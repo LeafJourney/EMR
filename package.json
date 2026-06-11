@@ -18,6 +18,7 @@
     "db:seed-staff": "tsx --conditions=react-server scripts/seed-staff-accounts.ts",
     "db:seed-cfo": "tsx --conditions=react-server scripts/seed-cfo.ts",
     "db:studio": "prisma studio",
+    "db:drift-check": "bash scripts/check-schema-drift.sh",
     "test": "vitest run",
     "test:golden-visit": "vitest run src/lib/domain/golden-visit-harness.test.ts",
     "e2e:golden-visit": "playwright test e2e/golden-visit-surfaces.spec.ts",
