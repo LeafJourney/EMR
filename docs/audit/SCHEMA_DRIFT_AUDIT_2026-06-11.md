@@ -93,6 +93,37 @@ the two URLs against each other. Output is one of:
 Also remember: any `/ops` crash now shows an **Error ID** (PR #638) that can
 be matched to the server log line in Render.
 
+## Resolution (2026-06-11, prod Render shell)
+
+The runbook above was executed against production the same day. Findings:
+
+- `prisma migrate status` on prod (database `postgres` at
+  `aws-1-us-east-1.pooler.supabase.com:5432`): 42 migrations recorded applied,
+  **15 pending, none failed** — proof that `migrate deploy` had **never run on
+  boot** for this database. The effective start command was not running any
+  schema sync; the last sync came from the old `db push` mechanism (~June 8).
+- `prisma migrate diff` against the live DB matched the prediction: the DDL of
+  9 pending migrations was already present (db-push era), while 6 were
+  genuinely missing (`emr951` index, `emr724_llm_usage`,
+  `emr456_migration_job_staging`, `emr1079_add_task_kind`,
+  `emr1103_clinical_orders_and_coding_approval`,
+  `emr1113_dose_capture_and_goals`). Until the fix, **every page reading
+  `Task`, `DoseLog`, `DosingRegimen`, or `CodingSuggestion` crashed in prod** —
+  all features shipped June 8–10.
+- Heal: `prisma migrate resolve --applied` for the 9 already-present
+  migrations, then `prisma migrate deploy` applied the 6 missing ones.
+  `migrate status` now reports no pending migrations.
+- Remaining operator action: set the Render dashboard **Start Command** for
+  `emr-web` to `npx prisma migrate deploy && npm run start` so every future
+  deploy self-heals (render.yaml already says this; the dashboard was not
+  honoring it).
+
+The staging-to-prod pipeline now carries a **Schema Drift Gate** job that
+diffs staging's live schema against `prisma/schema.prisma` after every staging
+deploy and blocks production on mismatch. It requires the
+`STAGING_DIRECT_URL` GitHub Actions secret (staging DB direct connection
+string); until that secret is set it warns and passes.
+
 ## Recommendations
 
 1. Run `npm run db:drift-check` in the prod Render shell now (2 minutes) and

@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 # Pipeline contract:
-#   verify → deploy_staging → test_staging → deploy_production
+#   verify → deploy_staging → (test_staging + drift_gate) → deploy_production
 #
 # Production only ships when every preceding job is green. The previous
 # arrangement had a separate `deploy-production.yml` that fired in
@@ -90,6 +90,40 @@ jobs:
           echo "::error::Staging did not report commit ${EXPECTED_SHA} after $((MAX_ATTEMPTS * INTERVAL))s. Last seen: ${LAST_COMMIT:-<none>}."
           exit 1
 
+  # Schema drift gate — after the staging deploy (which runs `prisma migrate
+  # deploy` on boot), the live staging schema must match prisma/schema.prisma.
+  # This is the tripwire for the 2026-06-08→11 incident where the service's
+  # start command silently stopped syncing schema: deploys stayed green for
+  # three days while every new feature queried columns that didn't exist.
+  # See docs/audit/SCHEMA_DRIFT_AUDIT_2026-06-11.md.
+  #
+  # Requires the STAGING_DIRECT_URL secret (the staging DB's direct, non-pooled
+  # connection string). Until that secret is set, the gate warns and passes.
+  drift_gate:
+    name: Schema Drift Gate (Staging)
+    needs: deploy_staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Diff staging schema against prisma/schema.prisma
+        env:
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+        run: |
+          if [ -z "${DIRECT_URL}" ]; then
+            echo "::warning::STAGING_DIRECT_URL secret not set — schema drift gate skipped. Set it (staging DB direct connection string) to enable the gate."
+            exit 0
+          fi
+          bash scripts/check-schema-drift.sh
+
   test_staging:
     name: Automated Tests (Staging)
     needs: deploy_staging
@@ -116,7 +150,7 @@ jobs:
 
   deploy_production:
     name: Deploy to Production
-    needs: test_staging
+    needs: [test_staging, drift_gate]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
