@@ -29,6 +29,8 @@ export interface ProviderRow extends SearchableProvider {
 
 interface Props {
   providers: ProviderRow[];
+  /** Gate the /ancillary dispensary slash-command behind the cannabis modality. */
+  showDispensaries?: boolean;
 }
 
 // ── Slash-command helpers ──────────────────────────────────────────────────
@@ -73,7 +75,11 @@ function applyFilter(providers: ProviderRow[], search: string): ProviderRow[] {
   return providers.filter((p) => providerMatchesQuery(p, search));
 }
 
-function getSuggestions(raw: string, providers: ProviderRow[]): string[] {
+function getSuggestions(
+  raw: string,
+  providers: ProviderRow[],
+  ancillaryKeys: string[],
+): string[] {
   if (!raw.startsWith("/")) return [];
   const body = raw.slice(1);
 
@@ -88,12 +94,14 @@ function getSuggestions(raw: string, providers: ProviderRow[]): string[] {
   }
   if (body.startsWith("ancillary")) {
     const term = body.slice("ancillary".length).trimStart().toLowerCase();
-    return ANCILLARY_CATEGORY_KEYS.filter(
-      (c) =>
-        !term ||
-        c.startsWith(term) ||
-        ANCILLARY_CATEGORY_LABELS[c].toLowerCase().startsWith(term),
-    ).map((c) => `/ancillary ${c}`);
+    return ancillaryKeys
+      .filter(
+        (c) =>
+          !term ||
+          c.startsWith(term) ||
+          ANCILLARY_CATEGORY_LABELS[c].toLowerCase().startsWith(term),
+      )
+      .map((c) => `/ancillary ${c}`);
   }
   if (body.startsWith("specialty ")) {
     const term = body.slice(10).toLowerCase();
@@ -134,13 +142,24 @@ function SearchIcon() {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function ProvidersDirectoryClient({ providers }: Props) {
+export function ProvidersDirectoryClient({ providers, showDispensaries = false }: Props) {
   const [search, setSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const suggestions = useMemo(() => getSuggestions(search, providers), [search, providers]);
+  const ancillaryKeys = useMemo(
+    () =>
+      showDispensaries
+        ? ANCILLARY_CATEGORY_KEYS
+        : ANCILLARY_CATEGORY_KEYS.filter((k) => k !== "dispensary"),
+    [showDispensaries],
+  );
+
+  const suggestions = useMemo(
+    () => getSuggestions(search, providers, ancillaryKeys),
+    [search, providers, ancillaryKeys],
+  );
   const filtered = useMemo(() => applyFilter(providers, search), [providers, search]);
   const { mode } = parseSlashCommand(search);
 

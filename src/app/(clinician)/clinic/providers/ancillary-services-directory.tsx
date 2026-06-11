@@ -146,9 +146,30 @@ function SearchIcon() {
 
 const ALL_CATEGORIES = Object.keys(CATEGORY_LABELS) as ServiceCategory[];
 
-export function AncillaryServicesDirectory() {
+interface Props {
+  /** Gate dispensary entries behind the cannabis-medicine modality. */
+  showDispensaries?: boolean;
+}
+
+export function AncillaryServicesDirectory({ showDispensaries = false }: Props) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<ServiceCategory | null>(null);
+
+  const visibleCategories = useMemo(
+    () =>
+      showDispensaries
+        ? ALL_CATEGORIES
+        : ALL_CATEGORIES.filter((c) => c !== "dispensary"),
+    [showDispensaries],
+  );
+
+  const visibleServices = useMemo(
+    () =>
+      showDispensaries
+        ? SERVICES
+        : SERVICES.filter((s) => s.category !== "dispensary"),
+    [showDispensaries],
+  );
 
   // Listen for "ancillary:filter" events dispatched by the provider-directory
   // slash-command handler (e.g. /ancillary lab) so the two sibling client
@@ -156,24 +177,30 @@ export function AncillaryServicesDirectory() {
   useEffect(() => {
     function handleFilter(e: Event) {
       const cat = (e as CustomEvent<{ category: string }>).detail.category;
-      setActiveCategory(ALL_CATEGORIES.includes(cat as ServiceCategory) ? (cat as ServiceCategory) : null);
+      setActiveCategory(
+        visibleCategories.includes(cat as ServiceCategory)
+          ? (cat as ServiceCategory)
+          : null,
+      );
     }
     document.addEventListener("ancillary:filter", handleFilter);
     return () => document.removeEventListener("ancillary:filter", handleFilter);
-  }, []);
+  }, [visibleCategories]);
 
   const categoryCounts = useMemo(() => {
     const counts = {} as Record<ServiceCategory, number>;
-    SERVICES.forEach((s) => { counts[s.category] = (counts[s.category] ?? 0) + 1; });
+    visibleServices.forEach((s) => {
+      counts[s.category] = (counts[s.category] ?? 0) + 1;
+    });
     return counts;
-  }, []);
+  }, [visibleServices]);
 
   const filtered = useMemo(() => {
-    let list = SERVICES;
+    let list = visibleServices;
     if (activeCategory) list = list.filter((s) => s.category === activeCategory);
     if (search.trim()) list = list.filter((s) => matchesQuery(s, search));
     return list;
-  }, [search, activeCategory]);
+  }, [search, activeCategory, visibleServices]);
 
   return (
     <section id="ancillary" className="space-y-5">
@@ -199,9 +226,9 @@ export function AncillaryServicesDirectory() {
           aria-pressed={activeCategory === null}
         >
           All
-          <span className="opacity-60 tabular-nums">{SERVICES.length}</span>
+          <span className="opacity-60 tabular-nums">{visibleServices.length}</span>
         </button>
-        {ALL_CATEGORIES.map((cat) => (
+        {visibleCategories.map((cat) => (
           <button
             key={cat}
             onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
@@ -272,7 +299,7 @@ export function AncillaryServicesDirectory() {
                         <path
                           d="M2 1h2.5l1 3-1.5 1a7.5 7.5 0 003 3l1-1.5 3 1V10a1 1 0 01-1 1A9 9 0 011 2a1 1 0 011-1z"
                           stroke="currentColor"
-                          strokeWidth="1.1"
+                          strokeWidth="1.2"
                           strokeLinejoin="round"
                         />
                       </svg>

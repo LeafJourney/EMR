@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { EmptyState } from "@/components/ui/empty-state";
 import { logger } from "@/lib/observability/log";
+import { isModalityEnabled } from "@/lib/modality/server";
 import {
   ProvidersDirectoryClient,
   type ProviderRow,
@@ -18,6 +19,10 @@ const PROVIDER_DIRECTORY_CAP = 5_000;
 
 export default async function ProvidersPage() {
   const user = await requireUser();
+  const cannabisEnabled = await isModalityEnabled(
+    user.organizationId ?? "",
+    "cannabis-medicine",
+  );
 
   const providers = await prisma.provider.findMany({
     where: {
@@ -69,12 +74,12 @@ export default async function ProvidersPage() {
           description="There are no active providers in your organization yet."
         />
       ) : (
-        <ProvidersDirectoryClient providers={rows} />
+        <ProvidersDirectoryClient providers={rows} showDispensaries={cannabisEnabled} />
       )}
 
-      {/* EMR-667 — Ancillary Services directory (labs, imaging, pharmacy, dispensary) */}
+      {/* EMR-614 — Ancillary Services directory (labs, imaging, pharmacy, dispensary) */}
       <div className="mt-12 pt-8 border-t border-border">
-        <AncillaryServicesDirectory />
+        <AncillaryServicesDirectory showDispensaries={cannabisEnabled} />
       </div>
     </PageShell>
   );
