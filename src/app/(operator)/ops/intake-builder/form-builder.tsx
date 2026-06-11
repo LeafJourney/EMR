@@ -171,7 +171,7 @@ export function FormBuilder() {
                 size="sm"
                 onClick={() => setShowAddField((s) => !s)}
               >
-                + Add field
+                + Add new
               </Button>
               {showAddField && (
                 <div className="absolute right-0 top-full mt-2 z-50 bg-surface border border-border rounded-lg shadow-lg p-2 w-56 max-h-72 overflow-y-auto">

@@ -269,7 +269,7 @@ export function FeedbackView({ initialFeedback }: { initialFeedback: FeedbackIte
           className="md:w-64 h-9"
         />
         <MultiSelectFilter
-          label="NPS band"
+          label="NPS (Net Promoter Score) band"
           options={(["detractor", "passive", "promoter"] as RatingBand[]).map((b) => ({
             value: b,
             label: RATING_BAND_LABELS[b],

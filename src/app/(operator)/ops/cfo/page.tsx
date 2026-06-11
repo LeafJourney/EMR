@@ -88,8 +88,7 @@ export default async function CfoOverviewPage({
                   day: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
-                })}{" "}
-                by {latestBriefing.generatedBy}.
+                })}.
               </p>
             )}
           </CardContent>
@@ -98,7 +97,7 @@ export default async function CfoOverviewPage({
 
       {/* KPI grid */}
       <div className="mb-10">
-        <Eyebrow className="mb-4">Headline KPIs</Eyebrow>
+        <Eyebrow className="mb-4">Headline KPIs (Key Performance Indicators)</Eyebrow>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {report.kpis.map((kpi) => (
             <KpiTile key={kpi.id} kpi={kpi} />

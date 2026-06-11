@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,15 +36,42 @@ function saveAcks(next: Record<string, string>) {
   window.localStorage.setItem(ACK_STORAGE, JSON.stringify(next));
 }
 
-export function PoliciesView({ policies }: { policies: Policy[] }) {
+export function PoliciesView({ policies: initialPolicies }: { policies: Policy[] }) {
+  const [policies, setPolicies] = useState<Policy[]>(initialPolicies);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<PolicyCategory | "All">("All");
-  const [selectedId, setSelectedId] = useState<string>(policies[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState<string>(initialPolicies[0]?.id ?? "");
   const [acks, setAcks] = useState<Record<string, string>>({});
+  const [createOpen, setCreateOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftCategory, setDraftCategory] = useState<PolicyCategory>(CATEGORIES[0]);
+  const [draftBody, setDraftBody] = useState("");
 
   useEffect(() => {
     setAcks(loadAcks());
   }, []);
+
+  function openCreate() {
+    setDraftTitle("");
+    setDraftCategory(CATEGORIES[0]);
+    setDraftBody("");
+    setCreateOpen(true);
+  }
+
+  function saveDraft() {
+    const title = draftTitle.trim();
+    if (!title) return;
+    const newPolicy: Policy = {
+      id: `pol-new-${Date.now()}`,
+      title,
+      category: draftCategory,
+      updatedAt: new Date().toISOString().slice(0, 10),
+      body: draftBody.trim() || "No description provided yet.",
+    };
+    setPolicies((prev) => [newPolicy, ...prev]);
+    setSelectedId(newPolicy.id);
+    setCreateOpen(false);
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -77,7 +105,7 @@ export function PoliciesView({ policies }: { policies: Policy[] }) {
           onChange={(e) => setQuery(e.target.value)}
           className="md:w-80"
         />
-        <Button size="sm" variant="secondary" onClick={() => alert("Demo: open new-policy editor")}>
+        <Button size="sm" variant="secondary" onClick={openCreate}>
           + Create new policy
         </Button>
       </div>
@@ -122,13 +150,19 @@ export function PoliciesView({ policies }: { policies: Policy[] }) {
                         type="button"
                         onClick={() => setSelectedId(p.id)}
                         className={cn(
-                          "w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors",
+                          "w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md text-xs transition-colors",
                           active
                             ? "bg-surface-muted text-text"
                             : "text-text-muted hover:bg-surface-muted/60",
                         )}
                       >
-                        {p.title}
+                        <span>{p.title}</span>
+                        {category === "All" && acks[p.id] && (
+                          <Check
+                            className="h-3.5 w-3.5 shrink-0 text-success"
+                            aria-label="Completed"
+                          />
+                        )}
                       </button>
                     </li>
                   );
@@ -179,6 +213,64 @@ export function PoliciesView({ policies }: { policies: Policy[] }) {
           </CardContent>
         </Card>
       </div>
+
+      {createOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create new policy"
+          onClick={() => setCreateOpen(false)}
+        >
+          <Card tone="raised" className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <CardContent className="py-6 space-y-4">
+              <h2 className="font-display text-xl text-text">Create new policy</h2>
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-wider text-text-subtle">Title</label>
+                <Input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  placeholder="Policy title"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-wider text-text-subtle">Category</label>
+                <select
+                  value={draftCategory}
+                  onChange={(e) => setDraftCategory(e.target.value as PolicyCategory)}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs uppercase tracking-wider text-text-subtle">
+                  Description
+                </label>
+                <textarea
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  placeholder="Describe the policy…"
+                  rows={5}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button size="sm" variant="ghost" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="primary" onClick={saveDraft} disabled={!draftTitle.trim()}>
+                  Save policy
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

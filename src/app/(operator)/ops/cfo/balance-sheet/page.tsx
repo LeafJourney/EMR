@@ -31,15 +31,15 @@ export default async function BalanceSheetPage() {
       {/* Headline */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
         <Tile label="Total assets" value={fmtMoney(bs.assets.totalCents, { compact: true })} accent />
-        <Tile label="Total liabilities" value={fmtMoney(bs.liabilities.totalCents, { compact: true })} />
+        <Tile label="Total liabilities" value={fmtMoney(bs.liabilities.totalCents, { compact: true })} highlight="bad" />
         <Tile label="Total equity" value={fmtMoney(bs.equity.totalCents, { compact: true })} accent />
         <Tile label="Working capital" value={fmtMoney(bs.ratios.workingCapitalCents, { compact: true })} highlight={bs.ratios.workingCapitalCents < 0 ? "bad" : "good"} />
       </div>
 
       {/* Ratios */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
-        <Ratio label="Current ratio" value={bs.ratios.currentRatio.toFixed(2)} target="≥ 2.0" met={bs.ratios.currentRatio >= 2} />
-        <Ratio label="Quick ratio" value={bs.ratios.quickRatio.toFixed(2)} target="≥ 1.0" met={bs.ratios.quickRatio >= 1} />
+        <Ratio label="Current ratio" value={bs.ratios.currentRatio.toFixed(2)} target="≥ 2.0" met={bs.ratios.currentRatio >= 2} definition="Current assets ÷ current liabilities — ability to cover short-term obligations." />
+        <Ratio label="Quick ratio" value={bs.ratios.quickRatio.toFixed(2)} target="≥ 1.0" met={bs.ratios.quickRatio >= 1} definition="Liquid assets ÷ current liabilities, excluding inventory." />
         <Ratio label="Debt / equity" value={bs.ratios.debtToEquity.toFixed(2)} target="≤ 2.0" met={bs.ratios.debtToEquity <= 2} />
         <Ratio
           label="Books balance"
@@ -122,13 +122,14 @@ function Tile({ label, value, accent, highlight }: { label: string; value: strin
   );
 }
 
-function Ratio({ label, value, target, met }: { label: string; value: string; target: string; met: boolean | null }) {
+function Ratio({ label, value, target, met, definition }: { label: string; value: string; target: string; met: boolean | null; definition?: string }) {
   return (
     <Card>
       <CardContent className="pt-4 pb-4">
         <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">{label}</p>
         <p className={`font-display text-xl tabular-nums mt-1 ${met === true ? "text-success" : met === false ? "text-danger" : "text-text"}`}>{value}</p>
         {target && <p className="text-[11px] text-text-subtle mt-1">Target: {target}</p>}
+        {definition && <p className="text-[11px] text-text-subtle mt-1 leading-tight">{definition}</p>}
       </CardContent>
     </Card>
   );
