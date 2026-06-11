@@ -21,11 +21,18 @@ import {
 } from "@/lib/domain/overnight-batch";
 import { cn } from "@/lib/utils/cn";
 
-const SEVERITY_TONES: Record<IncidentSeverity, "neutral" | "warning" | "highlight" | "danger"> = {
-  low: "neutral",
+const SEVERITY_TONES: Record<IncidentSeverity, "info" | "warning" | "danger"> = {
+  low: "info",
   medium: "warning",
-  high: "highlight",
+  high: "danger",
   critical: "danger",
+};
+
+const SEVERITY_BADGE_CLASS: Record<IncidentSeverity, string> = {
+  low: "",
+  medium: "",
+  high: "bg-orange-50 text-orange-700 border-orange-200",
+  critical: "",
 };
 
 const SEVERITY_LABELS: Record<IncidentSeverity, string> = {
@@ -292,7 +299,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
               {filtered.map((i) => (
                 <tr key={i.id} className="border-b border-border/40 hover:bg-surface-muted/40">
                   <td className="px-5 py-3.5">
-                    <Badge tone={SEVERITY_TONES[i.severity]}>{SEVERITY_LABELS[i.severity]}</Badge>
+                    <Badge tone={SEVERITY_TONES[i.severity]} className={SEVERITY_BADGE_CLASS[i.severity]}>{SEVERITY_LABELS[i.severity]}</Badge>
                   </td>
                   <td className="px-5 py-3.5 text-text-muted text-xs">
                     {INCIDENT_CATEGORY_LABELS[i.category]}
@@ -368,7 +375,12 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
                       className={cn(
                         "py-2 rounded-md border text-xs font-medium transition-colors",
                         draft.severity === s
-                          ? "border-emerald-700 bg-emerald-700 text-white"
+                          ? {
+                              low: "border-blue-600 bg-blue-600 text-white",
+                              medium: "border-yellow-500 bg-yellow-500 text-white",
+                              high: "border-orange-600 bg-orange-600 text-white",
+                              critical: "border-red-600 bg-red-600 text-white",
+                            }[s]
                           : "border-border bg-surface text-text-muted hover:bg-surface-muted",
                       )}
                     >
@@ -394,7 +406,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
                 <Input
                   value={draft.title}
                   onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                  placeholder="Short summary"
+                  placeholder=""
                 />
               </FieldGroup>
 

@@ -112,7 +112,7 @@ export default async function CashPage() {
                         {a.last4 && <span className="text-[11px] text-text-subtle">···{a.last4}</span>}
                       </div>
                       <p className="text-[11px] text-text-subtle mt-0.5">
-                        {a.institution ?? "—"} · last synced {a.asOfDate.toLocaleString("en-US", { month: "short", day: "numeric" })}
+                        {a.institution ?? "—"} · last reconciled {a.asOfDate.toLocaleString("en-US", { month: "short", day: "numeric" })}
                       </p>
                     </div>
                     <div className="text-right shrink-0">

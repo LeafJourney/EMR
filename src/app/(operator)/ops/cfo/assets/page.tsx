@@ -48,7 +48,7 @@ export default async function AssetsPage() {
     <PageShell maxWidth="max-w-[1320px]">
       <PageHeader
         eyebrow="CFO · Fixed Assets"
-        title="Capitalized assets register"
+        title="Capitalized assets"
         description="Equipment, hardware, leasehold improvements, and other capitalized assets. Depreciation is computed automatically and flows to the P&L and balance sheet."
       />
       <CfoTabs active="assets" />
@@ -57,7 +57,7 @@ export default async function AssetsPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
         <Tile label="Gross book value" value={fmtMoney(totalGross, { compact: true })} />
         <Tile label="Accumulated depreciation" value={fmtMoney(totalDeprec, { compact: true })} />
-        <Tile label="Net book value" value={fmtMoney(netBook, { compact: true })} accent />
+        <Tile label="Net book value" value={fmtMoney(netBook, { compact: true })} />
         <Tile label="Active assets" value={String(assets.length)} />
       </div>
 
@@ -84,7 +84,7 @@ export default async function AssetsPage() {
                 <Input name="cost" type="number" step="0.01" min="0" required placeholder="0.00" />
               </div>
               <div className="md:col-span-1">
-                <label className="block text-[11px] uppercase tracking-wider text-text-subtle mb-1">Salvage</label>
+                <label className="block text-[11px] uppercase tracking-wider text-text-subtle mb-1">Residual</label>
                 <Input name="salvage" type="number" step="0.01" min="0" placeholder="0" />
               </div>
               <div className="md:col-span-1">

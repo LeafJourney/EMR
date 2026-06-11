@@ -110,21 +110,12 @@ export function TrainingView({ initialModules }: { initialModules: TrainingModul
                   {m.status === "complete" ? "Completed" : m.status === "in_progress" ? "Resume" : "Start training"}
                 </Button>
                 <select
-                  className="flex-1 rounded-md border border-border-strong bg-surface px-2 h-8 text-xs text-text-muted"
+                  className="flex-1 rounded-md border border-border-strong bg-surface px-2 h-8 text-xs text-text-muted disabled:cursor-not-allowed disabled:opacity-60"
                   defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      alert(`Demo: assigned "${m.title}" to ${e.target.value}`);
-                      e.currentTarget.value = "";
-                    }
-                  }}
+                  disabled
+                  title="Assigning training to staff is not yet available."
                 >
-                  <option value="">Assign to…</option>
-                  <option value="Avery Chen">Avery Chen</option>
-                  <option value="Morgan Patel">Morgan Patel</option>
-                  <option value="Jordan Rivera">Jordan Rivera</option>
-                  <option value="Taylor Kim">Taylor Kim</option>
-                  <option value="Riley Okafor">Riley Okafor</option>
+                  <option value="">Assign to staff (coming soon)</option>
                 </select>
               </div>
             </CardContent>

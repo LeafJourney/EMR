@@ -105,7 +105,7 @@ export default async function ReportDetailPage({ params }: { params: { id: strin
       {/* Anomalies */}
       {anomalies.length > 0 && (
         <>
-          <Eyebrow className="mb-3">Anomalies flagged at generation time</Eyebrow>
+          <Eyebrow className="mb-3">Anomalies Flagged</Eyebrow>
           <AnomaliesPanel anomalies={anomalies} />
         </>
       )}
