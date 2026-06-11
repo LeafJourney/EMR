@@ -109,32 +109,6 @@ export function InlineDemographicsCard({
               renderDisplay={(v) => v || "Add DOB"}
             />
           </Row>
-          <Row label="Email">
-            <div className="flex items-center gap-1.5">
-              <div className="min-w-0 flex-1">
-                <InlineEdit
-                  value={initial.email}
-                  onSave={makeDemo("email")}
-                  validator={inlineValidators.email}
-                  type="email"
-                  placeholder="Add email"
-                  ariaLabel="email"
-                  disabled={!canEdit}
-                />
-              </div>
-              {/* EMR-826 — click-to-mail icon next to the contact detail. */}
-              {initial.email && (
-                <a
-                  href={`mailto:${initial.email}`}
-                  title={`Email ${initial.email}`}
-                  aria-label="Send email"
-                  className="shrink-0 text-text-subtle hover:text-accent"
-                >
-                  <MailIcon />
-                </a>
-              )}
-            </div>
-          </Row>
           <Row label="Phone">
             <div className="flex items-center gap-1.5">
               <div className="min-w-0 flex-1">
@@ -157,6 +131,32 @@ export function InlineDemographicsCard({
                   className="shrink-0 text-text-subtle hover:text-accent"
                 >
                   <PhoneIcon />
+                </a>
+              )}
+            </div>
+          </Row>
+          <Row label="Email">
+            <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1">
+                <InlineEdit
+                  value={initial.email}
+                  onSave={makeDemo("email")}
+                  validator={inlineValidators.email}
+                  type="email"
+                  placeholder="Add email"
+                  ariaLabel="email"
+                  disabled={!canEdit}
+                />
+              </div>
+              {/* EMR-826 — click-to-mail icon next to the contact detail. */}
+              {initial.email && (
+                <a
+                  href={`mailto:${initial.email}`}
+                  title={`Email ${initial.email}`}
+                  aria-label="Send email"
+                  className="shrink-0 text-text-subtle hover:text-accent"
+                >
+                  <MailIcon />
                 </a>
               )}
             </div>

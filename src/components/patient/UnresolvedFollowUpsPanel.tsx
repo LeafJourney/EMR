@@ -116,7 +116,13 @@ export function UnresolvedFollowUpsPanel({
                   </span>
                 </div>
                 <Link
-                  href={item.href}
+                  href={
+                    // Per Dr. Patel: message-sourced rows open the unified
+                    // messages inbox rather than the per-patient
+                    // correspondence tab. Note-sourced rows keep their
+                    // deep link to the originating note.
+                    item.source === "message" ? "/clinic/messages" : item.href
+                  }
                   className="block mt-0.5 text-sm text-text font-medium leading-snug hover:underline"
                 >
                   {item.title}

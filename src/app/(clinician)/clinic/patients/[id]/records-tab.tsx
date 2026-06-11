@@ -18,9 +18,17 @@ import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { Input, Textarea } from "@/components/ui/input";
 import { ClinicianUploadForm } from "./documents/clinician-upload-form";
-import { Bubble, CindySays, ModalShell, useChartLedger } from "./chart-kit";
-import { RECORD_SUBTABS } from "@/lib/clinical/records-taxonomy";
+import { Bubble, ModalShell, useChartLedger } from "./chart-kit";
+import {
+  searchDirectory,
+  fullName,
+  IdentityAvatar,
+  type DirectoryEntry,
+} from "./correspondence-composer";
+import { RECORD_SUBTABS, IMAGING_MODALITIES } from "@/lib/clinical/records-taxonomy";
 
 export interface ChartDoc {
   id: string;
@@ -30,6 +38,22 @@ export interface ChartDoc {
   createdAt: string;
   tags: string[];
 }
+
+/**
+ * E-signed subtab filter (directive line 572): a small options button filters
+ * the e-signed documents by type, distinct from the shared tertiary-label
+ * bubbles. The keys map onto the e-signed subtab's tertiary labels so a chosen
+ * type narrows to its routing bucket.
+ */
+const ESIGNED_FILTERS = [
+  { key: "all", label: "All e-signed" },
+  { key: "medication-overrides", label: "Overrides" },
+  { key: "cures", label: "CURES" },
+  { key: "warning-acknowledgements", label: "Acknowledgments" },
+  { key: "controlled-substance-checks", label: "Notes" },
+] as const;
+
+type EsignedFilter = (typeof ESIGNED_FILTERS)[number]["key"];
 
 /** Heuristic 3-layer routing: pick a subtab + tertiary label for a doc. */
 function routeDoc(doc: ChartDoc): { subtab: string; label: string } {
@@ -63,7 +87,15 @@ export function RecordsTab({
   const [label, setLabel] = React.useState<string | null>(null);
   const [density, setDensity] = React.useState<"tile" | "list">("tile");
   const [query, setQuery] = React.useState("");
+  // EMR-865: per-subtab search — filters within the active subtab only,
+  // distinct from the global `query` above.
+  const [subtabQuery, setSubtabQuery] = React.useState("");
   const [openDoc, setOpenDoc] = React.useState<ChartDoc | null>(null);
+  // Gap 1 (directive 512): the document a clinician is composing a "send" for.
+  const [sendDoc, setSendDoc] = React.useState<ChartDoc | null>(null);
+  // Gap 2 (directive 572): options/filter for the E-signed subtab, by type.
+  const [esignedFilter, setEsignedFilter] = React.useState<EsignedFilter>("all");
+  const [esignedMenuOpen, setEsignedMenuOpen] = React.useState(false);
 
   // Pre-route every doc once.
   const routed = React.useMemo(
@@ -73,6 +105,7 @@ export function RecordsTab({
 
   const subtabDef = RECORD_SUBTABS.find((s) => s.key === subtab);
   const q = query.trim().toLowerCase();
+  const sq = subtabQuery.trim().toLowerCase();
 
   const inSubtab = routed.filter((r) => {
     if (q) {
@@ -81,6 +114,13 @@ export function RecordsTab({
     }
     if (r.route.subtab !== subtab) return false;
     if (label && r.route.label !== label) return false;
+    // Gap 2: in the E-signed subtab, the options filter narrows by type.
+    if (subtab === "e-signed" && esignedFilter !== "all" && r.route.label !== esignedFilter)
+      return false;
+    if (sq) {
+      const hay = `${r.doc.name} ${r.doc.kind} ${r.doc.tags.join(" ")}`.toLowerCase();
+      if (!hay.includes(sq)) return false;
+    }
     return true;
   });
 
@@ -126,6 +166,9 @@ export function RecordsTab({
               setSubtab(s.key);
               setLabel(null);
               setQuery("");
+              setSubtabQuery("");
+              setEsignedFilter("all");
+              setEsignedMenuOpen(false);
             }}
             className={cn(
               "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
@@ -139,19 +182,95 @@ export function RecordsTab({
         ))}
       </div>
 
-      {/* Tertiary label bubbles */}
-      {!q && subtabDef && subtabDef.tertiaryLabels.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {subtabDef.tertiaryLabels.map((tl) => (
-            <Bubble
-              key={tl.key}
-              className={tl.colorClass}
-              active={label === tl.key}
-              onClick={() => setLabel(label === tl.key ? null : tl.key)}
-            >
-              {tl.label}
-            </Bubble>
-          ))}
+      {/* Subtab header: tertiary label bubbles + per-subtab search */}
+      {!q && subtabDef && (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          {subtabDef.tertiaryLabels.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {subtabDef.tertiaryLabels.map((tl) => (
+                <Bubble
+                  key={tl.key}
+                  className={tl.colorClass}
+                  active={label === tl.key}
+                  onClick={() => setLabel(label === tl.key ? null : tl.key)}
+                >
+                  {tl.label}
+                </Bubble>
+              ))}
+            </div>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            {/* Gap 2 (directive 572): E-signed options/filter button — filters
+                the e-signed documents by type, distinct from the tertiary
+                bubbles above. */}
+            {subtab === "e-signed" && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setEsignedMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={esignedMenuOpen}
+                  title="Filter e-signed documents by type"
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                    esignedFilter !== "all"
+                      ? "bg-accent-soft text-accent"
+                      : "text-text-muted hover:bg-surface-muted",
+                  )}
+                >
+                  <span aria-hidden="true">⚙️</span>
+                  {ESIGNED_FILTERS.find((f) => f.key === esignedFilter)?.label ??
+                    "Options"}
+                </button>
+                {esignedMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setEsignedMenuOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-border bg-surface shadow-lg py-1"
+                    >
+                      {ESIGNED_FILTERS.map((f) => (
+                        <button
+                          key={f.key}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={esignedFilter === f.key}
+                          onClick={() => {
+                            setEsignedFilter(f.key);
+                            setEsignedMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-center justify-between px-3 py-1.5 text-left text-sm hover:bg-surface-muted",
+                            esignedFilter === f.key
+                              ? "text-accent font-medium"
+                              : "text-text",
+                          )}
+                        >
+                          {f.label}
+                          {esignedFilter === f.key && (
+                            <span aria-hidden="true">✓</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {/* EMR-865: per-subtab search — filters within this subtab only */}
+            <input
+              type="search"
+              value={subtabQuery}
+              onChange={(e) => setSubtabQuery(e.target.value)}
+              placeholder={`🔎 Search ${subtabDef.label}`}
+              className="w-56 text-sm rounded-md border border-border bg-surface px-3 py-1.5 text-text focus:outline-none focus:border-accent"
+            />
+          </div>
         </div>
       )}
 
@@ -168,10 +287,13 @@ export function RecordsTab({
               key={r.doc.id}
               doc={r.doc}
               patientId={patientId}
+              subtab={r.route.subtab}
+              routeLabel={r.route.label}
               labelColor={
                 subtabDef?.tertiaryLabels.find((tl) => tl.key === r.route.label)?.colorClass
               }
               onOpen={() => setOpenDoc(r.doc)}
+              onSend={() => setSendDoc(r.doc)}
               onReroute={() =>
                 record({
                   kind: "note",
@@ -212,23 +334,222 @@ export function RecordsTab({
         onPick={(d) => setOpenDoc(d)}
         record={record}
       />
+
+      {/* Gap 1 (directive 512): send-document composer popup */}
+      <SendDocModal
+        doc={sendDoc}
+        patientId={patientId}
+        onClose={() => setSendDoc(null)}
+        record={record}
+      />
     </div>
+  );
+}
+
+/**
+ * Gap 1 (directive 512): the Send (✉️) icon on a DocTile opens this composer
+ * popup — mirroring the Correspondence message box — with a Subject field, a
+ * Message field, and a fully searchable "Patient" field (the recipient). On
+ * send it logs to the chart ledger; nothing is actually transmitted (client
+ * presentation only, no real delivery).
+ */
+function SendDocModal({
+  doc,
+  patientId,
+  onClose,
+  record,
+}: {
+  doc: ChartDoc | null;
+  patientId: string;
+  onClose: () => void;
+  record: ReturnType<typeof useChartLedger>["record"];
+}) {
+  const [subject, setSubject] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [query, setQuery] = React.useState("");
+  const [recipient, setRecipient] = React.useState<DirectoryEntry | null>(null);
+  const [showResults, setShowResults] = React.useState(false);
+
+  // Reset the form whenever a new document is opened for sending.
+  React.useEffect(() => {
+    if (doc) {
+      setSubject(doc.name);
+      setMessage("");
+      setQuery("");
+      setRecipient(null);
+      setShowResults(false);
+    }
+  }, [doc]);
+
+  const results = React.useMemo(() => searchDirectory(query), [query]);
+  const dirty = Boolean(
+    doc && (message.trim() || recipient || subject.trim() !== (doc.name ?? "")),
+  );
+  const canSend = Boolean(recipient && subject.trim());
+
+  function handleSend() {
+    if (!doc || !recipient) return;
+    record({
+      kind: "note",
+      source: "Records",
+      subject: `Sent “${doc.name}” to ${fullName(recipient)} — “${subject.trim()}”`,
+    });
+    onClose();
+  }
+
+  return (
+    <ModalShell
+      open={doc !== null}
+      onClose={onClose}
+      isDirty={dirty}
+      eyebrow="Send document"
+      title={doc?.name ?? ""}
+      placement="center"
+      maxWidth="max-w-lg"
+      footer={
+        <div className="px-5 py-3 flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={!canSend} onClick={handleSend}>
+            Send
+          </Button>
+        </div>
+      }
+    >
+      <div className="px-5 py-4 space-y-4">
+        {/* Patient / recipient — fully searchable directory. */}
+        <div className="relative">
+          <label className="text-xs font-medium text-text mb-1.5 inline-block">
+            Patient
+          </label>
+          <div className="flex items-center gap-2">
+            {recipient && (
+              <IdentityAvatar
+                seed={recipient.id}
+                name={fullName(recipient)}
+                size="sm"
+              />
+            )}
+            <Input
+              value={query}
+              placeholder="Search patient by name, title, or department…"
+              onFocus={() => setShowResults(true)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowResults(true);
+                setRecipient(null);
+              }}
+            />
+          </div>
+          {showResults && !recipient && results.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+              {results.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => {
+                    setRecipient(e);
+                    setQuery(fullName(e));
+                    setShowResults(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-muted"
+                >
+                  <IdentityAvatar seed={e.id} name={fullName(e)} size="sm" />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-text truncate">
+                      {fullName(e)}{" "}
+                      <span className="text-text-subtle">· {e.title}</span>
+                    </span>
+                    <span className="block text-[11px] text-text-subtle truncate">
+                      {e.department}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {showResults && !recipient && results.length === 0 && (
+            <p className="text-[11px] text-text-subtle mt-1">
+              No match for “{query}”.
+            </p>
+          )}
+        </div>
+
+        {/* Subject. */}
+        <div>
+          <label className="text-xs font-medium text-text mb-1.5 inline-block">
+            Subject
+          </label>
+          <Input
+            value={subject}
+            placeholder="Subject"
+            onChange={(e) => setSubject(e.target.value)}
+          />
+        </div>
+
+        {/* Message. */}
+        <div>
+          <label className="text-xs font-medium text-text mb-1.5 inline-block">
+            Message
+          </label>
+          <Textarea
+            value={message}
+            rows={5}
+            placeholder="Write a message to accompany this document…"
+            onChange={(e) => setMessage(e.target.value)}
+          />
+        </div>
+      </div>
+    </ModalShell>
   );
 }
 
 function DocTile({
   doc,
   patientId,
+  subtab,
+  routeLabel,
   labelColor,
   onOpen,
+  onSend,
   onReroute,
 }: {
   doc: ChartDoc;
   patientId: string;
+  subtab: string;
+  routeLabel: string;
   labelColor?: string;
   onOpen: () => void;
+  onSend: () => void;
   onReroute: () => void;
 }) {
+  // EMR-865/EMR-902: in the Images subtab, render a dual-bubble layout — a
+  // coloured modality bubble plus a beige body-part secondary bubble.
+  const modality =
+    subtab === "images"
+      ? IMAGING_MODALITIES.find((m) => m.key === routeLabel)
+      : undefined;
+  const bodyPart = modality
+    ? modality.bodyParts.find((bp) => {
+        const hay = `${doc.name} ${doc.tags.join(" ")}`.toLowerCase();
+        return hay.includes(bp.toLowerCase());
+      })
+    : undefined;
+
+  // EMR-864: Save triggers an actual download of the document file rather than
+  // re-opening the viewer.
+  function handleSave() {
+    const href = `/clinic/patients/${patientId}/documents/${doc.id}/view`;
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = doc.name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   return (
     <Card tone="raised" className="card-hover">
       <CardContent className="pt-4 pb-3">
@@ -243,14 +564,21 @@ function DocTile({
           </button>
           {/* send / print / save icons */}
           <div className="flex items-center gap-1.5 shrink-0 text-text-subtle">
-            <IconBtn label="Send" onClick={onOpen}>✉️</IconBtn>
+            <IconBtn label="Send" onClick={onSend}>✉️</IconBtn>
             <IconBtn label="Print" onClick={() => window.open(`/clinic/patients/${patientId}/documents/${doc.id}/view`, "_blank")}>🖨️</IconBtn>
-            <IconBtn label="Save" onClick={onOpen}>💾</IconBtn>
+            <IconBtn label="Save" onClick={handleSave}>💾</IconBtn>
           </div>
         </div>
         <div className="flex items-end justify-between mt-3">
           <div className="flex items-center gap-1.5">
-            {labelColor && <Bubble className={labelColor}>{doc.kind}</Bubble>}
+            {modality ? (
+              <>
+                <Bubble className={modality.colorClass}>{modality.label}</Bubble>
+                {bodyPart && <Bubble>{bodyPart}</Bubble>}
+              </>
+            ) : (
+              labelColor && <Bubble className={labelColor}>{doc.kind}</Bubble>
+            )}
             <IconBtn label="Return to routing" onClick={onReroute}>↩︎</IconBtn>
           </div>
           {/* EMR-864: date bottom-right, darker + bigger */}

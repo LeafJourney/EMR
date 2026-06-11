@@ -38,7 +38,8 @@ const TABS = [
   // the half-rendered summary view.
   {
     key: "billing",
-    label: "Financial cockpit",
+    // EMR-178/816: Dr. Patel — "Change 'Financial Cockpit' to 'Billing'".
+    label: "Billing",
     dot: "bg-[color:var(--success)]",
     group: "Financial",
     redirectTo: (patientId: string) => `/clinic/patients/${patientId}/billing`,
@@ -365,7 +366,11 @@ export function ChartTabs({ patientId, counts, peeks, peekSummaries }: ChartTabs
               aria-expanded={hasPeek ? isOpen : undefined}
               title={compact ? tab.label : undefined}
               className={cn(
-                "relative flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap cursor-grab active:cursor-grabbing",
+                // EMR-816: regular pointer cursor on the tab itself (not the
+                // grab-hand) — the ⋮⋮ handle on hover signals it's still
+                // draggable, so reorder works without the whole ribbon
+                // feeling like a drag surface.
+                "relative flex items-center gap-2 text-sm font-medium transition-colors whitespace-nowrap cursor-pointer",
                 // Vertical rails fill the rail width and use a slightly
                 // tighter vertical rhythm so all 9 tabs read as a list;
                 // horizontal bars keep the original padding.

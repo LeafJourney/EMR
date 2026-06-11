@@ -89,9 +89,14 @@ export function useChartFrame(): ChartFrameSettings {
 export function ChartFrame({
   nav,
   children,
+  stickyHeader,
 }: {
   nav: React.ReactNode;
   children: React.ReactNode;
+  /** EMR-816 — compact patient strip that shares the sticky region above
+   *  the tab bar (top layout only). Reveals on scroll once the dossier is
+   *  gone so name/age/sex/phone/email/Rx stay pinned. */
+  stickyHeader?: React.ReactNode;
 }) {
   const [position, setPositionState] = React.useState<ChartTabPosition>("top");
   const [compact, setCompactState] = React.useState<boolean>(false);
@@ -130,8 +135,21 @@ export function ChartFrame({
       >
         {/* Vertical rails need a fixed-width wrapper so the chart
             content keeps a stable column; horizontal bars render the
-            nav directly so the existing top/bottom DOM is unchanged. */}
-        {isVertical ? <div className="w-52 shrink-0">{nav}</div> : nav}
+            nav directly so the existing top/bottom DOM is unchanged.
+            EMR-816: for the default top layout, the sticky patient strip
+            and the tab bar share one `position: sticky` region so both
+            stay pinned to the top of the viewport while the chart body
+            scrolls underneath. */}
+        {isVertical ? (
+          <div className="w-52 shrink-0">{nav}</div>
+        ) : position === "top" ? (
+          <div className="sticky top-0 z-30 bg-surface/95 backdrop-blur-md -mx-2 px-2 pt-1 rounded-b-lg shadow-sm [&>nav]:!mb-3">
+            {stickyHeader}
+            {nav}
+          </div>
+        ) : (
+          nav
+        )}
         <div className="flex-1 min-w-0">{children}</div>
       </div>
     </Ctx.Provider>

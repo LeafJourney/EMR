@@ -87,6 +87,7 @@ import { ImagesTab } from "./images-tab";
 import { LsvTab, type LsvLabMarker } from "./lsv-tab";
 import { NotesTab } from "./notes-tab";
 import { PrivateNotesButton } from "./private-notes-button";
+import { StickyPatientHeader } from "./sticky-patient-header";
 
 function cleanMarkdownSummary(md: string): string {
   if (!md) return "";
@@ -435,22 +436,31 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       meta: formatRelative(d.createdAt),
       href: `/clinic/patients/${params.id}?tab=labs`,
     })),
-    notes: allNotes.slice(0, 5).map((n: any) => {
-      // Notes store their chief complaint inside a Json `blocks` payload
-      // whose shape is validated at write-time. For peek purposes we just
-      // read defensively and fall back to the narrative or a generic label.
-      const chiefComplaint =
-        typeof (n.blocks as { chiefComplaint?: unknown })?.chiefComplaint === "string"
-          ? ((n.blocks as { chiefComplaint: string }).chiefComplaint).trim()
-          : "";
-      const raw = chiefComplaint || n.narrative?.trim() || "Untitled note";
-      return {
-        id: n.id,
-        title: raw.length > 60 ? raw.slice(0, 60) + "…" : raw,
-        meta: `${n.status} · ${formatRelative(n.createdAt)}`,
-        href: `/clinic/patients/${params.id}/notes/${n.id}`,
-      };
-    }),
+    // EMR-883 — Dr. Patel: hovering Notes shows only "N notes pending /
+    // N attestations pending" — minimal, at-a-glance work remaining
+    // rather than a list of recent notes.
+    notes: (() => {
+      const pending = allNotes.filter(
+        (n: any) => n.status !== "finalized" && n.status !== "amended",
+      ).length;
+      const attest = allNotes.filter(
+        (n: any) => n.status === "needs_review" || n.status === "pending_cosign",
+      ).length;
+      return [
+        {
+          id: "notes-pending",
+          title: `${pending} note${pending === 1 ? "" : "s"} pending`,
+          meta: "Drafts + unsigned",
+          href: `/clinic/patients/${params.id}?tab=notes`,
+        },
+        {
+          id: "attest-pending",
+          title: `${attest} attestation${attest === 1 ? "" : "s"} pending`,
+          meta: "Awaiting sign-off",
+          href: `/clinic/patients/${params.id}?tab=notes`,
+        },
+      ];
+    })(),
     rx: activeRegimens.slice(0, 5).map((r: any) => ({
       id: r.id,
       title: r.product?.name ?? "Cannabis regimen",
@@ -469,12 +479,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       meta: formatRelative(d.createdAt),
       href: `/clinic/patients/${params.id}?tab=images`,
     })),
-    correspondence: threads.slice(0, 5).map((t: any) => ({
-      id: t.id,
-      title: t.subject || "No subject",
-      meta: `${t.messages.length} message${t.messages.length === 1 ? "" : "s"} · ${formatRelative(t.lastMessageAt)}`,
-      href: `/clinic/patients/${params.id}?tab=correspondence`,
-    })),
+    // EMR-892 — Dr. Patel: "When hovering over the Correspondence Tab
+    // remove any pop up information or summaries. Remove this aspect
+    // completely." Omitting the key means chart-tabs renders no peek.
     memory: patientMemories.slice(0, 5).map((m: any) => ({
       id: m.id,
       title:
@@ -490,26 +497,26 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
       meta: `${c.status} · ${formatRelative(c.serviceDate)}`,
       href: `/clinic/patients/${params.id}/billing`,
     })),
-    // EMR-817 — demographics tab hover peek: primary contact summary.
+    // EMR-817/849 — demographics tab hover peek: Dr. Patel wants 1-2
+    // *pertinent clinical* facts to flash (not the dob/email/phone list,
+    // which now lives in the sticky strip). Allergies first (safety),
+    // then the presenting concern / one-line summary.
     demographics: [
       {
-        id: "dob",
-        title: patient.dateOfBirth
-          ? `DOB ${new Date(patient.dateOfBirth).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}`
-          : "DOB not on file",
-        meta: "Date of birth",
+        id: "allergies",
+        title:
+          patient.allergies?.length > 0
+            ? `⚠️ Allergies: ${patient.allergies.slice(0, 3).join(", ")}${patient.allergies.length > 3 ? "…" : ""}`
+            : "No known drug allergies",
+        meta: "Safety",
         href: `/clinic/patients/${params.id}?tab=demographics`,
       },
       {
-        id: "email",
-        title: patient.email || "No email on file",
-        meta: "Email",
-        href: `/clinic/patients/${params.id}?tab=demographics`,
-      },
-      {
-        id: "phone",
-        title: patient.phone || "No phone on file",
-        meta: "Phone",
+        id: "concern",
+        title:
+          (patient.presentingConcerns || "").slice(0, 90).trim() ||
+          "No active concerns documented",
+        meta: "Presenting concern",
         href: `/clinic/patients/${params.id}?tab=demographics`,
       },
     ],
@@ -819,48 +826,67 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
 
 
             {/* Quick actions */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <MessagePatientDock
-                patientId={patient.id}
-                patientName={`${patient.firstName} ${patient.lastName}`}
-              />
-              <Link href={`/clinic/patients/${params.id}/download`}>
-                <Button variant="ghost" size="sm">
-                  Download chart
+            <div className="flex flex-col items-stretch gap-2 pt-1 min-w-[220px]">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <MessagePatientDock
+                  patientId={patient.id}
+                  patientName={`${patient.firstName} ${patient.lastName}`}
+                />
+                <Link href={`/clinic/patients/${params.id}/download`}>
+                  <Button variant="ghost" size="sm">
+                    Download chart
+                  </Button>
+                </Link>
+                {/* ux/print-stylesheets-clinical — opens a server-rendered
+                    chart summary in a new tab and auto-fires the print dialog
+                    via AutoPrintTrigger. Target="_blank" keeps the working
+                    chart untouched while the printout renders. */}
+                <Link
+                  href={`/clinic/patients/${params.id}/print`}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  <Button variant="ghost" size="sm">
+                    Print chart
+                  </Button>
+                </Link>
+                <Link href={`/clinic/patients/${params.id}/voice-chart`}>
+                  <Button variant="ghost" size="sm">
+                    Voice chart
+                  </Button>
+                </Link>
+                {/* EMR-816: "Prepare for visit" → "Ask Cindy (AI Helper)" per
+                    Dr. Patel — same /prepare briefing console, friendlier name. */}
+                <Link href={`/clinic/patients/${params.id}/prepare`}>
+                  <Button variant="highlight" size="sm">
+                    Ask Cindy (AI Helper)
+                  </Button>
+                </Link>
+                <form action={startVisitWithPatient}>
+                  <Button type="submit" size="sm">
+                    Start visit
+                  </Button>
+                </form>
+              </div>
+              {/* EMR-816: large quick-prescribe button sits under the action
+                  row — the fastest path from chart open to /prescribe, per
+                  Dr. Patel's "make it as easy as possible to prescribe" rule. */}
+              <Link href={`/clinic/patients/${params.id}/prescribe`} className="w-full">
+                <Button variant="primary" size="lg" className="w-full font-semibold">
+                  <span aria-hidden className="text-lg leading-none">💊</span>
+                  Prescribe (Rx)
                 </Button>
               </Link>
-              {/* ux/print-stylesheets-clinical — opens a server-rendered
-                  chart summary in a new tab and auto-fires the print dialog
-                  via AutoPrintTrigger. Target="_blank" keeps the working
-                  chart untouched while the printout renders. */}
-              <Link
-                href={`/clinic/patients/${params.id}/print`}
-                target="_blank"
-                rel="noopener"
-              >
-                <Button variant="ghost" size="sm">
-                  Print chart
-                </Button>
-              </Link>
-              <Link href={`/clinic/patients/${params.id}/voice-chart`}>
-                <Button variant="ghost" size="sm">
-                  Voice chart
-                </Button>
-              </Link>
-              <Link href={`/clinic/patients/${params.id}/prepare`}>
-                <Button variant="highlight" size="sm">
-                  Prepare for visit
-                </Button>
-              </Link>
-              <form action={startVisitWithPatient}>
-                <Button type="submit" size="sm">
-                  Start visit
-                </Button>
-              </form>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* EMR-816 — sentinel marking the bottom of the dossier card. The
+          sticky patient strip (rendered inside ChartFrame above the tab
+          bar) watches this via IntersectionObserver and reveals once the
+          dossier has scrolled out of view. */}
+      <div id="chart-dossier-sentinel" aria-hidden className="h-px -mt-px" />
 
       {/* ── Unresolved follow-up items (EMR-675) ───────────── */}
       {/* Derived from finalized notes (Plan/Follow-up blocks) +
@@ -944,6 +970,16 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           bottom) and density (labels / dots). Both preferences are
           persisted in localStorage and scoped to the whole chart. */}
       <ChartFrame
+        stickyHeader={
+          <StickyPatientHeader
+            patientId={params.id}
+            name={`${patient.firstName} ${patient.lastName}`}
+            age={age}
+            sexLabel={sex === "Female" ? "F" : sex === "Male" ? "M" : (typeof sex === "string" ? sex : null)}
+            phone={patient.phone}
+            email={patient.email}
+          />
+        }
         nav={
           <ChartTabs
             patientId={params.id}

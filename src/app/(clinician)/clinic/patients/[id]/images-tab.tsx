@@ -18,14 +18,13 @@ import { cn } from "@/lib/utils/cn";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DicomViewer } from "./dicom-viewer";
-import { ClinicianUploadForm } from "./documents/clinician-upload-form";
 import { Bubble, CindySays, ModalShell, usePersistentState, useChartLedger } from "./chart-kit";
 import type { ChartDoc } from "./records-tab";
 import {
   IMAGING_MODALITIES,
   CARDIOLOGY_STUDIES,
 } from "@/lib/clinical/records-taxonomy";
-import { cindyListSummary, cindyImageRead } from "@/lib/clinical/cindy-says";
+import { cindyImageRead } from "@/lib/clinical/cindy-says";
 
 const IMAGE_EXT = [".png", ".jpg", ".jpeg", ".pdf", ".tiff", ".heic", ".dcm", ".dicom"];
 
@@ -53,9 +52,9 @@ export function ImagesTab({
     [],
   );
 
-  const cindy = cindyListSummary(
-    documents.map((d) => ({ title: d.name, meta: new Date(d.createdAt).toLocaleDateString() })),
-    { voice: "says", noun: "images" },
+  const cindy = cindyImageRead(
+    documents[0]?.name ?? "Imaging on file",
+    documents.map((d) => d.name).join("; "),
   );
 
   const filtered =
@@ -166,14 +165,14 @@ export function ImagesTab({
         <div className="space-y-3">
           <CindySays analysis={cindy} />
           <p className="text-[11px] text-text-subtle">
-            Cindy Says mirrors the Correspondence summary style — a 1–2 bullet
-            read of what is on file.
+            Cindy Sees is an AI imaging read — a 3–5 bullet interpretation of the
+            studies on file. Draft read; verify before charting.
           </p>
         </div>
       </div>
 
       {/* EMR-900: drag-and-drop upload, imaging types only */}
-      <ImageDropZone patientId={patientId} />
+      <ImageDropZone />
 
       {/* EMR-901: DICOM viewer with tools */}
       <DicomViewerPro patientId={patientId} />
@@ -262,7 +261,7 @@ function ImageTile({
   );
 }
 
-function ImageDropZone({ patientId }: { patientId: string }) {
+function ImageDropZone() {
   const [over, setOver] = React.useState(false);
   const [rejected, setRejected] = React.useState<string | null>(null);
 
@@ -302,7 +301,6 @@ function ImageDropZone({ patientId }: { patientId: string }) {
             </p>
           )}
         </div>
-        <ClinicianUploadForm patientId={patientId} />
       </CardContent>
     </Card>
   );
@@ -318,6 +316,27 @@ function DicomViewerPro({ patientId }: { patientId: string }) {
   const [comment, setComment] = React.useState("");
 
   const tools = ["highlight", "color", "circle", "mark", "annotate"];
+
+  const headerControls = (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => setShareOpen(true)}
+        title="Share"
+        className="px-2 py-1 text-[11px] rounded-md border border-border"
+      >
+        📤 Share
+      </button>
+      <button
+        type="button"
+        onClick={() => setDark((d) => !d)}
+        title="Toggle dark mode"
+        className="px-2 py-1 text-[11px] rounded-md border border-border"
+      >
+        {dark ? "🌙 Dark" : "💡 Light"}
+      </button>
+    </div>
+  );
 
   const ribbon = (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -336,27 +355,11 @@ function DicomViewerPro({ patientId }: { patientId: string }) {
       ))}
       <button
         type="button"
-        onClick={() => setDark((d) => !d)}
-        title="Toggle dark mode"
-        className="px-2 py-1 text-[11px] rounded-md border border-border"
-      >
-        {dark ? "🌙 Dark" : "💡 Light"}
-      </button>
-      <button
-        type="button"
         onClick={() => setFullscreen((f) => !f)}
         title="Fullscreen"
         className="px-2 py-1 text-[11px] rounded-md border border-border"
       >
         ⛶
-      </button>
-      <button
-        type="button"
-        onClick={() => setShareOpen(true)}
-        title="Share"
-        className="px-2 py-1 text-[11px] rounded-md border border-border"
-      >
-        📤 Share
       </button>
     </div>
   );
@@ -374,8 +377,11 @@ function DicomViewerPro({ patientId }: { patientId: string }) {
 
   return (
     <section className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h3 className="font-display text-lg text-text tracking-tight">DICOM Viewer</h3>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <h3 className="font-display text-lg text-text tracking-tight">DICOM Viewer</h3>
+          {headerControls}
+        </div>
         <span className="text-[11px] text-text-subtle">Type categorized by modality</span>
       </div>
       {ribbon}

@@ -238,7 +238,7 @@ export function DicomViewer({ study, className }: DicomViewerProps) {
         {/* DICOM overlay (modality, frame, patient orientation) */}
         <div className="absolute top-2 left-3 text-[11px] font-mono text-white/80 leading-tight pointer-events-none">
           <div>{activeStudy.modality}</div>
-          <div className="opacity-70">{activeStudy.studyDate}</div>
+          <div className="opacity-70">{mmddyyyy(activeStudy.studyDate)}</div>
         </div>
         <div className="absolute top-2 right-3 text-[11px] font-mono text-white/80 leading-tight pointer-events-none text-right">
           <div>
@@ -296,6 +296,15 @@ export function DicomViewer({ study, className }: DicomViewerProps) {
       </div>
     </div>
   );
+}
+
+/** Render an ISO date (YYYY-MM-DD) as MM-DD-YYYY for the study-date overlay. */
+function mmddyyyy(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${mm}-${dd}-${d.getUTCFullYear()}`;
 }
 
 function ToolButton({

@@ -17,14 +17,17 @@ function GlassCard({
 }: {
   children: React.ReactNode;
   className?: string;
-  tint?: "neutral" | "accent" | "warning";
+  // accent / positive = green, caution = amber/yellow, warning = red
+  tint?: "neutral" | "accent" | "positive" | "caution" | "warning";
 }) {
   const gradient =
-    tint === "accent"
+    tint === "accent" || tint === "positive"
       ? "linear-gradient(135deg, rgba(95,165,120,0.12), rgba(255,255,255,0.55))"
-      : tint === "warning"
-        ? "linear-gradient(135deg, rgba(200,130,60,0.12), rgba(255,255,255,0.55))"
-        : "linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.35))";
+      : tint === "caution"
+        ? "linear-gradient(135deg, rgba(184,120,47,0.13), rgba(255,255,255,0.55))"
+        : tint === "warning"
+          ? "linear-gradient(135deg, rgba(200,90,62,0.13), rgba(255,255,255,0.55))"
+          : "linear-gradient(135deg, rgba(255,255,255,0.7), rgba(255,255,255,0.35))";
 
   return (
     <div
@@ -163,6 +166,101 @@ function StepRow({ step }: { step: BriefingStep }) {
 // Briefing section card (for intelligence details)
 // ---------------------------------------------------------------------------
 
+// Three-tier color stratification per Dr. Patel's directive:
+//   RED   ("critical")  = top priority / urgent
+//   YELLOW("watch")     = watch / consider for future / side-effects
+//   GREEN ("positive")  = positives + "continue" (keep same meds/labs/lifestyle)
+type SectionTier = "critical" | "watch" | "positive";
+
+const TIER_STYLE: Record<
+  SectionTier,
+  {
+    tint: "warning" | "caution" | "positive";
+    bar: string;
+    label: string | null;
+    chip: string;
+  }
+> = {
+  critical: {
+    tint: "warning",
+    bar: "linear-gradient(180deg, #D85A3E, #B33F28)",
+    label: "Priority",
+    chip: "bg-[rgba(200,70,60,0.12)] text-[#B33F28]",
+  },
+  watch: {
+    tint: "caution",
+    bar: "linear-gradient(180deg, var(--highlight), var(--highlight-hover))",
+    label: "Watch",
+    chip: "bg-[var(--highlight-soft)] text-[color:var(--highlight-hover)]",
+  },
+  positive: {
+    tint: "positive",
+    bar: "linear-gradient(180deg, var(--accent), var(--accent-strong))",
+    label: "Continue",
+    chip: "bg-[var(--accent-soft)] text-[color:var(--accent)]",
+  },
+};
+
+// "Symptom trends" type sections get colored by their *direction*, not their
+// raw priority: green when improving, yellow/red when worsening (severity by
+// how negative). We infer direction from whatever language the section already
+// carries (title + content), since the briefing emits trend sections like
+// "<metric> improving" / risk-style "worsening" copy.
+const SIDE_EFFECT_RE = /side[\s-]?effect|adverse|tolerab/i;
+const SYMPTOM_TREND_RE = /symptom|trend|outcome|improv|worsen|increas|decreas|trending/i;
+const SEVERE_WORSEN_RE =
+  /severe|sharp|rapid|markedly|significant|alarm|urgent|spik|escalat|much worse|considerably/i;
+
+function inferTrendDirection(
+  text: string,
+): "improving" | "worsening" | "severely-worsening" | null {
+  const t = text.toLowerCase();
+  const improving =
+    /improv|better|trending down|decreas(?:ing|ed)|lower(?:ing|ed)?|down over|reduc|relief|resolv|stabiliz/.test(
+      t,
+    );
+  const worsening =
+    /worsen|worse|trending up|increas(?:ing|ed)|higher|elevat|spik|flare|deteriorat|escalat/.test(
+      t,
+    );
+  // When the copy reads positively (improving) and isn't also flagging a rise,
+  // treat as improving — green.
+  if (improving && !worsening) return "improving";
+  if (worsening) {
+    return SEVERE_WORSEN_RE.test(t) ? "severely-worsening" : "worsening";
+  }
+  return null;
+}
+
+function resolveTier(section: {
+  title: string;
+  content: string;
+  priority: string;
+}): SectionTier {
+  const haystack = `${section.title} ${section.content}`;
+
+  // Symptom-trend sections: color dynamically by direction.
+  if (SYMPTOM_TREND_RE.test(haystack)) {
+    const dir = inferTrendDirection(haystack);
+    if (dir === "improving") return "positive";
+    if (dir === "severely-worsening") return "critical";
+    if (dir === "worsening") {
+      // High-priority worsening reads as critical (red); otherwise watch.
+      return section.priority === "high" ? "critical" : "watch";
+    }
+    // Direction unclear — fall through to the priority mapping below.
+  }
+
+  // Side-effect sections are always the "watch / consider" yellow tier.
+  if (SIDE_EFFECT_RE.test(haystack)) return "watch";
+
+  // Default priority stratification:
+  //   high  -> red, medium -> yellow (watch), low -> green (positive/continue).
+  if (section.priority === "high") return "critical";
+  if (section.priority === "medium") return "watch";
+  return "positive";
+}
+
 function BriefingSection({
   section,
 }: {
@@ -173,34 +271,25 @@ function BriefingSection({
     icon: string;
   };
 }) {
-  const tint =
-    section.priority === "high"
-      ? "warning"
-      : section.priority === "medium"
-        ? "accent"
-        : "neutral";
+  const tier = resolveTier(section);
+  const style = TIER_STYLE[tier];
 
   return (
-    <GlassCard tint={tint} className="px-5 py-4">
+    <GlassCard tint={style.tint} className="px-5 py-4">
       <div className="flex items-start gap-4">
-        {/* Priority indicator */}
+        {/* Tier indicator — red = priority, yellow = watch, green = continue */}
         <div
           className="shrink-0 w-1 self-stretch rounded-full"
-          style={{
-            background:
-              section.priority === "high"
-                ? "linear-gradient(180deg, #D85A3E, #B33F28)"
-                : section.priority === "medium"
-                  ? "linear-gradient(180deg, var(--accent), var(--accent-strong))"
-                  : "linear-gradient(180deg, rgba(150,150,140,0.4), rgba(150,150,140,0.2))",
-          }}
+          style={{ background: style.bar }}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-sm font-medium text-text">{section.title}</p>
-            {section.priority === "high" && (
-              <span className="text-[9px] font-medium uppercase tracking-[0.14em] px-2 py-0.5 rounded-full bg-[rgba(200,70,60,0.12)] text-[#B33F28]">
-                Priority
+            {style.label && (
+              <span
+                className={`text-[9px] font-medium uppercase tracking-[0.14em] px-2 py-0.5 rounded-full ${style.chip}`}
+              >
+                {style.label}
               </span>
             )}
           </div>
@@ -224,11 +313,13 @@ export function BriefingConsole({
   patientId: string;
   patientName: string;
 }) {
+  const firstName = patientName.trim().split(/\s+/)[0] || patientName;
   const [result, setResult] = useState<BriefingResult | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isStartingVisit, startStartVisitTransition] = useTransition();
   const [simulatedSteps, setSimulatedSteps] = useState<BriefingStep[]>([]);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
+  const [riskFlagsExpanded, setRiskFlagsExpanded] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Simulated step progression for UX
@@ -407,9 +498,9 @@ export function BriefingConsole({
         {phase === "idle" && (
           <div className="px-7 pt-6 pb-7">
             <p className="text-[14px] text-text-muted leading-relaxed max-w-lg">
-              The agent will synthesize {patientName}&apos;s chart into a concise briefing
-              — chart data, outcome trends, medication adherence, recent messages,
-              and assessments — with talking points and risk flags ready for the visit.
+              Cindy will summarize {firstName}&apos;s chart into a concise outline
+              using chart data, outcome trends, medication adherence, recent messages,
+              and assessments — with talking points and risk flags so you&apos;re ready for the visit.
             </p>
             <div className="mt-6">
               <Button size="lg" onClick={handleGenerate}>
@@ -524,7 +615,10 @@ export function BriefingConsole({
                   </p>
                 </div>
                 <ul className="space-y-2.5">
-                  {result.briefing.riskFlags.map((flag, i) => (
+                  {(riskFlagsExpanded
+                    ? result.briefing.riskFlags
+                    : result.briefing.riskFlags.slice(0, 3)
+                  ).map((flag, i) => (
                     <li
                       key={i}
                       className="flex items-start gap-3 text-sm text-text leading-relaxed"
@@ -534,6 +628,17 @@ export function BriefingConsole({
                     </li>
                   ))}
                 </ul>
+                {result.briefing.riskFlags.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setRiskFlagsExpanded((v) => !v)}
+                    className="mt-3 text-[11px] font-medium uppercase tracking-[0.14em] text-[#B33F28] transition-opacity hover:opacity-70"
+                  >
+                    {riskFlagsExpanded
+                      ? "Show fewer"
+                      : `Expand · ${result.briefing.riskFlags.length - 3} more`}
+                  </button>
+                )}
               </div>
             </GlassCard>
           )}
@@ -541,7 +646,7 @@ export function BriefingConsole({
           {/* Patient summary — hero glass */}
           <GlassCard tint="accent" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="px-8 py-8">
-              <Eyebrow className="mb-4">Patient briefing</Eyebrow>
+              <Eyebrow className="mb-4">Patient&apos;s Story</Eyebrow>
               <p className="font-display text-2xl md:text-3xl text-text leading-[1.15] tracking-tight">
                 {result.briefing.patientSummary}
               </p>
@@ -644,7 +749,7 @@ export function BriefingConsole({
                     });
                   }}
                 >
-                  {isStartingVisit ? "Starting..." : "Start visit with briefing"}
+                  {isStartingVisit ? "Starting..." : "Start Visit"}
                 </Button>
               </div>
             </div>

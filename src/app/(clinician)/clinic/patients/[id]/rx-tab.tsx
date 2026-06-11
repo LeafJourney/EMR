@@ -177,7 +177,8 @@ export function RxTab({
           {/* ── Active Medications (EMR-876/878/879/880) ── */}
           <ActiveMedications
             patientId={patientId}
-            regimens={active}
+            activeRegimens={active}
+            inactiveRegimens={inactive}
             heading="Active Medications"
             record={record}
           />
@@ -448,12 +449,14 @@ function InteractionCheck({
 
 function ActiveMedications({
   patientId,
-  regimens,
+  activeRegimens,
+  inactiveRegimens,
   heading,
   record,
 }: {
   patientId: string;
-  regimens: RxRegimen[];
+  activeRegimens: RxRegimen[];
+  inactiveRegimens: RxRegimen[];
   heading: string;
   record: ReturnType<typeof useChartLedger>["record"];
 }) {
@@ -462,12 +465,34 @@ function ActiveMedications({
   const [sort, setSort] = React.useState<"name" | "sig" | "prescribed" | "renewed">(
     "name",
   );
+  // Dr. Patel doc ~line 729: top-of-section dropdown toggles the view between
+  // active and inactive regimens. Pure client state over the regimens already
+  // passed in — partitioned by their `active` flag.
+  const [view, setView] = React.useState<"active" | "inactive">("active");
+  const regimens = view === "active" ? activeRegimens : inactiveRegimens;
+
+  const viewToggle = (
+    <select
+      value={view}
+      onChange={(e) => setView(e.target.value as typeof view)}
+      aria-label="Regimen status"
+      className="text-xs rounded-md border border-border bg-surface px-2 py-1 text-text focus:outline-none focus:border-accent"
+    >
+      <option value="active">Active regimens</option>
+      <option value="inactive">Inactive regimens</option>
+    </select>
+  );
 
   if (regimens.length === 0) {
     return (
       <section>
-        <h3 className="font-display text-lg text-text tracking-tight mb-3">{heading}</h3>
-        <p className="text-sm text-text-muted">No active medications.</p>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h3 className="font-display text-lg text-text tracking-tight">{heading}</h3>
+          {viewToggle}
+        </div>
+        <p className="text-sm text-text-muted">
+          {view === "active" ? "No active medications." : "No inactive medications."}
+        </p>
       </section>
     );
   }
@@ -509,7 +534,8 @@ function ActiveMedications({
         >
           {heading} →
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {viewToggle}
           <label className="text-[11px] text-text-subtle">Sort</label>
           <select
             value={sort}

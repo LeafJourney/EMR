@@ -5,7 +5,18 @@ import { useFormState, useFormStatus } from "react-dom";
 import { collectPayment, type CollectResult } from "./actions";
 import { Button } from "@/components/ui/button";
 
-type Method = "card" | "ach" | "cash" | "check";
+// UI-level method choices. Note "bitcoin" is a presentation-only option:
+// the server action's schema still only accepts card/ach/cash/check, so we
+// submit a server-valid `method` value while capturing the crypto-specific
+// fields in form state (Dr. Patel directive — UI form fields only, no real
+// crypto processing wired here).
+type Method = "card" | "ach" | "cash" | "check" | "bitcoin";
+
+/** The value sent to the server action — bitcoin maps onto the closest
+ * server-accepted enum so the existing submit path keeps working. */
+function serverMethod(m: Method): "card" | "ach" | "cash" | "check" {
+  return m === "bitcoin" ? "cash" : m;
+}
 
 // Best-effort browser UUID. Falls back to a random-string shim for very
 // old browsers that don't expose crypto.randomUUID. Server-side validates
@@ -40,6 +51,12 @@ export function CollectPaymentForm({
   const [amount, setAmount] = useState(
     suggestedAmountCents > 0 ? (suggestedAmountCents / 100).toFixed(2) : "",
   );
+  // ACH bank details (presentation-only form state — not sent to the gateway).
+  const [routingNumber, setRoutingNumber] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  // Bitcoin crypto-wallet details (presentation-only form state).
+  const [walletAddress, setWalletAddress] = useState("");
   // Stable across re-renders of this form instance. A retried submit
   // (e.g. user double-clicks "Collect payment") reuses the same key, so
   // the server short-circuits and returns the existing payment id.
@@ -103,8 +120,8 @@ export function CollectPaymentForm({
         <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1.5">
           Method
         </label>
-        <div className="grid grid-cols-4 gap-1">
-          {(["card", "ach", "cash", "check"] as Method[]).map((m) => (
+        <div className="grid grid-cols-5 gap-1">
+          {(["card", "ach", "cash", "check", "bitcoin"] as Method[]).map((m) => (
             <button
               key={m}
               type="button"
@@ -119,7 +136,8 @@ export function CollectPaymentForm({
             </button>
           ))}
         </div>
-        <input type="hidden" name="method" value={method} />
+        {/* Submit a server-valid enum value (bitcoin maps to cash). */}
+        <input type="hidden" name="method" value={serverMethod(method)} />
       </div>
 
       {/* Card-on-file note */}
@@ -132,6 +150,73 @@ export function CollectPaymentForm({
         <p className="text-[11px] text-[color:var(--warning)]">
           No card on file — will prompt patient to enter
         </p>
+      )}
+
+      {/* ACH bank details — UI form fields only, not sent to the gateway */}
+      {method === "ach" && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
+              Routing number
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="achRoutingNumber"
+              value={routingNumber}
+              onChange={(e) => setRoutingNumber(e.target.value)}
+              placeholder="123456789"
+              className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 tabular-nums"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
+              Account number
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="achAccountNumber"
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value)}
+              placeholder="000123456789"
+              className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50 tabular-nums"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
+              Bank name
+            </label>
+            <input
+              type="text"
+              name="achBankName"
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              placeholder="First National Bank"
+              className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm text-text focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Bitcoin crypto-wallet details — UI form fields only, no crypto rails */}
+      {method === "bitcoin" && (
+        <div>
+          <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
+            Crypto wallet address
+          </label>
+          <input
+            type="text"
+            name="bitcoinWalletAddress"
+            value={walletAddress}
+            onChange={(e) => setWalletAddress(e.target.value)}
+            placeholder="bc1q…"
+            className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm text-text font-mono focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/50"
+          />
+          <p className="text-[11px] text-text-subtle mt-1">
+            Recorded for documentation — settlement is handled off-platform.
+          </p>
+        </div>
       )}
 
       {/* Reference */}

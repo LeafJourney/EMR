@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
 import { formatRelative } from "@/lib/utils/format";
@@ -21,11 +22,19 @@ import { EntityTagEditor, EntityTagStrip } from "@/components/ui/entity-tag-edit
 //   - Missing required consents (cannabis, telehealth, etc.)
 //   - Anything else passed in via items[]
 //
-// The list is dismissible per-patient (localStorage). Dismissal hides
-// the panel for *this session/device*; it does not mark the underlying
-// tasks done — that remains the job of the actual workflow each item
-// links to. We intentionally avoid wiring "Complete task" buttons here
-// to prevent the panel becoming a side-channel for state mutations.
+// The list is dismissible per-patient (localStorage). Per Dr. Patel's
+// revision directive, Dismiss is a *48-hour snooze*: we stamp the
+// dismissal time and keep the whole section hidden until 00:01 on the
+// day-after-next (tomorrow is skipped entirely; it reappears the
+// following day). Dismissal does not mark the underlying tasks done —
+// that remains the job of the actual workflow each item links to. We
+// intentionally avoid wiring "Complete task" buttons here to prevent the
+// panel becoming a side-channel for state mutations.
+//
+// Distinct from Dismiss, the header carries a collapse/expand chevron
+// that hides only the list body while leaving the header (and the task
+// count / urgent badge) visible — a lightweight tuck-away that does not
+// arm the snooze timer.
 
 export type ChartTaskCategory =
   | "order"
@@ -95,12 +104,31 @@ function DragGripIcon() {
   );
 }
 
-const STORAGE_KEY_PREFIX = "chart:task-list-dismissed:v1:";
+// v2: stores an ISO "snooze until" timestamp instead of the old item
+// hash. While `Date.now() < snoozeUntil` the section stays hidden; once
+// past, the stale entry is cleared and the panel returns.
+const STORAGE_KEY_PREFIX = "chart:task-list-dismissed:v2:";
+// Per-patient collapse (body-hidden) state for the header chevron.
+const COLLAPSE_KEY_PREFIX = "chart:task-list-collapsed:v1:";
 // EMR-DnD: per-patient manual ordering override. Stores an array of
 // `${category}:${id}` keys; any task not present falls back to the
 // default severity-sorted order at the bottom. TODO(schema): when a
 // `ChartTask.sortOrder` field lands on the model, persist server-side.
 const ORDER_KEY_PREFIX = "chart:task-list-order:v1:";
+
+/**
+ * 48-hour dismiss window per Dr. Patel: dismissing today should skip
+ * tomorrow entirely and reappear at 00:01 local on the day-after-next.
+ * We snap to the start of the day-after-next (now + 2 calendar days at
+ * 00:01 local) rather than a raw +48h offset so the reappearance lands
+ * on a predictable wall-clock time regardless of when it was dismissed.
+ */
+function computeSnoozeUntil(from: Date = new Date()): number {
+  const d = new Date(from);
+  d.setDate(d.getDate() + 2);
+  d.setHours(0, 1, 0, 0);
+  return d.getTime();
+}
 
 export function ChartTaskList({
   patientId,
@@ -109,28 +137,36 @@ export function ChartTaskList({
   className,
 }: ChartTaskListProps) {
   const storageKey = `${STORAGE_KEY_PREFIX}${patientId}`;
+  const collapseKey = `${COLLAPSE_KEY_PREFIX}${patientId}`;
   const orderKey = `${ORDER_KEY_PREFIX}${patientId}`;
   const [dismissed, setDismissed] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   // Manual ordering applied on top of severity-bucket sort. Initialized
   // from localStorage on mount so SSR markup stays stable.
   const [manualOrder, setManualOrder] = React.useState<string[] | null>(null);
 
-  // Hash the items so dismissals re-appear when something genuinely
-  // *new* lands on the chart. Without this, dismissing a list with
-  // 3 items would also hide a later state with 5 items — masking
-  // newly-arriving safety signals.
-  const hash = React.useMemo(
-    () => items.map((i) => `${i.category}:${i.id}`).sort().join("|"),
-    [items],
-  );
-
   React.useEffect(() => {
     try {
+      // Dismiss is a 48h snooze: the stored value is an ISO "show again
+      // after" timestamp. Still in the future → keep hidden; expired →
+      // clear the stale entry and show the panel again.
       const raw = window.localStorage.getItem(storageKey);
-      if (raw && raw === hash) setDismissed(true);
+      if (raw) {
+        const snoozeUntil = Date.parse(raw);
+        if (Number.isFinite(snoozeUntil) && Date.now() < snoozeUntil) {
+          setDismissed(true);
+        } else {
+          window.localStorage.removeItem(storageKey);
+        }
+      }
     } catch {
       // ignore — Safari private mode etc.
+    }
+    try {
+      setCollapsed(window.localStorage.getItem(collapseKey) === "1");
+    } catch {
+      // ignore — private-mode storage; default to expanded.
     }
     try {
       const rawOrder = window.localStorage.getItem(orderKey);
@@ -144,15 +180,31 @@ export function ChartTaskList({
       // ignore — bad JSON or private-mode storage; just fall back.
     }
     setHydrated(true);
-  }, [storageKey, hash, orderKey]);
+  }, [storageKey, collapseKey, orderKey]);
 
   const handleDismiss = () => {
     setDismissed(true);
     try {
-      window.localStorage.setItem(storageKey, hash);
+      window.localStorage.setItem(
+        storageKey,
+        new Date(computeSnoozeUntil()).toISOString(),
+      );
     } catch {
       // ignore
     }
+  };
+
+  const handleToggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        if (next) window.localStorage.setItem(collapseKey, "1");
+        else window.localStorage.removeItem(collapseKey);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   // Base order: bucket by severity, surface the most urgent first.
@@ -213,8 +265,27 @@ export function ChartTaskList({
       )}
       data-testid="chart-task-list"
     >
-      <div className="flex items-center justify-between px-5 py-3 border-b border-border/60">
+      <div className={cn(
+        "flex items-center justify-between px-5 py-3",
+        !collapsed && "border-b border-border/60",
+      )}>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggleCollapse}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand task list" : "Collapse task list"}
+            title={collapsed ? "Expand task list" : "Collapse task list"}
+            className="-ml-1 text-text-subtle hover:text-text p-1 rounded-md hover:bg-surface-muted transition-colors"
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={cn(
+                "h-4 w-4 transition-transform",
+                collapsed && "-rotate-90",
+              )}
+            />
+          </button>
           <p className="text-[11px] uppercase tracking-[0.14em] text-text-subtle font-medium">
             {title} · {items.length}
           </p>
@@ -227,6 +298,7 @@ export function ChartTaskList({
         <button
           type="button"
           onClick={handleDismiss}
+          title="Snooze for 48 hours"
           className="text-[11px] text-text-subtle hover:text-text px-2 py-1 rounded-md hover:bg-surface-muted transition-colors"
         >
           Dismiss
@@ -235,7 +307,8 @@ export function ChartTaskList({
 
       {/* EMR-DnD: clinicians can drag tasks (or use Space + arrow keys) to
           re-prioritize their punch list. Order persists per-patient in
-          localStorage. */}
+          localStorage. The chevron above hides just this body. */}
+      {!collapsed && (
       <SortableList
         items={sorted}
         getKey={(item) => `${item.category}-${item.id}`}
@@ -297,6 +370,7 @@ export function ChartTaskList({
           </div>
         )}
       />
+      )}
     </div>
   );
 }

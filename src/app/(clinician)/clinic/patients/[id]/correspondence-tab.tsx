@@ -128,6 +128,24 @@ const BEIGE_TAG: Record<string, string> = {
   result_inquiry: "doctor's note",
 };
 
+/* ── Clickable bubble filters (EMR-895) ───────────────────────────────────
+   Priority bubbles (Urgent/High/Routine/Meds) and beige reason tags act as
+   click-to-filter chips over the threads already passed in. A filter key is a
+   stable string; threadFilterKeys() returns every key a given thread carries.
+   Pure client state — no schema/data change. */
+
+/** The set of filter keys a thread carries via its triage bubbles/tags. */
+function threadFilterKeys(thread: SerializedThread): string[] {
+  const keys: string[] = [];
+  const u = urgencyBubble(thread.triageUrgency);
+  if (u) keys.push(`urgency:${u.label}`); // Urgent / High / Routine
+  const category = thread.triageCategory ?? "";
+  if (category && MEDS_CATEGORIES.has(category)) keys.push("meds");
+  const beige = BEIGE_TAG[category];
+  if (beige) keys.push(`beige:${beige}`);
+  return keys;
+}
+
 /* ── Inbox folder state (EMR-895) ─────────────────────────────────────────
    Trash → 30-day trash folder; Archive → restorable archive. Persisted via
    localStorage (no schema column). */
@@ -216,6 +234,8 @@ function InboxRow({
   thread,
   isActive,
   isDraft,
+  bubbleFilter,
+  onFilter,
   onSelect,
   onArchive,
   onTrash,
@@ -223,6 +243,10 @@ function InboxRow({
   thread: SerializedThread;
   isActive: boolean;
   isDraft: boolean;
+  /** Active bubble filter key, or null. */
+  bubbleFilter: string | null;
+  /** Toggle a bubble filter (click again to clear). */
+  onFilter: (key: string) => void;
   onSelect: () => void;
   onArchive: () => void;
   onTrash: () => void;
@@ -271,37 +295,63 @@ function InboxRow({
         </div>
 
         {/* EMR-895 — FULL ~12-word summary, no truncation. */}
-        <p className="text-xs text-text-subtle mb-1.5 leading-snug">
+        <p className="text-xs text-text-subtle leading-snug">
           {summary}
         </p>
-
-        <div className="flex items-center gap-1 flex-wrap">
-          {isDraft && (
-            <Bubble tone="info" emoji="✏️">
-              Draft
-            </Bubble>
-          )}
-          {uBubble && (
-            <Bubble tone={uBubble.tone}>{uBubble.label}</Bubble>
-          )}
-          {category && MEDS_CATEGORIES.has(category) && (
-            <Bubble tone="info">Meds</Bubble>
-          )}
-          {beige && <Bubble tone="beige">{beige}</Bubble>}
-          {category && !MEDS_CATEGORIES.has(category) && !beige && (
-            <Badge tone="neutral" className="text-[9px]">
-              {CATEGORY_LABELS[category] ?? category}
-            </Badge>
-          )}
-          {hasAiDraft && aiDraftMsg && (
-            <AgentSignal
-              agent={aiDraftMsg.senderAgent}
-              label="draft ready"
-              showPopover={false}
-            />
-          )}
-        </div>
       </button>
+
+      {/* EMR-895 — clickable bubble filters live OUTSIDE the select button so a
+          click filters the inbox (toggle off by clicking again) instead of
+          opening the thread. */}
+      <div className="flex items-center gap-1 flex-wrap px-4 pb-3 -mt-0.5">
+        {isDraft && (
+          <Bubble tone="info" emoji="✏️">
+            Draft
+          </Bubble>
+        )}
+        {uBubble && (
+          <Bubble
+            tone={uBubble.tone}
+            active={bubbleFilter === `urgency:${uBubble.label}`}
+            title={`Filter: ${uBubble.label}`}
+            onClick={() => onFilter(`urgency:${uBubble.label}`)}
+          >
+            {uBubble.label}
+          </Bubble>
+        )}
+        {category && MEDS_CATEGORIES.has(category) && (
+          <Bubble
+            tone="info"
+            active={bubbleFilter === "meds"}
+            title="Filter: Meds"
+            onClick={() => onFilter("meds")}
+          >
+            Meds
+          </Bubble>
+        )}
+        {beige && (
+          <Bubble
+            tone="beige"
+            active={bubbleFilter === `beige:${beige}`}
+            title={`Filter: ${beige}`}
+            onClick={() => onFilter(`beige:${beige}`)}
+          >
+            {beige}
+          </Bubble>
+        )}
+        {category && !MEDS_CATEGORIES.has(category) && !beige && (
+          <Badge tone="neutral" className="text-[9px]">
+            {CATEGORY_LABELS[category] ?? category}
+          </Badge>
+        )}
+        {hasAiDraft && aiDraftMsg && (
+          <AgentSignal
+            agent={aiDraftMsg.senderAgent}
+            label="draft ready"
+            showPopover={false}
+          />
+        )}
+      </div>
 
       {/* EMR-895 — hover actions: trash/archive/send. Hidden until hover. */}
       <div className="absolute top-2.5 right-2 hidden group-hover:flex items-center gap-1">
@@ -351,6 +401,8 @@ export function CorrespondenceTab({
   );
   const [composing, setComposing] = useState(false);
   const [folder, setFolder] = useState<FolderName>("inbox");
+  // EMR-895 — active bubble/beige filter key (null = no filter).
+  const [bubbleFilter, setBubbleFilter] = useState<string | null>(null);
   const { toast } = useToast();
 
   // EMR-895 — folder + EMR-896 draft state persisted per patient.
@@ -395,14 +447,41 @@ export function CorrespondenceTab({
   );
 
   const visibleThreads = useMemo(() => {
-    return threads.filter((t) => {
+    const inFolder = threads.filter((t) => {
       if (folder === "trash") return trashedSet.has(t.id);
       if (folder === "archive")
         return archivedSet.has(t.id) && !trashedSet.has(t.id);
       // inbox: not archived, not trashed
       return !archivedSet.has(t.id) && !trashedSet.has(t.id);
     });
-  }, [threads, folder, archivedSet, trashedSet]);
+    // EMR-895 — when a bubble filter is active, show only matching threads.
+    // Keep newest-first to match the unfiltered inbox order (threads arrive
+    // sorted by lastMessageAt desc) so toggling a filter doesn't flip the
+    // list upside-down on the clinician.
+    if (!bubbleFilter) return inFolder;
+    return inFolder
+      .filter((t) => threadFilterKeys(t).includes(bubbleFilter))
+      .sort(
+        (a, b) =>
+          new Date(b.lastMessageAt).getTime() -
+          new Date(a.lastMessageAt).getTime(),
+      );
+  }, [threads, folder, archivedSet, trashedSet, bubbleFilter]);
+
+  // EMR-895 — toggle a bubble filter; clicking the active one clears it.
+  function toggleBubbleFilter(key: string) {
+    setBubbleFilter((cur) => (cur === key ? null : key));
+    setActiveThreadId(null);
+  }
+
+  // Human-readable label for the active filter chip.
+  const filterLabel = bubbleFilter
+    ? bubbleFilter.startsWith("urgency:")
+      ? bubbleFilter.slice("urgency:".length)
+      : bubbleFilter.startsWith("beige:")
+        ? bubbleFilter.slice("beige:".length)
+        : "Meds"
+    : null;
 
   const activeThread = visibleThreads.find((t) => t.id === activeThreadId) ?? null;
 
@@ -520,6 +599,25 @@ export function CorrespondenceTab({
             </button>
           </div>
 
+          {/* EMR-895 — active bubble filter indicator. Click ✕ to clear. */}
+          {bubbleFilter && (
+            <div className="flex items-center justify-between gap-2 rounded-md bg-accent-soft/50 px-2.5 py-1.5">
+              <span className="text-[11px] text-text-muted">
+                Filtering by{" "}
+                <span className="font-medium text-accent">{filterLabel}</span>{" "}
+                · chronological
+              </span>
+              <button
+                type="button"
+                onClick={() => setBubbleFilter(null)}
+                className="text-[11px] text-accent hover:underline"
+                aria-label="Clear filter"
+              >
+                Clear ✕
+              </button>
+            </div>
+          )}
+
           <Card className="overflow-hidden">
             <div className="overflow-y-auto max-h-[720px]">
               {/* Drafts (EMR-896) pinned at the top of the inbox. */}
@@ -571,6 +669,8 @@ export function CorrespondenceTab({
                       thread={t}
                       isActive={t.id === activeThreadId}
                       isDraft={draftThreadIds.has(`draft:${t.subject}`)}
+                      bubbleFilter={bubbleFilter}
+                      onFilter={toggleBubbleFilter}
                       onSelect={() => {
                         setComposing(false);
                         setActiveThreadId(t.id);

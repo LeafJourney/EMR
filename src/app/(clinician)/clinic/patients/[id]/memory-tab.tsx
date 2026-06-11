@@ -153,7 +153,9 @@ const SEVERITY_STYLE: Record<
 > = {
   urgent: { tone: "danger", label: "Urgent" },
   concern: { tone: "warning", label: "Concern" },
-  notable: { tone: "info", label: "Notable" },
+  // EMR-858 — "notable" is retired from the filter strip; legacy data maps
+  // into the "info" bucket so old observations still render (as Info).
+  notable: { tone: "accent", label: "Info" },
   info: { tone: "accent", label: "Info" },
 };
 
@@ -862,6 +864,12 @@ function WhatWeRememberPanel({
     [],
   );
 
+  // EMR-859 — emoji-only display toggle for the trend bubbles (persisted).
+  const [trendEmojiOnly, setTrendEmojiOnly] = usePersistentState<boolean>(
+    `memory:trend-emoji-only:${ledgerKey}`,
+    false,
+  );
+
   const [detail, setDetail] = React.useState<{
     group: (typeof KIND_GROUPS)[number];
     items: PatientMemory[];
@@ -907,13 +915,25 @@ function WhatWeRememberPanel({
         <div className="pt-1 space-y-4">
           {/* EMR-859 — trend bubbles (filter the window below). */}
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-text-subtle mb-1.5">
-              Filter by trend
-            </p>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] uppercase tracking-wider text-text-subtle">
+                Filter by trend
+              </p>
+              {/* EMR-859 — toggle the bubbles between label+emoji and emoji-only. */}
+              <button
+                type="button"
+                onClick={() => setTrendEmojiOnly((prev) => !prev)}
+                aria-pressed={trendEmojiOnly}
+                className="text-[10px] text-accent hover:underline"
+              >
+                {trendEmojiOnly ? "Show labels" : "Emoji only"}
+              </button>
+            </div>
             <BubbleStrip
               bubbles={trendBubbles}
               selected={trendFilter}
               onSelect={setTrendFilter}
+              emojiOnly={trendEmojiOnly}
             />
           </div>
 

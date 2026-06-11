@@ -50,6 +50,7 @@ export function ScreeningsPanel({
     [],
   );
   const [open, setOpen] = React.useState<ScreeningLite | null>(null);
+  const [searchOpen, setSearchOpen] = React.useState(false);
 
   function toggle(id: string) {
     setDone((prev) =>
@@ -64,14 +65,13 @@ export function ScreeningsPanel({
           <h3 className="font-display text-base text-text tracking-tight flex items-center gap-2">
             <span aria-hidden="true">🩺</span> Preventative Screenings
           </h3>
-          <a
-            href="https://www.uspreventiveservicestaskforce.org/uspstf/topic_search_results?grades%5B%5D=A&grades%5B%5D=B"
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
             className="text-[11px] px-2.5 py-1 rounded-md border border-border text-accent hover:bg-accent-soft transition-colors"
           >
             🔎 Search USPSTF
-          </a>
+          </button>
         </div>
 
         {screenings.length === 0 ? (
@@ -133,7 +133,33 @@ export function ScreeningsPanel({
             ))}
           </div>
         </div>
+
+        {/* EMR-855 — required source attribution for the USPSTF search surface. */}
+        <p className="mt-4 text-[10px] text-text-subtle">
+          Obtained from the US Preventative Services Task Force.
+        </p>
       </CardContent>
+
+      {/* EMR-855 — in-app USPSTF recommendation browser (webview embed). */}
+      <ModalShell
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        eyebrow="USPSTF"
+        title="🔎 Search preventative measures"
+        placement="center"
+        maxWidth="max-w-4xl"
+      >
+        <div className="flex flex-col">
+          <iframe
+            src="https://www.uspreventiveservicestaskforce.org/webview/#!/"
+            title="US Preventive Services Task Force recommendation browser"
+            className="w-full h-[70vh] border-0"
+          />
+          <p className="px-6 py-3 text-[10px] text-text-subtle border-t border-border">
+            Obtained from the US Preventative Services Task Force.
+          </p>
+        </div>
+      </ModalShell>
 
       <ModalShell
         open={open !== null}

@@ -1558,10 +1558,21 @@ export function VoiceRecorder({
                       <span className="font-mono text-xs text-text-muted shrink-0 pt-0.5 w-10 text-right">
                         {formatDuration(seg.startTime)}
                       </span>
-                      <span className="font-medium text-text-muted shrink-0 w-6">
+                      <span
+                        className={cn(
+                          "font-semibold shrink-0 w-6",
+                          seg.speaker === "clinician"
+                            ? "text-accent"
+                            : seg.speaker === "patient"
+                              ? "text-info"
+                              : "text-text-muted",
+                        )}
+                      >
                         {seg.speaker === "clinician" ? "Dr" : "Pt"}
                       </span>
-                      <span className="text-text">{seg.text}</span>
+                      <span className="text-text">
+                        {seg.text ? seg.text.charAt(0).toUpperCase() + seg.text.slice(1) : seg.text}
+                      </span>
                     </div>
                   ))}
                 </div>

@@ -13,6 +13,7 @@ import { getPatientFinancialSummary, formatMoney } from "@/lib/domain/billing";
 import { CollectPaymentForm } from "./collect-payment-form";
 import { PaymentPlanForm } from "./payment-plan-form";
 import { EventLog, type EventLogItem } from "./event-log";
+import { StatementHistory, type StatementTileItem } from "./statement-history";
 import { InsuranceVerify } from "./insurance-verify";
 
 interface PageProps {
@@ -101,6 +102,32 @@ export default async function PatientBillingPage({ params }: PageProps) {
     };
   });
 
+  // Pre-format statements for the collapsible client tiles so the client
+  // component never imports the billing/prisma layer (mirrors eventItems).
+  const statementItems: StatementTileItem[] = statements.map((statement) => ({
+    id: statement.id,
+    statementNumber: statement.statementNumber,
+    dateLabel: `Due ${formatDate(statement.dueDate)}`,
+    amountLabel: formatMoney(statement.amountDueCents),
+    status: statement.status,
+    statusTone:
+      statement.status === "paid" || statement.status === "sent"
+        ? "success"
+        : statement.status === "overdue"
+          ? "danger"
+          : statement.status === "viewed"
+            ? "accent"
+            : "warning",
+    detailLine: `Sent ${
+      statement.sentAt ? formatRelative(statement.sentAt) : "not sent"
+    } · Due ${formatDate(statement.dueDate)}${
+      statement.viewedAt ? ` · Viewed ${formatRelative(statement.viewedAt)}` : ""
+    }`,
+    deliveryMethod: statement.deliveryMethod,
+    invoiceHref: `/clinic/patients/${params.id}/billing/invoice/${statement.id}`,
+    plainLanguageSummary: statement.plainLanguageSummary,
+  }));
+
   return (
     <PageShell maxWidth="max-w-[1280px]">
       {/* Header */}
@@ -112,9 +139,15 @@ export default async function PatientBillingPage({ params }: PageProps) {
             size="lg"
           />
           <div>
-            <Eyebrow className="mb-2">Financial cockpit</Eyebrow>
+            <Eyebrow className="mb-2">Billing</Eyebrow>
             <h1 className="font-display text-2xl text-text tracking-tight">
-              Billing — {patient.firstName} {patient.lastName}
+              Billing —{" "}
+              <Link
+                href={`/clinic/patients/${params.id}`}
+                className="hover:text-accent transition-colors"
+              >
+                {patient.firstName} {patient.lastName}
+              </Link>
             </h1>
             <p className="text-sm text-text-muted mt-0.5">
               Complete financial story, plain-language explanations, one-click collection.
@@ -425,7 +458,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
                   )}
                   {coverage.outOfPocketMaxCents != null && (
                     <DetailRow
-                      label="OOP max"
+                      label="Out-of-Pocket Max"
                       value={`${formatMoney(coverage.outOfPocketMetCents)} / ${formatMoney(coverage.outOfPocketMaxCents)}`}
                     />
                   )}
@@ -556,81 +589,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {statements.map((statement) => (
-              <Card key={statement.id} tone="raised">
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-4">
-                    <div className="shrink-0 w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                        <path
-                          d="M4 2H14V16H4V2Z"
-                          stroke="var(--accent)"
-                          strokeWidth="1.2"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M6 6H12M6 9H12M6 12H10"
-                          stroke="var(--accent)"
-                          strokeWidth="1.2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-text">
-                          {statement.statementNumber}
-                        </p>
-                        <Badge
-                          tone={
-                            statement.status === "paid"
-                              ? "success"
-                              : statement.status === "overdue"
-                                ? "danger"
-                                : statement.status === "viewed"
-                                  ? "accent"
-                                  : "warning"
-                          }
-                          className="text-[9px]"
-                        >
-                          {statement.status}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-text-subtle mt-0.5">
-                        Sent {statement.sentAt ? formatRelative(statement.sentAt) : "not sent"} · Due {formatDate(statement.dueDate)}
-                        {statement.viewedAt && ` · Viewed ${formatRelative(statement.viewedAt)}`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-text tabular-nums">
-                        {formatMoney(statement.amountDueCents)}
-                      </p>
-                      <p className="text-[11px] text-text-subtle">
-                        {statement.deliveryMethod}
-                      </p>
-                      <Link
-                        href={`/clinic/patients/${params.id}/billing/invoice/${statement.id}`}
-                        className="text-[11px] text-accent hover:text-accent-strong mt-1 inline-block"
-                      >
-                        View invoice →
-                      </Link>
-                    </div>
-                  </div>
-                  {statement.plainLanguageSummary && (
-                    <div className="mt-3 p-3 rounded-lg bg-accent/5 border border-accent/10">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-accent mb-1">
-                        Plain language summary
-                      </p>
-                      <p className="text-xs text-text-muted leading-relaxed">
-                        {statement.plainLanguageSummary}
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <StatementHistory statements={statementItems} />
         )}
       </div>
 

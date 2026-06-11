@@ -55,7 +55,7 @@ const STEP_LABELS = [
   "Analyzing outcome trends (last 30 days)",
   "Checking medications and dosing adherence",
   "Scanning recent messages and assessments",
-  "Generating intelligence briefing via LLM",
+  "Cindy is at work!",
 ];
 
 export async function generateBriefing(patientId: string): Promise<BriefingResult> {

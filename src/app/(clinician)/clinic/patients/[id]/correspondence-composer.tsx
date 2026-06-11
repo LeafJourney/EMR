@@ -116,7 +116,6 @@ export function CorrespondenceComposer({
   const [showResults, setShowResults] = React.useState(false);
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
-  const [expanded, setExpanded] = React.useState(false);
   // Disambiguation popup when a typed name maps to duplicates.
   const [ambiguous, setAmbiguous] = React.useState<DirectoryEntry[] | null>(
     null,
@@ -185,6 +184,18 @@ export function CorrespondenceComposer({
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        {/* Subject — placed ABOVE the To field per the revision directive. */}
+        <div>
+          <label className="text-xs font-medium text-text mb-1.5 inline-block">
+            Subject
+          </label>
+          <Input
+            value={subject}
+            placeholder="Subject"
+            onChange={(e) => setSubject(e.target.value)}
+          />
+        </div>
+
         {/* To: searchable directory. */}
         <div className="relative">
           <label className="text-xs font-medium text-text mb-1.5 inline-block">
@@ -241,37 +252,23 @@ export function CorrespondenceComposer({
           )}
         </div>
 
-        {/* Subject. */}
-        <div>
-          <label className="text-xs font-medium text-text mb-1.5 inline-block">
-            Subject
-          </label>
-          <Input
-            value={subject}
-            placeholder="Subject"
-            onChange={(e) => setSubject(e.target.value)}
-          />
-        </div>
-
-        {/* Expandable message body. */}
+        {/* Drag-to-resize message body — grab the bottom-right corner to
+            expand the box free-handedly (CSS resize) instead of a toggle. */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-medium text-text inline-block">
               Message
             </label>
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="text-[11px] text-accent hover:underline"
-            >
-              {expanded ? "Shrink" : "Expand"}
-            </button>
+            <span className="text-[11px] text-text-subtle">
+              Drag the bottom-right corner to resize
+            </span>
           </div>
           <Textarea
             value={body}
-            rows={expanded ? 12 : 4}
+            rows={6}
             placeholder="Write your message…"
             onChange={(e) => setBody(e.target.value)}
+            className="resize-y min-h-[7rem] max-h-[28rem]"
           />
         </div>
       </div>

@@ -38,6 +38,7 @@ export function CDSPanel({ alerts, patientName }: CDSPanelProps) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filterSeverity, setFilterSeverity] = useState<AlertSeverity | "all">("all");
+  const [collapsed, setCollapsed] = useState(false);
 
   const visibleAlerts = alerts.filter((a) => {
     if (dismissed.has(a.id)) return false;
@@ -82,10 +83,22 @@ export function CDSPanel({ alerts, patientName }: CDSPanelProps) {
             {infoCount > 0 && (
               <Badge tone="info" className="text-[10px] px-1.5">{infoCount}</Badge>
             )}
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Expand decision support" : "Collapse decision support"}
+              className="ml-1 flex items-center justify-center h-6 w-6 rounded-md text-text-subtle hover:text-text hover:bg-surface-muted transition-colors"
+            >
+              <span className={cn("text-[11px] leading-none transition-transform", collapsed ? "" : "rotate-180")}>
+                ▾
+              </span>
+            </button>
           </div>
         </div>
 
         {/* Severity filter pills */}
+        {!collapsed && (
         <div className="flex items-center gap-1 mt-2">
           {(["all", "critical", "warning", "info"] as const).map((sev) => (
             <button
@@ -102,8 +115,10 @@ export function CDSPanel({ alerts, patientName }: CDSPanelProps) {
             </button>
           ))}
         </div>
+        )}
       </CardHeader>
 
+      {!collapsed && (
       <CardContent className="pt-0">
         <div className="space-y-2">
           {visibleAlerts.length === 0 ? (
@@ -156,7 +171,7 @@ export function CDSPanel({ alerts, patientName }: CDSPanelProps) {
                                 e.stopPropagation();
                                 setDismissed((prev) => new Set([...prev, alert.id]));
                               }}
-                              className="ml-auto text-[11px] text-text-subtle hover:text-text transition-colors px-2 py-0.5"
+                              className="ml-auto text-[13px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md px-3 py-1 shadow-sm transition-colors"
                             >
                               Acknowledge
                             </button>
@@ -185,6 +200,7 @@ export function CDSPanel({ alerts, patientName }: CDSPanelProps) {
           </button>
         )}
       </CardContent>
+      )}
     </Card>
   );
 }
