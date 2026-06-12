@@ -45,6 +45,7 @@ import {
   type PharmacyEntry,
 } from "@/lib/clinical/pharmacy-directory";
 import { ADMINISTRATION_METHODS } from "@/lib/clinical/methods-of-administration";
+import { searchIcd10 } from "@/lib/clinical/icd10-common";
 import type { ModuleFlags } from "@/lib/clinical/module-opt-in";
 import {
   checkInteractions,
@@ -399,6 +400,33 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
         : [...prev, diag],
     );
   }
+
+  // EMR-1099 (M4 follow-on) — ICD-10 freehand typeahead. Dr. Patel: "type
+  // 'M54' and underneath populate M54.5 (Back pain), M54.2 (Neck pain)…".
+  // Adds to the same selectedDiagnoses that feeds the action's diagnosisCodes.
+  const [icdQuery, setIcdQuery] = useState("");
+  const [icdOpen, setIcdOpen] = useState(false);
+  const icdBoxRef = useRef<HTMLDivElement>(null);
+  const icdResults = useMemo(() => searchIcd10(icdQuery, 8), [icdQuery]);
+  const looksLikeIcd10 = /^[A-Za-z]\d/.test(icdQuery.trim());
+
+  function addDiagnosis(diag: { code: string; label: string }) {
+    setSelectedDiagnoses((prev) =>
+      prev.some((d) => d.code === diag.code) ? prev : [...prev, diag],
+    );
+    setIcdQuery("");
+    setIcdOpen(false);
+  }
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (icdBoxRef.current && !icdBoxRef.current.contains(e.target as Node)) {
+        setIcdOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
 
   /* ── Pharmacy (EMR-892) ───────────────────────────────────── */
   const [pharmacy, setPharmacy] = useState<PharmacyEntry | null>(null);
@@ -1148,45 +1176,143 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
         </div>
       </div>
 
-      {/* ── EMR-1099 (M4): diagnosis codes (ICD-10 linkage) ────── */}
-      <Card className="rounded-2xl bg-white border-border/60 shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Diagnosis codes</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
+      {/* ── EMR-1099 (M4): diagnosis codes — collapsible + optional ─
+          Dr. Patel: diagnosis is optional (doesn't gate prescribing) and the
+          section is fully collapsible/expandable. ICD-10 freehand typeahead
+          lets the provider type a partial code or symptom and click to add. */}
+      <details className="group rounded-2xl bg-white border border-border/60 shadow-sm" open>
+        <summary className="flex items-center justify-between gap-2 px-5 py-3 cursor-pointer list-none select-none">
+          <span className="text-base font-semibold text-text flex items-center gap-2">
+            Diagnosis codes
+            <span className="text-[11px] font-normal lowercase text-text-subtle">(optional)</span>
+          </span>
+          <span className="text-xs text-text-muted flex items-center gap-2">
+            {selectedDiagnoses.length > 0
+              ? `${selectedDiagnoses.length} linked`
+              : "none linked"}
+            <span
+              aria-hidden
+              className="inline-block transition-transform group-open:rotate-180"
+            >
+              ▾
+            </span>
+          </span>
+        </summary>
+        <div className="px-5 pb-5 space-y-3">
           <p className="text-xs text-text-muted">
-            Link the ICD-10 diagnoses this prescription treats. Codes from the
-            patient&apos;s problem list are marked{" "}
-            <span className="font-medium text-accent">chart</span>.
+            Link the ICD-10 diagnoses this prescription treats. Optional — not
+            required to sign &amp; send. Codes from the patient&apos;s problem
+            list are marked <span className="font-medium text-accent">chart</span>.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {diagnosisOptions.map((diag) => {
-              const selected = selectedDiagnoses.some((d) => d.code === diag.code);
-              return (
-                <button
-                  key={diag.code}
-                  type="button"
-                  onClick={() => toggleDiagnosis({ code: diag.code, label: diag.label })}
-                  className={cn(
-                    "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
-                    selected
-                      ? "bg-accent/10 text-accent border-accent/30"
-                      : "bg-surface-muted text-text-muted border-border hover:border-accent/30",
-                  )}
-                >
-                  <span className="font-mono text-[10px]">{diag.code}</span>
-                  <span>{diag.label}</span>
-                  {diag.fromChart && (
-                    <Badge tone="accent" className="text-[9px] uppercase">
-                      chart
-                    </Badge>
-                  )}
-                </button>
-              );
-            })}
+
+          {/* ICD-10 freehand typeahead (code prefix or symptom) */}
+          <div className="relative" ref={icdBoxRef}>
+            <label className={FIELD_LABEL}>Search ICD-10 (code or symptom)</label>
+            <input
+              value={icdQuery}
+              onChange={(e) => {
+                setIcdQuery(e.target.value);
+                setIcdOpen(true);
+              }}
+              onFocus={() => setIcdOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (icdResults[0]) addDiagnosis(icdResults[0]);
+                  else if (looksLikeIcd10)
+                    addDiagnosis({ code: icdQuery.toUpperCase().trim(), label: "Custom code" });
+                }
+              }}
+              placeholder='Type "M54" or "back pain"…'
+              className={TEXT_INPUT_CLASS}
+              autoComplete="off"
+            />
+            {icdOpen && (icdResults.length > 0 || looksLikeIcd10) && (
+              <div className="absolute z-20 mt-1 w-full rounded-xl border border-border-strong bg-white shadow-lg max-h-64 overflow-y-auto">
+                {icdResults.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => addDiagnosis(c)}
+                    className="w-full text-left px-3 py-2 hover:bg-accent-soft/40 flex items-center gap-2"
+                  >
+                    <span className="font-mono text-[11px] text-accent shrink-0 w-16">{c.code}</span>
+                    <span className="text-sm text-text">{c.label}</span>
+                  </button>
+                ))}
+                {icdResults.length === 0 && looksLikeIcd10 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      addDiagnosis({ code: icdQuery.toUpperCase().trim(), label: "Custom code" })
+                    }
+                    className="w-full text-left px-3 py-2 hover:bg-accent-soft/40"
+                  >
+                    <span className="font-mono text-[11px] text-accent">{icdQuery.toUpperCase().trim()}</span>
+                    <span className="text-sm text-text-muted ml-2">— add as custom code</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Selected diagnoses (removable) */}
+          {selectedDiagnoses.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedDiagnoses.map((d) => (
+                <span
+                  key={d.code}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border bg-accent/10 text-accent border-accent/30"
+                >
+                  <span className="font-mono text-[10px]">{d.code}</span>
+                  <span>{d.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleDiagnosis(d)}
+                    className="ml-0.5 leading-none hover:text-danger"
+                    aria-label={`Remove ${d.code}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Quick-add from the patient's problem list */}
+          {diagnosisOptions.length > 0 && (
+            <div>
+              <p className="text-[11px] text-text-subtle mb-1.5">From the problem list:</p>
+              <div className="flex flex-wrap gap-2">
+                {diagnosisOptions.map((diag) => {
+                  const selected = selectedDiagnoses.some((d) => d.code === diag.code);
+                  return (
+                    <button
+                      key={diag.code}
+                      type="button"
+                      onClick={() => toggleDiagnosis({ code: diag.code, label: diag.label })}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border transition-all",
+                        selected
+                          ? "bg-accent/10 text-accent border-accent/30"
+                          : "bg-surface-muted text-text-muted border-border hover:border-accent/30",
+                      )}
+                    >
+                      <span className="font-mono text-[10px]">{diag.code}</span>
+                      <span>{diag.label}</span>
+                      {diag.fromChart && (
+                        <Badge tone="accent" className="text-[9px] uppercase">
+                          chart
+                        </Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </details>
 
       {/* ── EMR-892: Pharmacy (moved up, next to the window) ───── */}
       <Card className="rounded-2xl bg-white border-border/60 shadow-sm">

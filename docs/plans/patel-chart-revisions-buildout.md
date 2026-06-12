@@ -30,6 +30,7 @@
 - **Images:** DICOM date MM-DD-YYYY · share/💡 by the viewer header · 3-5 bullet "Cindy Sees" · imaging-only uploads.
 - **Voice-chart:** transcript speaker colors + capitalized sentence starts.
 - **Billing:** "Billing" eyebrow · "Out-of-Pocket Max" · "Cindy says:" · clickable patient name · sent=green · ACH/Bitcoin payment fields · collapsible statement tiles.
+- **Prescribe:** the one-screen redo (Medication left / Dosing+Notes right, dropdown+freehand dose/unit/freq/days, pharmacy popup, preview modal) was **already built** (EMR-883..893); this session added the two remaining safe diagnosis gaps — **collapsible + optional Diagnosis** section and an **ICD-10 freehand typeahead** (`src/lib/clinical/icd10-common.ts`, ~140 curated codes; "M54" → M54.5/M54.2/M54.9; also accepts any free-typed code) feeding the existing `diagnosisCodes` the action persists. *(DAW / PRN-reason intentionally skipped — the server action doesn't read them, so UI-only would be hollow.)*
 
 **Deferred (need their own scoped pass — NOT silently stubbed):** the big rocks above, plus Decision-Support critical-gating + persisted acknowledgements (Prisma model), the Prescribe one-screen UX redo, voice-chart save-as-draft + password finalize, Tasks/CDS-as-ribbon-tabs (an information-architecture decision), and Rx schema items (real ICD-10 + pharmacy fields, dose-log emoji persistence).
 
