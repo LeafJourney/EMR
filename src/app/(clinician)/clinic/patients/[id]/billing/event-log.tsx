@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Eyebrow } from "@/components/ui/ornament";
 
 // EMR-910 — Collapsible financial event log.
 // Older records collapse behind a toggle so the recent activity stays the
@@ -17,6 +19,53 @@ export interface EventLogItem {
   meta: string;
   /** Dot color (CSS var). */
   color: string;
+}
+
+// Section-level collapse for the whole Financial Event Log (Dr. Patel
+// directive — collapse the entire section, not just paginate within it).
+export function EventLogSection({
+  title,
+  events,
+}: {
+  title: string;
+  events: EventLogItem[];
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-2 mb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+      >
+        <Eyebrow className="mb-0">{title}</Eyebrow>
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 14 14"
+          fill="none"
+          aria-hidden="true"
+          className={`text-text-subtle transition-transform ${open ? "" : "-rotate-90"}`}
+        >
+          <path
+            d="M3.5 5L7 8.5L10.5 5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open && (
+        <Card tone="raised">
+          <CardContent className="pt-6 pb-6">
+            <EventLog events={events} />
+          </CardContent>
+        </Card>
+      )}
+    </section>
+  );
 }
 
 export function EventLog({

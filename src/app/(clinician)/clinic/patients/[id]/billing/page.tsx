@@ -12,7 +12,7 @@ import { formatDate, formatRelative } from "@/lib/utils/format";
 import { getPatientFinancialSummary, formatMoney } from "@/lib/domain/billing";
 import { CollectPaymentForm } from "./collect-payment-form";
 import { PaymentPlanForm } from "./payment-plan-form";
-import { EventLog, type EventLogItem } from "./event-log";
+import { EventLogSection, type EventLogItem } from "./event-log";
 import { StatementHistory, type StatementTileItem } from "./statement-history";
 import { InsuranceVerify } from "./insurance-verify";
 import { FinancialTimeline, type TimelineRow } from "./timeline";
@@ -795,14 +795,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* ═════════════════════════════════════════════════════════ */}
       {/* G. Audit Trail / Financial Events                         */}
       {/* ═════════════════════════════════════════════════════════ */}
-      <div>
-        <Eyebrow className="mb-4">Financial event log</Eyebrow>
-        <Card tone="raised">
-          <CardContent className="pt-6 pb-6">
-            <EventLog events={eventItems} />
-          </CardContent>
-        </Card>
-      </div>
+      <EventLogSection title="Financial event log" events={eventItems} />
     </PageShell>
   );
 }

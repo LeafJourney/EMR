@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,13 +48,14 @@ function StatementTile({ statement }: { statement: StatementTileItem }) {
   return (
     <Card tone="raised">
       <CardContent className="py-4">
-        {/* Collapsed header — statement name, date, amount due. The whole
-            row toggles the tile open/closed. */}
+        {/* Collapsed header — statement name, date, amount due. The toggle
+            opens the tile; Print/Share sit beside it (not nested). */}
+        <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="w-full flex items-center gap-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-md"
+          className="flex-1 min-w-0 flex items-center gap-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-md"
         >
           <div className="shrink-0 w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -112,6 +113,8 @@ function StatementTile({ statement }: { statement: StatementTileItem }) {
             />
           </svg>
         </button>
+          <StatementActions invoiceHref={statement.invoiceHref} />
+        </div>
 
         {/* Expanded detail — the rest of the information. */}
         {expanded && (
@@ -144,5 +147,100 @@ function StatementTile({ statement }: { statement: StatementTileItem }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Per-statement Print + Share actions (Dr. Patel directive — Statement History).
+// Print opens the existing branded, printable invoice sheet in a new tab.
+// Share copies an absolute link to that invoice (email/text delivery is a
+// separate messaging-pipeline pass). Rendered beside the toggle, never nested.
+function StatementActions({ invoiceHref }: { invoiceHref: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function share() {
+    const url = `${window.location.origin}${invoiceHref}`;
+    const clipboard = navigator.clipboard;
+    if (!clipboard) {
+      // No Clipboard API (insecure context / older browser) — open the
+      // invoice so the user can copy/share from there instead.
+      window.open(invoiceHref, "_blank", "noopener");
+      return;
+    }
+    void clipboard.writeText(url).then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => {
+        /* clipboard blocked — no-op; the Print path still works */
+      },
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <IconButton
+        label="Print or save invoice"
+        onClick={() => window.open(invoiceHref, "_blank", "noopener")}
+      >
+        <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+          <path
+            d="M5 7V3h8v4M5 13H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-1M5 11h8v4H5v-4Z"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </IconButton>
+      <IconButton
+        label={copied ? "Invoice link copied" : "Copy invoice link to share"}
+        onClick={share}
+      >
+        {copied ? (
+          <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M4 9.5L7.5 13L14 5.5"
+              stroke="var(--success)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M11 6.5L7 9M11 11.5L7 9M7 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm8-4.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm0 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </IconButton>
+    </div>
+  );
+}
+
+function IconButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="h-7 w-7 rounded-md flex items-center justify-center text-text-subtle hover:text-text hover:bg-surface-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+    >
+      {children}
+    </button>
   );
 }
