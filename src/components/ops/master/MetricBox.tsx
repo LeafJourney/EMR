@@ -69,6 +69,14 @@ export interface MetricBoxProps {
   /** Optional deep-link rendered as "View details →" in the popup footer. */
   detailHref?: string;
   detailLabel?: string;
+  /**
+   * Render a compare checkbox in the top-right corner and report selection up
+   * (MASTER prompt G9). Managed by <MetricBoxGroup>, which overlays the
+   * selected metrics on one chart.
+   */
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectedChange?: (next: boolean) => void;
   className?: string;
 }
 
@@ -85,6 +93,9 @@ export function MetricBox({
   initialChartType = "line",
   detailHref,
   detailLabel = "View details",
+  selectable = false,
+  selected = false,
+  onSelectedChange,
   className,
 }: MetricBoxProps) {
   const [open, setOpen] = React.useState(false);
@@ -115,13 +126,34 @@ export function MetricBox({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-haspopup="dialog"
-        aria-label={`${eyebrow}: ${headlineAria}. Open details`}
-        className={cn(
-          "group relative block w-full text-left rounded-2xl border border-border/80 bg-surface-raised",
+      <div className="relative">
+        {selectable && (
+          <label
+            className={cn(
+              "absolute right-3 top-3 z-10 flex items-center gap-1 rounded-full border border-border",
+              "bg-surface/90 px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur",
+              "cursor-pointer select-none",
+              selected ? "text-accent" : "text-text-muted hover:text-text",
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              className="h-3 w-3 accent-[color:var(--accent)]"
+              checked={selected}
+              onChange={(e) => onSelectedChange?.(e.target.checked)}
+              aria-label={`Compare ${eyebrow}`}
+            />
+            Compare
+          </label>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
+          aria-label={`${eyebrow}: ${headlineAria}. Open details`}
+          className={cn(
+            "group relative block w-full text-left rounded-2xl border border-border/80 bg-surface-raised",
           "shadow-sm transition-all duration-200 ease-smooth",
           "hover:shadow-md hover:-translate-y-0.5 hover:border-border-strong",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
@@ -158,7 +190,8 @@ export function MetricBox({
             </span>
           </div>
         )}
-      </button>
+        </button>
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
