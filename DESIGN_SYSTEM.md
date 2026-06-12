@@ -31,6 +31,26 @@ The palette is intentionally narrow. One neutral ramp, one accent (a calm clinic
 
 **Rule:** never use more than two colors per screen. The accent exists to direct attention, not to decorate.
 
+#### Status accents (Fleet Command Directive, June 2026)
+
+Soft, low-saturation fill/text pairs for status communication in clinical
+workspaces. They are indicators, not decoration — they don't count against
+the two-color rule, but they obey its spirit: pastel fills, quiet presence.
+Defined in `src/app/globals.css` (light + dark) and exposed via
+`tailwind.config.ts`.
+
+| Token pair                                  | Light fill / text     | Purpose                                  |
+| ------------------------------------------- | --------------------- | ---------------------------------------- |
+| `--status-positive-bg` / `--status-positive-fg` | `#E2F0D9` / `#385723` | Approvals, positive status (sage)        |
+| `--status-alert-bg` / `--status-alert-fg`       | `#FCE4D6` / `#C65911` | Alerts, immediate gaps (soft terracotta) |
+| `--status-link-bg` / `--status-link-fg`         | `#DDEBF7` / `#1F4E78` | Interactive links (muted slate blue)     |
+
+Tailwind: `bg-status-positive-bg text-status-positive-fg`, etc. Dark mode
+follows the existing pastel approach — preserve hue, drop fill value,
+brighten text. Use these for status chips, highlighted rows, and inline
+insight cards; keep `--success` / `--warning` / `--danger` for hard semantic
+states (toasts, destructive actions, validation).
+
 ### Typography
 
 - **Sans:** Inter (via `next/font/google`), with variable font features enabled.
@@ -158,3 +178,41 @@ Totally distinct from the app shell. No nav chrome. Hero + clear CTA + trust mar
 - Excessive modals — prefer inline panels and drawers
 - "AI" branding on every feature
 - Dashboards that look like someone dragged 30 widgets onto a grid
+
+## 8. Fleet Command Directive (June 2026)
+
+Dr. Patel's Core Master Prompt Blueprint (epic EMR-1125) sets hard efficiency
+budgets on top of everything above. Full rules live in `CLAUDE.md`
+("Fleet Command Directive"); the design-relevant summary:
+
+### The Four Golden Axioms
+
+1. **Click-Elimination** — routine clinical workflows complete in **≤2
+   clicks** from the primary dashboard viewport. Contextual prediction,
+   hover actions, autofill, Cmd+K.
+2. **Scroll-Elimination** — critical patient/encounter details fit a
+   **single non-scrolling viewport**. Tabbed side drawers, expanding canvas
+   grids, split viewports. No endless vertical timelines.
+3. **Typing-Reduction** — no manual typing of standard clinical prose or
+   routine code lookups. Ambient capture drafts + intelligent defaults.
+4. **Zen-Density** — spacious 16–24px padding grid, soft pastel status
+   indicators (§1 status accents), muted neutral backgrounds, clear text
+   hierarchy. Information appears only when relevant.
+
+Designs requiring scrolling for mandatory forms, multi-step wizards, or
+stacked pop-up confirmations are rejected and rebuilt with slide-out
+contextual drawers and predictive entry. Sub-workflows never use popups —
+drawers or inline expanding rows only, minimum 12px separation.
+
+### Workspace geometry
+
+| Region                | Layout                                          | Scroll mitigation                                | Click shortcuts                                        |
+| --------------------- | ----------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
+| Global Control Box    | Centered floating search bar (Cmd+K)            | 0px — results render in a clean overlay          | Instant focus; contextual actions per query             |
+| Patient Summary HUD   | Sticky header row, top 80px of the screen       | 0px — key stats in horizontal groups             | Hover opens a tooltip bubble with trend graphs          |
+| Active Care Canvas    | Three-column grid with clean gutters            | Deep history lives inside scroll-free tab rows   | One click expands a section; click-away collapses it    |
+| Context Action Drawer | Right-hand slide-out drawer overlay             | Drawer height adapts dynamically to content      | Single-click approve / authorize / save actions         |
+
+The existing AppShell (§4) and side-panel patterns (§3) remain the
+foundation; the geometry above is the target composition for clinician
+encounter workspaces as they are rebuilt under EMR-1125.
