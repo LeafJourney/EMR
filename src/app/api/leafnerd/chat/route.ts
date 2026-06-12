@@ -71,12 +71,12 @@ function buildDemoContext(): string {
   L.push("\nAI INSIGHTS (evidence-backed):");
   for (const i of D.insights) {
     L.push(
-      `• [${i.kind}] ${i.finding}. ${i.why} Evidence: ${i.evidence.join(", ")}. Recommended: ${i.action} (${i.actionCount}). Impact: ${i.impact.join("; ")}.`,
+      `• [${i.kind}] ${i.finding}. ${i.why} Evidence: ${i.evidence.join(", ")}. Recommended: ${i.action} (${i.actionCount}). Impact: ${(i.impact ?? []).join("; ")}.`,
     );
   }
   L.push("\nDATA ANOMALIES (recent):");
   for (const a of D.anomalies) {
-    L.push(`• [${a.sev}] ${a.title} — ${a.when}, ${Math.round(a.confidence * 100)}% confidence. ${a.detail} Impact: ${a.impact.join("; ")}.`);
+    L.push(`• [${a.sev}] ${a.title} — ${a.when}, ${Math.round(a.confidence * 100)}% confidence. ${a.detail} Impact: ${(a.impact ?? []).join("; ")}.`);
   }
   L.push("\nTOP OPPORTUNITIES (ranked):");
   for (const o of D.opportunities) L.push(`• ${o.title} — ${o.impact} (${o.effort} effort, priority ${o.value}).`);
