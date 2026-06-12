@@ -33,10 +33,15 @@ export interface CDSAlert {
 import { checkInteractions, type DrugInteraction, type Severity } from "./drug-interactions";
 import { ADVERSE_EFFECTS, type AdverseEffect } from "./cannabis-pharmacology";
 import { checkContraindications, type ContraindicationMatch, type PatientForContraindicationCheck } from "./contraindications";
+// EMR-166 — reuse the tested allergy parser + drug cross-reference (handles the
+// "penicillin allergy → amoxicillin Rx" family case) rather than re-deriving it.
+import { decodeAllergies, crossReferenceWithMedications } from "@/lib/clinical/allergy-profile";
 
 interface PatientCDSInput {
   patientId: string;
   medications: { name: string; genericName?: string | null; active: boolean }[];
+  /** Patient.allergies (String[] — JSON-line or plain-text labels). */
+  allergies?: string[];
   cannabinoids: string[];
   dateOfBirth?: Date | null;
   presentingConcerns?: string | null;
@@ -59,6 +64,41 @@ interface PatientCDSInput {
 export function generateCDSAlerts(input: PatientCDSInput): CDSAlert[] {
   const alerts: CDSAlert[] = [];
   let alertIndex = 0;
+
+  // 0. Drug-allergy cross-reference — highest safety priority. Flags any
+  // active medication whose name (exact) or drug family (cross-reactive)
+  // matches a documented allergy. Reuses lib/clinical/allergy-profile.
+  if (input.allergies && input.allergies.length > 0) {
+    const allergyEntries = decodeAllergies(input.allergies);
+    const activeMeds = input.medications
+      .filter((m) => m.active)
+      .map((m, i) => ({ id: String(i), name: m.name, genericName: m.genericName ?? null }));
+    const hits = crossReferenceWithMedications(allergyEntries, activeMeds);
+    const seen = new Set<string>();
+    for (const hit of hits) {
+      const dedupeKey = `${hit.medicationName.toLowerCase()}__${hit.allergyLabel.toLowerCase()}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      // Exact name match, or any severe/life-threatening allergy, is critical;
+      // a same-family (possible cross-reactivity) match is a warning.
+      const isCritical =
+        hit.matchKind === "exact" ||
+        hit.severity === "severe" ||
+        hit.severity === "life-threatening";
+      alerts.push({
+        id: `cds-alg-${alertIndex++}`,
+        severity: isCritical ? "critical" : "warning",
+        category: "allergy",
+        title: `Allergy conflict: ${hit.medicationName} vs ${hit.allergyLabel}`,
+        detail:
+          hit.matchKind === "exact"
+            ? `${hit.medicationName} matches the patient's documented ${hit.allergyLabel} allergy (${hit.severity}). Verify before continuing — consider an alternative agent.`
+            : `${hit.medicationName} is in the same drug family as the patient's documented ${hit.allergyLabel} allergy (${hit.severity}). Possible cross-reactivity — confirm prior tolerance before continuing.`,
+        source: "allergy-profile",
+        acknowledged: false,
+      });
+    }
+  }
 
   // 1. Drug-drug interactions
   const medNames = input.medications.filter((m) => m.active).map((m) => m.name);

@@ -553,6 +553,9 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
 
   const cdsAlerts = generateCDSAlerts({
     patientId: params.id,
+    // EMR-166 — feed the documented allergy profile so the CDS engine flags
+    // active meds that conflict (penicillin allergy + amoxicillin, etc.).
+    allergies: patient.allergies,
     medications: patientMedications.map((m: any) => ({
       name: m.name,
       genericName: m.genericName,
