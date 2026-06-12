@@ -318,6 +318,84 @@ export async function cancelPlan(planId: string, reason: string): Promise<Paymen
   });
 }
 
+/** Patient reminder cadence for an installment plan. Persisted as a
+ *  structured `REMINDER:` tag in the plan's notes (same convention the engine
+ *  already uses for MISSED:/PAUSED:/CANCELLED:), so no schema change. */
+export type ReminderCadence = "none" | "weekly" | "3_day" | "1_day";
+
+export const REMINDER_CADENCES: ReminderCadence[] = [
+  "none",
+  "weekly",
+  "3_day",
+  "1_day",
+];
+
+/** Remaining installments + already-paid → the plan's total installment count
+ *  after re-levelling to `newInstallmentCents`. Pure (no DB) so it's testable. */
+export function computeAdjustedInstallmentCount(
+  plan: { installmentsPaid: number; totalAmountCents: number; paidAmountCents: number },
+  newInstallmentCents: number,
+): number {
+  const remainingDue = Math.max(0, plan.totalAmountCents - plan.paidAmountCents);
+  const remainingInstallments = Math.max(1, Math.ceil(remainingDue / newInstallmentCents));
+  return plan.installmentsPaid + remainingInstallments;
+}
+
+export interface AdjustPlanInput {
+  newInstallmentCents: number;
+  newFrequency: PaymentPlanFrequency;
+  autopayEnabled: boolean;
+  reminderCadence: ReminderCadence;
+}
+
+export interface AdjustPlanResult {
+  plan: PaymentPlan;
+  numberOfInstallments: number;
+}
+
+/** Adjust an active/paused plan's installment price, frequency, autopay, and
+ *  patient reminder cadence. Re-levels the remaining balance and (when the
+ *  frequency changed) reschedules the next payment one cycle out. Validates
+ *  the same $50–$500 / 3–24-installment limits as creation. */
+export async function adjustPlan(
+  planId: string,
+  input: AdjustPlanInput,
+  today: Date = new Date(),
+): Promise<AdjustPlanResult> {
+  validateInstallment(input.newInstallmentCents);
+  const plan = await prisma.paymentPlan.findUniqueOrThrow({ where: { id: planId } });
+  if (plan.status !== "active" && plan.status !== "paused") {
+    throw new Error(`can only adjust an active or paused plan (status=${plan.status})`);
+  }
+
+  const numberOfInstallments = computeAdjustedInstallmentCount(plan, input.newInstallmentCents);
+  if (
+    numberOfInstallments < MIN_INSTALLMENT_COUNT ||
+    numberOfInstallments > MAX_INSTALLMENT_COUNT
+  ) {
+    throw new Error(
+      `adjusted plan would have ${numberOfInstallments} installments, outside ${MIN_INSTALLMENT_COUNT}-${MAX_INSTALLMENT_COUNT}`,
+    );
+  }
+
+  const frequencyChanged = plan.frequency !== input.newFrequency;
+  const updated = await prisma.paymentPlan.update({
+    where: { id: planId },
+    data: {
+      installmentAmountCents: input.newInstallmentCents,
+      frequency: input.newFrequency,
+      numberOfInstallments,
+      autopayEnabled: input.autopayEnabled,
+      notes: upsertNoteTag(plan.notes, "REMINDER", input.reminderCadence),
+      // Only reschedule a live plan whose next date moves because the cadence changed.
+      ...(frequencyChanged && plan.nextPaymentDate
+        ? { nextPaymentDate: nextDueDate(input.newFrequency, today) }
+        : {}),
+    },
+  });
+  return { plan: updated, numberOfInstallments };
+}
+
 export async function modifyInstallment(
   planId: string,
   newInstallmentCents: number,
@@ -389,6 +467,30 @@ function nextDueDate(frequency: PaymentPlanFrequency, fromDate: Date): Date {
 
 function appendNote(existing: string | undefined, addition: string): string {
   return [existing ?? "", addition].filter(Boolean).join("\n");
+}
+
+/** Set (or replace) a single `TAG: value` line inside a notes blob, leaving
+ *  every other line untouched. Mirrors the engine's structured-note convention. */
+export function upsertNoteTag(
+  notes: string | null,
+  tag: string,
+  value: string,
+): string {
+  const prefix = `${tag}:`;
+  const kept = (notes ?? "")
+    .split(/\n/)
+    .filter((line) => line.trim() !== "" && !line.startsWith(prefix));
+  kept.push(`${tag}: ${value}`);
+  return kept.join("\n");
+}
+
+/** Read back a `TAG: value` line, or null when absent. */
+export function parseNoteTag(notes: string | null, tag: string): string | null {
+  const prefix = `${tag}:`;
+  const line = (notes ?? "")
+    .split(/\n/)
+    .find((l) => l.startsWith(prefix));
+  return line ? line.slice(prefix.length).trim() : null;
 }
 
 function formatDollars(cents: number): string {

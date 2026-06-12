@@ -17,11 +17,13 @@ import { StatementHistory, type StatementTileItem } from "./statement-history";
 import { InsuranceVerify } from "./insurance-verify";
 import { FinancialTimeline, type TimelineRow } from "./timeline";
 import { MetricDrilldown, type MetricTrendData } from "./metric-drilldown";
+import { PaymentPlanAdjust } from "./payment-plan-adjust";
 import {
   buildMetricTrend,
   type MetricKey,
   type TrendEvent,
 } from "@/lib/domain/billing-metric-trend";
+import { parseNoteTag, type ReminderCadence } from "@/lib/billing/payment-plans";
 
 interface PageProps {
   params: { id: string };
@@ -686,12 +688,36 @@ export default async function PatientBillingPage({ params }: PageProps) {
         {/* Payment plan status */}
         <Card tone="raised">
           <CardHeader>
-            <CardTitle className="text-base">Payment plan</CardTitle>
-            <CardDescription>
-              {paymentPlan
-                ? "Active installment plan on this account"
-                : "No active payment plan"}
-            </CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Payment plan</CardTitle>
+                <CardDescription>
+                  {paymentPlan
+                    ? "Active installment plan on this account"
+                    : "No active payment plan"}
+                </CardDescription>
+              </div>
+              {paymentPlan && (
+                <PaymentPlanAdjust
+                  planId={paymentPlan.id}
+                  patientId={params.id}
+                  installmentAmountCents={paymentPlan.installmentAmountCents}
+                  frequency={
+                    paymentPlan.frequency as "monthly" | "biweekly" | "weekly"
+                  }
+                  autopayEnabled={paymentPlan.autopayEnabled}
+                  reminderCadence={
+                    (parseNoteTag(paymentPlan.notes, "REMINDER") as ReminderCadence) ??
+                    "none"
+                  }
+                  remainingDueCents={Math.max(
+                    0,
+                    paymentPlan.totalAmountCents - paymentPlan.paidAmountCents,
+                  )}
+                  installmentsPaid={paymentPlan.installmentsPaid}
+                />
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {paymentPlan ? (

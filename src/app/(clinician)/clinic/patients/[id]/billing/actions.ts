@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolvePaymentGateway } from "@/lib/payments";
-import { createPlan } from "@/lib/billing/payment-plans";
+import { adjustPlan, createPlan, REMINDER_CADENCES } from "@/lib/billing/payment-plans";
 import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
@@ -433,6 +433,110 @@ export async function createPaymentPlanAction(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to create payment plan",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Adjust an existing payment plan
+// Lets the provider/owner re-level the installment price, frequency, autopay,
+// and patient reminder cadence on an active plan (Dr. Patel directive —
+// billing Payment Plan "Adjust"). Re-uses the engine's validation + schedule
+// math; reminder cadence persists as a structured note tag (no schema change).
+// ---------------------------------------------------------------------------
+
+const adjustPlanSchema = z.object({
+  planId: z.string().min(1),
+  patientId: z.string().min(1),
+  installmentAmountCents: z.coerce.number().int().min(1),
+  frequency: z.enum(["monthly", "biweekly", "weekly"]),
+  autopayEnabled: z.coerce.boolean(),
+  reminderCadence: z.enum(["none", "weekly", "3_day", "1_day"]),
+});
+
+export type AdjustPlanActionResult =
+  | { ok: true; planId: string; numberOfInstallments: number }
+  | { ok: false; error: string };
+
+export async function adjustPaymentPlanAction(
+  _prev: AdjustPlanActionResult | null,
+  formData: FormData,
+): Promise<AdjustPlanActionResult> {
+  const user = await requireUser();
+
+  if (
+    !user.roles.some(
+      (r) => r === "clinician" || r === "practice_owner" || r === "operator",
+    )
+  ) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
+  const parsed = adjustPlanSchema.safeParse({
+    planId: formData.get("planId"),
+    patientId: formData.get("patientId"),
+    installmentAmountCents: formData.get("installmentAmountCents"),
+    frequency: formData.get("frequency"),
+    autopayEnabled:
+      formData.get("autopayEnabled") === "on" ||
+      formData.get("autopayEnabled") === "true",
+    reminderCadence: formData.get("reminderCadence"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid plan adjustment data" };
+  }
+
+  // Defense in depth — reminderCadence is already a zod enum, but keep the
+  // engine's source-of-truth list authoritative.
+  if (!REMINDER_CADENCES.includes(parsed.data.reminderCadence)) {
+    return { ok: false, error: "Invalid reminder cadence" };
+  }
+
+  // Verify the plan belongs to this patient + caller's org before touching it.
+  const plan = await prisma.paymentPlan.findFirst({
+    where: {
+      id: parsed.data.planId,
+      patientId: parsed.data.patientId,
+      organizationId: user.organizationId!,
+    },
+    select: { id: true },
+  });
+  if (!plan) return { ok: false, error: "Payment plan not found." };
+
+  try {
+    const { numberOfInstallments } = await adjustPlan(parsed.data.planId, {
+      newInstallmentCents: parsed.data.installmentAmountCents,
+      newFrequency: parsed.data.frequency,
+      autopayEnabled: parsed.data.autopayEnabled,
+      reminderCadence: parsed.data.reminderCadence,
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        organizationId: user.organizationId!,
+        actorUserId: user.id,
+        action: "patient.payment_plan.adjusted",
+        subjectType: "Patient",
+        subjectId: parsed.data.patientId,
+        metadata: {
+          planId: parsed.data.planId,
+          installmentAmountCents: parsed.data.installmentAmountCents,
+          frequency: parsed.data.frequency,
+          autopay: parsed.data.autopayEnabled,
+          reminderCadence: parsed.data.reminderCadence,
+          numberOfInstallments,
+        },
+      },
+    });
+
+    revalidatePath(`/clinic/patients/${parsed.data.patientId}`);
+    revalidatePath(`/clinic/patients/${parsed.data.patientId}/billing`);
+    return { ok: true, planId: parsed.data.planId, numberOfInstallments };
+  } catch (err) {
+    // adjustPlan throws on out-of-range installment/count — surface it.
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to adjust payment plan",
     };
   }
 }

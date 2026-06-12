@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeInstallmentCharge, planInstallmentSchedule } from "./payment-plans";
+import {
+  computeAdjustedInstallmentCount,
+  computeInstallmentCharge,
+  parseNoteTag,
+  planInstallmentSchedule,
+  upsertNoteTag,
+} from "./payment-plans";
 
 describe("planInstallmentSchedule", () => {
   it("splits an evenly-divisible balance into level installments", () => {
@@ -75,5 +81,54 @@ describe("computeInstallmentCharge", () => {
       paidAmountCents: 105_000,
     });
     expect(charge).toBe(0);
+  });
+});
+
+describe("computeAdjustedInstallmentCount", () => {
+  it("re-levels the remaining balance on top of installments already paid", () => {
+    // $1,000 plan, 2 × $250 paid ($500). Re-level remaining $500 to $100/ea →
+    // 5 more installments, on top of the 2 already paid = 7 total.
+    const count = computeAdjustedInstallmentCount(
+      { installmentsPaid: 2, totalAmountCents: 100_000, paidAmountCents: 50_000 },
+      10_000,
+    );
+    expect(count).toBe(7);
+  });
+
+  it("rounds a non-even remainder up to a full installment", () => {
+    // $530 remaining at $200 → ceil(2.65) = 3 remaining + 0 paid = 3.
+    const count = computeAdjustedInstallmentCount(
+      { installmentsPaid: 0, totalAmountCents: 53_000, paidAmountCents: 0 },
+      20_000,
+    );
+    expect(count).toBe(3);
+  });
+
+  it("guarantees at least one remaining installment when nothing is left", () => {
+    const count = computeAdjustedInstallmentCount(
+      { installmentsPaid: 4, totalAmountCents: 100_000, paidAmountCents: 100_000 },
+      25_000,
+    );
+    expect(count).toBe(5); // 4 paid + a floor of 1
+  });
+});
+
+describe("upsertNoteTag / parseNoteTag", () => {
+  it("adds a tag line to an empty notes blob and reads it back", () => {
+    const notes = upsertNoteTag(null, "REMINDER", "weekly");
+    expect(notes).toBe("REMINDER: weekly");
+    expect(parseNoteTag(notes, "REMINDER")).toBe("weekly");
+  });
+
+  it("replaces an existing tag without disturbing other lines", () => {
+    const start = "MISSED: 2026-05-01 — declined\nREMINDER: weekly";
+    const next = upsertNoteTag(start, "REMINDER", "1_day");
+    expect(next).toBe("MISSED: 2026-05-01 — declined\nREMINDER: 1_day");
+    expect(parseNoteTag(next, "REMINDER")).toBe("1_day");
+    expect(parseNoteTag(next, "MISSED")).toBe("2026-05-01 — declined");
+  });
+
+  it("returns null for an absent tag", () => {
+    expect(parseNoteTag("PAUSED: hardship", "REMINDER")).toBeNull();
   });
 });
