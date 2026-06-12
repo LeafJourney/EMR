@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
+import { ReportsTable, type ReportDataRow } from "./reports-table";
 import { ReportChart } from "@/components/analytics/report-chart";
 import {
   renderReport,
@@ -130,6 +131,17 @@ export default function ReportsPage({ searchParams }: PageProps) {
     }
     return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
+
+  const dimensionLabel =
+    DIMENSION_OPTIONS.find((d) => d.value === dimension)?.label ?? "Dimension";
+
+  const reportRows: ReportDataRow[] = report.rows.map((r) => ({
+    id: r.label,
+    label: r.label,
+    valueDisplay: fmt(r.value),
+    value: r.value,
+    forecast: r.forecast ?? false,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -296,38 +308,7 @@ export default function ReportsPage({ searchParams }: PageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="py-2 pr-3 text-text-subtle text-[11px] uppercase tracking-wider">
-                    {DIMENSION_OPTIONS.find((d) => d.value === dimension)?.label}
-                  </th>
-                  <th className="py-2 pr-3 text-right text-text-subtle text-[11px] uppercase tracking-wider">
-                    Value
-                  </th>
-                  <th className="py-2 text-text-subtle text-[11px] uppercase tracking-wider">
-                    Source
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {report.rows.map((r) => (
-                  <tr key={r.label}>
-                    <td className="py-2 pr-3 text-text">{r.label}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{fmt(r.value)}</td>
-                    <td className="py-2">
-                      {r.forecast ? (
-                        <Badge tone="warning">forecast</Badge>
-                      ) : (
-                        <Badge tone="neutral">observed</Badge>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ReportsTable rows={reportRows} dimensionLabel={dimensionLabel} />
           <div className="mt-4 flex flex-wrap gap-3 text-sm text-text-muted">
             <Link
               href="/ops/research-exports/builder"

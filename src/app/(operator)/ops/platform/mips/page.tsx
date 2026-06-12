@@ -1,8 +1,8 @@
 import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { extrapolate, demoCohort, type MipsCategory } from "@/lib/platform/mips";
+import { MipsTable, type MipsMeasureRow } from "./mips-table";
 
 export const metadata = { title: "MIPS console" };
 
@@ -19,6 +19,20 @@ export default async function MipsPage() {
   // Until the live cohort builder is wired in, we render the demo cohort.
   // The agent (mipsExtrapolator) is what production will call.
   const result = extrapolate(demoCohort());
+
+  const rows: MipsMeasureRow[] = result.measures.map((m) => ({
+    id: m.measureId,
+    measureId: m.measureId,
+    title: m.title,
+    categoryLabel: CATEGORY_LABELS[m.category as MipsCategory],
+    numerator: m.numerator,
+    denominator: m.denominator,
+    performanceDisplay: `${(m.performance * 100).toFixed(0)}%`,
+    performance: m.performance,
+    scoreDisplay: m.scorePoints.toFixed(1),
+    scorePoints: m.scorePoints,
+    blockerCount: m.blockers.length,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1100px]">
@@ -101,55 +115,8 @@ export default async function MipsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Measure detail</CardTitle>
-          <CardDescription>
-            Numerator / denominator with the patients blocking each measure.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wide">
-                  <th className="py-2 pr-4">Measure</th>
-                  <th className="py-2 pr-4 text-right">Numerator</th>
-                  <th className="py-2 pr-4 text-right">Denominator</th>
-                  <th className="py-2 pr-4 text-right">Performance</th>
-                  <th className="py-2 pr-4 text-right">Score</th>
-                  <th className="py-2">Blockers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.measures.map((m) => (
-                  <tr key={m.measureId} className="border-t border-border/60 align-top">
-                    <td className="py-3 pr-4">
-                      <p className="font-medium">{m.title}</p>
-                      <p className="text-[11px] text-text-subtle font-mono">
-                        {m.measureId} · {CATEGORY_LABELS[m.category as MipsCategory]}
-                      </p>
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono">{m.numerator}</td>
-                    <td className="py-3 pr-4 text-right font-mono">{m.denominator}</td>
-                    <td className="py-3 pr-4 text-right font-mono">
-                      {(m.performance * 100).toFixed(0)}%
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono">{m.scorePoints.toFixed(1)}</td>
-                    <td className="py-3 text-text-muted text-xs">
-                      {m.blockers.length === 0 ? (
-                        <Badge tone="success">All clear</Badge>
-                      ) : (
-                        <span>{m.blockers.length} patient(s)</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Measure detail — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <MipsTable rows={rows} />
     </PageShell>
   );
 }

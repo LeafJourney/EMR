@@ -2,13 +2,13 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eyebrow } from "@/components/ui/ornament";
 import { fmtMoney } from "@/lib/finance/formatting";
 import { CfoTabs } from "../components";
 import { recordEquityEntryAction } from "../actions";
+import { EquityTable, type EquityRow } from "./equity-table";
 import type { EquityEntryType } from "@prisma/client";
 
 export const metadata = { title: "Equity · CFO" };
@@ -42,6 +42,21 @@ export default async function EquityPage() {
   const totalDistributed = entries
     .filter((e) => e.type === "distribution" || e.type === "stock_buyback")
     .reduce((a, b) => a + Math.abs(b.amountCents), 0);
+
+  const rows: EquityRow[] = entries.map((e) => {
+    const isInflow = e.amountCents >= 0;
+    return {
+      id: e.id,
+      dateDisplay: e.occurredOn.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      dateMs: e.occurredOn.getTime(),
+      typeLabel: e.type.replace(/_/g, " "),
+      isInflow,
+      description: e.description,
+      ownerName: e.ownerName ?? "—",
+      amountDisplay: `${isInflow ? "+" : "−"}${fmtMoney(Math.abs(e.amountCents))}`,
+      amountCents: e.amountCents,
+    };
+  });
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -106,38 +121,9 @@ export default async function EquityPage() {
         </Card>
       </div>
 
-      {/* Entries */}
-      <Card tone="raised">
-        <CardContent className="pt-3 pb-3 px-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-text-subtle border-b border-border/60">
-                <th className="text-left py-2 px-4 font-medium">Date</th>
-                <th className="text-left py-2 px-4 font-medium">Type</th>
-                <th className="text-left py-2 px-4 font-medium">Description</th>
-                <th className="text-left py-2 px-4 font-medium">Owner</th>
-                <th className="text-right py-2 px-4 font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {entries.length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-text-subtle italic">No equity entries yet.</td></tr>
-              )}
-              {entries.map((e) => (
-                <tr key={e.id} className="hover:bg-surface-muted/50">
-                  <td className="py-2 px-4 text-text-muted tabular-nums whitespace-nowrap">{e.occurredOn.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
-                  <td className="py-2 px-4">
-                    <Badge tone={e.amountCents >= 0 ? "success" : "warning"} className="text-[10px]">{e.type.replace(/_/g, " ")}</Badge>
-                  </td>
-                  <td className="py-2 px-4 text-text">{e.description}</td>
-                  <td className="py-2 px-4 text-text-muted">{e.ownerName ?? "—"}</td>
-                  <td className={`py-2 px-4 text-right tabular-nums ${e.amountCents >= 0 ? "text-success" : "text-danger"}`}>{e.amountCents >= 0 ? "+" : "−"}{fmtMoney(Math.abs(e.amountCents))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {/* Entries — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <Eyebrow className="mb-4">Equity entries</Eyebrow>
+      <EquityTable rows={rows} />
     </PageShell>
   );
 }
