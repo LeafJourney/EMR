@@ -5,7 +5,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   BENCHMARK_FEATURES,
   categoryScores,
@@ -13,14 +12,9 @@ import {
   overallParity,
   type BenchmarkFeature,
 } from "@/lib/marketplace/benchmark";
+import { BenchmarkTable, type BenchmarkRow } from "./benchmark-table";
 
 export const metadata = { title: "Marketplace Benchmark" };
-
-const STATUS_TONE: Record<BenchmarkFeature["theleafmartStatus"], string> = {
-  shipped: "bg-leaf-soft text-leaf-ink",
-  partial: "bg-amber-100 text-amber-800",
-  missing: "bg-rose-100 text-rose-800",
-};
 
 const CATEGORY_LABEL: Record<BenchmarkFeature["category"], string> = {
   discovery: "Discovery",
@@ -38,6 +32,18 @@ export default async function MarketplaceBenchmarkPage() {
   const parity = overallParity();
   const scores = categoryScores().sort((a, b) => a.parityScore - b.parityScore);
   const gaps = gapAreas();
+
+  const rows: BenchmarkRow[] = BENCHMARK_FEATURES.map((f) => ({
+    id: f.id,
+    name: f.name,
+    notes: f.notes ?? null,
+    categoryLabel: CATEGORY_LABEL[f.category],
+    category: f.category,
+    amazonReference: f.amazonReference,
+    status: f.theleafmartStatus,
+    priority: f.priority,
+    ticket: f.ticket ?? null,
+  }));
 
   return (
     <PageShell>
@@ -118,54 +124,8 @@ export default async function MarketplaceBenchmarkPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Feature matrix</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase text-text-muted border-b border-border">
-                  <th className="py-2 pr-4">Feature</th>
-                  <th className="py-2 pr-4">Category</th>
-                  <th className="py-2 pr-4">Amazon reference</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Priority</th>
-                  <th className="py-2 pr-4">Ticket</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BENCHMARK_FEATURES.map((f) => (
-                  <tr key={f.id} className="border-b border-border/50 align-top">
-                    <td className="py-3 pr-4">
-                      <div className="font-medium text-text">{f.name}</div>
-                      {f.notes && (
-                        <div className="text-xs text-text-muted mt-1">{f.notes}</div>
-                      )}
-                    </td>
-                    <td className="py-3 pr-4 text-text-muted">
-                      {CATEGORY_LABEL[f.category]}
-                    </td>
-                    <td className="py-3 pr-4 text-text-muted">{f.amazonReference}</td>
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[f.theleafmartStatus]}`}
-                      >
-                        {f.theleafmartStatus}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <Badge>{f.priority}</Badge>
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-xs">{f.ticket ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Feature matrix — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <BenchmarkTable rows={rows} />
     </PageShell>
   );
 }

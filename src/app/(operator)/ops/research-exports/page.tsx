@@ -2,7 +2,6 @@ import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
   CohortPseudonymizer,
   buildCohortManifest,
@@ -13,6 +12,8 @@ import {
   type RawPatientFacts,
   type RawClaimFacts,
 } from "@/lib/billing/research-export";
+import { PatientCohortTable, type PatientCohortRow } from "./patient-cohort-table";
+import { ClaimCohortTable, type ClaimCohortRow } from "./claim-cohort-table";
 
 export const metadata = { title: "Researcher Exports" };
 
@@ -64,6 +65,35 @@ export default function ResearchExportsPage({
     return acc;
   }, {});
 
+  const patientRows: PatientCohortRow[] = kept.map((p) => ({
+    pseudonym: p.pseudonym,
+    ageDisplay: String(p.ageYears),
+    ageNum: p.ageYears === "90+" ? 90 : p.ageYears,
+    sex: p.sex ?? "—",
+    race: p.race ?? "—",
+    ethnicity: p.ethnicity ?? "—",
+    smokingStatus: p.smokingStatus ?? "—",
+    zipPrefix: p.zipPrefix === "000" ? "000" : (p.zipPrefix ?? "—"),
+    zipSuppressed: p.zipPrefix === "000",
+    socioeconomicTier: p.socioeconomicTier ?? "—",
+  }));
+
+  const claimRows: ClaimCohortRow[] = filteredClaims.map((c) => ({
+    claimPseudonym: c.claimPseudonym,
+    claimShort: c.claimPseudonym.slice(0, 12) + "…",
+    patientPseudonym: c.patientPseudonym,
+    patientShort: c.patientPseudonym.slice(0, 12) + "…",
+    serviceMonth: c.serviceMonth,
+    payerCategory: c.payerCategory,
+    cptCodes: c.cptCodes.join(", "),
+    icd10Codes: c.icd10Codes.join(", "),
+    billedDisplay: `$${(c.billedCents / 100).toFixed(2)}`,
+    billedCents: c.billedCents,
+    paidDisplay: `$${(c.paidCents / 100).toFixed(2)}`,
+    paidCents: c.paidCents,
+    status: c.status,
+  }));
+
   return (
     <PageShell maxWidth="max-w-[1320px]">
       <PageHeader
@@ -108,45 +138,7 @@ export default function ResearchExportsPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {kept.length === 0 ? (
-            <EmptyState
-              title="All buckets suppressed"
-              description="Lower the minimum cell size to view the cohort."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="py-2 pr-3 text-text-subtle">Pseudonym</th>
-                    <th className="py-2 pr-3 text-text-subtle">Age</th>
-                    <th className="py-2 pr-3 text-text-subtle">Sex</th>
-                    <th className="py-2 pr-3 text-text-subtle">Race</th>
-                    <th className="py-2 pr-3 text-text-subtle">Ethnicity</th>
-                    <th className="py-2 pr-3 text-text-subtle">Smoking</th>
-                    <th className="py-2 pr-3 text-text-subtle">ZIP3</th>
-                    <th className="py-2 text-text-subtle">SES</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {kept.map((p) => (
-                    <tr key={p.pseudonym}>
-                      <td className="py-2 pr-3 font-mono text-[11px]">{p.pseudonym}</td>
-                      <td className="py-2 pr-3 tabular-nums">{p.ageYears}</td>
-                      <td className="py-2 pr-3">{p.sex}</td>
-                      <td className="py-2 pr-3">{p.race}</td>
-                      <td className="py-2 pr-3">{p.ethnicity}</td>
-                      <td className="py-2 pr-3">{p.smokingStatus}</td>
-                      <td className="py-2 pr-3 tabular-nums">
-                        {p.zipPrefix === "000" ? <Badge tone="warning">000</Badge> : p.zipPrefix}
-                      </td>
-                      <td className="py-2">{p.socioeconomicTier}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <PatientCohortTable rows={patientRows} />
         </CardContent>
       </Card>
 
@@ -168,44 +160,7 @@ export default function ResearchExportsPage({
               </Badge>
             ))}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="py-2 pr-3 text-text-subtle">Claim</th>
-                  <th className="py-2 pr-3 text-text-subtle">Patient</th>
-                  <th className="py-2 pr-3 text-text-subtle">Month</th>
-                  <th className="py-2 pr-3 text-text-subtle">Payer</th>
-                  <th className="py-2 pr-3 text-text-subtle">CPTs</th>
-                  <th className="py-2 pr-3 text-text-subtle">ICD-10</th>
-                  <th className="py-2 pr-3 text-text-subtle text-right">Billed</th>
-                  <th className="py-2 pr-3 text-text-subtle text-right">Paid</th>
-                  <th className="py-2 text-text-subtle">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {filteredClaims.map((c) => (
-                  <tr key={c.claimPseudonym}>
-                    <td className="py-2 pr-3 font-mono text-[11px]">{c.claimPseudonym.slice(0, 12)}…</td>
-                    <td className="py-2 pr-3 font-mono text-[11px]">{c.patientPseudonym.slice(0, 12)}…</td>
-                    <td className="py-2 pr-3 tabular-nums">{c.serviceMonth}</td>
-                    <td className="py-2 pr-3">{c.payerCategory}</td>
-                    <td className="py-2 pr-3">{c.cptCodes.join(", ")}</td>
-                    <td className="py-2 pr-3">{c.icd10Codes.join(", ")}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">${(c.billedCents / 100).toFixed(2)}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">${(c.paidCents / 100).toFixed(2)}</td>
-                    <td className="py-2">
-                      <Badge
-                        tone={c.status === "paid" ? "success" : c.status === "denied" ? "danger" : "neutral"}
-                      >
-                        {c.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ClaimCohortTable rows={claimRows} />
         </CardContent>
       </Card>
     </PageShell>

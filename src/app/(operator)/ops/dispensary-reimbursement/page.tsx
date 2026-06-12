@@ -12,16 +12,14 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, LeafSprig } from "@/components/ui/ornament";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { DEFAULT_CAP_CENTS } from "@/lib/dispensary";
 import { homeForRoles } from "@/lib/rbac/roles";
+import { ReimbursementTable, type ReimbursementRow } from "./reimbursement-table";
 
 export const metadata = { title: "Dispensary reimbursement" };
 
@@ -43,10 +41,6 @@ function statusTone(status: string): "success" | "warning" | "accent" | "neutral
   }
 }
 
-function monthLabel(d: Date): string {
-  return d.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
-}
-
 export default async function DispensaryReimbursementPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
@@ -63,7 +57,7 @@ export default async function DispensaryReimbursementPage() {
     );
   }
 
-  const rows = await prisma.dispensaryReimbursement.findMany({
+  const dbRows = await prisma.dispensaryReimbursement.findMany({
     where: { organizationId: user.organizationId },
     orderBy: [{ serviceMonth: "desc" }, { createdAt: "desc" }],
     include: {
@@ -72,9 +66,27 @@ export default async function DispensaryReimbursementPage() {
     },
   });
 
-  const totalDocumented = rows.reduce((s, r) => s + r.documentedSpendCents, 0);
-  const totalReimbursable = rows.reduce((s, r) => s + r.reimbursableCents, 0);
-  const submittedCount = rows.filter((r) => r.status === "submitted" || r.status === "approved").length;
+  const totalDocumented = dbRows.reduce((s, r) => s + r.documentedSpendCents, 0);
+  const totalReimbursable = dbRows.reduce((s, r) => s + r.reimbursableCents, 0);
+  const submittedCount = dbRows.filter((r) => r.status === "submitted" || r.status === "approved").length;
+
+  const rows: ReimbursementRow[] = dbRows.map((r) => ({
+    id: r.id,
+    patientName: `${r.patient.firstName} ${r.patient.lastName}`,
+    dispensaryName: r.dispensary.name,
+    serviceMonthDisplay: r.serviceMonth.toLocaleString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }),
+    serviceMonthMs: r.serviceMonth.getTime(),
+    spendDisplay: `$${(r.documentedSpendCents / 100).toFixed(2)}`,
+    spendCents: r.documentedSpendCents,
+    reimbursableDisplay: `$${(r.reimbursableCents / 100).toFixed(2)}`,
+    reimbursableCents: r.reimbursableCents,
+    status: r.status,
+    statusTone: statusTone(r.status),
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1200px]">
@@ -119,59 +131,10 @@ export default async function DispensaryReimbursementPage() {
           description="When a patient documents cannabis spend, it shows up here. The annual cap ($500) is the maximum reimbursable per patient per calendar year."
         />
       ) : (
-        <Card tone="raised">
-          <CardHeader>
-            <CardTitle className="text-base">Reimbursement records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">
-                      Patient
-                    </th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">
-                      Dispensary
-                    </th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide">
-                      Service month
-                    </th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide text-right">
-                      Spend
-                    </th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-xs uppercase tracking-wide text-right">
-                      Reimbursable
-                    </th>
-                    <th className="py-2 font-medium text-text-subtle text-xs uppercase tracking-wide">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {rows.map((r) => (
-                    <tr key={r.id}>
-                      <td className="py-3 pr-4 font-medium text-text">
-                        {r.patient.firstName} {r.patient.lastName}
-                      </td>
-                      <td className="py-3 pr-4 text-text-muted">{r.dispensary.name}</td>
-                      <td className="py-3 pr-4 text-text-muted">{monthLabel(r.serviceMonth)}</td>
-                      <td className="py-3 pr-4 text-right tabular-nums">
-                        {dollars(r.documentedSpendCents)}
-                      </td>
-                      <td className="py-3 pr-4 text-right tabular-nums">
-                        {dollars(r.reimbursableCents)}
-                      </td>
-                      <td className="py-3">
-                        <Badge tone={statusTone(r.status)}>{r.status}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <>
+          <Eyebrow className="mb-4">Reimbursement records</Eyebrow>
+          <ReimbursementTable rows={rows} />
+        </>
       )}
 
       <p className="text-[11px] text-text-subtle mt-6 max-w-2xl leading-relaxed">

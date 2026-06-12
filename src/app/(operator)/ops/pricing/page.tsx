@@ -17,11 +17,29 @@ import {
   type CompetitorTier,
 } from "@/lib/billing/subscription";
 import { RoiCalculator } from "./RoiCalculator";
+import {
+  FeatureMatrixTable,
+  type FeatureMatrixRow,
+} from "./feature-matrix-table";
 
 export const metadata = { title: "Pricing · Leafjourney" };
 
 export default async function OpsPricingPage() {
   await requireUser();
+
+  const featureMatrixRows: FeatureMatrixRow[] = [
+    { feature: "Charting + scheduling + e-Rx", starter: true, growth: true, scale: true, enterprise: true },
+    { feature: "Patient portal", starter: true, growth: true, scale: true, enterprise: true },
+    { feature: "Basic claims billing", starter: true, growth: true, scale: true, enterprise: true },
+    { feature: "Dispensary POS + inventory", starter: false, growth: true, scale: true, enterprise: true },
+    { feature: "RCM agents (eligibility, scrubbing, denial)", starter: false, growth: true, scale: true, enterprise: true },
+    { feature: "ChatCB + cannabis contraindication checks", starter: false, growth: true, scale: true, enterprise: true },
+    { feature: "Multi-location consolidation", starter: false, growth: false, scale: true, enterprise: true },
+    { feature: "Research export (de-identified cohorts)", starter: false, growth: false, scale: true, enterprise: true },
+    { feature: "On-prem / VPC deployment", starter: false, growth: false, scale: false, enterprise: true },
+    { feature: "Custom HL7/FHIR/EDI integrations", starter: false, growth: false, scale: false, enterprise: true },
+    { feature: "Dedicated success manager", starter: false, growth: false, scale: true, enterprise: true },
+  ];
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -41,7 +59,7 @@ export default async function OpsPricingPage() {
       <EditorialRule className="my-10" />
 
       <Eyebrow className="mb-4">Feature matrix</Eyebrow>
-      <FeatureMatrix />
+      <FeatureMatrixTable rows={featureMatrixRows} />
 
       <EditorialRule className="my-10" />
 
@@ -131,60 +149,3 @@ function CompetitorCard({ competitor }: { competitor: CompetitorTier }) {
   );
 }
 
-function FeatureMatrix() {
-  const rows: Array<{ feature: string; tiers: Record<SubscriptionTier["id"], boolean> }> = [
-    { feature: "Charting + scheduling + e-Rx", tiers: { starter: true, growth: true, scale: true, enterprise: true } },
-    { feature: "Patient portal", tiers: { starter: true, growth: true, scale: true, enterprise: true } },
-    { feature: "Basic claims billing", tiers: { starter: true, growth: true, scale: true, enterprise: true } },
-    { feature: "Dispensary POS + inventory", tiers: { starter: false, growth: true, scale: true, enterprise: true } },
-    { feature: "RCM agents (eligibility, scrubbing, denial)", tiers: { starter: false, growth: true, scale: true, enterprise: true } },
-    { feature: "ChatCB + cannabis contraindication checks", tiers: { starter: false, growth: true, scale: true, enterprise: true } },
-    { feature: "Multi-location consolidation", tiers: { starter: false, growth: false, scale: true, enterprise: true } },
-    { feature: "Research export (de-identified cohorts)", tiers: { starter: false, growth: false, scale: true, enterprise: true } },
-    { feature: "On-prem / VPC deployment", tiers: { starter: false, growth: false, scale: false, enterprise: true } },
-    { feature: "Custom HL7/FHIR/EDI integrations", tiers: { starter: false, growth: false, scale: false, enterprise: true } },
-    { feature: "Dedicated success manager", tiers: { starter: false, growth: false, scale: true, enterprise: true } },
-  ];
-
-  return (
-    <Card tone="raised">
-      <CardContent className="pt-4 pb-4">
-        <div className="overflow-x-auto -mx-6">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                <th className="px-6 py-2 text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle">
-                  Feature
-                </th>
-                {TIERS.map((t) => (
-                  <th
-                    key={t.id}
-                    className="px-6 py-2 text-[10px] font-medium uppercase tracking-[0.14em] text-text-subtle text-center"
-                  >
-                    {t.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {rows.map((row) => (
-                <tr key={row.feature} className="hover:bg-surface-muted/40">
-                  <td className="px-6 py-2.5 text-text">{row.feature}</td>
-                  {TIERS.map((t) => (
-                    <td key={t.id} className="px-6 py-2.5 text-center">
-                      {row.tiers[t.id] ? (
-                        <span className="text-success font-medium">✓</span>
-                      ) : (
-                        <span className="text-text-subtle">—</span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}

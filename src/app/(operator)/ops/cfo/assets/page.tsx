@@ -2,7 +2,6 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eyebrow } from "@/components/ui/ornament";
@@ -10,6 +9,7 @@ import { fmtMoney } from "@/lib/finance/formatting";
 import { FIXED_ASSET_MAP } from "@/lib/finance/chart-of-accounts";
 import { CfoTabs } from "../components";
 import { createFixedAssetAction } from "../actions";
+import { AssetsTable, type AssetRow } from "./assets-table";
 import type { FixedAssetCategory } from "@prisma/client";
 
 export const metadata = { title: "Assets · CFO" };
@@ -43,6 +43,26 @@ export default async function AssetsPage() {
     return a + (b.accumulatedDeprecCents > 0 ? b.accumulatedDeprecCents : computed);
   }, 0);
   const netBook = totalGross - totalDeprec;
+
+  const rows: AssetRow[] = assets.map((a) => {
+    const monthly = a.usefulLifeMonths > 0 ? (a.acquiredCostCents - a.salvageValueCents) / a.usefulLifeMonths : 0;
+    const months = (Date.now() - a.purchaseDate.getTime()) / (30.44 * 86_400_000);
+    const accum = a.accumulatedDeprecCents > 0 ? a.accumulatedDeprecCents : Math.min(a.acquiredCostCents - a.salvageValueCents, Math.round(monthly * Math.max(0, months)));
+    const net = a.acquiredCostCents - accum;
+    return {
+      id: a.id,
+      name: a.name,
+      categoryLabel: FIXED_ASSET_MAP[a.category].label,
+      acquiredDisplay: a.purchaseDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      acquiredMs: a.purchaseDate.getTime(),
+      costDisplay: fmtMoney(a.acquiredCostCents),
+      costCents: a.acquiredCostCents,
+      lifeDisplay: `${a.usefulLifeMonths}mo`,
+      usefulLifeMonths: a.usefulLifeMonths,
+      netBookDisplay: fmtMoney(net),
+      netBookCents: net,
+    };
+  });
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -103,48 +123,8 @@ export default async function AssetsPage() {
         </Card>
       </div>
 
-      {/* Asset list */}
-      <Card tone="raised">
-        <CardContent className="pt-3 pb-3 px-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-text-subtle border-b border-border/60">
-                <th className="text-left py-2 px-4 font-medium">Name</th>
-                <th className="text-left py-2 px-4 font-medium">Category</th>
-                <th className="text-left py-2 px-4 font-medium">Acquired</th>
-                <th className="text-right py-2 px-4 font-medium">Cost</th>
-                <th className="text-right py-2 px-4 font-medium">Life</th>
-                <th className="text-right py-2 px-4 font-medium">Net book</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {assets.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-text-subtle italic">No capitalized assets yet.</td></tr>
-              )}
-              {assets.map((a) => {
-                const monthly = a.usefulLifeMonths > 0 ? (a.acquiredCostCents - a.salvageValueCents) / a.usefulLifeMonths : 0;
-                const months = (Date.now() - a.purchaseDate.getTime()) / (30.44 * 86_400_000);
-                const accum = a.accumulatedDeprecCents > 0 ? a.accumulatedDeprecCents : Math.min(a.acquiredCostCents - a.salvageValueCents, Math.round(monthly * Math.max(0, months)));
-                const net = a.acquiredCostCents - accum;
-                return (
-                  <tr key={a.id} className="hover:bg-surface-muted/50">
-                    <td className="py-2 px-4 text-text">{a.name}</td>
-                    <td className="py-2 px-4">
-                      <Badge tone="neutral" className="text-[10px]">{FIXED_ASSET_MAP[a.category].label}</Badge>
-                    </td>
-                    <td className="py-2 px-4 text-text-muted tabular-nums whitespace-nowrap">
-                      {a.purchaseDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                    </td>
-                    <td className="py-2 px-4 text-right tabular-nums text-text-muted">{fmtMoney(a.acquiredCostCents)}</td>
-                    <td className="py-2 px-4 text-right tabular-nums text-text-subtle">{a.usefulLifeMonths}mo</td>
-                    <td className="py-2 px-4 text-right tabular-nums text-text">{fmtMoney(net)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {/* Asset list — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <AssetsTable rows={rows} />
     </PageShell>
   );
 }
