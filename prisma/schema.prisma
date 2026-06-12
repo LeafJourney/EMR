@@ -5993,3 +5993,29 @@ model MigrationJob {
   @@index([organizationId, status])
   @@index([migrationProfileId])
 }
+
+// --------------------------------------------------------------
+// LeafBridge — FHIR-native data spine (Phase 1: persistence)
+// --------------------------------------------------------------
+// Canonical store for normalized FHIR R4 resources, written through the
+// LeafBridge FhirPersistenceService Postgres adapter
+// (src/lib/leafbridge/fhir-resource-store.ts). `body` holds the full FHIR
+// JSON as-is — a genuinely open shape per design rule #1 — while the
+// denormalized columns mirror the store's composite key so reads stay
+// index-only. organizationId is denormalized (no relation) to keep this
+// spine table independent of the operational graph, the way the rest of
+// LeafBridge stays framework-free and adapter-based.
+model StoredResource {
+  id             String   @id @default(cuid())
+  organizationId String
+  resourceType   String
+  resourceId     String
+  versionId      String   @default("1")
+  lastUpdated    DateTime @default(now())
+  body           Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, resourceType, resourceId])
+  @@index([organizationId, resourceType])
+}
