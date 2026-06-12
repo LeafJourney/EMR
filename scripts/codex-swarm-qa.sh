@@ -21,15 +21,23 @@ rm -rf .next/cache
 echo "[1/4] Seeding clinician appointments for today..."
 npx tsx --conditions=react-server scripts/seed-clinician-appointments.ts
 
-# 2. Spin up the Next.js dev server in the background
+# 2. Spin up the Next.js dev server in the background.
+# Guard first: never stack a second server on a shared `.next` — the documented
+# cause of corrupted webpack chunks, hung routes, and broken builds. Refuses by
+# default; set NEXT_GUARD=reap to auto-clear a pre-existing server in unattended
+# runs. (For heavier E2E prefer `next build && next start`; see docs/DEMO_DAY_RUNBOOK.md.)
+source scripts/lib/next-server-guard.sh
+next_guard_assert_free || exit 1
 echo "[2/4] Starting dev server..."
 npm run dev > /tmp/next-dev-server.log 2>&1 &
 DEV_PID=$!
 
-# Trap exit to ensure background process is killed cleanly
+# Trap exit to tear the server down cleanly — including the next-server CHILD.
+# `kill $DEV_PID` alone only kills the npm wrapper and ORPHANS next-server, which
+# keeps holding `.next` and corrupts the next run (the stray-accumulation bug).
 cleanup() {
-  echo "Tearing down dev server (PID: $DEV_PID)..."
-  kill -9 "$DEV_PID" || true
+  echo "Tearing down dev server (npm PID: $DEV_PID + next-server child)..."
+  next_guard_teardown "$DEV_PID"
   exit
 }
 trap cleanup EXIT INT TERM
