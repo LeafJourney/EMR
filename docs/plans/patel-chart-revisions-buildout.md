@@ -34,6 +34,15 @@
 
 **Deferred (need their own scoped pass — NOT silently stubbed):** the big rocks above, plus voice-chart save-as-draft + password finalize, Tasks/CDS-as-ribbon-tabs (an information-architecture decision), and Rx schema items (real ICD-10 + pharmacy fields, dose-log emoji persistence). *(Decision-Support critical-gating + persisted acknowledgements — shipped this session, see above.)*
 
+## ✅ Shipped 2026-06-11 (session 2 — billing interactivity, no schema)
+
+The billing surface's "best value/effort" interactivity targets, all typecheck-clean (sentinel-verified on `page.tsx`), eslint-clean, with a unit-tested pure helper:
+
+- **Clickable balance + breakdown metrics → trend drill-down popups.** Total balance, Patient due, Insurance pending, Overdue (BalanceLines) and Copay collected, Patient responsibility (MiniStats) are now clickable, opening a month-to-month **cumulative graph** popup with **search + time-range (3/6/12mo/all) + min-amount filters** over the contributing activity. The trend is reconstructed from the patient's full `FinancialEvent` ledger via `buildMetricTrend` (`src/lib/domain/billing-metric-trend.ts`), where each event type's contribution to each metric is defined **explicitly** (direction × |amount|) so the running total is correct by construction — not a stub. **Deductible applied** uses a fill bar (met / total / remaining) since it's payer-reported, not event-derived. Covers ~7 directives. *(New: `metric-drilldown.tsx`, `billing-metric-trend.ts` + `.test.ts`.)*
+- **Interactive Encounter Financial Timeline.** Replaced the static table with `FinancialTimeline` (`timeline.tsx`): **sortable column headers** (date/charge/insurance/adjustment/patient/balance/status), **clickable rows → claim-detail popup** (claim #, CPTs, full money breakdown, payments posted, and a **lifecycle trail** — created → submitted → denied/reimbursed → closed — built from the claim's real `submittedAt/paidAt/deniedAt/closedAt` timestamps + `denialReason`), and a **History toggle** that hides resolved/closed claims by default and reveals them on demand. Covers ~5 directives.
+
+**Still open on billing (own pass):** Generate Tax Documents (1099/W9) + email/save-to-Correspondence (M, regulatory), payment-method completions (ACH routing/account fields, Bitcoin wallet, Print/Save invoice, cash/check → Correspondence), Payment Plan **Adjust** button, Insurance **Directory** + click-to-call (telephony), per-statement/event-log share+print, "Cindy suggests" reimbursement-probability AI panel.
+
 ## Surface scorecard
 
 | Surface | Total | ✅ Done | 🟡 Partial | ⬜ Missing |
