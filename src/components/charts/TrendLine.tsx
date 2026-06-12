@@ -21,6 +21,18 @@ import {
   chartColor,
 } from "./theme";
 
+/**
+ * Compact Y-axis tick label so wide values like -90000 aren't clipped to
+ * ",000" by the narrow axis (matches <TrendArea>). Abbreviates thousands /
+ * millions; leaves sub-thousand values as-is.
+ */
+function formatCompactTick(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return v.toLocaleString();
+}
+
 export interface TrendLineSeries {
   /** Key in each row that holds this series' numeric value. */
   dataKey: string;
@@ -124,6 +136,7 @@ export function TrendLine<T extends object>({
           />
           <YAxis
             {...Y_AXIS_DEFAULTS}
+            width={48}
             label={
               yLabel
                 ? {
@@ -136,7 +149,7 @@ export function TrendLine<T extends object>({
                 : undefined
             }
             tickFormatter={(v: number) =>
-              unit ? `${v}${unit}` : v.toLocaleString()
+              unit ? `${v}${unit}` : formatCompactTick(v)
             }
           />
           <Tooltip
