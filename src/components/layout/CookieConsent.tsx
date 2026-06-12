@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "leafjourney-cookie-consent";
 
 export function CookieConsent() {
   const [show, setShow] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     // SSR safety: localStorage is only on the client.
@@ -36,6 +38,10 @@ export function CookieConsent() {
     }
     setShow(false);
   };
+
+  // The Leafnerd FHIR-intelligence SPA is a full-bleed, self-contained surface
+  // (often shown in live demos) — keep the global cookie banner off it.
+  if (pathname?.startsWith("/leafnerd")) return null;
 
   if (!show) return null;
 

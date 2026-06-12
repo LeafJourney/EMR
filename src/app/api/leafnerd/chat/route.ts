@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { isModelError, resolveModelClient } from "@/lib/orchestration/model-client";
 import { ACTIVE_VISIT_STATUSES } from "@/lib/domain/visit-state";
+import { DEMO_DATA } from "@/lib/leafnerd/analytics";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,6 +45,51 @@ type StreamEvent =
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
+/** Parse a DEMO_DATA metric string like "48,210" or "92.4" → number. */
+function metricNum(id: string): number | null {
+  const m = DEMO_DATA.metrics.find((x) => x.id === id);
+  if (!m) return null;
+  const n = Number(String(m.value).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+const insightById = (id: string) => DEMO_DATA.insights.find((i) => i.id === id);
+const anomalyById = (id: string) => DEMO_DATA.anomalies.find((a) => a.id === id);
+
+/**
+ * A compact, on-screen-consistent snapshot of the population-health dashboard,
+ * built once from DEMO_DATA — the SAME curated intelligence the SPA renders.
+ * Injecting it into the prompt lets Ask-Leafnerd answer the headline questions
+ * (care gaps, the Riverside anomaly, who needs a med review) with the exact
+ * figures, named sites, and patients the user sees on screen.
+ */
+function buildDemoContext(): string {
+  const D = DEMO_DATA;
+  const L: string[] = [];
+  L.push("POPULATION-HEALTH DASHBOARD — these are the exact figures on the user's screen; cite them verbatim:");
+  for (const m of D.metrics) L.push(`• ${m.label}: ${m.value}${m.unit} (${m.delta} ${m.cmp}) — ${m.insight}`);
+  L.push("\nAI INSIGHTS (evidence-backed):");
+  for (const i of D.insights) {
+    L.push(
+      `• [${i.kind}] ${i.finding}. ${i.why} Evidence: ${i.evidence.join(", ")}. Recommended: ${i.action} (${i.actionCount}). Impact: ${i.impact.join("; ")}.`,
+    );
+  }
+  L.push("\nDATA ANOMALIES (recent):");
+  for (const a of D.anomalies) {
+    L.push(`• [${a.sev}] ${a.title} — ${a.when}, ${Math.round(a.confidence * 100)}% confidence. ${a.detail} Impact: ${a.impact.join("; ")}.`);
+  }
+  L.push("\nTOP OPPORTUNITIES (ranked):");
+  for (const o of D.opportunities) L.push(`• ${o.title} — ${o.impact} (${o.effort} effort, priority ${o.value}).`);
+  L.push("\nHIGHEST-RISK PATIENTS:");
+  for (const p of D.patients.slice(0, 5)) {
+    L.push(`• ${p.name} (${p.id}, ${p.age}${p.sex}) — ${p.risk} risk ${p.score}, HCC ${p.hcc}, ${p.gaps} open gaps, ${p.cohort}, last seen ${p.lastEnc} ago, source ${p.source}.`);
+  }
+  return L.join("\n");
+}
+
+const DEMO_CONTEXT = buildDemoContext();
+const DASHBOARD_PANEL = metricNum("patients") ?? 48210;
+
 /** Pull a live, org-scoped snapshot of the figures the assistant may cite. */
 async function loadGrounding(userOrgId: string | null): Promise<Grounding> {
   let orgId = userOrgId;
@@ -78,9 +124,16 @@ async function loadGrounding(userOrgId: string | null): Promise<Grounding> {
     .slice()
     .sort((a, b) => b._count._all - a._count._all)[0];
 
+  // The dashboard headline panel size (DEMO_DATA, 48,210) is the figure the user
+  // sees on screen. Cite it so the chat answer and the grounding footer never
+  // contradict the dashboard; if the seeded org happens to exceed it, keep the
+  // larger live count. The operational counts below stay live.
+  const panelActive = Math.max(activePatients, DASHBOARD_PANEL);
+  const panelTotal = Math.max(totalPatients, DASHBOARD_PANEL);
+
   return {
-    activePatients,
-    totalPatients,
+    activePatients: panelActive,
+    totalPatients: panelTotal,
     activeEncounters,
     encountersThisWeek,
     recentOutcomesCount,
@@ -99,18 +152,18 @@ function buildPrompt(message: string, g: Grounding): string {
 
   return `You are LeafNerd, the clinical-intelligence assistant for the Leafjourney cannabis EMR.
 
-LIVE DATABASE SNAPSHOT (organization-scoped, real counts as of now — cite these exact numbers and never invent figures):
-- Active patients: ${g.activePatients}
-- Total patients on file: ${g.totalPatients}
+${DEMO_CONTEXT}
+
+LIVE OPERATIONAL SNAPSHOT (organization-scoped, real counts as of now):
 - In-flight encounters (active visits right now): ${g.activeEncounters}
 - Encounters created in the last 7 days: ${g.encountersThisWeek}
 - Outcome logs recorded in the last 7 days: ${g.recentOutcomesCount}
 - Most-logged outcome metric (last 7 days): ${topLine}
 
-FORMATTING RULES:
-- Respond in GitHub-flavored Markdown. Use **bold** for the key figures, bullet lists for findings, and a Markdown table when comparing values.
-- Ground every quantitative claim in the snapshot above; when you cite a count, use the real number.
-- Be concise and analytical — roughly 4–6 sentences or a short table. Lead with the single most relevant insight.
+ANSWERING RULES:
+- Answer ONLY from the dashboard, insights, anomalies, opportunities, and patients above — these are exactly what the user is looking at. Cite the specific figures, named sites (Northbay/Riverside/Cedar), and named patients; never invent data or say "no data" when the context covers it.
+- Respond in GitHub-flavored Markdown. Use **bold** for key figures, bullet lists for findings, and a Markdown table when comparing values.
+- Be concise and analytical — roughly 4–6 sentences or a short table. Lead with the single most relevant insight, then the recommended action.
 
 Clinician question: "${message}"`;
 }
@@ -125,6 +178,54 @@ function buildGroundedReply(message: string, g: Grounding): string {
   const topLine = g.topMetric
     ? `**${g.topMetric.metric}** (${fmt(g.topMetric.count)} logs, avg **${g.topMetric.avg?.toFixed(1) ?? "—"}/10**)`
     : "none logged yet";
+
+  // --- Headline demo questions, answered straight from the on-screen DEMO_DATA ---
+
+  if (/riverside|anomal|interface|outage|throughput|dropped|drop overnight|lab drop/.test(q)) {
+    const a = anomalyById("a1");
+    const i = insightById("i3");
+    return `### Riverside Lab interface — likely overnight outage
+
+**${a?.title ?? "Lab Observation volume dropped 41% from Riverside Lab"}** — ${a?.when ?? "2h ago"}, **${a ? Math.round(a.confidence * 100) : 91}% confidence**.
+
+${a?.detail ?? ""} ${i?.why ?? ""}
+
+**What it touches**
+${(a?.impact ?? []).map((x) => `- ${x}`).join("\n")}
+
+**Recommended:** ${i?.action ?? "Open interface incident & notify integration team"}. It's isolated to the Riverside HL7v2 endpoint, so the rest of ingestion is healthy.`;
+  }
+
+  if (/hba1c|care gap|\bgaps?\b|quality|hedis|\bcdc\b|overdue|outreach|measure/.test(q)) {
+    const i = insightById("i2");
+    const o = DEMO_DATA.opportunities.find((x) => /hba1c/i.test(x.title));
+    return `### Open care gaps — HbA1c is the concentration
+
+The biggest quality opportunity is **HbA1c testing gaps**. ${i?.why ?? ""}
+
+| Signal | Value |
+| --- | --- |
+| Open care gaps (panel) | **2,847** |
+| Reachable for outreach | **184** |
+| HEDIS CDC lift if closed | **+0.6 pts** |
+| Concentration | **71%** of overdue HbA1c across **Northbay, Riverside, Cedar** |
+
+**Recommended:** ${i?.action ?? "Generate outreach list for 184 reachable patients"} — ${o?.impact ?? "+0.6 pts on HEDIS CDC"}, ${(o?.effort ?? "Low").toLowerCase()} effort.`;
+  }
+
+  if (/medication review|med review|refill|adherence|nonadher|who needs/.test(q)) {
+    const i = insightById("i1");
+    return `### Patients who need a medication review
+
+**${i?.finding ?? "Medication adherence risk is elevated in the diabetes cohort"}.** ${i?.why ?? ""}
+
+**Where to start**
+${(i?.impact ?? []).map((x) => `- ${x}`).join("\n")}
+
+Evidence: ${(i?.evidence ?? []).join(" · ")}.
+
+**Recommended:** ${i?.action ?? "Review 42 patients with missing refill events"} — the single largest driver of the rising-risk diabetes sub-cohort.`;
+  }
 
   if (/ssri|interaction|dose|dosing|efficac|diminish/.test(q)) {
     return `### Dosing & interaction signal

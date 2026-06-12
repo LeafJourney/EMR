@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { useToast } from "@/components/ui/toast";
@@ -23,6 +24,7 @@ export function UniversalFeedbackFab() {
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<FileUploadItem[]>([]);
   const { toast } = useToast();
+  const pathname = usePathname();
 
   // Persist a stable client-id per browser to dedupe repeats / retries.
   const clientIdRef = useRef<string>("");
@@ -96,6 +98,10 @@ export function UniversalFeedbackFab() {
       setState("error");
     }
   }
+
+  // Hide the global feedback FAB on the full-bleed Leafnerd SPA so the
+  // demo surface stays clean (no floating 🌱 over the dashboard).
+  if (pathname?.startsWith("/leafnerd")) return null;
 
   if (state === "closed") {
     return (
