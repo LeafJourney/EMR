@@ -54,12 +54,27 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
     }
   };
 
+  // Open the active pillar's drawer ONLY when the route's pillar actually
+  // changes (a real navigation). A same-route re-render — e.g. a server action
+  // revalidating the page, which hands PillarNav a fresh `sections` array
+  // reference — must NOT re-open a drawer the user just collapsed. That was the
+  // "sidebar pops back open when I click Log / Add / Delete / Generate" bug
+  // (Owner Portal Revisions, MASTER prompt G2).
+  const prevPathPillar = React.useRef<string | null>(pathPillar);
+  React.useEffect(() => {
+    if (pathPillar && pathPillar !== prevPathPillar.current) {
+      setActivePillar(pathPillar);
+    }
+    prevPathPillar.current = pathPillar;
+  }, [pathPillar]);
+
+  // On mount only: if the current route isn't under any pillar, restore the
+  // last-used pillar so the drawer isn't empty on a neutral landing page.
+  // Deliberately mount-only — re-running on every `sections` change would
+  // re-open a dismissed drawer (the bug guarded against above).
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    if (pathPillar) {
-      setActivePillar(pathPillar);
-      return;
-    }
+    if (pathPillar) return;
     try {
       const stored = window.localStorage.getItem(LAST_PILLAR_KEY);
       if (!stored) return;
@@ -70,7 +85,8 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
     } catch {
       /* private mode — non-fatal */
     }
-  }, [pathPillar, sections]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
