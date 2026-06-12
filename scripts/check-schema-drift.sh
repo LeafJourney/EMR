@@ -22,8 +22,15 @@ if [ -z "$DB_URL" ] && [ -z "$DIR_URL" ]; then
   exit 1
 fi
 
-# Strip pgbouncer-style params that the diff engine's direct connection rejects.
-clean() { printf '%s' "$1" | sed -E 's/([?&])(pgbouncer|pool_timeout|connection_limit)=[^&]*//g; s/[?&]$//'; }
+# Strip pgbouncer-style params the diff engine rejects, trim stray
+# whitespace/newlines (a trailing \n in a Render env var bit us on
+# 2026-06-11), and swap Supabase's transaction pooler (:6543) for the
+# session pooler (:5432) — the diff engine hangs on transaction mode.
+clean() {
+  printf '%s' "$1" \
+    | tr -d '[:space:]' \
+    | sed -E 's/([?&])(pgbouncer|pool_timeout|connection_limit)=[^&]*//g; s/[?&]$//; s/:6543\//:5432\//'
+}
 
 FAIL=0
 

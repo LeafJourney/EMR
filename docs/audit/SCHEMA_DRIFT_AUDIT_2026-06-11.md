@@ -124,6 +124,43 @@ deploy and blocks production on mismatch. It requires the
 `STAGING_DIRECT_URL` GitHub Actions secret (staging DB direct connection
 string); until that secret is set it warns and passes.
 
+## Final chapter (2026-06-11, afternoon): the runtime P2022 and the worker split-brain
+
+After the morning heal, `/clinic/patients/[id]` still crashed for real
+patients. The digest-instrumented boundary (#643) + Render logs produced the
+exact error:
+
+```
+Invalid `prisma.doseLog.findMany()` invocation:
+The column `DoseLog.sideEffects` does not exist in the current database.
+code: 'P2022', meta: { modelName: 'DoseLog', column: 'DoseLog.sideEffects' }
+```
+
+I.e., the production database the APP reads was still missing (at least) the
+EMR-1113 DDL even though the migration ledger recorded it applied. Findings
+and fixes from the Render-side investigation:
+
+1. **EMR-1113 DDL applied directly** to the production Supabase database via
+   `prisma db execute --file prisma/migrations/20260610090000_.../migration.sql`,
+   then verified by direct `information_schema` checks: `ClinicalOrder`,
+   `CannabisRecommendation`, `TreatmentGoal`, and `DoseLog.sideEffects` all
+   exist now.
+2. **Worker/scheduler split-brain (major):** `emr-agent-worker` and
+   `emr-scheduler` had `DATABASE_URL` pointing at the legacy Render Postgres
+   (`dpg-…/emr_s3lc`) — an isolated database the web app never reads. Both
+   were repointed to the production Supabase instance via the Render API.
+   Any rows those services wrote before the fix live only in the legacy
+   database; export it before decommissioning if that history matters.
+3. **`emr-web`'s `DIRECT_URL` carried a trailing newline**, now cleaned —
+   a plausible contributor to the hung schema diffs against `DATABASE_URL`.
+   The drift-check script now trims whitespace and swaps Supabase's
+   transaction pooler (`:6543`) for the session pooler (`:5432`) before
+   diffing, so both legs of the check complete.
+
+Remaining cleanup recommendations: remove the legacy `emr-postgres` block
+from `render.yaml` and decommission the orphan database once its contents
+are confirmed disposable; move prod off Clerk development keys.
+
 ## Recommendations
 
 1. Run `npm run db:drift-check` in the prod Render shell now (2 minutes) and
