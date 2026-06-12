@@ -67,3 +67,53 @@ Based on the Medical Cannabis Library (MCL) paper:
 3. **Drug Mix** — Drug interaction checker (public-facing version)
 4. **Research** — PubMed article browser
 5. **Learn** — Educational articles (moved from existing /learn page)
+
+---
+
+## Fleet Command Directive (Core Master Prompt Blueprint — June 2026)
+
+Binding rules for **every** agent and contributor, per Dr. Patel's Core Master
+Prompt Blueprint (see
+`docs/product-feedback/2026-06-12_workflows-revisions-red-text.md`, "Core
+Master Prompt Blueprint"; epic EMR-1125). These rules **harmonize with — they
+do not replace — the Apple-iOS aesthetic directive above**: same calm,
+minimal, large-touch-target feel, now with hard efficiency budgets.
+
+### The Four Golden Axioms
+1. **Click-Elimination** — no routine clinical workflow (SOAP note, Rx
+   signing, lab review) may require more than **two clicks** from the primary
+   dashboard viewport. Mechanisms: contextual prediction, hover actions,
+   autofill, and the Cmd+K command box.
+2. **Scroll-Elimination** — critical patient/encounter details fit a
+   **single non-scrolling viewport**. Mechanisms: tabbed side drawers,
+   expanding canvas grids, split viewports. No endless vertical timelines.
+3. **Typing-Reduction** — clinicians **never manually type** standard
+   clinical prose or look up routine codes. Mechanisms: ambient capture
+   drafts + intelligent defaults from patient history and provider habits.
+4. **Zen-Density** — spacious **16–24px padding grid**, soft pastel status
+   indicators (see `--status-*` tokens), muted neutral backgrounds, clear
+   text hierarchy. Context-aware display: information appears only when
+   relevant.
+
+### Rejection rule
+Any design that requires scrolling to reveal mandatory forms, multi-step
+wizards, or stacked pop-up confirmations must be **rejected and rebuilt**
+using slide-out contextual drawers and predictive data entry.
+
+### No-popup rule (sub-workflows)
+Sub-workflows (picking lab tests, adding diagnoses, editing demographic
+cards) never spawn popup dialogs or nested windows. Use slide-out contextual
+drawers or clean inline expanding rows only, with a **minimum 12px
+separation** between components.
+
+### Agent-group directives
+- **UI/UX:** no popups or nested windows — drawers and inline expanding rows
+  with generous padding, validated against the single-viewport standard.
+- **Clinical NLP:** continuously convert spoken dialogue and note edits into
+  structured data, staged in a sidebar for single-click verification.
+- **CPOE:** no multi-step order wizards — auto-populate order parameters
+  (LOINC/RxNorm codes, doses, prior-auth justifications, fasting flags) so
+  one click authorizes from the checkout queue.
+- **Triage:** auto-sort inbound patient messages by clinical risk into the
+  clinician's task queue; convert visit notes into plain-language
+  instructions matched to the patient's language and reading level.
