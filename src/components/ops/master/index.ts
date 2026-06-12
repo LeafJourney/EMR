@@ -8,12 +8,32 @@
 //   G5 Sortable table columns      → <DataTable> (tri-state header sort, built-in)
 //   G6 Table send/print/download   → <DataTable exportable> + table-export utils
 //   G7 Movable / rearrangeable     → <SortableList> / <KanbanBoard> / reorder()
+//   G10 "click a box → popup"      → <MetricBox> (history popup + feather cycle)
+//   G11 Hover tooltips on charts   → <MetricBox> drill-in (branded chart hover)
 //
 // Still to build (tracked, not yet shipped): global sidebar overlay/autohide
-// (G2), 7-result autocomplete inputs (G3), per-section AI search bar (G8),
-// compare-mode + "beautify" popups (G9/G10).
+// (G2 layered/autohide half remains; in-page-click re-open fixed via PR #648),
+// 7-result autocomplete inputs (G3), per-section AI search bar (G8), and
+// multi-metric compare-mode (G9).
 
 export { Collapsible } from "@/components/ui/collapsible";
+
+export {
+  MetricBox,
+  type MetricBoxProps,
+  type MetricPoint,
+} from "./MetricBox";
+
+export {
+  cycleChartType,
+  summarizeSeries,
+  formatMetricValue,
+  METRIC_CHART_TYPES,
+  type MetricChartType,
+  type MetricValueFormat,
+  type SeriesSummary,
+  type MetricDirection,
+} from "./metric-box-utils";
 
 export {
   DataTable,

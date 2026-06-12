@@ -42,6 +42,12 @@ export interface TrendLineProps<T extends object> {
   xLabel?: string;
   /** Optional unit suffix shown in tooltip values (e.g. "%"). */
   unit?: string;
+  /**
+   * Optional custom formatter for tooltip values (overrides `unit`). Lets
+   * callers render currency / compact / domain-specific values on hover —
+   * e.g. "$1,234" instead of the raw "1234".
+   */
+  formatValue?: (value: number | string, name?: string) => React.ReactNode;
   /** Container height. Default 240. */
   height?: number;
   /** Show loading skeleton. */
@@ -68,6 +74,7 @@ export function TrendLine<T extends object>({
   yLabel,
   xLabel,
   unit,
+  formatValue,
   height = 240,
   loading,
   emptyTitle = "No data yet",
@@ -134,7 +141,7 @@ export function TrendLine<T extends object>({
           />
           <Tooltip
             cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
-            content={<ChartTooltip unit={unit} />}
+            content={<ChartTooltip unit={unit} formatValue={formatValue} />}
           />
           {lines.map((s, i) => {
             const color = s.color ?? chartColor(i);
