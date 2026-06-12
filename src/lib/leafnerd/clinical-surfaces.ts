@@ -119,6 +119,27 @@ function iso(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null;
 }
 
+/**
+ * Humanize a LabResult.reviewOutcome enum into a clinician-facing phrase. The
+ * surface renders this value verbatim, so emit a clean label (never the raw
+ * snake_case enum). Unknown/nullable values pass through unchanged.
+ */
+function reviewOutcomeLabel(outcome: string | null | undefined): string | null {
+  if (!outcome) return null;
+  switch (outcome) {
+    case "needs_followup":
+      return "Needs follow-up";
+    case "looks_good":
+      return "Reviewed — within range";
+    case "repeat":
+      return "Repeat ordered";
+    case "routed_to_ma":
+      return "Routed to MA";
+    default:
+      return outcome;
+  }
+}
+
 /** True when a medication's notes describe an unmapped local vocabulary code. */
 function isUnmapped(notes: string | null | undefined): boolean {
   if (!notes) return false;
@@ -190,12 +211,12 @@ const FB_MEDICATIONS: MedicationRow[] = [
 const FB_LABS: LabRow[] = [
   {
     id: "ln-fb-l1", patientId: "ln-fb-p2", patientName: "Priya Nair", panelName: "HbA1c",
-    receivedAt: "2026-05-25T13:00:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-25T13:00:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [{ name: "Hemoglobin A1c", value: 8.9, unit: "%", abnormal: true }],
   },
   {
     id: "ln-fb-l2", patientId: "ln-fb-p2", patientName: "Priya Nair", panelName: "Comprehensive Metabolic Panel",
-    receivedAt: "2026-05-25T13:00:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-25T13:00:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [
       { name: "Glucose", value: 168, unit: "mg/dL", abnormal: true },
       { name: "Sodium", value: 139, unit: "mmol/L", abnormal: false },
@@ -206,7 +227,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l3", patientId: "ln-fb-p1", patientName: "Marcus Delgado", panelName: "Comprehensive Metabolic Panel",
-    receivedAt: "2026-05-31T12:30:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-31T12:30:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [
       { name: "Creatinine", value: 2.3, unit: "mg/dL", abnormal: true },
       { name: "eGFR", value: 38, unit: "mL/min", abnormal: true },
@@ -216,7 +237,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l4", patientId: "ln-fb-p1", patientName: "Marcus Delgado", panelName: "Lipid Panel",
-    receivedAt: "2026-05-31T12:30:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-31T12:30:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [
       { name: "Total cholesterol", value: 232, unit: "mg/dL", abnormal: true },
       { name: "LDL", value: 158, unit: "mg/dL", abnormal: true },
@@ -226,7 +247,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l5", patientId: "ln-fb-p4", patientName: "Sofia Romano", panelName: "Lipid Panel",
-    receivedAt: "2026-05-29T14:00:00.000Z", abnormalFlag: false, reviewOutcome: "looks_good",
+    receivedAt: "2026-05-29T14:00:00.000Z", abnormalFlag: false, reviewOutcome: "Reviewed — within range",
     markers: [
       { name: "Total cholesterol", value: 184, unit: "mg/dL", abnormal: false },
       { name: "LDL", value: 102, unit: "mg/dL", abnormal: false },
@@ -236,7 +257,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l6", patientId: "ln-fb-p3", patientName: "Andre Boucher", panelName: "Complete Blood Count",
-    receivedAt: "2026-05-20T11:45:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-20T11:45:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [
       { name: "WBC", value: 12.6, unit: "10^3/uL", abnormal: true },
       { name: "Hemoglobin", value: 13.4, unit: "g/dL", abnormal: false },
@@ -246,7 +267,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l7", patientId: "ln-fb-p7", patientName: "Daniel Kim", panelName: "Liver Panel",
-    receivedAt: "2026-05-23T15:15:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-05-23T15:15:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [
       { name: "ALT", value: 64, unit: "U/L", abnormal: true },
       { name: "AST", value: 58, unit: "U/L", abnormal: true },
@@ -256,7 +277,7 @@ const FB_LABS: LabRow[] = [
   },
   {
     id: "ln-fb-l8", patientId: "ln-fb-p8", patientName: "Elena Petrov", panelName: "HbA1c",
-    receivedAt: "2026-06-03T10:00:00.000Z", abnormalFlag: true, reviewOutcome: "needs_followup",
+    receivedAt: "2026-06-03T10:00:00.000Z", abnormalFlag: true, reviewOutcome: "Needs follow-up",
     markers: [{ name: "Hemoglobin A1c", value: 9.4, unit: "%", abnormal: true }],
   },
 ];
@@ -376,8 +397,10 @@ async function loadPatients(prisma: Prisma, orgId: string): Promise<PatientRow[]
       const risk = riskRaw ? coerceRisk(riskRaw) : riskFromScore(score);
       const enc = p.encounters[0];
       const lastWhen = enc?.completedAt ?? enc?.scheduledFor ?? null;
-      // Patient model has no sex column; surface "—" unless intake captured it.
-      const sex = jStr(ia, "sex") ?? jStr(ia, "gender") ?? "—";
+      // Patient model has no sex column; leave it blank unless intake captured it
+      // (the widget renders age+sex with no separator, so a placeholder would glue
+      // onto the age, e.g. "56—" instead of a clean "56").
+      const sex = jStr(ia, "sex") ?? jStr(ia, "gender") ?? "";
       return {
         name: `${p.firstName} ${p.lastName}`.trim(),
         id: p.id,
@@ -602,7 +625,7 @@ async function loadLabs(prisma: Prisma, orgId: string): Promise<LabRow[]> {
       panelName: l.panelName,
       receivedAt: iso(l.receivedAt),
       abnormalFlag: l.abnormalFlag,
-      reviewOutcome: l.reviewOutcome ?? null,
+      reviewOutcome: reviewOutcomeLabel(l.reviewOutcome),
       markers: parseLabMarkers(l.results),
     }));
   } catch {

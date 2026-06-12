@@ -50,12 +50,17 @@ export function LeafnerdApp(props: LeafnerdAppProps) {
     toastTimer.current = setTimeout(() => setToastMsg(null), 2600);
   }, []);
 
-  // ⌘K / Ctrl-K opens "Ask Leafnerd".
+  // Clear any pending toast timer on unmount so it never fires setState after
+  // the SPA route changes.
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // ⌘K / Ctrl-K opens "Ask Leafnerd" — open-only, matching the CommandBar and
+  // ai button (the panel has its own Escape-to-close + scrim).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setAskOpen((v) => !v);
+        setAskOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);

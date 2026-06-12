@@ -479,8 +479,11 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
   const matches = (x: FhirResource) =>
     !q || [x.type, x.label, x.patient, x.code, x.status].some(v => v.toLowerCase().includes(q));
   const visible = D.fhirResources.filter(matches);
+  const hasVisible = visible.length > 0;
   // The active resource follows the filter: if the current selection is filtered
   // out, fall back to the first visible match (never crashes when nothing matches).
+  // When nothing matches we still resolve a resource so derived state stays
+  // type-safe, but the center/right panes render an empty-state instead of it.
   const r = visible.find(x => x.id === activeId) || visible[0] || D.fhirResources[0];
 
   // Derived US-Core conformance checklist + counts for the active resource.
@@ -577,14 +580,24 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
               )}
               Normalized view
             </div>
-            <div className="wrap-gap">
-              <Badge tone="indigo" mono dot={false}>{r.type}</Badge>
-              {counts.err > 0 && <Badge tone="rose" dot={false}>{counts.err} error{counts.err === 1 ? "" : "s"}</Badge>}
-              {counts.warn > 0 && <Badge tone="amber" dot={false}>{counts.warn} warning{counts.warn === 1 ? "" : "s"}</Badge>}
-              {counts.err === 0 && counts.warn === 0 && <Badge tone="green" dot={false}>US Core validated</Badge>}
-            </div>
+            {hasVisible && (
+              <div className="wrap-gap">
+                <Badge tone="indigo" mono dot={false}>{r.type}</Badge>
+                {counts.err > 0 && <Badge tone="rose" dot={false}>{counts.err} error{counts.err === 1 ? "" : "s"}</Badge>}
+                {counts.warn > 0 && <Badge tone="amber" dot={false}>{counts.warn} warning{counts.warn === 1 ? "" : "s"}</Badge>}
+                {counts.err === 0 && counts.warn === 0 && <Badge tone="green" dot={false}>US Core validated</Badge>}
+              </div>
+            )}
           </div>
         </div>
+        {!hasVisible ? (
+          <div className="exp-body">
+            <div style={{ padding: "26px 4px", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+              No resource selected — clear the filter to browse.
+              <span className="link" style={{ marginLeft: 6, color: "var(--canopy)", cursor: "pointer" }} onClick={() => setQuery("")}>Clear filter</span>
+            </div>
+          </div>
+        ) : (
         <div className="exp-body">
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-.02em" }}>{r.label}</div>
@@ -658,6 +671,7 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* RIGHT — raw JSON / provenance / validation */}
@@ -669,7 +683,12 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
           </div>
         </div>
         <div style={{ padding: 16 }}>
-          {rtab === "raw" && <React.Fragment>
+          {!hasVisible && (
+            <div style={{ padding: "10px 0", fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+              No resource selected — clear the filter to browse.
+            </div>
+          )}
+          {hasVisible && rtab === "raw" && <React.Fragment>
             <div className="between" style={{ marginBottom: 10 }}>
               <span className="mono" style={{ fontSize: 11.5, color: "var(--muted)" }}>FHIR R4 · {r.type}</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -695,8 +714,8 @@ export function FhirExplorerSurface({ data = DEMO_DATA, toast }: { data?: Leafne
               <JsonValue k={null} value={r.json} depth={0} isLast allOpen={jsonAllOpen} />
             </div>
           </React.Fragment>}
-          {rtab === "prov" && <ProvSteps steps={r.provenance} />}
-          {rtab === "valid" && <React.Fragment>
+          {hasVisible && rtab === "prov" && <ProvSteps steps={r.provenance} />}
+          {hasVisible && rtab === "valid" && <React.Fragment>
             <div className="wrap-gap" style={{ marginBottom: 14 }}>
               <Badge tone="green" dot={false}>{counts.ok} passed</Badge>
               {counts.warn > 0 && <Badge tone="amber" dot={false}>{counts.warn} warning{counts.warn === 1 ? "" : "s"}</Badge>}

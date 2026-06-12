@@ -374,8 +374,12 @@ export function AnalyticsSurface({ toast }: { toast?: (m: string) => void }) {
               </div>
             </div>
             <Badge tone={deltaTone} dot={false}>
+              {/* Arrow follows the raw sign of the change; tone follows whether
+                  that change is an improvement (so a green "−10%" reads with a
+                  down arrow for lower-is-better measures, not a contradictory up
+                  arrow). */}
               <Icon
-                name={improved ? "trendUp" : "arrowDown"}
+                name={deltaPct >= 0 ? "trendUp" : "arrowDown"}
                 size={12}
               />
               {deltaLabel}

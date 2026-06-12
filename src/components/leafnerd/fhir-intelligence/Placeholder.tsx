@@ -13,19 +13,21 @@ export function Placeholder({ id }: { id: string }) {
     risk: "Stratify the panel by HCC and utilization models, with explainable drivers behind every score.",
     quality: "Track HEDIS & CMS measures with gap lists, provenance, and one-click outreach cohorts.",
   };
+  // Fall back to a humanized id so an unmapped surface never renders blank headings.
+  const label = titles[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
   return (
     <div className="page">
       <div className="page-head" style={{ marginBottom: 0 }}>
         <div>
-          <div className="eyebrow">{titles[id]}</div>
-          <h1 className="page-title">{titles[id]}</h1>
+          <div className="eyebrow">{label}</div>
+          <h1 className="page-title">{label}</h1>
         </div>
       </div>
       <div className="empty">
         <div>
           <div className="e-ic"><Icon name="layers" size={28} /></div>
-          <h3>{titles[id]} lives here</h3>
-          <p>{blurbs[id] || `The ${titles[id]} surface inherits the same aperture pattern — summary insight up top, consumable analytics in the middle, inspectable detail and provenance one click away.`}</p>
+          <h3>{label} lives here</h3>
+          <p>{blurbs[id] || `The ${label} surface inherits the same aperture pattern — summary insight up top, consumable analytics in the middle, inspectable detail and provenance one click away.`}</p>
           <div className="wrap-gap" style={{ justifyContent: "center" }}>
             <Badge tone="green" dot={false}>Same shell</Badge>
             <Badge tone="indigo" dot={false}>Provenance drawer</Badge>

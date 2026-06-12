@@ -18,7 +18,7 @@ export function OutcomeVelocityChart() {
       <div className="z-10 bg-bg/90 p-5 rounded-xl shadow-xl border border-border/10 text-center max-w-sm backdrop-blur-md animate-in fade-in zoom-in duration-700">
         <h4 className="font-bold text-text-strong text-sm flex items-center justify-center gap-2">
           <span className="w-2 h-2 rounded-full bg-accent-strong animate-pulse" />
-          Velocity Trajectory Live
+          Velocity Trajectory · Illustrative
         </h4>
         <p className="text-xs text-text-muted mt-2 leading-relaxed">
           Symptom reduction is actively outpacing prescription issuance by <strong className="text-accent-strong">2.4x</strong> across tracked patients in the current window.

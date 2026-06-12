@@ -24,6 +24,28 @@ interface ClaimsWorkbenchProps {
   initialAnomalies: Anomaly[];
 }
 
+// Map the raw ScrubStatus enum (clean | warnings | blocked) — plus the in-app
+// "Awaiting Provider" state set after a Contact Provider action — to friendly
+// labels and a display tone. Only "blocked" is a true clearinghouse error (red);
+// "warnings" / "clean" are advisory and "Awaiting Provider" is the post-action
+// waiting state, all of which read as warning (amber) rather than a red error.
+type StatusTone = "error" | "warning";
+
+const STATUS_LABELS: Record<string, string> = {
+  clean: "Passing",
+  warnings: "Needs review",
+  blocked: "Clearinghouse blocked",
+  "Awaiting Provider": "Awaiting clinician",
+};
+
+function statusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status;
+}
+
+function statusTone(status: string): StatusTone {
+  return status === "blocked" ? "error" : "warning";
+}
+
 export function ClaimsWorkbench({ initialAnomalies }: ClaimsWorkbenchProps) {
   const [anomalies, setAnomalies] = useState<Anomaly[]>(initialAnomalies);
   const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null);
@@ -104,7 +126,8 @@ export function ClaimsWorkbench({ initialAnomalies }: ClaimsWorkbenchProps) {
             const issue = (edits[0] as any)?.message || "Rule violation detected";
             const cptCodes = flag.claim?.cptCodes as any[];
             const code = cptCodes && cptCodes.length > 0 ? cptCodes[0]?.code : "99214";
-            
+            const tone = statusTone(flag.status);
+
             return (
               <div
                 key={flag.id}
@@ -113,16 +136,16 @@ export function ClaimsWorkbench({ initialAnomalies }: ClaimsWorkbenchProps) {
               >
                 <div className="flex items-center gap-5">
                   <div className={`w-12 h-12 rounded-lg font-mono font-bold flex items-center justify-center border transition-colors ${
-                    flag.status === "Awaiting Provider" 
-                      ? "bg-warning/10 text-warning border-warning/20" 
-                      : "bg-error/10 text-error border-error/20"
+                    tone === "error"
+                      ? "bg-error/10 text-error border-error/20"
+                      : "bg-warning/10 text-warning border-warning/20"
                   }`}>
                     {code}
                   </div>
                   <div>
                     <h4 className="font-bold text-text-strong group-hover:text-accent-strong transition-colors">{issue}</h4>
                     <p className="text-sm text-text-muted mt-1">
-                      Claim #{flag.claim?.claimNumber || flag.claimId.slice(0, 8)} • Status: <span className={flag.status === "Awaiting Provider" ? "text-warning font-semibold" : "text-error font-semibold"}>{flag.status}</span>
+                      Claim #{flag.claim?.claimNumber || flag.claimId.slice(0, 8)} • Status: <span className={tone === "error" ? "text-error font-semibold" : "text-warning font-semibold"}>{statusLabel(flag.status)}</span>
                     </p>
                   </div>
                 </div>
@@ -168,15 +191,15 @@ export function ClaimsWorkbench({ initialAnomalies }: ClaimsWorkbenchProps) {
               
               {/* Status Banner */}
               <div className={`p-4 rounded-xl border flex items-center gap-3 ${
-                selectedAnomaly.status === "Awaiting Provider"
-                  ? "bg-warning/5 border-warning/20 text-warning"
-                  : "bg-error/5 border-error/20 text-error"
+                statusTone(selectedAnomaly.status) === "error"
+                  ? "bg-error/5 border-error/20 text-error"
+                  : "bg-warning/5 border-warning/20 text-warning"
               }`}>
                 <span className="text-lg">⚠️</span>
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wider">Active Rule Flag</div>
                   <div className="text-sm font-semibold text-text-strong mt-0.5">
-                    {selectedAnomaly.status === "Awaiting Provider" ? "Awaiting Clinical Response" : "Clearinghouse Blocked"}
+                    {selectedAnomaly.status === "Awaiting Provider" ? "Awaiting Clinical Response" : statusLabel(selectedAnomaly.status)}
                   </div>
                 </div>
               </div>

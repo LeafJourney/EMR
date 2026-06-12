@@ -84,7 +84,14 @@ export function ConditionsSurface({ rows, openRecord, toast }: { rows?: Conditio
             </thead>
             <tbody>
               {data.map(row => (
-                <tr key={row.id} onClick={() => open(row)}>
+                <tr
+                  key={row.id}
+                  onClick={() => open(row)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(row); } }}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open ${row.patientName} — ${row.condition}`}
+                >
                   <td>
                     <div className="pt-name">{row.patientName}</div>
                     <div className="pt-id">{row.patientId}</div>

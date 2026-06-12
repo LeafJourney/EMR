@@ -69,8 +69,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Job action failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Keep internals server-side; return a generic message to the client.
+    console.error("leafnerd job-action failed", err);
+    return NextResponse.json({ error: "Action failed" }, { status: 500 });
   }
 }
 
@@ -90,7 +91,8 @@ export async function GET(req: Request) {
     const data = await getAgentJobLogs(jobId, user.organizationId ?? null);
     return NextResponse.json(data);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to load job logs";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Keep internals server-side; return a generic message to the client.
+    console.error("leafnerd job-action log fetch failed", err);
+    return NextResponse.json({ error: "Unable to load data" }, { status: 500 });
   }
 }

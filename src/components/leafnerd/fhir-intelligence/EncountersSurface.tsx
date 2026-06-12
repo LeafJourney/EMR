@@ -91,7 +91,22 @@ export function EncountersSurface({
   openRecord: (p: DrawerPayload) => void;
   toast?: (m: string) => void;
 }) {
-  const data = rows && rows.length ? rows : FALLBACK;
+  const all = rows && rows.length ? rows : FALLBACK;
+  const [last30, setLast30] = React.useState(true);
+  // Window the list to encounters scheduled within the last 30 days. Computed
+  // against the most recent scheduled date in the set so the filter behaves
+  // consistently regardless of the wall clock; rows with no/invalid date stay.
+  const within30 = (r: EncounterRow): boolean => {
+    if (!r.scheduledFor) return true;
+    const t = new Date(r.scheduledFor).getTime();
+    if (Number.isNaN(t)) return true;
+    const latest = all.reduce((max, e) => {
+      const et = e.scheduledFor ? new Date(e.scheduledFor).getTime() : NaN;
+      return Number.isNaN(et) ? max : Math.max(max, et);
+    }, Date.now());
+    return latest - t <= 30 * 24 * 60 * 60 * 1000;
+  };
+  const data = last30 ? all.filter(within30) : all;
   return (
     <div className="page">
       <div className="page-head">
@@ -106,8 +121,11 @@ export function EncountersSurface({
       </div>
       <div className="tbl-wrap">
         <div className="tbl-tools">
-          <button className="chip on">Last 30 days <span className="x">×</span></button>
+          {last30
+            ? <button className="chip on" onClick={() => setLast30(false)} title="Show all encounters">Last 30 days <span className="x">×</span></button>
+            : <button className="chip" onClick={() => setLast30(true)}><Icon name="filter" size={13} />Last 30 days</button>}
           <button className="chip" onClick={() => toast?.("Filter builder — add modality, status, or provider conditions")}><Icon name="plus" size={13} />Add filter</button>
+          <div style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--muted)" }}>{data.length} of {all.length}</div>
         </div>
         <div className="tbl-scroll">
           <table className="tbl">
@@ -135,6 +153,14 @@ export function EncountersSurface({
                   <td><span className="row-action"><Icon name="chevR" size={15} /></span></td>
                 </tr>
               ))}
+              {data.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: "20px 16px", color: "var(--muted)", fontSize: 12.5 }}>
+                    No encounters in the last 30 days.{" "}
+                    <span className="link" onClick={() => setLast30(false)}>Show all encounters</span>.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

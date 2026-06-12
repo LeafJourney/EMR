@@ -25,6 +25,11 @@ function severityLabel(severity: string): string {
   return severity.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Humanize raw snake_case categories (e.g. "symptom_trend" → "Symptom Trend").
+function categoryLabel(category: string): string {
+  return category.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -33,7 +38,14 @@ function fmtDate(iso: string | null): string {
 }
 
 function buildPayload(row: ObservationRow): DrawerPayload {
-  const valueText = row.value != null ? `${row.value}${row.unit ? ` ${row.unit}` : ""}` : null;
+  // UCUM annotation-only units (e.g. "{score}") read like a template placeholder
+  // on screen — render survey scores as "/10" and drop other bare annotations.
+  const displayUnit = row.unit && /^\{.*\}$/.test(row.unit)
+    ? (row.unit === "{score}" ? "/10" : "")
+    : row.unit;
+  const valueText = row.value != null
+    ? `${row.value}${displayUnit ? (displayUnit.startsWith("/") ? displayUnit : ` ${displayUnit}`) : ""}`
+    : null;
   return {
     kind: "record" as DrawerPayload["kind"],
     tag: "Observation",
@@ -42,7 +54,7 @@ function buildPayload(row: ObservationRow): DrawerPayload {
       <React.Fragment>
         {row.patientName}
         <span className="dotsep">·</span>
-        {row.category}
+        {categoryLabel(row.category)}
       </React.Fragment>
     ),
     render: () => (
@@ -53,7 +65,7 @@ function buildPayload(row: ObservationRow): DrawerPayload {
             <dl className="kv">
               <dt>Patient</dt><dd>{row.patientName}</dd>
               <dt>Summary</dt><dd>{row.summary}</dd>
-              <dt>Category</dt><dd>{row.category}</dd>
+              <dt>Category</dt><dd>{categoryLabel(row.category)}</dd>
               <dt>Severity</dt><dd><Badge tone={severityTone(row.severity)} dot={false}>{severityLabel(row.severity)}</Badge></dd>
               <dt>When</dt><dd>{fmtDate(row.createdAt)}</dd>
             </dl>
@@ -136,12 +148,20 @@ export function ObservationsSurface({
                     <div className="pt-id">{row.patientId}</div>
                   </td>
                   <td><span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{row.summary}</span></td>
-                  <td><span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{row.category}</span></td>
+                  <td><span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{categoryLabel(row.category)}</span></td>
                   <td><Badge tone={severityTone(row.severity)} dot={false}>{severityLabel(row.severity)}</Badge></td>
                   <td><span className="muted" style={{ fontSize: 12.5 }}>{fmtDate(row.createdAt)}</span></td>
                   <td><span className="row-action"><Icon name="chevR" size={15} /></span></td>
                 </tr>
               ))}
+              {data.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ padding: "20px 16px", color: "var(--muted)", fontSize: 12.5 }}>
+                    No observations at this severity.{" "}
+                    <span className="link" onClick={() => setNotableOnly(false)}>Show all severities</span>.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

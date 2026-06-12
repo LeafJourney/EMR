@@ -237,8 +237,10 @@ export async function POST(req: Request) {
   let grounding: Grounding;
   try {
     grounding = await loadGrounding(user.organizationId);
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "grounding_failed" }, { status: 500 });
+  } catch (err) {
+    // Keep DB/Prisma internals server-side; surface only a generic code to the client.
+    console.error("leafnerd grounding failed", err);
+    return NextResponse.json({ error: "grounding_failed" }, { status: 500 });
   }
 
   const prompt = buildPrompt(message, grounding);

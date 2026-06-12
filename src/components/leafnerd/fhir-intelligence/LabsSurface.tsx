@@ -77,6 +77,13 @@ const FALLBACK: LabRow[] = [
   },
 ];
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord: (p: DrawerPayload) => void }) {
   const all = rows && rows.length ? rows : FALLBACK;
   const [onlyAbnormal, setOnlyAbnormal] = React.useState(false);
@@ -103,7 +110,7 @@ export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord:
               <dl className="kv">
                 <dt>Patient</dt><dd>{row.patientName}</dd>
                 <dt>Panel</dt><dd>{row.panelName}</dd>
-                <dt>Received</dt><dd>{row.receivedAt ?? "—"}</dd>
+                <dt>Received</dt><dd>{fmtDate(row.receivedAt)}</dd>
                 <dt>Flag</dt><dd>{row.abnormalFlag ? <Badge tone="rose" dot={false}>abnormal</Badge> : <Badge tone="green" dot={false}>normal</Badge>}</dd>
                 <dt>Review</dt><dd>{row.reviewOutcome ?? "—"}</dd>
               </dl>
@@ -166,7 +173,7 @@ export function LabsSurface({ rows, openRecord }: { rows?: LabRow[]; openRecord:
                     <div className="pt-id">{row.patientId}</div>
                   </td>
                   <td><span style={{ fontSize: 12.5, color: "var(--ink)" }}>{row.panelName}</span></td>
-                  <td><span className="muted" style={{ fontSize: 12.5 }}>{row.receivedAt ?? "—"}</span></td>
+                  <td><span className="muted" style={{ fontSize: 12.5 }}>{fmtDate(row.receivedAt)}</span></td>
                   <td>{row.abnormalFlag ? <Badge tone="rose" dot={false}>abnormal</Badge> : <Badge tone="green" dot={false}>normal</Badge>}</td>
                   <td><span style={{ fontSize: 12, color: "var(--ink-2)" }}>{row.reviewOutcome ?? "—"}</span></td>
                   <td><span className="row-action"><Icon name="chevR" size={15} /></span></td>

@@ -138,6 +138,11 @@ function ImpactList({ items }: { items?: string[] }) {
 
 export function Drawer({ payload, onClose, toast }: { payload: DrawerPayload; onClose: () => void; toast: (m: string) => void }) {
   const [tab, setTab] = React.useState(payload.tab || "summary");
+  // The drawer instance is reused across opens (same key/position), so reset to
+  // the new payload's default tab whenever the payload changes — otherwise a
+  // record-kind drawer can inherit a tab id its tab row doesn't include and
+  // appear to have no selected tab.
+  React.useEffect(() => { setTab(payload.tab || "summary"); }, [payload]);
   React.useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);

@@ -1,8 +1,11 @@
 import { getCurrentUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
+import type { Prisma } from "@prisma/client";
 import { ClaimsWorkbench } from "@/components/leafnerd/ClaimsWorkbench";
 import Link from "next/link";
+
+type ScrubWithClaim = Prisma.ClaimScrubResultGetPayload<{ include: { claim: true } }>;
 
 export default async function ClaimsPage() {
   const user = await getCurrentUser();
@@ -17,15 +20,46 @@ export default async function ClaimsPage() {
     redirect("/leafnerd");
   }
 
-  // Fetch anomalies along with their claims details to display in the workbench
-  const anomalies = await prisma.claimScrubResult.findMany({
-    include: {
-      claim: true
-    },
-    orderBy: {
-      scrubbedAt: 'desc'
+  // Resolve the demo org so the workbench is scoped to a single tenant — mirrors
+  // the live SPA page.tsx, which scopes its claims overlay to the demo org and
+  // never aggregates across tenants. On any failure we fall back to no org id
+  // (and therefore no anomalies) rather than leaking other tenants' claims.
+  let demoOrgId: string | null = null;
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { slug: "leafnerd-demo" },
+      select: { id: true }
+    });
+    demoOrgId = org?.id ?? null;
+  } catch {
+    demoOrgId = null;
+  }
+
+  // Fetch anomalies along with their claims details to display in the workbench.
+  // Scoped to the demo org and filtered to genuinely-flagged statuses (warnings /
+  // blocked) so clean scrubs don't inflate the flagged count or block the
+  // "All anomalies resolved" empty state. Wrapped in try/catch with an
+  // empty-array fallback so a DB error renders the empty state, not a 500.
+  let anomalies: ScrubWithClaim[] = [];
+  if (demoOrgId) {
+    try {
+      anomalies = await prisma.claimScrubResult.findMany({
+        where: {
+          status: { in: ['warnings', 'blocked'] },
+          claim: { is: { organizationId: demoOrgId } }
+        },
+        include: {
+          claim: true
+        },
+        orderBy: {
+          scrubbedAt: 'desc'
+        },
+        take: 25
+      });
+    } catch {
+      anomalies = [];
     }
-  });
+  }
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

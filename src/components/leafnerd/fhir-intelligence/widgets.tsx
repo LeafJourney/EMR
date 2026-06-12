@@ -252,13 +252,34 @@ export function InsightCard({ ins, onEvidence, toast }: { ins: Insight; onEviden
   );
 }
 
+// Severity rank so the "Risk" column sorts by clinical severity rather than
+// alphabetically (otherwise "Low" sorts above "Moderate").
+const RISK_RANK: Record<RiskLevel, number> = { Critical: 0, High: 1, Moderate: 2, Low: 3 };
+// Parse a relative "last encounter" string ("2d", "3w", "6mo") to a day count so
+// the column sorts chronologically rather than as raw text.
+function lastEncDays(s: string): number {
+  const m = /(\d+)\s*(mo|wk|w|d|m|y)/i.exec(s || "");
+  if (!m) return 14;
+  const n = parseInt(m[1], 10);
+  const u = m[2].toLowerCase();
+  if (u === "d") return n;
+  if (u === "w" || u === "wk") return n * 7;
+  if (u === "mo" || u === "m") return n * 30;
+  if (u === "y") return n * 365;
+  return n;
+}
+
 export function PatientTable({ patients, onOpen, toast }: { patients: PatientRow[]; onOpen: (p: PatientRow) => void; toast?: (m: string) => void }) {
   const [dense, setDense] = React.useState(false);
   const [riskFilter, setRiskFilter] = React.useState(true);
   const [sort, setSort] = React.useState<{ key: keyof PatientRow; dir: number }>({ key: "score", dir: -1 });
   const filtered = riskFilter ? patients.filter(p => p.risk !== "Low") : patients;
+  // Normalize ordinal columns (risk severity, relative dates) before comparing so
+  // they sort by meaning rather than as raw strings.
+  const norm = (k: keyof PatientRow, v: PatientRow[keyof PatientRow]): string | number =>
+    k === "risk" ? RISK_RANK[v as RiskLevel] : k === "lastEnc" ? lastEncDays(String(v)) : (v as string | number);
   const sorted = [...filtered].sort((a, b) => {
-    const av = a[sort.key], bv = b[sort.key];
+    const av = norm(sort.key, a[sort.key]), bv = norm(sort.key, b[sort.key]);
     return (av < bv ? -1 : av > bv ? 1 : 0) * sort.dir;
   });
   const setSortKey = (k: keyof PatientRow) => setSort(s => s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: -1 });
@@ -290,15 +311,36 @@ export function PatientTable({ patients, onOpen, toast }: { patients: PatientRow
         <table className={`tbl ${dense ? "dense" : ""}`}>
           <thead>
             <tr>
-              {cols.map(c => <th key={c.k} onClick={() => setSortKey(c.k)} style={{ textAlign: c.num ? "right" : "left" }}>
+              {cols.map(c => <th
+                key={c.k}
+                onClick={() => setSortKey(c.k)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSortKey(c.k); } }}
+                tabIndex={0}
+                role="button"
+                aria-label={`Sort by ${c.t}`}
+                style={{ textAlign: c.num ? "right" : "left" }}
+              >
                 {c.t}<span className="sortcaret">{caret(c.k)}</span>
               </th>)}
               <th style={{ width: 32 }}></th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map(p => (
-              <tr key={p.id} onClick={() => onOpen(p)}>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={cols.length + 1} style={{ textAlign: "center", padding: "32px", color: "var(--muted)" }}>
+                  No patients match the current filter
+                </td>
+              </tr>
+            ) : sorted.map(p => (
+              <tr
+                key={p.id}
+                onClick={() => onOpen(p)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(p); } }}
+                tabIndex={0}
+                role="button"
+                aria-label={`Open ${p.name} — ${p.risk} risk`}
+              >
                 <td>
                   <div className="pt-name">{p.name}</div>
                   <div className="pt-id">{p.id} · {p.age}{p.sex}</div>

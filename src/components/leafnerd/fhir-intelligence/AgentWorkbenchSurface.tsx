@@ -400,6 +400,8 @@ export function AgentWorkbenchSurface({
         return { paused: true }; // stays "running" underneath; parked server-side
       case "retry":
         return { status: "running", paused: false, completedAt: null };
+      default:
+        return {}; // exhaustiveness guard — unknown actions are a harmless no-op
     }
   };
 

@@ -14,9 +14,27 @@ export function CommandBar({
 }) {
   return (
     <header className="cmdbar">
-      <div className="search" onClick={onAsk} style={{ cursor: "text" }}>
+      <div
+        className="search"
+        onClick={onAsk}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onAsk?.();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label="Ask Leafnerd, or search patients & resources"
+        style={{ cursor: "text" }}
+      >
         <Icon name="search" size={16} />
-        <input placeholder="Ask Leafnerd, or search patients & resources…" readOnly />
+        <input
+          placeholder="Ask Leafnerd, or search patients & resources…"
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+        />
         <span className="kbd">⌘K</span>
       </div>
       <div className="cmd-spacer"></div>

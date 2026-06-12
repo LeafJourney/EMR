@@ -91,6 +91,9 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
   const D = data;
   const volLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
   const volData = [1.21, 1.30, 1.28, 1.44, 1.66, 1.84];
+  // Drive the completeness gauge from the metric so it matches the card and the
+  // headline copy ("rose to 92.4%") instead of a hardcoded integer.
+  const completeness = parseFloat(D.metrics.find(m => m.id === "completeness")?.value ?? "92") || 92;
   return (
     <div className="page">
       <div className="page-head">
@@ -147,7 +150,7 @@ export function OverviewSurface({ data = DEMO_DATA, openDrawer, toast }: { data?
         <div className="card card-pad">
           <div style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: "-.01em" }}>Data completeness</div>
           <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "12px 0 16px" }}>
-            <Gauge value={92} label="overall" />
+            <Gauge value={completeness} label="overall" />
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
               6 of 7 domains exceed 85%. <b>Social history</b> lags at 61% and caps the composite score.
             </div>

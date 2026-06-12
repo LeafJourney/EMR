@@ -445,7 +445,8 @@ function CareGapDrawer({
 
   const shown = reachableOnly ? roster.filter((p) => p.reachable) : roster;
   const reachableRows = roster.filter((p) => p.reachable);
-  const allReachableQueued = reachableRows.length > 0 && reachableRows.every((p) => outreach[p.id] === "sent");
+  const reachableCount = reachableRows.length;
+  const allReachableQueued = reachableCount > 0 && reachableRows.every((p) => outreach[p.id] === "sent");
 
   return (
     <React.Fragment>
@@ -487,8 +488,14 @@ function CareGapDrawer({
           <div className="norm-section">
             <div className="between" style={{ marginBottom: 9, alignItems: "center" }}>
               <div className="nh" style={{ margin: 0 }}>Patients missing this screening</div>
-              <label className="qm-filter" onClick={() => setReachableOnly((v) => !v)}>
-                <span className={`qm-toggle ${reachableOnly ? "on" : ""}`}></span>
+              <label className="qm-filter">
+                <input
+                  type="checkbox"
+                  checked={reachableOnly}
+                  onChange={(e) => setReachableOnly(e.target.checked)}
+                  style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 }}
+                />
+                <span className={`qm-toggle ${reachableOnly ? "on" : ""}`} aria-hidden></span>
                 Reachable only
               </label>
             </div>
@@ -510,16 +517,22 @@ function CareGapDrawer({
 
           <button
             className="insight-action"
-            style={{ width: "100%", justifyContent: "center", opacity: allReachableQueued ? 0.75 : 1 }}
-            disabled={bulkSending || allReachableQueued}
+            style={{ width: "100%", justifyContent: "center", opacity: allReachableQueued || reachableCount === 0 ? 0.75 : 1 }}
+            disabled={bulkSending || allReachableQueued || reachableCount === 0}
             onClick={() => onRemindAll(roster)}
           >
-            {bulkSending ? <Spinner /> : allReachableQueued ? <Icon name="check" size={15} /> : <Icon name="users" size={15} />}
+            {bulkSending
+              ? <Spinner />
+              : allReachableQueued || reachableCount === 0
+                ? <Icon name="check" size={15} />
+                : <Icon name="users" size={15} />}
             {bulkSending
               ? "Queuing outreach…"
-              : allReachableQueued
-                ? "All reachable patients queued"
-                : `Queue outreach · ${m.reachable.toLocaleString()} reachable`}
+              : reachableCount === 0
+                ? "No reachable patients"
+                : allReachableQueued
+                  ? "All reachable patients queued"
+                  : `Queue outreach · ${m.reachable.toLocaleString()} reachable`}
           </button>
         </div>
       </aside>
@@ -583,7 +596,9 @@ function MeasureCard({
               <span>Rate trend</span>
               <span className="tnum">{m.trend.length} periods</span>
             </div>
-            <Sparkline data={m.trend} color={s.color} w={150} h={32} />
+            {m.trend.length > 0
+              ? <Sparkline data={m.trend} color={s.color} w={150} h={32} />
+              : <span className="muted" style={{ fontSize: 11.5 }}>no trend data</span>}
           </div>
         </div>
       </div>
@@ -637,7 +652,9 @@ export function QualitySurface({
 
   const [open, setOpen] = React.useState<QualityMeasureRow | null>(null);
   const [outreach, setOutreach] = React.useState<Record<string, OutreachStatus>>({});
-  const [bulkSending, setBulkSending] = React.useState(false);
+  // Keyed by measure id so an in-flight bulk send never bleeds into another
+  // measure's drawer when the user re-navigates within the ~1.2s send window.
+  const [bulkSendingId, setBulkSendingId] = React.useState<string | null>(null);
   const [allSending, setAllSending] = React.useState(false);
   const timers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
   React.useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
@@ -652,10 +669,10 @@ export function QualitySurface({
   };
 
   const remindAll = (roster: GapPatient[], m: QualityMeasureRow) => {
-    if (bulkSending) return;
+    if (bulkSendingId) return;
     const keys = roster.filter((p) => p.reachable).map((p) => p.id);
     if (!keys.length) return;
-    setBulkSending(true);
+    setBulkSendingId(m.id);
     setOutreach((o) => {
       const next = { ...o };
       keys.forEach((k) => { if (next[k] !== "sent") next[k] = "sending"; });
@@ -667,7 +684,7 @@ export function QualitySurface({
         keys.forEach((k) => { next[k] = "sent"; });
         return next;
       });
-      setBulkSending(false);
+      setBulkSendingId(null);
       toast?.(`Queued outreach for ${m.reachable.toLocaleString()} reachable patients — ${m.abbrev}`);
     }, 1200));
   };
@@ -768,7 +785,7 @@ export function QualitySurface({
           outreach={outreach}
           onRemind={remindOne}
           onRemindAll={(roster) => remindAll(roster, open)}
-          bulkSending={bulkSending}
+          bulkSending={bulkSendingId === open.id}
           onClose={() => setOpen(null)}
         />
       )}

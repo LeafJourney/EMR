@@ -54,6 +54,20 @@ function coerceLogLines(raw: unknown): AgentLogLine[] {
   return out.slice(-40); // keep the tail so chatty jobs stay small over the wire
 }
 
+/**
+ * Coerce an AgentReasoning.sources Json blob into evidence-chip labels. The
+ * schema default is an object-of-arrays map (e.g. `{ memories: [...] }`) whose
+ * keys read as labels, but a row may instead store a top-level array of label
+ * strings. Arrays are objects in JS, so `Object.keys` on an array yields bare
+ * indices ("0","1","2") — handle the array shape explicitly so chips stay
+ * readable, and fall back to keys only for the documented map shape.
+ */
+function reasoningSources(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (raw && typeof raw === "object") return Object.keys(raw);
+  return [];
+}
+
 // --- Curated fallback (representative governed actions) --------------------
 const FALLBACK_JOBS: AgentJobRow[] = [
   {
@@ -206,7 +220,10 @@ export async function getAgentWorkbenchData(): Promise<AgentWorkbenchData> {
         reasoning: re
           ? {
               steps: Array.isArray(re.steps) ? (re.steps as unknown[]).length : 0,
-              sources: re.sources && typeof re.sources === "object" ? Object.keys(re.sources as object) : [],
+              // sources may be an array of label strings (UI chip shape) or the
+              // documented object-of-arrays map; keep array labels intact and
+              // only fall back to keys for the map, never emit bare indices.
+              sources: reasoningSources(re.sources),
               confidence: re.confidence ?? null,
               summary: re.summary ?? null,
             }

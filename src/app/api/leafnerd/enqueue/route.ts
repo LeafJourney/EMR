@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 
 /**
@@ -20,6 +21,19 @@ const ACTION_MAP: Record<string, { workflowName: string; agentName: string }> = 
 };
 
 export async function POST(req: Request) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message ?? "Unauthorized" }, { status: 401 });
+  }
+
+  // Authorize via the Clerk session roles (user.roles) — same gate as the sibling routes.
+  const hasAccess = user.roles.some((r) => r === "leafnerd" || r === "super_admin");
+  if (!hasAccess) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   try {
     const body = (await req.json().catch(() => ({}))) as {
       kind?: string;
@@ -54,7 +68,8 @@ export async function POST(req: Request) {
       job,
       message: "Queued for human approval — governed action, autonomy off.",
     });
-  } catch {
-    return NextResponse.json({ ok: false, message: "Could not enqueue job." }, { status: 200 });
+  } catch (err) {
+    console.error("leafnerd enqueue failed", err);
+    return NextResponse.json({ ok: false, message: "Could not enqueue job." }, { status: 500 });
   }
 }
