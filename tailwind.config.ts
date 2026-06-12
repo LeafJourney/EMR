@@ -51,6 +51,14 @@ const config: Config = {
         warning: "var(--warning)",
         danger: "var(--danger)",
         info: "var(--info)",
+        // Status accents — Fleet Command Directive (EMR-1160).
+        // Usage: bg-status-positive-bg text-status-positive-fg, etc.
+        "status-positive-bg": "var(--status-positive-bg)",
+        "status-positive-fg": "var(--status-positive-fg)",
+        "status-alert-bg": "var(--status-alert-bg)",
+        "status-alert-fg": "var(--status-alert-fg)",
+        "status-link-bg": "var(--status-link-bg)",
+        "status-link-fg": "var(--status-link-fg)",
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
