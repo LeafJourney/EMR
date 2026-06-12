@@ -372,6 +372,7 @@ model Patient {
   // Agentic memory harness
   memories                 PatientMemory[]
   observations             ClinicalObservation[]
+  cdsAcknowledgements       CdsAcknowledgement[]
   referrals                Referral[]
   signedConsents           SignedConsent[]
   complianceForms          StateComplianceForm[]
@@ -2165,6 +2166,38 @@ model ClinicalObservation {
   // doesn't filter by category or severity, so neither covers the
   // ordering. Index audit 2026-05-09.
   @@index([patientId, createdAt])
+}
+
+/// EMR-166 follow-on — persisted Clinical Decision Support sign-offs.
+/// Dr. Patel: once a provider acknowledges a CDS suggestion it should be
+/// "placed in chart and then not have to be acknowledged again for another
+/// 30-90 days based on urgency/severity." Critical alerts cannot be dismissed
+/// and require a justification; warning/info can be dismissed.
+///
+/// The alert itself is generated deterministically each render (see
+/// generateCDSAlerts) with an index-based id, so acks are keyed by the
+/// stable content-derived `alertKey` ("<category>::<title>") instead.
+model CdsAcknowledgement {
+  id               String   @id @default(cuid())
+  patientId        String
+  /// Stable key derived from alert content, NOT the volatile index-based id.
+  alertKey         String
+  severity         String // "critical" | "warning" | "info"
+  action           String // "acknowledge" | "dismiss"
+  /// Required justification for critical acknowledgements; optional otherwise.
+  comment          String?
+  /// Authenticated user who signed off (string id, mirroring
+  /// ClinicalObservation.acknowledgedBy — no User relation needed).
+  acknowledgedById String
+  acknowledgedAt   DateTime @default(now())
+  /// Suppress re-prompting this alert until this time. Shorter for more
+  /// urgent severities (critical 30d / warning 60d / info 90d).
+  snoozeUntil      DateTime
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, alertKey])
+  @@index([patientId, snoozeUntil])
 }
 
 model AgentReasoning {

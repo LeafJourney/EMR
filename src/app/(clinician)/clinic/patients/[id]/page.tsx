@@ -38,6 +38,7 @@ import { checkInteractions, getSeverityLabel, type DrugInteraction } from "@/lib
 import { InteractionBadge } from "@/components/ui/interaction-badge";
 import { generateCDSAlerts } from "@/lib/domain/clinical-decision-support";
 import { CDSPanel } from "./cds-panel";
+import { loadActiveCdsAcks } from "./cds-actions";
 import { TagManager } from "./tag-manager";
 import { PatientAvatar } from "./patient-avatar";
 import { HeaderContact } from "./header-contact";
@@ -566,6 +567,17 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
     })),
   });
 
+  // EMR-166 follow-on — persisted CDS acknowledgements (still within their
+  // snooze window) so signed-off alerts stay signed-off across reloads. Only
+  // queried when there are alerts to suppress.
+  const cdsAcks =
+    cdsAlerts.length > 0
+      ? await loadActiveCdsAcks(params.id).catch((err) => {
+          logger.error({ event: "clinic.patient_chart.cds_acks_failed", err: String(err) });
+          return [];
+        })
+      : [];
+
   /* ── Birthday check (EMR-780) ────────────────────────────── */
   const isBirthday = (() => {
     if (!patient.dateOfBirth) return false;
@@ -961,6 +973,8 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
           <CDSPanel
             alerts={cdsAlerts}
             patientName={`${patient.firstName} ${patient.lastName}`}
+            patientId={params.id}
+            initialAcks={cdsAcks}
           />
         </div>
       )}

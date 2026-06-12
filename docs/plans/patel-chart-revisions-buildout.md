@@ -21,7 +21,7 @@
 - **Main front page:** sticky compact patient strip on scroll (name · age,sex · phone · email · 💊Rx) + fixed tab bar · large **Prescribe (Rx)** button → `/prescribe` · **Prepare for visit → "Ask Cindy (AI Helper)"** · grab-cursor → pointer · Demographics hover → 1-2 pertinent facts · **"Financial cockpit" → "Billing"** tab · Notes hover → "N notes / N attestations pending" · Correspondence hover peek removed.
 - **Prepare / Cindy:** Cindy-branded idle copy · "Patient briefing" → **"Patient's Story"** · "Start visit with briefing" → **"Start Visit"** · risk-flags expand · Step-6 → "Cindy is at work!" · Intelligence Details red/yellow/green stratification + dynamic symptom-trend coloring.
 - **Open Tasks:** 48-hour reappear timer · collapse/expand toggle · message rows → `/clinic/messages`.
-- **Decision Support:** green high-contrast Acknowledge button · section collapse. *(gating/password/persistence deferred — see below.)*
+- **Decision Support:** green high-contrast Acknowledge + beige Dismiss · section collapse · **persisted acknowledgements** — new `CdsAcknowledgement` Prisma model (keyed by a stable `<category>::<title>` alertKey, since alert ids are volatile), `loadActiveCdsAcks`/`acknowledgeCdsAlert` server actions, 30/60/90-day snooze-by-severity so sign-offs survive reloads. **Critical alerts can't be dismissed and require a written justification** (modal, ≥10 chars, attributed to the authenticated user — no fake password gate, since Clerk auth has no in-app password to verify). Table pushed live via `db push`.
 - **Demographics:** phone-above-email · USPSTF in-app webview modal + attribution.
 - **Memory:** "notable" severity retired · emoji-only trend-bubble toggle.
 - **Records:** dual-bubble modality+body-part · Save→real download · per-subtab search · Send compose modal · e-signed type filter.
@@ -32,7 +32,7 @@
 - **Billing:** "Billing" eyebrow · "Out-of-Pocket Max" · "Cindy says:" · clickable patient name · sent=green · ACH/Bitcoin payment fields · collapsible statement tiles.
 - **Prescribe:** the one-screen redo (Medication left / Dosing+Notes right, dropdown+freehand dose/unit/freq/days, pharmacy popup, preview modal) was **already built** (EMR-883..893); this session added the two remaining safe diagnosis gaps — **collapsible + optional Diagnosis** section and an **ICD-10 freehand typeahead** (`src/lib/clinical/icd10-common.ts`, ~140 curated codes; "M54" → M54.5/M54.2/M54.9; also accepts any free-typed code) feeding the existing `diagnosisCodes` the action persists. *(DAW / PRN-reason intentionally skipped — the server action doesn't read them, so UI-only would be hollow.)*
 
-**Deferred (need their own scoped pass — NOT silently stubbed):** the big rocks above, plus Decision-Support critical-gating + persisted acknowledgements (Prisma model), the Prescribe one-screen UX redo, voice-chart save-as-draft + password finalize, Tasks/CDS-as-ribbon-tabs (an information-architecture decision), and Rx schema items (real ICD-10 + pharmacy fields, dose-log emoji persistence).
+**Deferred (need their own scoped pass — NOT silently stubbed):** the big rocks above, plus voice-chart save-as-draft + password finalize, Tasks/CDS-as-ribbon-tabs (an information-architecture decision), and Rx schema items (real ICD-10 + pharmacy fields, dose-log emoji persistence). *(Decision-Support critical-gating + persisted acknowledgements — shipped this session, see above.)*
 
 ## Surface scorecard
 
