@@ -60,6 +60,15 @@ import {
   assessHighRiskAttestation,
   psychiatricComorbidityLabels,
 } from "./high-risk-attestation";
+import type {
+  GuardrailFinding,
+  RxSafetyEvaluation,
+} from "@/lib/clinical/rx-safety/types";
+import {
+  RxGuardrailCard,
+  type GuardrailAdjustment,
+} from "./rx-guardrail-card";
+import { evaluateDraftRxAction, acceptRxSafetyRecommendationAction } from "./rx-safety-actions";
 
 /* ── Types ──────────────────────────────────────────────────── */
 
@@ -203,13 +212,27 @@ const MED_CLASS_TONE: Record<MedClass, "neutral" | "highlight" | "success" | "in
 
 /* ── Submit button ──────────────────────────────────────────── */
 
-function SubmitButton({ disabled }: { disabled?: boolean }) {
+function SubmitButton({
+  disabled,
+  alert,
+}: {
+  disabled?: boolean;
+  /** EMR-1135 — the order button changes color while a guardrail
+   *  modification recommendation is pending (Phase 6, status tokens). */
+  alert?: boolean;
+}) {
   const { pending } = useFormStatus();
   return (
     <Button
       type="submit"
       size="lg"
-      className="rounded-xl h-12 px-8 font-semibold"
+      variant={alert ? "secondary" : "primary"}
+      className={cn(
+        "rounded-xl h-12 px-8 font-semibold",
+        alert &&
+          "bg-status-alert-bg text-status-alert-fg border-[color:var(--status-alert-fg)]/30 " +
+            "hover:bg-status-alert-bg hover:text-status-alert-fg hover:border-[color:var(--status-alert-fg)]/50",
+      )}
       disabled={pending || disabled}
     >
       {pending ? "Signing & sending..." : "Sign & send ℞"}
@@ -519,6 +542,131 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     interactions.some((i) => i.severity === "red" || i.severity === "yellow") &&
     !visibleSafetyBoxes.some((b) => b.tier === "red" || b.tier === "yellow");
 
+  /* ── Ambient Optimization Canvas (EMR-1131/EMR-1135) ──────────
+     Guardrail engine evaluation of the drafted order against the patient's
+     multi-omic profile (PGx / organ clearance / botanical). Runs debounced
+     ~400ms after the drug name or dose configuration settles; findings render
+     as the inline card beside the medication fields — never a pop-up. */
+  const draftDrugName = selectedProduct
+    ? selectedProduct.name
+    : customProductName.trim();
+
+  // Structured total daily dose in mg, when the form can compute it.
+  const draftDailyDoseMg = useMemo(() => {
+    const dose = parseFloat(doseValue);
+    if (!Number.isFinite(dose) || dose <= 0) return undefined;
+    if (unitValue.trim().toLowerCase() !== "mg") return undefined;
+    return dose * frequencyPerDay;
+  }, [doseValue, unitValue, frequencyPerDay]);
+
+  const draftFrequency = freqMode === "free" ? freqFreeText.trim() : freqLabel;
+
+  const [rxSafety, setRxSafety] = useState<RxSafetyEvaluation | null>(null);
+  const [rxSafetyEvaluating, setRxSafetyEvaluating] = useState(false);
+  const [rxSafetyAccepting, setRxSafetyAccepting] = useState(false);
+  // Monotonic sequence guards against out-of-order responses.
+  const rxSafetySeq = useRef(0);
+
+  useEffect(() => {
+    if (!draftDrugName || draftDrugName.length < 3) {
+      rxSafetySeq.current += 1;
+      setRxSafety(null);
+      setRxSafetyEvaluating(false);
+      return;
+    }
+    const seq = ++rxSafetySeq.current;
+    setRxSafetyEvaluating(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await evaluateDraftRxAction(patientId, {
+          drugName: draftDrugName,
+          dose: `${doseValue} ${unitValue}`.trim(),
+          route: productType.trim() || undefined,
+          frequency: draftFrequency || undefined,
+          dailyDoseMg: draftDailyDoseMg,
+        });
+        if (seq !== rxSafetySeq.current) return;
+        setRxSafety(res.ok ? res.evaluation : null);
+      } catch {
+        if (seq === rxSafetySeq.current) setRxSafety(null);
+      } finally {
+        if (seq === rxSafetySeq.current) setRxSafetyEvaluating(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    patientId,
+    draftDrugName,
+    doseValue,
+    unitValue,
+    productType,
+    draftFrequency,
+    draftDailyDoseMg,
+  ]);
+
+  const rxSafetyBlocking = rxSafety?.hasBlockingFinding ?? false;
+  // Hard stops disable signing entirely until the conflict is resolved
+  // (swap accepted or medication changed → re-evaluation clears the card).
+  const rxSafetyHardStop =
+    rxSafety?.findings.some((f) => f.kind === "hard_stop") ?? false;
+
+  const rxAdjustmentContext = useMemo(
+    () => ({ doseValue, unitValue, frequencyPerDay }),
+    [doseValue, unitValue, frequencyPerDay],
+  );
+
+  // One-click accept — applies the suggested swap/dose adjustment into the
+  // DRAFT fields only (provider still signs), records the acceptance in the
+  // chart ledger + server AuditLog, and lets the debounced effect re-run the
+  // evaluation so the card clears itself.
+  function handleGuardrailAccept(
+    finding: GuardrailFinding,
+    adjustment: GuardrailAdjustment,
+  ) {
+    const before = {
+      drugName: draftDrugName,
+      dose: `${doseValue} ${unitValue}`.trim(),
+    };
+    let after = before;
+    if (adjustment.type === "swap") {
+      setSelectedProductId("");
+      setCustomProductName(adjustment.drugName);
+      setMedQuery(adjustment.drugName);
+      after = { ...before, drugName: adjustment.drugName };
+    } else {
+      setDoseMode("free");
+      setDoseValue(adjustment.dose);
+      if (adjustment.unit && adjustment.unit !== unitValue) {
+        setUnitMode("preset");
+        setUnitValue(adjustment.unit);
+      }
+      setQuantityManual(false); // let quantity re-derive from the new dose
+      after = {
+        ...before,
+        dose: `${adjustment.dose} ${adjustment.unit || unitValue}`.trim(),
+      };
+    }
+
+    ledger.record({
+      kind: "acknowledge",
+      source: "Rx guardrail",
+      subject: `${finding.ruleId} — ${adjustment.label}`,
+      justification: finding.recommendation,
+    });
+
+    setRxSafetyAccepting(true);
+    void acceptRxSafetyRecommendationAction(patientId, {
+      ruleId: finding.ruleId,
+      kind: finding.kind,
+      layer: finding.layer,
+      recommendation: finding.recommendation,
+      adjustmentLabel: adjustment.label,
+      before,
+      after,
+      requiredFollowUp: finding.requiredFollowUp ?? [],
+    }).finally(() => setRxSafetyAccepting(false));
+  }
+
   /* ── CURES attestation (EMR-889) ──────────────────────────── */
   const CURES_ATTESTATIONS = [
     "Queried the CURES/PDMP database for this patient.",
@@ -611,6 +759,8 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
     !pharmacy ||
     unresolvedRed ||
     mustAckContraindication ||
+    // EMR-1135: hard-stop guardrail findings disable signing until resolved.
+    rxSafetyHardStop ||
     (isControlled && !curesAcknowledged) ||
     (highRiskAttestationRequired && !highRiskAcknowledged);
 
@@ -855,7 +1005,8 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
 
       {/* ── EMR-883: 2-column window (Medication | Dosing+Notes) ─ */}
       <div className="grid gap-4 lg:grid-cols-2 items-start">
-        {/* LEFT — Medication */}
+        {/* LEFT — Medication + Ambient Optimization Canvas */}
+        <div className="space-y-4">
         <Card className="rounded-2xl bg-white border-border/60 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2 flex-wrap">
@@ -1021,6 +1172,18 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
             </div>
           </CardContent>
         </Card>
+
+        {/* EMR-1131/EMR-1135 — inline optimization card beside the
+            medication fields. Renders nothing for a clean order; height
+            animates so the column never jumps. */}
+        <RxGuardrailCard
+          evaluation={rxSafety}
+          evaluating={rxSafetyEvaluating}
+          adjustmentContext={rxAdjustmentContext}
+          onAccept={handleGuardrailAccept}
+          accepting={rxSafetyAccepting}
+        />
+        </div>
 
         {/* RIGHT — Dosing & directions + Notes (EMR-887, EMR-891) */}
         <div className="space-y-4">
@@ -1480,9 +1643,16 @@ export function PrescribeFormV2(props: PrescribeFormV2Props) {
           >
             Prescription preview
           </Button>
-          <SubmitButton disabled={blocked} />
+          <SubmitButton disabled={blocked} alert={rxSafetyBlocking} />
         </div>
       </div>
+      {/* EMR-1135: ambient hint while a guardrail conflict blocks signing */}
+      {rxSafetyHardStop && (
+        <p className="text-[11px] text-status-alert-fg text-right">
+          A safety hard stop is active — resolve the conflict in the
+          optimization card to enable Sign &amp; send.
+        </p>
+      )}
       {/* EMR-1099 (M3): visible hint when the pharmacy gate blocks signing */}
       {!pharmacy && (
         <p className="text-[11px] text-danger text-right">

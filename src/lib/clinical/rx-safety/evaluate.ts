@@ -1,3 +1,4 @@
+// SAFE: dead-export-allowed reason="Entry point for the rx-safety engine, called by future clinical order workflows"
 // ---------------------------------------------------------------------------
 // evaluateRxSafety — top-level entry point for the prescription-safety
 // guardrail engine. Runs the three layers (PGx, organ clearance, botanical)

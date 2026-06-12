@@ -146,6 +146,8 @@ export default async function OperatorLayout({
       items: [
         { label: "Overview", href: "/ops/billing" },
         { label: "Scrub and Auths", href: "/ops/scrub" },
+        // EMR-1139 — denial-risk gate between scrub and submission.
+        { label: "Pre-Flight", href: "/ops/preflight" },
         { label: "Denials", href: "/ops/denials", badge: denialsBadge },
         { label: "Aging", href: "/ops/aging", badge: agingBadge },
         { label: "Eligibility", href: "/ops/eligibility" },

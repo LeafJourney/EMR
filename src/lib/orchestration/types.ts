@@ -25,6 +25,10 @@ export type AllowedAction =
   | "write.document.metadata"
   | "write.note.draft"
   | "write.message.draft"
+  // EMR-1145 — held ONLY by safetyAutoResponder: sends the deterministic,
+  // pre-configured 911/ED safety copy on urgent UPI routes. Agents that
+  // compose free-form text stay approval-gated behind write.message.draft.
+  | "write.message.send"
   | "write.task"
   | "write.coding"
   | "write.qualification"
