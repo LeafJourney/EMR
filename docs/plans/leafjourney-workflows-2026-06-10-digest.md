@@ -1,7 +1,12 @@
 # LeafJourney WorkFlows — Owner Directive Digest (2026-06-10)
 
-> **Status:** Documented (repo digest complete). Gap-verification + net-new Linear
-> filing in progress — see [Gap Analysis](#gap-analysis) (scaffold below).
+> **Status:** Documented (repo digest complete). **Linear filing resolved (2026-06-11):**
+> reconciled into the existing **"WorkFlows Revisions — Zero-Click Ambient Intelligence"**
+> project — its 6 greenfield capstone epics (`EMR-1118..1123`) were annotated with
+> gap-verify-vs-`main` comments, and the two omitted net-new clusters were added as
+> `EMR-1163` (Cannabis Compounding & Botanical Order Builder ⭐) and `EMR-1164`
+> (Lifestyle & Protocol Prescribing). No duplicate project was created. The ranked
+> clusters below are the backlog map for those epics' children. See [Gap Analysis](#gap-analysis).
 >
 > This is a **read/aggregate digest**, not a build order. The owner prompt is
 > explicitly an *aggregation* directive ("use ALL data… remove all repetitive
