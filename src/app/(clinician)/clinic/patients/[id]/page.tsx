@@ -329,6 +329,10 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
         receivedAt: true,
         results: true,
         abnormalFlag: true,
+        // EMR-180 — review state, so unsigned abnormal labs can surface as
+        // "review labs" rows in Open Tasks.
+        signedById: true,
+        reviewOutcome: true,
       },
     }),
   ]);
@@ -959,6 +963,22 @@ export default async function PatientChartPage({ params, searchParams }: PagePro
             dueAt: null,
             severity: "warning" as const,
           })),
+          // EMR-180 — Dr. Patel: Open Tasks should include "reviewing labs".
+          // Surface abnormal labs that haven't been signed off as result rows
+          // (most-recent first; labResults is ordered receivedAt asc).
+          ...labResults
+            .filter((l) => l.abnormalFlag && !l.signedById && !l.reviewOutcome)
+            .slice(-5)
+            .reverse()
+            .map((l) => ({
+              id: l.id,
+              category: "result" as const,
+              title: `Review abnormal ${l.panelName}`,
+              detail: `Flagged abnormal · received ${formatRelative(l.receivedAt)} · unsigned`,
+              href: `/clinic/patients/${params.id}?tab=labs`,
+              dueAt: null,
+              severity: "danger" as const,
+            })),
         ];
         return items.length > 0 ? (
           <div className="mb-6">
