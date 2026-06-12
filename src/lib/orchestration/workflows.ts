@@ -514,6 +514,27 @@ export const workflows: WorkflowDefinition[] = [
       },
     ],
   },
+  // EMR-1145 — spec Phase 4.1: when an inbound message routes urgent
+  // (UPI ≥ 0.75), actually SEND the pre-configured 911/ED safety reply on
+  // the patient's channel. Fixed template, so not approval-gated — a 911
+  // instruction held in an approval queue is no safety net at all. The SMS
+  // webhook path replies synchronously in ingestInboundMessage(); the
+  // dedupe guard in dispatchSafetyAutoReply makes this step idempotent.
+  {
+    name: "safety-auto-reply",
+    on: ["message.received"],
+    steps: [
+      {
+        agent: "safetyAutoResponder",
+        input: (e) => ({
+          messageId: (e as any).messageId,
+          threadId: (e as any).threadId,
+          patientId: (e as any).patientId,
+        }),
+        requiresApproval: false,
+      },
+    ],
+  },
   {
     name: "visit-discovery-whisper",
     on: ["note.finalized"],

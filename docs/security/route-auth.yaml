@@ -478,6 +478,12 @@ routes:
     owner: leafmart
     notes: "HMAC-SHA256 timing-safe verification, fail-closed on missing secret."
 
+  webhooks/sms-inbound:
+    methods: [POST]
+    auth: webhook
+    owner: communications
+    notes: "EMR-1145 inbound SMS gateway. Shared-secret header (SMS_WEBHOOK_SECRET), timing-safe compare, fail-closed (503) when unset. Sender verified by exact phone-digit match; unmatched/ambiguous senders quarantined to AuditLog dead-letter, never written to a chart."
+
   # ── Cron (inbound triggers) ───────────────────────────────
   cron/anomaly-sweep:
     methods: [POST]
