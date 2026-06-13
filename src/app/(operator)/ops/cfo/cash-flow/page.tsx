@@ -5,8 +5,11 @@ import { Eyebrow } from "@/components/ui/ornament";
 import { Badge } from "@/components/ui/badge";
 import { rangeForPeriod } from "@/lib/finance/period";
 import { buildCashFlow } from "@/lib/finance/cash-flow";
+import { buildRunwayTrend } from "@/lib/finance/cash-flow-runway";
 import { fmtMoney } from "@/lib/finance/formatting";
 import { CfoTabs, GenerateReportButton, StatementSection } from "../components";
+import { RunwaySparkline } from "./runway-sparkline";
+import type { ReactNode } from "react";
 
 export const metadata = { title: "Cash Flow · CFO" };
 export const dynamic = "force-dynamic";
@@ -18,6 +21,13 @@ export default async function CashFlowPage({ searchParams }: { searchParams?: { 
 
   const range = rangeForPeriod(period, new Date());
   const cf = await buildCashFlow(orgId, range);
+  const runwayTrend = buildRunwayTrend({
+    openingCashCents: cf.openingCashCents,
+    closingCashCents: cf.closingCashCents,
+    netChangeCents: cf.netChangeCents,
+    burnRateCentsPerDay: cf.burnRateCentsPerDay,
+    runwayDays: cf.runwayDays,
+  });
 
   const sections = [cf.sections.operating, cf.sections.investing, cf.sections.financing];
 
@@ -37,7 +47,9 @@ export default async function CashFlowPage({ searchParams }: { searchParams?: { 
         <Tile label="Closing cash" value={fmtMoney(cf.closingCashCents, { compact: true })} accent />
         <Tile label="Net change" value={fmtMoney(cf.netChangeCents, { compact: true })} highlight={cf.netChangeCents >= 0 ? "good" : "bad"} />
         <Tile label="Daily burn" value={fmtMoney(cf.burnRateCentsPerDay)} />
-        <Tile label="Runway" value={cf.runwayDays === null ? "😊 + Cash-flow positive" : `😔 − ${cf.runwayDays} days`} highlight={cf.runwayDays === null ? "good" : cf.runwayDays < 90 ? "bad" : undefined} />
+        <Tile label="Runway" value={cf.runwayDays === null ? "😊 + Cash-flow positive" : `😔 − ${cf.runwayDays} days`} highlight={cf.runwayDays === null ? "good" : cf.runwayDays < 90 ? "bad" : undefined}>
+          <RunwaySparkline trend={runwayTrend} />
+        </Tile>
       </div>
 
       {/* Activity sections */}
@@ -122,12 +134,13 @@ export default async function CashFlowPage({ searchParams }: { searchParams?: { 
   );
 }
 
-function Tile({ label, value, accent, highlight }: { label: string; value: string; accent?: boolean; highlight?: "good" | "bad" }) {
+function Tile({ label, value, accent, highlight, children }: { label: string; value: string; accent?: boolean; highlight?: "good" | "bad"; children?: ReactNode }) {
   return (
     <Card tone="raised" className={accent ? "border-l-4 border-l-accent" : highlight === "bad" ? "border-l-4 border-l-danger" : highlight === "good" ? "border-l-4 border-l-[color:var(--success)]" : ""}>
       <CardContent className="pt-5 pb-5">
         <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">{label}</p>
         <p className="font-display text-2xl text-text tabular-nums mt-1.5">{value}</p>
+        {children}
       </CardContent>
     </Card>
   );
