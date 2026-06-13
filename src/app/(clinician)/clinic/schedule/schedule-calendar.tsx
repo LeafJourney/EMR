@@ -880,6 +880,7 @@ function ScheduleModal({
   timeZone,
   onClose,
   onSave,
+  initialPatient,
 }: {
   startDate: Date;
   patients: PatientDTO[];
@@ -887,9 +888,10 @@ function ScheduleModal({
   timeZone: string;
   onClose: () => void;
   onSave: (patientId: string, duration: number, modality: string, notes: string, force: boolean) => void;
+  initialPatient?: PatientDTO | null;
 }) {
   const [search, setSearch] = React.useState("");
-  const [selectedPatient, setSelectedPatient] = React.useState<PatientDTO | null>(null);
+  const [selectedPatient, setSelectedPatient] = React.useState<PatientDTO | null>(initialPatient || null);
   const [duration, setDuration] = React.useState<number>(30);
   const [modality, setModality] = React.useState<string>("in_person");
   const [notes, setNotes] = React.useState<string>("");
