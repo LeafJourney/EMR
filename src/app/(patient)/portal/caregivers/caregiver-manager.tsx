@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   RELATIONSHIPS,
   ACCESS_LEVELS,
@@ -11,32 +12,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
-
-const DEMO_CAREGIVERS: CaregiverInvite[] = [
-  {
-    id: "cg-1",
-    patientId: "p-1",
-    caregiverEmail: "maria.garcia@email.com",
-    caregiverName: "Maria Garcia",
-    relationship: "Spouse/Partner",
-    accessLevel: "full",
-    status: "active",
-    invitedAt: "2026-02-15T10:00:00Z",
-    acceptedAt: "2026-02-16T14:30:00Z",
-  },
-  {
-    id: "cg-2",
-    patientId: "p-1",
-    caregiverEmail: "james.wilson@email.com",
-    caregiverName: "James Wilson",
-    relationship: "Parent",
-    accessLevel: "read_only",
-    status: "invited",
-    invitedAt: "2026-04-10T09:00:00Z",
-  },
-];
+import { inviteCaregiver, revokeCaregiver } from "./actions";
 
 const ACCESS_ICONS: Record<AccessLevel, React.ReactNode> = {
   read_only: (
@@ -50,8 +28,16 @@ const ACCESS_ICONS: Record<AccessLevel, React.ReactNode> = {
   ),
 };
 
-export function CaregiverManager() {
-  const [caregivers, setCaregivers] = useState<CaregiverInvite[]>(DEMO_CAREGIVERS);
+export function CaregiverManager({
+  initialCaregivers,
+}: {
+  initialCaregivers: CaregiverInvite[];
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [caregivers, setCaregivers] = useState<CaregiverInvite[]>(initialCaregivers);
+  // Re-sync with server truth after a mutation triggers router.refresh().
+  useEffect(() => setCaregivers(initialCaregivers), [initialCaregivers]);
   const [showForm, setShowForm] = useState(false);
   const [successEmail, setSuccessEmail] = useState<string | null>(null);
 
@@ -62,32 +48,45 @@ export function CaregiverManager() {
   const [accessLevel, setAccessLevel] = useState<AccessLevel>("read_only");
 
   const handleRevoke = (id: string) => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Revoke this caregiver's access? They will immediately lose access to your records.",
+      )
+    ) {
+      return;
+    }
+    // Optimistic — reconciled by router.refresh() once the server confirms.
     setCaregivers((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: "revoked" as const, revokedAt: new Date().toISOString() } : c)),
+      prev.map((c) =>
+        c.id === id ? { ...c, status: "revoked" as const, revokedAt: new Date().toISOString() } : c,
+      ),
     );
+    startTransition(async () => {
+      await revokeCaregiver(id);
+      router.refresh();
+    });
   };
 
   const handleInvite = () => {
     if (!name || !email || !relationship) return;
-
-    const newInvite: CaregiverInvite = {
-      id: `cg-${Date.now()}`,
-      patientId: "p-1",
-      caregiverEmail: email,
+    const payload = {
       caregiverName: name,
+      caregiverEmail: email,
       relationship,
       accessLevel,
-      status: "invited",
-      invitedAt: new Date().toISOString(),
     };
-
-    setCaregivers((prev) => [...prev, newInvite]);
     setSuccessEmail(email);
     setShowForm(false);
     setName("");
     setEmail("");
     setRelationship("");
     setAccessLevel("read_only");
+    startTransition(async () => {
+      const res = await inviteCaregiver(payload);
+      if (res.ok) router.refresh();
+      else setSuccessEmail(null);
+    });
   };
 
   const activeCaregivers = caregivers.filter((c) => c.status !== "revoked");
@@ -167,9 +166,14 @@ export function CaregiverManager() {
                         <Badge tone="accent">{levelInfo.label}</Badge>
                       </div>
                     </div>
-                    {cg.status === "active" && (
-                      <Button variant="danger" size="sm" onClick={() => handleRevoke(cg.id)}>
-                        Revoke access
+                    {(cg.status === "active" || cg.status === "invited") && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        disabled={isPending}
+                        onClick={() => handleRevoke(cg.id)}
+                      >
+                        {cg.status === "active" ? "Revoke access" : "Cancel invite"}
                       </Button>
                     )}
                   </li>
@@ -265,8 +269,11 @@ export function CaregiverManager() {
             </div>
 
             <div className="flex items-center gap-3 pt-2">
-              <Button onClick={handleInvite} disabled={!name || !email || !relationship}>
-                Send invitation
+              <Button
+                onClick={handleInvite}
+                disabled={!name || !email || !relationship || isPending}
+              >
+                {isPending ? "Sending…" : "Send invitation"}
               </Button>
               <Button variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel
