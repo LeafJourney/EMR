@@ -3,8 +3,13 @@
  * --------------------------------------------------------------
  * Persistence layer over the pure parser in `era-parser.ts`. Takes a
  * raw 835 payload from the clearinghouse poller (or a manual upload),
- * dedupes against prior deliveries, parses it, and posts an
- * `AdjudicationResult` per claim plus PLB ledger entries.
+ * dedupes against prior deliveries, parses it, records one
+ * `AdjudicationResult` per claim plus PLB ledger entries, then dispatches
+ * `adjudication.received` so `adjudicationInterpretationAgent` can post the
+ * money (Payment, FinancialEvent ledger, contractual Adjustment,
+ * DenialEvents, claim balance). This file is the SINGLE source of truth for
+ * 835 parsing + the per-claim totals; it does not post payments itself, so
+ * there is exactly one writer of each downstream effect.
  *
  * Idempotency contract:
  *   - Content-hash dedupe (fast path) for byte-identical re-deliveries.
@@ -15,6 +20,7 @@
  */
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@prisma/client";
+import { dispatch } from "@/lib/orchestration/dispatch";
 import {
   parseEra835,
   hashEraPayload,
@@ -132,33 +138,47 @@ export async function ingestEra(input: IngestEraInput): Promise<IngestOutcome> {
 
     let claimsAdjudicated = 0;
     let claimsUnmatched = 0;
+    // Collected for post-commit dispatch. ingestEra is parse-and-record
+    // only — it creates the AdjudicationResult and then hands off to
+    // adjudicationInterpretationAgent (via the adjudication.received event)
+    // which OWNS all posting: Payment, FinancialEvent ledger entries,
+    // contractual Adjustment, DenialEvents, and the claim balance. We
+    // deliberately do NOT write claim.paidAmountCents here — doing both
+    // would double-post the moment the agent runs.
+    const adjudicated: Array<{
+      claimId: string;
+      adjudicationResultId: string;
+      claimStatus: ReturnType<typeof mapClpStatus>;
+      totalPaidCents: number;
+    }> = [];
     for (const claim of parsed.claimPayments) {
       const internalClaim = await resolveClaim(tx, input.organizationId, claim.claimControlNumber, claim.payerClaimId);
       if (!internalClaim) {
         claimsUnmatched++;
         continue;
       }
-      await tx.adjudicationResult.create({
+      const claimStatus = mapClpStatus(claim.claimStatusCode);
+      const created = await tx.adjudicationResult.create({
         data: {
           claimId: internalClaim.id,
           eraFileId: eraFile.id,
           eraDate: parsed.checkDate,
           checkNumber: parsed.checkNumber,
           totalPaidCents: claim.totalPaidCents,
-          totalAllowedCents: computeAllowed(claim),
-          totalAdjustedCents: sumAdjustments(claim),
+          totalAllowedCents: computeAllowedCents(claim),
+          totalAdjustedCents: sumContractualAdjustmentsCents(claim),
           totalPatientRespCents: claim.patientRespCents,
-          claimStatus: mapClpStatus(claim.claimStatusCode),
+          claimStatus,
           lineDetails: claim.serviceLines as unknown as Prisma.InputJsonValue,
           rawEra: input.rawPayload,
         },
+        select: { id: true },
       });
-      await tx.claim.update({
-        where: { id: internalClaim.id },
-        data: {
-          paidAmountCents: { increment: claim.totalPaidCents },
-          patientRespCents: { increment: claim.patientRespCents },
-        },
+      adjudicated.push({
+        claimId: internalClaim.id,
+        adjudicationResultId: created.id,
+        claimStatus,
+        totalPaidCents: claim.totalPaidCents,
       });
       claimsAdjudicated++;
     }
@@ -193,8 +213,26 @@ export async function ingestEra(input: IngestEraInput): Promise<IngestOutcome> {
       data: { status: "posted", postedAt: new Date() },
     });
 
-    return { eraFileId: eraFile.id, claimsAdjudicated, claimsUnmatched, plbAdjustmentsCount };
+    return { eraFileId: eraFile.id, claimsAdjudicated, claimsUnmatched, plbAdjustmentsCount, adjudicated };
   });
+
+  // 5. Post-commit: hand each adjudicated claim to the posting agent. Done
+  //    AFTER the transaction so a rollback can't leave orphaned agent jobs,
+  //    and so the AdjudicationResult rows the agent reads are durably visible.
+  //    The event union's claimStatus is paid|denied|partial; a pending_review
+  //    remit still gets interpreted (the agent recomputes the final status),
+  //    so we map it onto "partial" purely to satisfy the event type.
+  for (const a of result.adjudicated) {
+    await dispatch({
+      name: "adjudication.received",
+      claimId: a.claimId,
+      organizationId: input.organizationId,
+      adjudicationResultId: a.adjudicationResultId,
+      claimStatus: a.claimStatus === "pending_review" ? "partial" : a.claimStatus,
+      totalPaidCents: a.totalPaidCents,
+      totalDeniedCents: 0,
+    });
+  }
 
   return {
     kind: "ingested",
@@ -247,16 +285,34 @@ async function resolveClaim(
   return null;
 }
 
-function computeAllowed(c: Era835ClaimPayment): number {
-  const adj = sumAdjustments(c);
-  return Math.max(0, c.totalPaidCents + c.patientRespCents + adj);
+/** Allowed amount = the contracted rate the payer recognized = what the
+ *  payer paid + what they assigned to the patient (PR). The rest of the
+ *  billed charge is the contractual write-off (CO/OA/PI), which is NOT part
+ *  of "allowed". (Previously this added the full adjustment sum on top of
+ *  paid+PR, overstating allowed above the billed charge.) */
+export function computeAllowedCents(c: Era835ClaimPayment): number {
+  return Math.max(0, c.totalPaidCents + c.patientRespCents);
 }
 
-function sumAdjustments(c: Era835ClaimPayment): number {
+/** Sum of provider-side adjustments only — the contractual write-off the
+ *  practice absorbs (CO/OA/PI/CR/WO). Patient-responsibility (PR) CAS rows
+ *  are deliberately excluded: PR is the patient's balance, tracked on
+ *  `totalPatientRespCents`. Folding PR in here (the prior behavior, which
+ *  also abs()'d every group) silently wrote patient balances off as
+ *  contractual and broke the claim's balancing equation
+ *  (charge = paid + PR + contractual). Amounts are signed so a reversal's
+ *  negative CAS correctly backs out a prior write-off. */
+export function sumContractualAdjustmentsCents(c: Era835ClaimPayment): number {
   let total = 0;
-  for (const a of c.claimAdjustments) total += Math.abs(a.amountCents);
+  for (const a of c.claimAdjustments) {
+    if (a.groupCode === "PR") continue;
+    total += a.amountCents;
+  }
   for (const line of c.serviceLines) {
-    for (const a of line.adjustments) total += Math.abs(a.amountCents);
+    for (const a of line.adjustments) {
+      if (a.groupCode === "PR") continue;
+      total += a.amountCents;
+    }
   }
   return total;
 }

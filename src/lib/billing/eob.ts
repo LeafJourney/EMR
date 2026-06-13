@@ -86,8 +86,14 @@ export interface Era835Header {
   checkOrEftNumber: string | null;
 }
 
-/** Convert a parsed 835 ERA into our normalized EOB shape. */
-export function parseEra835(
+/**
+ * Build our normalized patient-facing EOB shape from ALREADY-segmented 835
+ * data (header + one claim segment). NOTE: this is NOT the raw-835 parser —
+ * that is `parseEra835` in era-parser.ts, which takes a raw X12 string and is
+ * the single source of truth for ingestion. This one is display-only. Named
+ * distinctly to avoid the prior `parseEra835`/`parseEra835` collision.
+ */
+export function buildEobFromEra835(
   header: Era835Header,
   claim: Era835ClaimSegment,
   matchedClaimId: string | null,

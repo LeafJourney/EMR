@@ -104,6 +104,27 @@ describe("build837P — primary claim", () => {
   });
 });
 
+describe("build837P — SV107 diagnosis pointer composite (regression for EDI-1)", () => {
+  it("emits a multi-pointer composite as 1:2:3, not a collapsed 123", () => {
+    const input = baseInput();
+    input.claim.diagnoses = ["F12.20", "G89.29", "M54.50"];
+    input.serviceLines[0].diagnosisPointers = [1, 2, 3];
+    const built = build837P(input, { ...CONTROL, date: FIXED_DATE });
+    // The pointer composite must survive with its sub-element delimiter.
+    expect(built.payload).toContain("*1:2:3~");
+    // And must NOT have collapsed into a single bogus pointer.
+    expect(built.payload).not.toContain("*123~");
+    // Still a clean claim end-to-end.
+    const report = validateSnip1to5(built.payload);
+    expect(report.passed).toBe(true);
+  });
+
+  it("single-pointer lines are unaffected", () => {
+    const built = build837P(baseInput(), { ...CONTROL, date: FIXED_DATE });
+    expect(built.payload).toContain("*1~");
+  });
+});
+
 describe("build837P — secondary claim with Loop 2320 / 2430", () => {
   it("emits CAS, AMT, and SVD segments per the IG", () => {
     const input = baseInput();

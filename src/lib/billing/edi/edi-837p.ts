@@ -419,7 +419,12 @@ export function build837P(input: Claim837Input, opts: BuildOptions): Built837 {
           String(line.units),
           line.placeOfService ?? null,
           null,
-          line.diagnosisPointers.slice(0, 4).join(":"),
+          // SV107 — composite diagnosis-code pointer (up to 4). Must be a
+          // real X12 composite so each pointer is joined with the sub-element
+          // delimiter AFTER per-element sanitization. Passing a pre-joined
+          // "1:2:3" string would have its ":" stripped by sanitizeX12,
+          // collapsing the pointers into a bogus single value ("123").
+          { sub: line.diagnosisPointers.slice(0, 4) },
         ],
         delims,
       ),
@@ -660,8 +665,11 @@ export function validate837Input(input: Claim837Input): {
     }
   }
 
-  // Claim total must equal sum of line charges (X12 5010 hard-fails otherwise)
-  if (lineSum > 0 && lineSum !== input.claim.totalChargeCents) {
+  // Claim total must equal sum of line charges (X12 5010 hard-fails otherwise).
+  // The mismatch must be caught even when the line charges sum to 0 but CLM02
+  // is non-zero (e.g. line amounts failed to populate) — the prior `lineSum > 0`
+  // guard silently let that exact case through.
+  if (lineSum !== input.claim.totalChargeCents) {
     err(
       "claim.totalChargeCents",
       `claim total ${formatAmount(input.claim.totalChargeCents)} does not equal sum of line charges ${formatAmount(lineSum)}`,

@@ -54,10 +54,21 @@ export async function getPatientFinancialSummary(
     }),
   ]);
 
-  // Insurance pending = submitted or pending claims
+  // Insurance pending = what the payer still owes on in-flight claims.
+  // Per claim that's billed − insurance already paid − patient responsibility
+  // (mirrors aging.ts). The old version summed the FULL billedAmountCents,
+  // which ignored payments already received AND double-counted the patient's
+  // portion (that same amount is also in patientResponsibilityCents below,
+  // so totalBalanceCents = patientResp + insurancePending overstated the
+  // headline balance).
   const insurancePendingCents = claims
     .filter((c) => c.status === "submitted" || c.status === "accepted" || c.status === "adjudicated")
-    .reduce((acc, c) => acc + c.billedAmountCents, 0);
+    .reduce((acc, c) => {
+      const insurancePaid = c.payments
+        .filter((p) => p.source === "insurance")
+        .reduce((sum, p) => sum + p.amountCents, 0);
+      return acc + Math.max(0, c.billedAmountCents - insurancePaid - c.patientRespCents);
+    }, 0);
 
   // Patient responsibility = sum of patient resp on all claims minus patient payments
   const patientRespTotal = claims.reduce(
