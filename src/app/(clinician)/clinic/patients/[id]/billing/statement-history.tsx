@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { sendStatementAction } from "./actions";
 
 // Collapsible statement tiles (Dr. Patel directive — Statement History).
 // Collapsed: statement name, date, and amount due. Expanded: the rest
@@ -32,17 +33,40 @@ export interface StatementTileItem {
   plainLanguageSummary: string | null;
 }
 
-export function StatementHistory({ statements }: { statements: StatementTileItem[] }) {
+export function StatementHistory({
+  statements,
+  canEmail = false,
+  canText = false,
+}: {
+  statements: StatementTileItem[];
+  /** Patient has an email address on file (enables Email send). */
+  canEmail?: boolean;
+  /** Patient has a phone number on file (enables Text send). */
+  canText?: boolean;
+}) {
   return (
     <div className="space-y-2">
       {statements.map((statement) => (
-        <StatementTile key={statement.id} statement={statement} />
+        <StatementTile
+          key={statement.id}
+          statement={statement}
+          canEmail={canEmail}
+          canText={canText}
+        />
       ))}
     </div>
   );
 }
 
-function StatementTile({ statement }: { statement: StatementTileItem }) {
+function StatementTile({
+  statement,
+  canEmail,
+  canText,
+}: {
+  statement: StatementTileItem;
+  canEmail: boolean;
+  canText: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -113,7 +137,12 @@ function StatementTile({ statement }: { statement: StatementTileItem }) {
             />
           </svg>
         </button>
-          <StatementActions invoiceHref={statement.invoiceHref} />
+          <StatementActions
+            statementId={statement.id}
+            invoiceHref={statement.invoiceHref}
+            canEmail={canEmail}
+            canText={canText}
+          />
         </div>
 
         {/* Expanded detail — the rest of the information. */}
@@ -150,75 +179,112 @@ function StatementTile({ statement }: { statement: StatementTileItem }) {
   );
 }
 
-// Per-statement Print + Share actions (Dr. Patel directive — Statement History).
-// Print opens the existing branded, printable invoice sheet in a new tab.
-// Share copies an absolute link to that invoice (email/text delivery is a
-// separate messaging-pipeline pass). Rendered beside the toggle, never nested.
-function StatementActions({ invoiceHref }: { invoiceHref: string }) {
-  const [copied, setCopied] = useState(false);
+// Per-statement Send + Print actions (Dr. Patel directive — Statement History:
+// "send via email, text, or print/save"). Email/Text route through the
+// deliverMessage pipeline (PHI-safe portal link, truthful delivery state).
+// Print opens the existing branded, printable invoice sheet. Rendered beside
+// the toggle, never nested.
+function StatementActions({
+  statementId,
+  invoiceHref,
+  canEmail,
+  canText,
+}: {
+  statementId: string;
+  invoiceHref: string;
+  canEmail: boolean;
+  canText: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [status, setStatus] = useState<{
+    tone: "success" | "muted" | "danger";
+    text: string;
+  } | null>(null);
 
-  function share() {
-    const url = `${window.location.origin}${invoiceHref}`;
-    const clipboard = navigator.clipboard;
-    if (!clipboard) {
-      // No Clipboard API (insecure context / older browser) — open the
-      // invoice so the user can copy/share from there instead.
-      window.open(invoiceHref, "_blank", "noopener");
-      return;
-    }
-    void clipboard.writeText(url).then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      },
-      () => {
-        /* clipboard blocked — no-op; the Print path still works */
-      },
-    );
+  function send(channel: "email" | "sms") {
+    setStatus(null);
+    startTransition(async () => {
+      const r = await sendStatementAction(statementId, channel);
+      if (!r.ok) {
+        setStatus({ tone: "danger", text: r.error });
+        return;
+      }
+      const verb = channel === "email" ? "Emailed" : "Texted";
+      setStatus(
+        r.delivery === "delivered"
+          ? { tone: "success", text: `${verb} ✓` }
+          : r.delivery === "recorded"
+            ? { tone: "muted", text: "Logged (no provider)" }
+            : { tone: "danger", text: "Send failed" },
+      );
+    });
   }
 
   return (
-    <div className="flex items-center gap-0.5 shrink-0">
-      <IconButton
-        label="Print or save invoice"
-        onClick={() => window.open(invoiceHref, "_blank", "noopener")}
-      >
-        <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
-          <path
-            d="M5 7V3h8v4M5 13H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-1M5 11h8v4H5v-4Z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </IconButton>
-      <IconButton
-        label={copied ? "Invoice link copied" : "Copy invoice link to share"}
-        onClick={share}
-      >
-        {copied ? (
+    <div className="flex items-center gap-1.5 shrink-0">
+      {status && (
+        <span
+          className={`text-[10px] ${
+            status.tone === "success"
+              ? "text-success"
+              : status.tone === "danger"
+                ? "text-danger"
+                : "text-text-subtle"
+          }`}
+        >
+          {status.text}
+        </span>
+      )}
+      <div className="flex items-center gap-0.5">
+        {canEmail && (
+          <IconButton
+            label="Email statement to patient"
+            onClick={() => send("email")}
+            disabled={pending}
+          >
+            <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M3 5h12v8H3V5Zm0 .5L9 10l6-4.5"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </IconButton>
+        )}
+        {canText && (
+          <IconButton
+            label="Text statement to patient"
+            onClick={() => send("sms")}
+            disabled={pending}
+          >
+            <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M4 4h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 3v-3H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </IconButton>
+        )}
+        <IconButton
+          label="Print or save invoice"
+          onClick={() => window.open(invoiceHref, "_blank", "noopener")}
+        >
           <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
             <path
-              d="M4 9.5L7.5 13L14 5.5"
-              stroke="var(--success)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : (
-          <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M11 6.5L7 9M11 11.5L7 9M7 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm8-4.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm0 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"
+              d="M5 7V3h8v4M5 13H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-1M5 11h8v4H5v-4Z"
               stroke="currentColor"
               strokeWidth="1.2"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
-        )}
-      </IconButton>
+        </IconButton>
+      </div>
     </div>
   );
 }
@@ -226,19 +292,22 @@ function StatementActions({ invoiceHref }: { invoiceHref: string }) {
 function IconButton({
   label,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       title={label}
-      className="h-7 w-7 rounded-md flex items-center justify-center text-text-subtle hover:text-text hover:bg-surface-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      className="h-7 w-7 rounded-md flex items-center justify-center text-text-subtle hover:text-text hover:bg-surface-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {children}
     </button>

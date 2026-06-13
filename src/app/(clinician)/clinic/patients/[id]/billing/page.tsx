@@ -371,8 +371,13 @@ export default async function PatientBillingPage({ params }: PageProps) {
 
   return (
     <PageShell maxWidth="max-w-[1280px]">
+      {/* Container-query context — this page renders inside the resizable
+          SplitWorkspace pane, so the viewport width lies about how much room
+          the content actually has. Every grid below sizes off `@container`
+          (the content column) instead of `md:`/`lg:` (the window). */}
+      <div className="@container">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between gap-4 flex-wrap mb-8">
         <div className="flex items-center gap-4">
           <Avatar
             firstName={patient.firstName}
@@ -407,8 +412,8 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* ═════════════════════════════════════════════════════════ */}
       {/* A. Balance Summary — the financial hero                   */}
       {/* ═════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-6 mb-10">
+        <div className="@4xl:col-span-2">
           <Card
             tone="raised"
             className={`border-l-4 ${
@@ -420,8 +425,8 @@ export default async function PatientBillingPage({ params }: PageProps) {
             }`}
           >
             <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
                   <CardTitle className="text-base">Current balance</CardTitle>
                   <CardDescription>
                     {summary.currentDueCents === 0
@@ -429,7 +434,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
                       : `Last payment ${summary.lastPaymentDate ? formatRelative(summary.lastPaymentDate) : "none recorded"}`}
                   </CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap shrink-0">
                   {paymentMethods.length > 0 && (
                     <Badge tone="success">Card on file</Badge>
                   )}
@@ -438,7 +443,11 @@ export default async function PatientBillingPage({ params }: PageProps) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {/* Its own container so the four money figures fold to a 2×2
+                  grid before they ever collide, independent of whether the
+                  payment center is stacked below or sitting alongside. */}
+              <div className="@container">
+              <div className="grid grid-cols-2 @xl:grid-cols-4 gap-x-5 gap-y-6">
                 <MetricDrilldown data={totalBalanceTrend}>
                   <BalanceLine
                     label="Total balance"
@@ -467,6 +476,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
                     tone={summary.overdueCents > 0 ? "danger" : "neutral"}
                   />
                 </MetricDrilldown>
+              </div>
               </div>
               {/* EMR-905 — accepted payment method pills */}
               <div className="mt-5 flex items-center gap-1.5 flex-wrap">
@@ -521,7 +531,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* ═════════════════════════════════════════════════════════ */}
       <div className="mb-10">
         <Eyebrow className="mb-4">Responsibility breakdown</Eyebrow>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-3">
           <MetricDrilldown data={copayTrend}>
             <MiniStat
               label="Copay collected"
@@ -595,7 +605,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* ═════════════════════════════════════════════════════════ */}
       {/* F. Insurance & Benefits Snapshot                          */}
       {/* ═════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-6 mb-10">
         <Card tone="raised">
           <CardHeader>
             <CardTitle className="text-base">Insurance & benefits</CardTitle>
@@ -788,7 +798,11 @@ export default async function PatientBillingPage({ params }: PageProps) {
             </CardContent>
           </Card>
         ) : (
-          <StatementHistory statements={statementItems} />
+          <StatementHistory
+            statements={statementItems}
+            canEmail={!!patient.email}
+            canText={!!patient.phone}
+          />
         )}
       </div>
 
@@ -796,6 +810,7 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* G. Audit Trail / Financial Events                         */}
       {/* ═════════════════════════════════════════════════════════ */}
       <EventLogSection title="Financial event log" events={eventItems} />
+      </div>
     </PageShell>
   );
 }

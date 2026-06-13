@@ -7,6 +7,8 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { resolvePaymentGateway } from "@/lib/payments";
 import { adjustPlan, createPlan, REMINDER_CADENCES } from "@/lib/billing/payment-plans";
+import { deliverMessage } from "@/lib/messaging/deliver";
+import { buildStatementNotice } from "@/lib/messaging/statement-notice";
 import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
@@ -537,6 +539,151 @@ export async function adjustPaymentPlanAction(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to adjust payment plan",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Send a statement to the patient by email or text
+// Dr. Patel directive (Statement History — "send via email, text"). Routes
+// through the single deliverMessage choke-point so the recorded delivery state
+// is truthful. PHI-safe: the message carries only the statement number + a link
+// to the bare portal — never the balance or any clinical detail.
+// ---------------------------------------------------------------------------
+
+const sendStatementSchema = z.object({
+  statementId: z.string().min(1),
+  channel: z.enum(["email", "sms"]),
+});
+
+export type SendStatementResult =
+  | { ok: true; delivery: "delivered" | "failed" | "recorded"; detail: string | null }
+  | { ok: false; error: string };
+
+export async function sendStatementAction(
+  statementId: string,
+  channel: "email" | "sms",
+): Promise<SendStatementResult> {
+  const user = await requireUser();
+
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "back_office" ||
+        r === "operator" ||
+        r === "practice_owner" ||
+        r === "practice_admin" ||
+        r === "clinician",
+    )
+  ) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
+  const parsed = sendStatementSchema.safeParse({ statementId, channel });
+  if (!parsed.success) return { ok: false, error: "Invalid request" };
+
+  const statement = await prisma.statement.findFirst({
+    where: {
+      id: parsed.data.statementId,
+      organizationId: user.organizationId!,
+    },
+    select: {
+      id: true,
+      statementNumber: true,
+      status: true,
+      patientId: true,
+      patient: {
+        select: { id: true, firstName: true, email: true, phone: true },
+      },
+    },
+  });
+  if (!statement) return { ok: false, error: "Statement not found." };
+
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId! },
+    select: { name: true },
+  });
+
+  const recipient =
+    parsed.data.channel === "email"
+      ? statement.patient.email
+      : statement.patient.phone;
+  if (!recipient) {
+    return {
+      ok: false,
+      error:
+        parsed.data.channel === "email"
+          ? "No email address on file for this patient."
+          : "No phone number on file for this patient.",
+    };
+  }
+
+  const portalUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "";
+  const notice = buildStatementNotice(parsed.data.channel, {
+    statementNumber: statement.statementNumber,
+    portalUrl,
+    practiceName: org?.name ?? "your care team",
+  });
+
+  // Find-or-create a dedicated billing thread so statement notices group
+  // together and don't pollute clinical correspondence.
+  const BILLING_SUBJECT = "Billing & statements";
+  let thread = await prisma.messageThread.findFirst({
+    where: { patientId: statement.patientId, subject: BILLING_SUBJECT },
+    select: { id: true },
+  });
+  if (!thread) {
+    thread = await prisma.messageThread.create({
+      data: { patientId: statement.patientId, subject: BILLING_SUBJECT },
+      select: { id: true },
+    });
+  }
+
+  try {
+    const result = await deliverMessage({
+      threadId: thread.id,
+      channel: parsed.data.channel,
+      body: notice.body,
+      subject: notice.subject,
+      recipient,
+      senderUserId: user.id,
+      organizationId: user.organizationId!,
+    });
+
+    // Mark the statement sent unless the external send hard-failed. A
+    // "recorded" outcome (no provider configured) still means we issued it.
+    if (result.delivery !== "failed") {
+      await prisma.statement.update({
+        where: { id: statement.id },
+        data: {
+          deliveryMethod: parsed.data.channel,
+          sentAt: new Date(),
+          ...(statement.status === "draft" ? { status: "sent" } : {}),
+        },
+      });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        organizationId: user.organizationId!,
+        actorUserId: user.id,
+        action: `patient.statement.sent.${parsed.data.channel}`,
+        subjectType: "Statement",
+        subjectId: statement.id,
+        metadata: { channel: parsed.data.channel, delivery: result.delivery },
+      },
+    });
+
+    revalidatePath(`/clinic/patients/${statement.patientId}/billing`);
+    revalidatePath(`/clinic/patients/${statement.patientId}`);
+    return { ok: true, delivery: result.delivery, detail: result.detail };
+  } catch (err) {
+    logger.error({ event: "clinic.billing.statement_send_failed", err });
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to send statement",
     };
   }
 }
