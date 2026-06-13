@@ -27,6 +27,22 @@ export default async function LibraryPage() {
         actions={<PdfExportButton />}
       />
 
+      {/* Compounding tool (EMR-1163) */}
+      <Link href="/clinic/library/compounding" className="block mb-6 group">
+        <Card tone="raised" className="transition-colors group-hover:border-accent/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <span aria-hidden>⚗️</span> Compound &amp; Botanical Order Builder
+              <Badge tone="highlight">New</Badge>
+            </CardTitle>
+            <CardDescription>
+              Design a multi-cannabinoid formulation by target ratio (e.g. CBD:THC:CBN 20:1:2), get the
+              raw-ingredient yield, and check it against your jurisdictional THC limit.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </Link>
+
       {/* Cannabinoid pharmacology */}
       <Card tone="raised" className="mb-6">
         <CardHeader>
