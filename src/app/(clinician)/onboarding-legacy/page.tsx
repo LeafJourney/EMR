@@ -5,7 +5,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { OnboardingWizard } from "./OnboardingWizard";
 
 export const metadata = {
-  title: "Clinic onboarding · Leafjourney",
+  title: "Clinic onboarding",
   description:
     "Set up your clinic on Leafjourney — basic info, NPI numbers, and state cannabis registries.",
 };

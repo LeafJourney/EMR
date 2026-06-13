@@ -22,7 +22,7 @@ import {
   type FeatureMatrixRow,
 } from "./feature-matrix-table";
 
-export const metadata = { title: "Pricing · Leafjourney" };
+export const metadata = { title: "Pricing" };
 
 export default async function OpsPricingPage() {
   await requireUser();

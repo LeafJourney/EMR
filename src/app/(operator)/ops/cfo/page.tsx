@@ -10,7 +10,7 @@ import { CfoTabs, KpiTile, AnomaliesPanel, GenerateReportButton } from "./compon
 import { TrendLine } from "@/components/charts";
 import { MetricBoxGroup } from "@/components/ops/master";
 
-export const metadata = { title: "CFO · Leafjourney" };
+export const metadata = { title: "CFO" };
 export const dynamic = "force-dynamic";
 
 export default async function CfoOverviewPage({
