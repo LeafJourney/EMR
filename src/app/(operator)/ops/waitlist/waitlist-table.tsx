@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils/cn";
 import { offerSlotAction, removeFromWaitlistAction } from "./actions";
 
@@ -93,6 +94,7 @@ function Row({ row, stripe }: { row: WaitlistRow; stripe: boolean }) {
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const confirm = useConfirm();
   const handleOffer = () => {
     setFeedback(null);
     startTransition(async () => {
@@ -100,8 +102,15 @@ function Row({ row, stripe }: { row: WaitlistRow; stripe: boolean }) {
       setFeedback(r.ok ? `Offer sent (${r.batchSize} in this stagger)` : r.error);
     });
   };
-  const handleRemove = () => {
-    if (!confirm(`Remove ${row.name} from the waitlist?`)) return;
+  const handleRemove = async () => {
+    const ok = await confirm({
+      title: `Remove ${row.name} from the waitlist?`,
+      description:
+        "They'll be taken off the waitlist. You can re-add them later if needed.",
+      severity: "danger",
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const r = await removeFromWaitlistAction({ patientId: row.id });
       if (!r.ok) setFeedback(r.error);
