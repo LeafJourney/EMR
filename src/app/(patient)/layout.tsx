@@ -7,6 +7,7 @@ import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { homeForRoles } from "@/lib/rbac/roles";
 import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { GlobalSearchButton } from "@/components/ui/global-search-button";
 import { ChatCBInterface } from "@/components/ask-cindy/ChatCBInterface";
 import { PortalCustomizationProvider } from "@/components/portal/portal-customization-provider";
 import { ConfettiCanvas } from "@/components/portal/confetti-canvas";
@@ -165,6 +166,7 @@ export default async function PatientLayout({
       >
         <QuoteWelcomeModal userName={user.firstName} />
         <CommandPalette role="patient" userId={user.id} />
+        <GlobalSearchButton />
         <ChatCBInterface />
         <ConfettiCanvas />
         <InstallPrompt />
