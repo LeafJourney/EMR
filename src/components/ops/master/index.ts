@@ -9,15 +9,32 @@
 //   G5 Sortable table columns      → <DataTable> (tri-state header sort, built-in)
 //   G6 Table send/print/download   → <DataTable exportable> + table-export utils
 //   G7 Movable / rearrangeable     → <SortableList> / <KanbanBoard> / reorder()
+//   G8 Per-section date/param search → <SectionSearchBar> (+ parseSectionQuery)
 //   G9 Compare mode               → <MetricBoxGroup> (select ≥2 → overlay chart)
 //   G10 "click a box → popup"      → <MetricBox> (history popup + feather cycle)
 //   G11 Hover tooltips on charts   → <MetricBox> drill-in (branded chart hover)
 //
+// G4 (global "search everything") ships as the layout-mounted
+// <GlobalSearchButton> (bottom-left affordance opening the ⌘K command palette),
+// not a per-page import — see src/components/ui/global-search-button.tsx.
+//
 // Still to build (tracked, not yet shipped): global sidebar overlay/autohide
-// (G2 layered/autohide half remains; in-page-click re-open fixed via PR #648)
-// and the per-section AI search bar (G8).
+// (G2 layered/autohide half remains; in-page-click re-open fixed via PR #648).
 
 export { Collapsible } from "@/components/ui/collapsible";
+
+export {
+  SectionSearchBar,
+  type SectionSearchBarProps,
+} from "@/components/ui/section-search-bar";
+
+export {
+  parseSectionQuery,
+  applySectionQuery,
+  type SectionQuery,
+  type SectionDateRange,
+  type SectionAmountFilter,
+} from "@/lib/ui/section-query";
 
 export {
   AutocompleteInput,
