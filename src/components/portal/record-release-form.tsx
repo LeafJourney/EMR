@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,20 +11,19 @@ import { cn } from "@/lib/utils/cn";
 import {
   RECORD_CATEGORY_LABELS,
   STATUS_LABELS,
-  buildReleaseRequest,
+  type NewRecordReleaseInput,
   type RecordCategory,
   type RecordReleaseRequest,
   type RecordReleaseScope,
 } from "@/lib/domain/record-release";
 import {
-  listRequests,
-  revokeRequest,
-  saveRequest,
-} from "@/lib/portal/record-release-store";
+  createReleaseRequest,
+  revokeReleaseRequest,
+} from "@/app/(patient)/portal/records/release/actions";
 
 type Props = {
-  patientId: string;
   patientLegalName?: string | null;
+  initialHistory: RecordReleaseRequest[];
 };
 
 const ALL_CATEGORIES: RecordCategory[] = [
@@ -37,7 +37,9 @@ const ALL_CATEGORIES: RecordCategory[] = [
   "billing",
 ];
 
-export function RecordReleaseForm({ patientId, patientLegalName }: Props) {
+export function RecordReleaseForm({ patientLegalName, initialHistory }: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   // Form state
   const [recipientName, setRecipientName] = useState("");
   const [practice, setPractice] = useState("");
@@ -57,13 +59,14 @@ export function RecordReleaseForm({ patientId, patientLegalName }: Props) {
   const [acknowledged, setAcknowledged] = useState(false);
 
   const [submitted, setSubmitted] = useState<RecordReleaseRequest | null>(null);
-  const [history, setHistory] = useState<RecordReleaseRequest[]>([]);
+  const [history, setHistory] = useState<RecordReleaseRequest[]>(initialHistory);
 
   const formId = useId();
 
+  // Re-sync with server truth after a mutation triggers router.refresh().
   useEffect(() => {
-    setHistory(listRequests());
-  }, []);
+    setHistory(initialHistory);
+  }, [initialHistory]);
 
   const expectedSignature = useMemo(
     () => (patientLegalName ?? "").trim().toLowerCase(),
@@ -91,7 +94,7 @@ export function RecordReleaseForm({ patientId, patientLegalName }: Props) {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-    const req = buildReleaseRequest(patientId, {
+    const input: NewRecordReleaseInput = {
       recipient: {
         fullName: recipientName.trim(),
         practice: practice.trim() || undefined,
@@ -105,15 +108,25 @@ export function RecordReleaseForm({ patientId, patientLegalName }: Props) {
       dateTo: scope === "date_range" ? dateTo : undefined,
       patientSignatureName: signature.trim(),
       reason: reason.trim() || undefined,
+    };
+    startTransition(async () => {
+      const res = await createReleaseRequest(input);
+      if (res.ok && res.request) {
+        setSubmitted(res.request);
+        router.refresh();
+      }
     });
-    saveRequest(req);
-    setSubmitted(req);
-    setHistory(listRequests());
   };
 
   const onRevoke = (id: string) => {
-    revokeRequest(id);
-    setHistory(listRequests());
+    // Optimistic; reconciled by router.refresh() once the server confirms.
+    setHistory((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: "revoked" as const } : r)),
+    );
+    startTransition(async () => {
+      await revokeReleaseRequest(id);
+      router.refresh();
+    });
   };
 
   const onStartAnother = () => {
@@ -364,8 +377,8 @@ export function RecordReleaseForm({ patientId, patientLegalName }: Props) {
                   sent. You&apos;ll see the status update here and in your
                   messages.
                 </p>
-                <Button type="submit" disabled={!canSubmit}>
-                  Submit for review
+                <Button type="submit" disabled={!canSubmit || isPending}>
+                  {isPending ? "Submitting…" : "Submit for review"}
                 </Button>
               </div>
             </form>

@@ -3048,6 +3048,40 @@ model CaregiverInvite {
 }
 
 // --------------------------------------------------------------
+// Record Release (EMR-082) — patient-authorized record sharing.
+// Standalone table with a plain-string patientId (no FK), matching the recent
+// TreatmentGoal / CannabisRecommendation pattern, so it applies cleanly over a
+// db-push-drifted database.
+// --------------------------------------------------------------
+
+model RecordReleaseRequest {
+  id     String @id @default(cuid())
+  patientId String
+  status String @default("submitted") // draft, submitted, approved, sent, declined, revoked
+
+  recipientName     String
+  recipientPractice String?
+  recipientEmail    String?
+  recipientFax      String?
+  recipientAddress  String?
+
+  scope      String // everything, date_range, encounter_types
+  categories String[]
+  dateFrom   DateTime?
+  dateTo     DateTime?
+
+  patientSignatureName String
+  patientSignedAt      DateTime @default(now())
+  expiresAt            DateTime
+  reason               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId, status])
+}
+
+// --------------------------------------------------------------
 // Team / staff invitations (practice lifecycle)
 // Standalone + additive: plain-string ids (organizationId, invitedById,
 // acceptedByUserId) with NO @relation, so this touches no existing model.
