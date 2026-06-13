@@ -156,8 +156,3 @@ services:
       - key: EMAIL_FROM
         sync: false
 
-databases:
-  - name: emr-postgres
-    plan: basic-256mb
-    databaseName: emr
-    user: emr
