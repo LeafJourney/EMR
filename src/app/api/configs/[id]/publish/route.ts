@@ -1,8 +1,10 @@
 // EMR-435 — Configuration CRUD API
 // POST /api/configs/[id]/publish
 //
-// Validates required fields (`selectedSpecialty`, `careModel`, at least one
-// enabled modality), snapshots the row into `PracticeConfigurationVersion`,
+// Validates go-live readiness (`selectedSpecialty`, `careModel`, ≥1 enabled
+// modality, ≥1 charting + ≥1 workflow template, ≥1 active provider, and a
+// CMS-Luhn-valid practice NPI), snapshots the row into
+// `PracticeConfigurationVersion`,
 // increments `version`, flips `status` → 'published', sets publishedAt /
 // publishedBy, and revalidates the by-practice cache tag.
 
@@ -12,42 +14,18 @@ import { prisma } from "@/lib/db/prisma";
 import { logControllerAction } from "@/lib/auth/audit-stub";
 import { withAdminMutation } from "@/lib/auth/with-admin-mutation";
 import { getSpecialtyTemplate } from "@/lib/specialty-templates/registry";
+import { isValidNpi } from "@/lib/billing/identifiers";
 import {
   type ConfigStatus,
   canTransition,
 } from "@/lib/db/practice-config-status";
 import { withAuthErrors, notFound } from "../../_helpers";
+import { findMissing } from "./readiness";
 
 export const runtime = "nodejs";
 
 interface Ctx {
   params: { id: string };
-}
-
-/**
- * Required fields for publish. Specialty-adaptive — we never special-case a
- * specific slug here. `enabledModalities` may be empty for some specialties
- * but the ticket requires at least one enabled modality at publish time.
- */
-function findMissing(
-  config: Record<string, unknown>,
-): string[] {
-  const missing: string[] = [];
-
-  if (!config.selectedSpecialty) missing.push("selectedSpecialty");
-  if (!config.careModel) missing.push("careModel");
-
-  const settings = (config.settings ?? {}) as Record<string, unknown>;
-  const enabled = (settings.enabledModalities ??
-    (config as Record<string, unknown>).enabledModalities) as
-    | unknown[]
-    | undefined;
-
-  if (!Array.isArray(enabled) || enabled.length === 0) {
-    missing.push("enabledModalities");
-  }
-
-  return missing;
 }
 
 export const POST = withAdminMutation<{ id: string }>(
@@ -75,6 +53,27 @@ export const POST = withAdminMutation<{ id: string }>(
     }
 
     const missing = findMissing(config as unknown as Record<string, unknown>);
+
+    // Cross-record go-live readiness (needs the DB, so it can't live in the
+    // pure structural check above):
+    //   - activeProvider : a practice may not go live with nobody to see
+    //                      patients / be assigned encounters and claims.
+    //   - practiceNpi    : the billing group NPI must be present AND pass the
+    //                      CMS-Luhn checksum (the onboarding create routes only
+    //                      length-check it), else the first claim fails.
+    const [activeProvider, practice] = await Promise.all([
+      prisma.provider.findFirst({
+        where: { organizationId: config.organizationId, active: true },
+        select: { id: true },
+      }),
+      prisma.practice.findUnique({
+        where: { id: config.practiceId },
+        select: { npi: true },
+      }),
+    ]);
+    if (!activeProvider) missing.push("activeProvider");
+    if (!isValidNpi(practice?.npi)) missing.push("practiceNpi");
+
     if (missing.length > 0) {
       return NextResponse.json(
         { error: "conflict", missing },

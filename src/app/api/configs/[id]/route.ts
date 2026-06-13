@@ -73,6 +73,23 @@ export const PATCH = withAdminMutation<{ id: string }>(
     });
     if (!existing) return notFound();
 
+    // EMR-436 — only a draft is editable. Blocking the protected fields above
+    // stops a status/version flip via PATCH, but the content fields of an
+    // already-published (live) row would otherwise remain mutable in place,
+    // changing the source-of-truth a practice is actively running without a
+    // new version snapshot or cache revalidation. Edits to a live practice
+    // must fork a fresh draft, not mutate the published row.
+    if (existing.status !== "draft") {
+      return NextResponse.json(
+        {
+          error: "conflict",
+          reason: "cannot_edit_published_config",
+          status: existing.status,
+        },
+        { status: 409 },
+      );
+    }
+
     const updated = await prisma.practiceConfiguration.update({
       where: { id: params.id },
       data: update as Prisma.PracticeConfigurationUpdateInput,

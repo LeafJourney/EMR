@@ -74,20 +74,26 @@ export async function requireImplementationAdmin(): Promise<AuthedUser> {
 export const requireControllerAccess = requireImplementationAdmin;
 
 /**
- * True when `user` may VIEW the published config for `practiceId`.
+ * True when `user` may VIEW the published config for the practice owned by
+ * `organizationId`.
  *
  *   - super_admin           : always true
  *   - implementation_admin  : always true (they steward all practices)
- *   - practice_admin        : only when scoped to that practice via Membership
+ *   - practice_admin        : only when scoped to that org via Membership
  *
  * All other roles: false. This is read-only; mutation paths must use
  * `requireImplementationAdmin()`.
+ *
+ * NOTE: the scope key is an **Organization id**, not a Practice id —
+ * Membership rows are keyed by `organizationId`. Callers that only have a
+ * `Practice.id` must resolve its `organizationId` first (a `Practice.id` will
+ * never match a Membership and the check silently fails closed).
  */
 export async function canViewPracticeConfig(
   user: AuthedUser,
-  practiceId: string,
+  organizationId: string,
 ): Promise<boolean> {
-  if (!practiceId) return false;
+  if (!organizationId) return false;
 
   if (user.roles.includes("super_admin")) return true;
   if (user.roles.includes("implementation_admin")) return true;
@@ -101,7 +107,7 @@ export async function canViewPracticeConfig(
   const membership = await prisma.membership.findFirst({
     where: {
       userId: user.id,
-      organizationId: practiceId,
+      organizationId,
       role: "practice_admin",
     },
     select: { id: true },

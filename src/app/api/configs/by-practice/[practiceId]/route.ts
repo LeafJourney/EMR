@@ -76,7 +76,11 @@ export async function GET(_req: Request, { params }: Ctx) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  const canViewFull = await canViewPracticeConfig(user, params.practiceId);
+  // `canViewPracticeConfig` keys on the Organization id (Membership scope),
+  // NOT the Practice id in the route param. Pass the published config's
+  // organizationId so a practice_admin scoped to this org sees the full row
+  // instead of silently falling through to the thin summary.
+  const canViewFull = await canViewPracticeConfig(user, config.organizationId);
 
   if (canViewFull) {
     return NextResponse.json(config);
