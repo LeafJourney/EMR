@@ -870,7 +870,10 @@ function BalanceLine({
   };
   return (
     <div>
-      <p className="text-[10px] text-text-subtle uppercase tracking-wider">
+      {/* Reserve two lines so a label that wraps in a narrow column (e.g.
+          "Insurance pending") keeps every metric's value on the same
+          baseline instead of dropping one row lower than its neighbours. */}
+      <p className="text-[10px] text-text-subtle uppercase tracking-wider min-h-[2.4em]">
         {label}
       </p>
       <p className={`font-display text-2xl tabular-nums mt-1 ${colors[tone]}`}>

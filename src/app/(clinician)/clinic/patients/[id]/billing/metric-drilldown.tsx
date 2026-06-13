@@ -63,7 +63,7 @@ export function MetricDrilldown({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group relative w-full text-left rounded-lg transition-colors hover:bg-surface-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="group relative w-full text-left rounded-lg pr-5 transition-colors hover:bg-surface-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         aria-label={`${data.label} — open trend`}
       >
         {children}
