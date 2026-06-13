@@ -54,6 +54,10 @@ coverage/
 next-env.d.ts
 tsconfig.tsbuildinfo
 
+# Playwright test output
+test-results/
+playwright-report/
+
 # Scratch test files with credentials
 test-db.js
 test-prisma.js
