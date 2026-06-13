@@ -91,7 +91,15 @@ export function AssessmentForm({ template }: { template: AssessmentTemplate }) {
               {state.score}
             </span>
             <span className="text-lg text-text-muted ml-2">
-              / {template.slug === "pain-vas" ? "10" : template.questions.length * 3}
+              {/* Max score = sum of each question's highest option value (scales
+                  differ: PHQ-9/GAD-7 cap at 3, ISI/AUDIT-C/CUDIT-R at 4,
+                  PROMIS-Pain at 5), not a flat ×3. */}
+              / {template.slug === "pain-vas"
+                ? "10"
+                : template.questions.reduce(
+                    (sum, q) => sum + Math.max(...q.options.map((o) => o.value)),
+                    0,
+                  )}
             </span>
           </div>
         </CardHeader>

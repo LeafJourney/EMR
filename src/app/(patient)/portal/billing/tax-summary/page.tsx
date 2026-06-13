@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
 import { formatMoney } from "@/lib/domain/billing";
+import { PrintButton } from "./print-button";
 
 export const metadata = { title: "Year-End Tax Summary" };
 
@@ -108,16 +109,9 @@ export default async function TaxSummaryPage() {
           <Badge tone="accent">{selectedYear}</Badge>
           <span className="text-sm text-text-muted">Tax year</span>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={undefined}
-          className="print:hidden"
-        >
-          <span className="print:hidden" suppressHydrationWarning>
-            Print summary
-          </span>
-        </Button>
+        <PrintButton variant="primary" size="sm" className="print:hidden">
+          Print summary
+        </PrintButton>
       </div>
 
       {totalPatientPaid === 0 && visitCount === 0 ? (
@@ -257,24 +251,12 @@ export default async function TaxSummaryPage() {
 
           {/* Print button (bottom) */}
           <div className="text-center print:hidden">
-            <PrintButton />
+            <PrintButton variant="ghost" size="sm">
+              Print or save as PDF
+            </PrintButton>
           </div>
         </div>
       )}
     </PageShell>
-  );
-}
-
-function PrintButton() {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (typeof window !== "undefined") window.print();
-      }}
-      className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent/80 transition-colors font-medium"
-    >
-      Print or save as PDF
-    </button>
   );
 }

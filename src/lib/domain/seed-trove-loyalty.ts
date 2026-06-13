@@ -138,6 +138,8 @@ export interface SeedTroveSnapshot {
   tierHue: string;
   seedsToNextTier: number | null;   // null when at the top tier
   nextTierLabel: string | null;
+  /** 0–100 progress through the current tier toward the next (100 at top tier). */
+  tierProgressPct: number;
   recentEntries: SeedLedgerEntry[]; // newest first, capped to 10
 }
 
@@ -168,6 +170,15 @@ export function snapshotFromLedger(userId: string, ledger: SeedLedgerEntry[]): S
     tierHue: tier.hue,
     seedsToNextTier: next ? Math.max(0, next.minSeeds - balance) : null,
     nextTierLabel: next?.label ?? null,
+    tierProgressPct: next
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(((balance - tier.minSeeds) / (next.minSeeds - tier.minSeeds)) * 100),
+          ),
+        )
+      : 100,
     recentEntries: recent,
   };
 }

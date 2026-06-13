@@ -89,10 +89,9 @@ export function TroveWalletView({
 }
 
 function TierStrip({ snapshot, balance }: { snapshot: SeedTroveSnapshot; balance: number }) {
-  const progress =
-    snapshot.seedsToNextTier == null || snapshot.seedsToNextTier === 0
-      ? 100
-      : Math.min(99, Math.floor(((balance - (balance - snapshot.seedsToNextTier - 1)) / (snapshot.seedsToNextTier + 1)) * 100));
+  // Actual progress through the current tier (0–100), computed in the loyalty
+  // builder where the tier floors are known.
+  const progress = snapshot.tierProgressPct;
   return (
     <Card tone="ambient">
       <CardContent className="py-7">
@@ -125,7 +124,7 @@ function TierStrip({ snapshot, balance }: { snapshot: SeedTroveSnapshot; balance
             <div className="h-1.5 mt-1.5 rounded-full bg-surface-muted overflow-hidden">
               <div
                 className="h-full bg-emerald-600 transition-all"
-                style={{ width: `${100 - progress}%` }}
+                style={{ width: `${progress}%` }}
               />
             </div>
           </div>

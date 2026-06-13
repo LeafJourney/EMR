@@ -18,9 +18,13 @@ export async function fileDispute(formData: FormData) {
   const reason = String(formData.get("reason") ?? "") as DisputeReason;
   const narrative = String(formData.get("narrative") ?? "").trim();
   const disputedAmountStr = String(formData.get("disputedAmount") ?? "").trim();
-  const disputedAmountCents = disputedAmountStr
-    ? Math.round(parseFloat(disputedAmountStr) * 100)
-    : null;
+  const parsedAmount = parseFloat(disputedAmountStr);
+  // Guard against NaN (non-numeric input) and negative amounts — otherwise a
+  // NaN or negative cents value gets persisted and rendered as e.g. "-$50.00".
+  const disputedAmountCents =
+    Number.isFinite(parsedAmount) && parsedAmount > 0
+      ? Math.round(parsedAmount * 100)
+      : null;
 
   if (!statementId || !reason || narrative.length < 4) return;
 

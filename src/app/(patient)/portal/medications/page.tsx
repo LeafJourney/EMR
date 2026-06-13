@@ -433,9 +433,11 @@ export default async function MedicationsPage() {
 
                     {/* ── Actions ────────────────────────────── */}
                     <div className="pt-2 flex items-center gap-3 flex-wrap">
-                      <Button variant="highlight" size="md">
-                        Log a dose
-                      </Button>
+                      <a href="/portal/log-dose">
+                        <Button variant="highlight" size="md">
+                          Log a dose
+                        </Button>
+                      </a>
                       <a href="/portal/medications/explainer">
                         <Button variant="ghost" size="md">
                           How does this work?
@@ -534,19 +536,6 @@ export default async function MedicationsPage() {
         </Card>
       </section>
 
-      {/* ==================== Dosing recommendation (merged from /portal/dosing) ==================== */}
-      <EditorialRule className="my-10" />
-      <section id="dosing-plan" className="scroll-mt-24 mb-4">
-        <Eyebrow className="mb-3">Dosing plan</Eyebrow>
-        <h2 className="font-display text-2xl md:text-3xl text-text tracking-tight">
-          AI-assisted dosing recommendation
-        </h2>
-        <p className="text-sm text-text-muted mt-3 max-w-md leading-relaxed mb-6">
-          Built from your health profile, current medications, and outcome
-          trends. Your care team will review and finalize.
-        </p>
-        <DosingDisplay />
-      </section>
     </PageShell>
   );
 }
