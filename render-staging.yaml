@@ -141,8 +141,3 @@ services:
       - key: RESEND_API_KEY
         sync: false
 
-databases:
-  - name: emr-postgres-staging
-    plan: basic-256mb
-    databaseName: emr
-    user: emr
