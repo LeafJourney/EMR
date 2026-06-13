@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  SectionSearchBar,
+  applySectionQuery,
+  type SectionQuery,
+} from "@/components/ops/master";
 import { cn } from "@/lib/utils/cn";
 import { AgentDraftedCard } from "@/components/supplies/agent-drafted-card";
 import type { SupplyOrderRow, SupplyOrderStatus } from "./_placeholder-types";
@@ -64,15 +69,27 @@ export function SuppliesInbox({ initialRows }: { initialRows: SupplyOrderRow[] }
     }
     return map;
   }, [initialRows]);
-  const rows = rowsByTab[active];
+  // MASTER-prompt G8 — date / amount / supplier search over the active tab.
+  const [sectionQuery, setSectionQuery] = useState<SectionQuery | null>(null);
+  const rows = useMemo(() => {
+    const base = rowsByTab[active];
+    return sectionQuery
+      ? applySectionQuery(base, sectionQuery, {
+          getDate: (r) => r.createdAt,
+          getAmount: (r) => r.totalCents / 100,
+          getText: (r) => `${r.supplyName} ${r.supplierName ?? ""}`,
+        })
+      : base;
+  }, [rowsByTab, active, sectionQuery]);
 
   return (
     <div className="space-y-6">
-      <nav
-        role="tablist"
-        aria-label="Supply order status"
-        className="flex flex-wrap gap-1 p-1 rounded-xl bg-surface-muted/60 border border-border/60 w-fit"
-      >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <nav
+          role="tablist"
+          aria-label="Supply order status"
+          className="flex flex-wrap gap-1 p-1 rounded-xl bg-surface-muted/60 border border-border/60 w-fit"
+        >
         {TABS.map((tab) => {
           const count = rowsByTab[tab.key].length;
           const isActive = active === tab.key;
@@ -99,7 +116,13 @@ export function SuppliesInbox({ initialRows }: { initialRows: SupplyOrderRow[] }
             </button>
           );
         })}
-      </nav>
+        </nav>
+        <SectionSearchBar
+          onChange={setSectionQuery}
+          placeholder="Search — “last 30 days”, “> 100”, supplier…"
+          aria-label="Search supply orders by date, amount, or name"
+        />
+      </div>
 
       {rows.length === 0 ? (
         <EmptyState title={EMPTY[active].title} description={EMPTY[active].description} />
