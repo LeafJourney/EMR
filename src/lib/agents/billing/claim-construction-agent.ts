@@ -205,7 +205,10 @@ export const claimConstructionAgent: Agent<
         ? "02"
         : "11");
 
-    // Build CPT and ICD-10 JSON arrays from charges
+    // Build CPT and ICD-10 JSON arrays from charges. Preserve each charge's
+    // linked diagnoses on the CPT entry so the 837P builder can emit real
+    // SV107 pointers (which dx each line treats) instead of always pointing
+    // at the first diagnosis. (EDI-2)
     const cptCodes = charges.map((c, i) => ({
       code: c.cptCode,
       label: c.cptDescription ?? c.cptCode,
@@ -213,6 +216,7 @@ export const claimConstructionAgent: Agent<
       chargeAmount: c.feeAmountCents,
       modifiers: c.modifiers,
       sequence: i + 1,
+      icd10Codes: c.icd10Codes,
     }));
 
     // Collect all unique ICD-10 codes from charges

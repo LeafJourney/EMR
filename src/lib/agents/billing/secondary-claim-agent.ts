@@ -22,6 +22,7 @@ import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
 import { startReasoning } from "../memory/agent-reasoning";
 import { build837P, type Claim837Input, type ClaimAdjustment } from "@/lib/billing/edi/edi-837p";
+import { deriveDiagnosisPointers } from "@/lib/billing/edi/build-from-claim";
 import { validateSnip1to5 } from "@/lib/billing/edi/snip-validator";
 import { resolveBillingIdentifiers } from "@/lib/billing/identifiers";
 import { resolvePayerRuleAsync } from "@/lib/billing/payer-rules-db";
@@ -251,8 +252,10 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
       units?: number;
       chargeAmount?: number;
       modifiers?: string[];
+      icd10Codes?: string[];
     }>;
     const icd10 = (claim.icd10Codes ?? []) as Array<{ code: string }>;
+    const claimDiagnoses = icd10.map((d) => d.code);
 
     const lineDetails = parseLineDetails(adjudication.lineDetails);
 
@@ -309,7 +312,7 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
           modifiers: cpt.modifiers ?? [],
           units: cpt.units ?? 1,
           chargeCents: Math.round((cpt.chargeAmount ?? 0) * 100),
-          diagnosisPointers: icd10.length > 0 ? [1] : [],
+          diagnosisPointers: deriveDiagnosisPointers(cpt.icd10Codes, claimDiagnoses),
           serviceDate: claim.serviceDate,
           placeOfService: claim.placeOfService ?? undefined,
           primaryAdjudication: ld

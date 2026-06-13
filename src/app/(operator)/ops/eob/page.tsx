@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import {
-  parseEra835,
+  buildEobFromEra835,
   topPatientRespReasons,
   buildSummaryPrompt,
   type ParsedEob,
@@ -81,7 +81,7 @@ export default function EobInboxPage() {
     (s) => ({
       patient: s.patient,
       mrn: s.mrn,
-      eob: parseEra835(SAMPLE_HEADER, s.segment, s.matchedClaimId),
+      eob: buildEobFromEra835(SAMPLE_HEADER, s.segment, s.matchedClaimId),
     }),
   );
 

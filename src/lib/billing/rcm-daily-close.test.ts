@@ -8,6 +8,7 @@ const closeDay = day("2026-04-15T23:59:00Z");
 const baseInputs = () => ({
   closeDate: closeDay,
   claims: [],
+  payments: [],
   adjustments: [],
   arBuckets: { b0_30: 100000, b31_60: 50000, b61_90: 25000, b91_120: 10000, b120plus: 5000 },
   eraFiles: [],
@@ -24,7 +25,10 @@ describe("aggregateClose", () => {
         {
           id: "c1",
           status: "paid",
-          serviceDate: day("2026-04-15T10:00:00Z"),
+          // RECON-2: serviceDate is weeks before the close, but the claim was
+          // BILLED (created) on the close day — so it counts here.
+          createdAt: day("2026-04-15T09:00:00Z"),
+          serviceDate: day("2026-04-01T10:00:00Z"),
           submittedAt: day("2026-04-15T11:00:00Z"),
           paidAt: day("2026-04-15T15:00:00Z"),
           deniedAt: null,
@@ -39,7 +43,8 @@ describe("aggregateClose", () => {
         {
           id: "c2",
           status: "denied",
-          serviceDate: day("2026-04-14T10:00:00Z"), // not on close day
+          createdAt: day("2026-04-14T10:00:00Z"), // billed the prior day
+          serviceDate: day("2026-04-14T10:00:00Z"),
           submittedAt: day("2026-04-15T11:00:00Z"),
           paidAt: null,
           deniedAt: day("2026-04-15T16:00:00Z"),
@@ -52,13 +57,21 @@ describe("aggregateClose", () => {
           timelyFilingDeadline: null,
         },
       ],
+      // RECON-1: cash is attributed by paymentDate. Only the $125 insurance
+      // payment lands on the close day; the off-day payment and the non-cash
+      // "adjustment" source are excluded.
+      payments: [
+        { amountCents: 12500, source: "insurance", paymentDate: day("2026-04-15T15:00:00Z") },
+        { amountCents: 9999, source: "insurance", paymentDate: day("2026-04-14T15:00:00Z") },
+        { amountCents: 500, source: "adjustment", paymentDate: day("2026-04-15T15:00:00Z") },
+      ],
     });
-    expect(row.claimsCreated).toBe(1); // only c1's serviceDate is on close day
+    expect(row.claimsCreated).toBe(1); // only c1 was billed (createdAt) on close day
     expect(row.claimsSubmitted).toBe(2);
     expect(row.claimsPaid).toBe(1);
     expect(row.claimsDenied).toBe(1);
-    expect(row.billedCents).toBe(20000); // only c1
-    expect(row.paidCents).toBe(12500);
+    expect(row.billedCents).toBe(20000); // c1 only — by createdAt, not serviceDate
+    expect(row.paidCents).toBe(12500); // close-day insurance cash only
   });
 
   it("rolls AR buckets straight through", () => {
@@ -75,6 +88,7 @@ describe("aggregateClose", () => {
         {
           id: "wo",
           status: "written_off",
+          createdAt: day("2026-04-15"),
           serviceDate: day("2026-04-15"),
           submittedAt: null,
           paidAt: null,
@@ -101,6 +115,7 @@ describe("findExceptions", () => {
         {
           id: "stale",
           status: "submitted",
+          createdAt: day("2026-03-05"),
           serviceDate: day("2026-03-01"),
           submittedAt: day("2026-03-05"),
           paidAt: null,
@@ -154,6 +169,7 @@ describe("dailyDigestText", () => {
         {
           id: "c1",
           status: "paid",
+          createdAt: closeDay,
           serviceDate: closeDay,
           submittedAt: closeDay,
           paidAt: closeDay,
