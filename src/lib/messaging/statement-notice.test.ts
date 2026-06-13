@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildStatementNotice } from "./statement-notice";
+import { buildStatementNotice, buildTaxSummaryNotice } from "./statement-notice";
 
 const input = {
   statementNumber: "STMT-2026-001",
@@ -44,5 +44,33 @@ describe("buildStatementNotice", () => {
     const n = buildStatementNotice("sms", { ...input, portalUrl: "https://app.leafjourney.com/" });
     expect(n.body).toContain("https://app.leafjourney.com/portal/billing/statements");
     expect(n.body).not.toContain("com//portal");
+  });
+});
+
+describe("buildTaxSummaryNotice", () => {
+  const taxInput = {
+    year: 2025,
+    portalUrl: "https://app.leafjourney.com",
+    practiceName: "Leafjourney Health",
+  };
+
+  it("references the tax year + the portal tax-summary link", () => {
+    const email = buildTaxSummaryNotice("email", taxInput);
+    expect(email.subject).toContain("2025");
+    expect(email.body).toContain("2025");
+    expect(email.body).toContain("https://app.leafjourney.com/portal/billing/tax-summary");
+
+    const sms = buildTaxSummaryNotice("sms", taxInput);
+    expect(sms.subject).toBeUndefined();
+    expect(sms.body).toContain("/portal/billing/tax-summary");
+  });
+
+  it("is PHI-safe: no amounts or clinical detail", () => {
+    for (const channel of ["email", "sms"] as const) {
+      const n = buildTaxSummaryNotice(channel, taxInput);
+      const text = `${n.subject ?? ""} ${n.body}`;
+      expect(text).not.toMatch(/\$\d/);
+      expect(text.toLowerCase()).not.toMatch(/diagnos|medication|cpt|icd/);
+    }
   });
 });

@@ -5,10 +5,10 @@ import { requireRole } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
 import { formatMoney } from "@/lib/domain/billing";
+import { getPatientTaxSummary } from "@/lib/domain/tax-summary";
 
 export const metadata = { title: "Year-End Tax Summary" };
 
@@ -29,68 +29,18 @@ export default async function TaxSummaryPage() {
   const currentYear = new Date().getFullYear();
   const selectedYear = currentYear - 1; // Previous tax year
 
-  // Fetch all payments and claims for the tax year
-  const [payments, claims] = await Promise.all([
-    prisma.payment.findMany({
-      where: {
-        claim: { patientId: patient.id },
-        paymentDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
-        },
-        source: "patient",
-      },
-      include: {
-        claim: {
-          select: {
-            serviceDate: true,
-            cptCodes: true,
-            icd10Codes: true,
-            billedAmountCents: true,
-          },
-        },
-      },
-      orderBy: { paymentDate: "asc" },
-    }),
-    prisma.claim.findMany({
-      where: {
-        patientId: patient.id,
-        serviceDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
-        },
-      },
-      orderBy: { serviceDate: "asc" },
-    }),
-  ]);
+  // Shared aggregation — the clinician billing tab renders from the same source.
+  const summary = await getPatientTaxSummary(patient.id, selectedYear);
 
-  const totalPatientPaid = payments.reduce((sum, p) => sum + p.amountCents, 0);
-  const totalCharged = claims.reduce((sum, c) => sum + (c.billedAmountCents ?? 0), 0);
-  const totalPatientResponsibility = claims.reduce(
-    (sum, c) => sum + (c.patientRespCents ?? 0),
-    0
-  );
-
-  // Group by quarter
-  const quarters = [
-    { label: "Q1 (Jan-Mar)", months: [0, 1, 2] },
-    { label: "Q2 (Apr-Jun)", months: [3, 4, 5] },
-    { label: "Q3 (Jul-Sep)", months: [6, 7, 8] },
-    { label: "Q4 (Oct-Dec)", months: [9, 10, 11] },
-  ];
-
-  const quarterTotals = quarters.map((q) => {
-    const qPayments = payments.filter((p) =>
-      q.months.includes(new Date(p.paymentDate).getMonth())
-    );
-    return {
-      ...q,
-      amount: qPayments.reduce((sum, p) => sum + p.amountCents, 0),
-      count: qPayments.length,
-    };
-  });
-
-  const visitCount = claims.length;
+  const totalPatientPaid = summary.totalPatientPaidCents;
+  const totalCharged = summary.totalChargedCents;
+  const totalPatientResponsibility = summary.totalPatientResponsibilityCents;
+  const quarterTotals = summary.quarters.map((q) => ({
+    label: q.label,
+    amount: q.amountCents,
+    count: q.count,
+  }));
+  const visitCount = summary.visitCount;
 
   return (
     <PageShell maxWidth="max-w-[860px]">
@@ -108,16 +58,7 @@ export default async function TaxSummaryPage() {
           <Badge tone="accent">{selectedYear}</Badge>
           <span className="text-sm text-text-muted">Tax year</span>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={undefined}
-          className="print:hidden"
-        >
-          <span className="print:hidden" suppressHydrationWarning>
-            Print summary
-          </span>
-        </Button>
+        <PrintButton variant="primary" label="Print summary" />
       </div>
 
       {totalPatientPaid === 0 && visitCount === 0 ? (
@@ -187,7 +128,7 @@ export default async function TaxSummaryPage() {
               <CardDescription>Individual visits and charges for your records</CardDescription>
             </CardHeader>
             <CardContent>
-              {claims.length > 0 ? (
+              {summary.services.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -199,29 +140,22 @@ export default async function TaxSummaryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {claims.map((claim) => {
-                        const cptCodes = Array.isArray(claim.cptCodes) ? claim.cptCodes : [];
-                        return (
-                          <tr key={claim.id} className="border-b border-border/30 last:border-0">
-                            <td className="py-3 pr-4 text-text-muted tabular-nums">
-                              {claim.serviceDate
-                                ? new Date(claim.serviceDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                                : "—"}
-                            </td>
-                            <td className="py-3 pr-4 text-text">
-                              {cptCodes.length > 0
-                                ? (cptCodes as any[]).map((c: any) => c.code || c).join(", ")
-                                : "Office visit"}
-                            </td>
-                            <td className="py-3 pr-4 text-right text-text-muted tabular-nums">
-                              {formatMoney(claim.billedAmountCents ?? 0)}
-                            </td>
-                            <td className="py-3 text-right font-medium text-text tabular-nums">
-                              {formatMoney(claim.patientRespCents ?? 0)}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {summary.services.map((row, i) => (
+                        <tr key={i} className="border-b border-border/30 last:border-0">
+                          <td className="py-3 pr-4 text-text-muted tabular-nums">
+                            {row.serviceDateMs
+                              ? new Date(row.serviceDateMs).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+                              : "—"}
+                          </td>
+                          <td className="py-3 pr-4 text-text">{row.cptLabel}</td>
+                          <td className="py-3 pr-4 text-right text-text-muted tabular-nums">
+                            {formatMoney(row.billedCents)}
+                          </td>
+                          <td className="py-3 text-right font-medium text-text tabular-nums">
+                            {formatMoney(row.patientRespCents)}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -265,16 +199,26 @@ export default async function TaxSummaryPage() {
   );
 }
 
-function PrintButton() {
+function PrintButton({
+  label = "Print or save as PDF",
+  variant = "link",
+}: {
+  label?: string;
+  variant?: "link" | "primary";
+}) {
   return (
     <button
       type="button"
       onClick={() => {
         if (typeof window !== "undefined") window.print();
       }}
-      className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent/80 transition-colors font-medium"
+      className={
+        variant === "primary"
+          ? "inline-flex items-center gap-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink shadow-sm hover:bg-accent-strong transition-colors"
+          : "inline-flex items-center gap-2 text-sm text-accent hover:text-accent/80 transition-colors font-medium"
+      }
     >
-      Print or save as PDF
+      {label}
     </button>
   );
 }

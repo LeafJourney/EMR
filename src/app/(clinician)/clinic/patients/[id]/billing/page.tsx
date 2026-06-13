@@ -810,6 +810,23 @@ export default async function PatientBillingPage({ params }: PageProps) {
       {/* G. Audit Trail / Financial Events                         */}
       {/* ═════════════════════════════════════════════════════════ */}
       <EventLogSection title="Financial event log" events={eventItems} />
+
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* Tax documents — year-end patient payment summary           */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      <div className="mt-10 pt-6 border-t border-border flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-text">Year-end tax summary</p>
+          <p className="text-xs text-text-muted">
+            Out-of-pocket expense summary for IRS Pub 502 — view, print, or send to the patient.
+          </p>
+        </div>
+        <Link href={`/clinic/patients/${params.id}/billing/tax-summary`}>
+          <Button variant="secondary" size="sm">
+            Generate tax summary
+          </Button>
+        </Link>
+      </div>
       </div>
     </PageShell>
   );

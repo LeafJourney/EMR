@@ -8,7 +8,10 @@ import { requireUser } from "@/lib/auth/session";
 import { resolvePaymentGateway } from "@/lib/payments";
 import { adjustPlan, createPlan, REMINDER_CADENCES } from "@/lib/billing/payment-plans";
 import { deliverMessage } from "@/lib/messaging/deliver";
-import { buildStatementNotice } from "@/lib/messaging/statement-notice";
+import {
+  buildStatementNotice,
+  buildTaxSummaryNotice,
+} from "@/lib/messaging/statement-notice";
 import { logger } from "@/lib/observability/log";
 
 // ---------------------------------------------------------------------------
@@ -684,6 +687,125 @@ export async function sendStatementAction(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to send statement",
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Notify a patient that their year-end tax summary is ready
+// Dr. Patel directive (billing — "Generate tax documents… sendable via email
+// and saveable to Correspondence"). Reuses the deliverMessage choke-point + the
+// per-patient billing thread. PHI-safe: only the tax year + a bare-portal link.
+// ---------------------------------------------------------------------------
+
+const sendTaxSummarySchema = z.object({
+  patientId: z.string().min(1),
+  year: z.coerce.number().int().min(2000).max(2100),
+  channel: z.enum(["email", "sms"]),
+});
+
+export async function sendTaxSummaryNotice(
+  patientId: string,
+  year: number,
+  channel: "email" | "sms",
+): Promise<SendStatementResult> {
+  const user = await requireUser();
+
+  if (
+    !user.roles.some(
+      (r) =>
+        r === "front_office" ||
+        r === "back_office" ||
+        r === "operator" ||
+        r === "practice_owner" ||
+        r === "practice_admin" ||
+        r === "clinician",
+    )
+  ) {
+    return { ok: false, error: "Unauthorized" };
+  }
+
+  const parsed = sendTaxSummarySchema.safeParse({ patientId, year, channel });
+  if (!parsed.success) return { ok: false, error: "Invalid request" };
+
+  const patient = await prisma.patient.findFirst({
+    where: {
+      id: parsed.data.patientId,
+      organizationId: user.organizationId!,
+      deletedAt: null,
+    },
+    select: { id: true, email: true, phone: true },
+  });
+  if (!patient) return { ok: false, error: "Patient not found." };
+
+  const recipient =
+    parsed.data.channel === "email" ? patient.email : patient.phone;
+  if (!recipient) {
+    return {
+      ok: false,
+      error:
+        parsed.data.channel === "email"
+          ? "No email address on file for this patient."
+          : "No phone number on file for this patient.",
+    };
+  }
+
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId! },
+    select: { name: true },
+  });
+  const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "";
+  const notice = buildTaxSummaryNotice(parsed.data.channel, {
+    year: parsed.data.year,
+    portalUrl,
+    practiceName: org?.name ?? "your care team",
+  });
+
+  const BILLING_SUBJECT = "Billing & statements";
+  let thread = await prisma.messageThread.findFirst({
+    where: { patientId: patient.id, subject: BILLING_SUBJECT },
+    select: { id: true },
+  });
+  if (!thread) {
+    thread = await prisma.messageThread.create({
+      data: { patientId: patient.id, subject: BILLING_SUBJECT },
+      select: { id: true },
+    });
+  }
+
+  try {
+    const result = await deliverMessage({
+      threadId: thread.id,
+      channel: parsed.data.channel,
+      body: notice.body,
+      subject: notice.subject,
+      recipient,
+      senderUserId: user.id,
+      organizationId: user.organizationId!,
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        organizationId: user.organizationId!,
+        actorUserId: user.id,
+        action: `patient.tax_summary.sent.${parsed.data.channel}`,
+        subjectType: "Patient",
+        subjectId: patient.id,
+        metadata: {
+          year: parsed.data.year,
+          channel: parsed.data.channel,
+          delivery: result.delivery,
+        },
+      },
+    });
+
+    revalidatePath(`/clinic/patients/${patient.id}/billing`);
+    return { ok: true, delivery: result.delivery, detail: result.detail };
+  } catch (err) {
+    logger.error({ event: "clinic.billing.tax_summary_send_failed", err });
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to send tax summary",
     };
   }
 }
