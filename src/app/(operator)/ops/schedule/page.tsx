@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
 import { computeAppointmentRisk } from "@/lib/scheduling/appointment-risk";
 import type { RiskTier } from "@/lib/scheduling/no-show-model";
 import {
@@ -274,19 +273,6 @@ export default async function SchedulePage({
     user: { firstName: p.user.firstName, lastName: p.user.lastName },
   }));
 
-  // Stats (reflect the chosen window).
-  const totalThisWeek = appointments.length;
-  const confirmedCount = appointments.filter(
-    (a) => a.status === "confirmed",
-  ).length;
-  const requestedCount = appointments.filter(
-    (a) => a.status === "requested",
-  ).length;
-  const completedCount = appointments.filter(
-    (a) => a.status === "completed",
-  ).length;
-  const todayCount = appointments.filter((a) => isSameDay(a.startAt, now)).length;
-
   const spanLabel = rangeSpanLabel(start, end);
 
   return (
@@ -296,15 +282,6 @@ export default async function SchedulePage({
         title="Schedule"
         description={spanLabel}
       />
-
-      {/* Stats strip */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <StatCard label="In range" value={totalThisWeek} />
-        <StatCard label="Today" value={todayCount} tone="accent" />
-        <StatCard label="Confirmed" value={confirmedCount} tone="success" />
-        <StatCard label="Requested" value={requestedCount} tone="warning" />
-        <StatCard label="Completed" value={completedCount} tone="neutral" />
-      </div>
 
       <ScheduleClient
         rangeLabel={spanLabel}
@@ -353,33 +330,3 @@ function serializeAppointment(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Stat card
-// ---------------------------------------------------------------------------
-
-function StatCard({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: number;
-  tone?: "accent" | "success" | "warning" | "neutral";
-}) {
-  const colors = {
-    accent: "text-accent",
-    success: "text-success",
-    warning: "text-[color:var(--warning)]",
-    neutral: "text-text",
-  };
-  return (
-    <Card tone="raised">
-      <CardContent className="pt-5 pb-5">
-        <p className={`font-display text-3xl tabular-nums ${colors[tone]}`}>
-          {value}
-        </p>
-        <p className="text-xs text-text-muted mt-1">{label}</p>
-      </CardContent>
-    </Card>
-  );
-}
