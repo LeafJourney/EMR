@@ -8,7 +8,7 @@ export const metadata = { title: "Schedule" };
 export default async function ClinicianSchedulePage({
   searchParams,
 }: {
-  searchParams: { week?: string; view?: string };
+  searchParams: { week?: string; view?: string; patient?: string; patientId?: string };
 }) {
   const user = await requireUser();
   const orgId = user.organizationId!;
@@ -93,6 +93,7 @@ export default async function ClinicianSchedulePage({
             ? `${p.addressLine1}${p.city ? `, ${p.city}` : ""}${p.state ? ` ${p.state}` : ""}`
             : null,
         }))}
+        patientId={searchParams.patient || searchParams.patientId}
       />
     </PageShell>
   );
