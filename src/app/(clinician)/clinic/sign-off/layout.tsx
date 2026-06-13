@@ -90,9 +90,16 @@ export default async function SignOffLayout({
     <div className="flex h-full min-h-[calc(100vh-4rem)]">
       {/* Left sidebar — Sign-Off tree navigation */}
       <div className="w-56 shrink-0 border-r border-border bg-surface flex flex-col p-3">
-        <p className="text-[11px] font-semibold text-text-subtle uppercase tracking-[0.12em] mb-3 px-2">
-          Sign-off
-        </p>
+        <div className="flex items-center justify-between mb-3 px-2">
+          <p className="text-[11px] font-semibold text-text-subtle uppercase tracking-[0.12em]">
+            Sign-off
+          </p>
+          {total > 0 && (
+            <span className="text-[10px] font-semibold tabular-nums rounded-full bg-surface-muted px-1.5 py-0.5 text-text-subtle">
+              {total}
+            </span>
+          )}
+        </div>
         <SignOffNav sections={sections} />
       </div>
 
