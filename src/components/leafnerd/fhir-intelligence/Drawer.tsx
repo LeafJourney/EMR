@@ -142,7 +142,7 @@ export function Drawer({ payload, onClose, toast }: { payload: DrawerPayload; on
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
-  }, []);
+  }, [onClose]);
 
   const tabsFor: [string, string][] = ({
     fhir:    [["summary", "Normalized"], ["raw", "Raw JSON"], ["prov", "Provenance"], ["valid", "Validation"]],
