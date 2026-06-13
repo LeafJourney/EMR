@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FieldGroup, Input, Textarea } from "@/components/ui/input";
 import { LinkifiedText } from "@/components/ui/linkified-text";
+import {
+  SectionSearchBar,
+  applySectionQuery,
+  type SectionQuery,
+} from "@/components/ops/master";
 import { cn } from "@/lib/utils/cn";
 
 export type AnnouncementCategory = "Clinical" | "Ops" | "Celebrations" | "Reminders";
@@ -48,6 +53,8 @@ export function AnnouncementsView({
 }) {
   const [items, setItems] = useState<Announcement[]>(initialAnnouncements);
   const [filter, setFilter] = useState<"all" | AnnouncementCategory>("all");
+  // MASTER-prompt G8 — per-section date/keyword filter for the feed below.
+  const [sectionQuery, setSectionQuery] = useState<SectionQuery | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState({
     title: "",
@@ -59,11 +66,17 @@ export function AnnouncementsView({
 
   const visible = useMemo(() => {
     const filtered = filter === "all" ? items : items.filter((i) => i.category === filter);
-    return [...filtered].sort((a, b) => {
+    const searched = sectionQuery
+      ? applySectionQuery(filtered, sectionQuery, {
+          getDate: (a) => a.createdAt,
+          getText: (a) => `${a.title} ${a.body} ${a.category}`,
+        })
+      : filtered;
+    return [...searched].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.createdAt.localeCompare(a.createdAt);
     });
-  }, [items, filter]);
+  }, [items, filter, sectionQuery]);
 
   function react(id: string, emoji: string) {
     setItems((prev) =>
@@ -136,6 +149,15 @@ export function AnnouncementsView({
         <Button size="sm" onClick={() => setComposeOpen(true)}>
           Post announcement
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-sm font-semibold text-text">Announcements</h2>
+        <SectionSearchBar
+          onChange={setSectionQuery}
+          placeholder="Filter — “last 30 days”, “reminder”…"
+          aria-label="Filter announcements by date or keyword"
+        />
       </div>
 
       <div className="space-y-4">

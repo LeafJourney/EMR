@@ -11,10 +11,12 @@ export interface ContextDrawerProps {
   pathname: string;
   onClose: () => void;
   pinned: boolean;
+  /** True when overlay is forced by a narrow viewport (G2) — pinning is N/A. */
+  narrow?: boolean;
   onTogglePin: () => void;
 }
 
-export function ContextDrawer({ section, pathname, onClose, pinned, onTogglePin }: ContextDrawerProps) {
+export function ContextDrawer({ section, pathname, onClose, pinned, narrow = false, onTogglePin }: ContextDrawerProps) {
   const open = section !== null;
   const ref = React.useRef<HTMLDivElement | null>(null);
 
@@ -103,25 +105,29 @@ export function ContextDrawer({ section, pathname, onClose, pinned, onTogglePin 
             </ul>
           </nav>
           
-          {/* Monday.com-style Pin Footer */}
-          <div className="mt-auto border-t border-border/80 p-3">
-            <button
-              type="button"
-              onClick={onTogglePin}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-surface-muted/50 py-2 text-xs font-medium text-text-subtle hover:bg-surface-muted hover:text-text transition-colors"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className={cn("transition-transform duration-200", !pinned && "rotate-45")}
+          {/* Monday.com-style Pin Footer. Hidden when a narrow viewport forces
+              overlay mode (G2) — pinning the drawer into the layout isn't an
+              option until the window widens again. */}
+          {!narrow && (
+            <div className="mt-auto border-t border-border/80 p-3">
+              <button
+                type="button"
+                onClick={onTogglePin}
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-surface-muted/50 py-2 text-xs font-medium text-text-subtle hover:bg-surface-muted hover:text-text transition-colors"
               >
-                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-              </svg>
-              {pinned ? "Collapse sidebar" : "Pin sidebar"}
-            </button>
-          </div>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className={cn("transition-transform duration-200", !pinned && "rotate-45")}
+                >
+                  <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                </svg>
+                {pinned ? "Collapse sidebar" : "Pin sidebar"}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

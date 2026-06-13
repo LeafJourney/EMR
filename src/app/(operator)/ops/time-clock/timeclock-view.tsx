@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  SectionSearchBar,
+  applySectionQuery,
+  type SectionQuery,
+} from "@/components/ops/master";
 import { cn } from "@/lib/utils/cn";
 
 interface ClockEntry {
@@ -135,7 +140,19 @@ export function TimeclockView({ userName }: { userName: string }) {
     [entries, now],
   );
 
-  const recent = [...entries].reverse().slice(0, 10);
+  // MASTER-prompt G8 — calendar/keyword search over the recent-activity log.
+  const [activityQuery, setActivityQuery] = useState<SectionQuery | null>(null);
+  const filteredEntries = useMemo(
+    () =>
+      activityQuery
+        ? applySectionQuery(entries, activityQuery, {
+            getDate: (e) => e.timestamp,
+            getText: (e) => `clock ${e.type} clocked ${e.type}`,
+          })
+        : entries,
+    [entries, activityQuery],
+  );
+  const recent = [...filteredEntries].reverse().slice(0, 10);
 
   function exportTimesheet() {
     const header = "timestamp,type\n";
@@ -205,11 +222,18 @@ export function TimeclockView({ userName }: { userName: string }) {
 
       <Card tone="raised">
         <CardContent className="py-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
             <p className="text-sm font-medium text-text">Recent activity</p>
-            <Button size="sm" variant="secondary" onClick={exportTimesheet} disabled={entries.length === 0}>
-              Export timesheet
-            </Button>
+            <div className="flex items-end gap-2">
+              <SectionSearchBar
+                onChange={setActivityQuery}
+                placeholder="Search — “last 7 days”, “clock out”…"
+                aria-label="Search clock activity by date or type"
+              />
+              <Button size="sm" variant="secondary" onClick={exportTimesheet} disabled={entries.length === 0}>
+                Export timesheet
+              </Button>
+            </div>
           </div>
           {recent.length === 0 ? (
             <p className="text-xs text-text-subtle">No clock activity yet.</p>

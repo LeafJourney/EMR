@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { GlobalSearchButton } from "@/components/ui/global-search-button";
 import { SystemBannerRail } from "@/components/ui/system-banner";
 import { homeForRoles } from "@/lib/rbac/roles";
 import { prisma } from "@/lib/db/prisma";
@@ -265,6 +266,7 @@ export default async function OperatorLayout({
         showNavPrefs={false}
       >
         <CommandPalette role="operator" userId={user.id} />
+        <GlobalSearchButton />
         {children}
       </AppShell>
     </>

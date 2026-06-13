@@ -393,6 +393,28 @@ export interface CommandPaletteProps {
   userId?: string;
 }
 
+/**
+ * Programmatically open (toggle) the global command palette from anywhere —
+ * no context plumbing. Re-dispatches the ⌘K / Ctrl+K hotkey the palette
+ * already listens for globally, so it works in every route group regardless
+ * of where the palette mounts. Used by the MASTER-prompt G4 bottom-left
+ * "search everything" affordance and the error-page CTA.
+ */
+export function openCommandPalette(): void {
+  if (typeof window === "undefined") return;
+  const isMac =
+    typeof navigator !== "undefined" && /mac|iphone|ipad|ipod/i.test(navigator.platform);
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "k",
+      code: "KeyK",
+      metaKey: isMac,
+      ctrlKey: !isMac,
+      bubbles: true,
+    }),
+  );
+}
+
 export function CommandPalette({ role, userId }: CommandPaletteProps = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);

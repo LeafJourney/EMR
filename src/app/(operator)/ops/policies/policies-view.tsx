@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { AutocompleteInput, type AutocompleteOption } from "@/components/ops/master";
 import { cn } from "@/lib/utils/cn";
 
 export type PolicyCategory = "Clinical" | "HIPAA" | "Safety" | "Operations" | "Emergency";
@@ -89,6 +90,20 @@ export function PoliciesView({ policies: initialPolicies }: { policies: Policy[]
     [filtered, selectedId],
   );
 
+  // MASTER-prompt G3 — top-7 page-specific matches: policy titles (label),
+  // searchable by category + body text (keywords), mirroring the title-or-body
+  // filter below.
+  const policyOptions: AutocompleteOption[] = useMemo(
+    () =>
+      policies.map((p) => ({
+        value: p.title,
+        label: p.title,
+        sublabel: p.category,
+        keywords: [p.category, p.body],
+      })),
+    [policies],
+  );
+
   function acknowledge(id: string) {
     const next = { ...acks, [id]: new Date().toISOString() };
     setAcks(next);
@@ -98,11 +113,14 @@ export function PoliciesView({ policies: initialPolicies }: { policies: Policy[]
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input
-          type="search"
-          placeholder="Search policies…"
+        <AutocompleteInput
+          options={policyOptions}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onValueChange={setQuery}
+          onSelect={(opt) => setQuery(opt.value)}
+          placeholder="Search policies…"
+          emptyMessage="No policies match"
+          aria-label="Search policies"
           className="md:w-80"
         />
         <Button size="sm" variant="secondary" onClick={openCreate}>
