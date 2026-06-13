@@ -380,7 +380,7 @@ export function QuickDoseLogger({ patientId, products }: Props) {
             Tap all that apply (optional)
           </p>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {SIDE_EFFECT_OPTIONS.map((eff) => (
               <button
                 key={eff.id}
@@ -673,7 +673,7 @@ function FollowUpHost() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <Card className="rounded-2xl w-full max-w-md shadow-2xl animate-in fade-in slide-in-from-bottom-4">
+      <Card className="rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl animate-in fade-in slide-in-from-bottom-4">
         <CardContent className="pt-8 pb-8">
           <div className="text-center mb-6">
             <p className="text-4xl mb-3">👋</p>

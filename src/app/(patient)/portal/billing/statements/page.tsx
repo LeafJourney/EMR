@@ -158,7 +158,8 @@ export default async function PatientStatementsPage() {
         ) : (
           <Card tone="raised">
             <CardContent className="py-4">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-sm min-w-[26rem]">
                 <thead>
                   <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wider border-b border-border/60">
                     <th className="py-2">Date</th>
@@ -191,6 +192,7 @@ export default async function PatientStatementsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </CardContent>
           </Card>
         )}

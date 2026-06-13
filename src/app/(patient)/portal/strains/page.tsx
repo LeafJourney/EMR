@@ -158,6 +158,11 @@ export default async function StrainFinderPage({
           : `Showing ${display.length} popular strains. Add a symptom to refine.`}
       </p>
 
+      {display.length === 0 && (
+        <p className="text-sm text-text-muted text-center py-10">
+          No strains match your filter. Try removing a symptom or classification.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {display.map(({ strain, score, matchedSymptoms }) => (
           <Card key={strain.id} tone="raised">

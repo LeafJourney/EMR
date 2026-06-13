@@ -221,7 +221,7 @@ function PlayerModal({
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={() => onClose(false)}
       />
-      <div className="relative z-10 w-full max-w-2xl rounded-3xl border border-border bg-surface-raised shadow-2xl overflow-hidden">
+      <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-border bg-surface-raised shadow-2xl">
         <div
           className={`${video.thumbnailBg} flex aspect-video items-center justify-center`}
         >

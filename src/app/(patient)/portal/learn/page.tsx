@@ -279,7 +279,7 @@ export default function LearnPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   <div className="rounded-lg bg-accent-soft/40 border border-accent/10 px-3 py-2 text-center">
                     <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-accent mb-0.5">Onset</p>
                     <p className="text-sm font-display text-text">{d.onset}</p>

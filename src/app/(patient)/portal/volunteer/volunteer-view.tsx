@@ -373,7 +373,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={onClose}
     >
-      <Card tone="raised" className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+      <Card tone="raised" className="w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {children}
       </Card>
     </div>
