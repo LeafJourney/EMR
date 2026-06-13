@@ -45,6 +45,7 @@ type Props = {
   initialView?: View;
   timeZone: string;
   patients: PatientDTO[];
+  patientId?: string;
 };
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
@@ -61,6 +62,7 @@ export function ScheduleCalendar({
   initialView = "week",
   timeZone,
   patients,
+  patientId,
 }: Props) {
   const router = useRouter();
   const [view, setView] = React.useState<View>(initialView);
@@ -84,6 +86,15 @@ export function ScheduleCalendar({
     if (today >= weekStart && today < addDays(weekStart, 7)) return today;
     return weekStart;
   }, [weekStart]);
+
+  const handleSlotClick = (dayIdx: number, slotIdx: number) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + dayIdx);
+    d.setMinutes(FIRST_HOUR * 60 + slotIdx * SLOT_MIN);
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    setShowScheduleModal(d);
+  };
 
   // Click handler to dismiss context menu
   React.useEffect(() => {
@@ -274,6 +285,7 @@ export function ScheduleCalendar({
           appointments={appointments}
           onDrop={onDrop}
           onContextMenu={handleSlotContextMenu}
+          onSlotClick={handleSlotClick}
           pending={pending}
         />
       )}
@@ -294,6 +306,12 @@ export function ScheduleCalendar({
               (dayStart.getTime() - weekStart.getTime()) / 86_400_000,
             );
             return handleSlotContextMenu(e, dayIdx, slotIdx);
+          }}
+          onSlotClick={(slotIdx) => {
+            const dayIdx = Math.round(
+              (dayStart.getTime() - weekStart.getTime()) / 86_400_000,
+            );
+            return handleSlotClick(dayIdx, slotIdx);
           }}
           pending={pending}
         />
@@ -379,6 +397,7 @@ export function ScheduleCalendar({
           appointments={appointments}
           timeZone={timeZone}
           onClose={() => setShowScheduleModal(null)}
+          initialPatient={patients.find((p) => p.id === patientId) || null}
           onSave={async (patientId, duration, modality, notes, force) => {
             setShowScheduleModal(null);
             setPending(true);
