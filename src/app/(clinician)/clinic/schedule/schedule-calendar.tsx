@@ -431,12 +431,14 @@ function WeekGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onSlotClick,
   pending,
 }: {
   weekStart: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, dayIdx: number, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, dayIdx: number, slotIdx: number) => void;
+  onSlotClick: (dayIdx: number, slotIdx: number) => void;
   pending: boolean;
 }) {
   return (
@@ -488,6 +490,7 @@ function WeekGrid({
                     appointment={findAppt(appointments, weekStart, dayIdx, slotIdx)}
                     onDrop={(apptId) => onDrop(apptId, dayIdx, slotIdx)}
                     onContextMenu={(e) => onContextMenu(e, dayIdx, slotIdx)}
+                    onClick={() => onSlotClick(dayIdx, slotIdx)}
                     pending={pending}
                     hourMark={isHourMark}
                   />
@@ -507,6 +510,7 @@ function Slot({
   appointment,
   onDrop,
   onContextMenu,
+  onClick,
   pending,
   hourMark,
 }: {
@@ -515,6 +519,7 @@ function Slot({
   appointment: AppointmentDTO | null;
   onDrop: (apptId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onClick: () => void;
   pending: boolean;
   hourMark: boolean;
 }) {
@@ -533,8 +538,14 @@ function Slot({
         if (apptId) onDrop(apptId);
       }}
       onContextMenu={onContextMenu}
+      onClick={() => {
+        if (!appointment) {
+          onClick();
+        }
+      }}
       className={cn(
-        "border-r border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
+        "border-r border-border/40 hover:bg-surface-muted transition-colors",
+        appointment ? "cursor-context-menu" : "cursor-pointer",
         hourMark && "border-t border-border/60",
         isOver && "bg-accent-soft/50",
         pending && "opacity-70",
@@ -553,12 +564,14 @@ function DayGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onSlotClick,
   pending,
 }: {
   day: Date;
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, slotIdx: number) => void;
+  onSlotClick: (slotIdx: number) => void;
   pending: boolean;
 }) {
   return (
@@ -598,8 +611,14 @@ function DayGrid({
                     if (apptId) onDrop(apptId, slotIdx);
                   }}
                   onContextMenu={(e) => onContextMenu(e, slotIdx)}
+                  onClick={() => {
+                    if (!inSlot) {
+                      onSlotClick(slotIdx);
+                    }
+                  }}
                   className={cn(
-                    "border-l border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
+                    "border-l border-border/40 hover:bg-surface-muted transition-colors",
+                    inSlot ? "cursor-context-menu" : "cursor-pointer",
                     isHourMark && "border-t border-border/60",
                     pending && "opacity-70",
                   )}
