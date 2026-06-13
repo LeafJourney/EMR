@@ -2,12 +2,12 @@ import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/ornament";
-import { Badge } from "@/components/ui/badge";
 import { rangeForPeriod, priorRange } from "@/lib/finance/period";
 import { buildPnl } from "@/lib/finance/pnl";
 import { fmtMoney, fmtPct, changeBadgeText } from "@/lib/finance/formatting";
-import { CfoTabs, GenerateReportButton, StatementSection } from "../components";
+import { CfoTabs, GenerateReportButton } from "../components";
 import { PnlTable, type PnlRow } from "./pnl-table";
+import { PnlKpiGrid, type PnlKpiView, type PnlSectionView } from "./pnl-kpi-grid";
 
 export const metadata = { title: "P&L · CFO" };
 export const dynamic = "force-dynamic";
@@ -56,6 +56,113 @@ export default async function PnlPage({ searchParams }: { searchParams?: { perio
     };
   });
 
+  // EMR-1031 — the statement detail sections, now surfaced inside each KPI's
+  // drill-in popup rather than as standalone cards on the page.
+  const sectionRevenue: PnlSectionView = {
+    title: "Revenue",
+    totalLabel: "Total revenue",
+    totalCents: pnl.totals.revenueCents,
+    emphasized: true,
+    lines: pnl.sections.revenue.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+      detail: `${l.itemCount} record${l.itemCount !== 1 ? "s" : ""}`,
+    })),
+  };
+  const sectionCogs: PnlSectionView = {
+    title: "Cost of goods & services",
+    totalLabel: "Total COGS",
+    totalCents: pnl.sections.cogs.totalCents,
+    lines: pnl.sections.cogs.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+      detail: `${l.itemCount} expense${l.itemCount !== 1 ? "s" : ""}`,
+    })),
+  };
+  const sectionOpex: PnlSectionView = {
+    title: "Operating expenses",
+    totalLabel: "Total operating expenses",
+    totalCents: pnl.sections.operatingExpenses.totalCents,
+    lines: pnl.sections.operatingExpenses.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+      detail: `${l.itemCount} entr${l.itemCount !== 1 ? "ies" : "y"}`,
+    })),
+  };
+  const sectionDa: PnlSectionView = {
+    title: "Depreciation & amortization",
+    totalLabel: "Total D&A (non-cash)",
+    totalCents: pnl.sections.depreciationAmortization.totalCents,
+    lines: pnl.sections.depreciationAmortization.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+    })),
+  };
+  const sectionInterest: PnlSectionView = {
+    title: "Interest & financing",
+    totalLabel: "Total non-operating",
+    totalCents: pnl.sections.nonOperating.totalCents,
+    lines: pnl.sections.nonOperating.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+    })),
+  };
+  const sectionTaxes: PnlSectionView = {
+    title: "Income & excise tax",
+    totalLabel: "Total tax",
+    totalCents: pnl.sections.taxes.totalCents,
+    lines: pnl.sections.taxes.lines.map((l) => ({
+      label: l.label,
+      amountCents: l.amountCents,
+    })),
+  };
+
+  // Each Headline KPI's popup shows the statement section(s) that drive it.
+  const kpis: PnlKpiView[] = [
+    {
+      id: "revenue",
+      label: "Revenue",
+      valueDisplay: fmtMoney(pnl.totals.revenueCents, { compact: true }),
+      ...kpiChange(pnl.totals.revenueCents, priorPnl.totals.revenueCents),
+      sections: [sectionRevenue],
+    },
+    {
+      id: "gross_margin",
+      label: "Gross margin",
+      valueDisplay: fmtPct(pnl.totals.grossMarginPct),
+      ...kpiChange(pnl.totals.grossMarginPct, priorPnl.totals.grossMarginPct),
+      sections: [sectionRevenue, sectionCogs],
+    },
+    {
+      id: "ebitda",
+      label: "EBITDA",
+      valueDisplay: fmtMoney(pnl.totals.ebitdaCents, { compact: true }),
+      ...kpiChange(pnl.totals.ebitdaCents, priorPnl.totals.ebitdaCents),
+      sections: [sectionOpex],
+    },
+    {
+      id: "net_income",
+      label: "Net income",
+      valueDisplay: fmtMoney(pnl.totals.netIncomeCents, { compact: true }),
+      ...kpiChange(pnl.totals.netIncomeCents, priorPnl.totals.netIncomeCents),
+      sections: [sectionDa, sectionInterest, sectionTaxes],
+    },
+    {
+      id: "net_margin",
+      label: "Net margin",
+      valueDisplay: fmtPct(pnl.totals.netMarginPct),
+      ...kpiChange(pnl.totals.netMarginPct, priorPnl.totals.netMarginPct),
+      sections: [
+        sectionRevenue,
+        sectionCogs,
+        sectionOpex,
+        sectionDa,
+        sectionInterest,
+        sectionTaxes,
+      ],
+    },
+  ];
+
   return (
     <PageShell maxWidth="max-w-[1320px]">
       <PageHeader
@@ -66,76 +173,10 @@ export default async function PnlPage({ searchParams }: { searchParams?: { perio
       />
       <CfoTabs active="pnl" />
 
-      {/* Summary bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-10">
-        <SummaryStat label="Revenue" current={pnl.totals.revenueCents} prior={priorPnl.totals.revenueCents} biggerIsBetter />
-        <SummaryStat label="Gross margin" current={pnl.totals.grossMarginPct} prior={priorPnl.totals.grossMarginPct} biggerIsBetter unit="pct" />
-        <SummaryStat label="EBITDA" current={pnl.totals.ebitdaCents} prior={priorPnl.totals.ebitdaCents} biggerIsBetter />
-        <SummaryStat label="Net income" current={pnl.totals.netIncomeCents} prior={priorPnl.totals.netIncomeCents} biggerIsBetter />
-        <SummaryStat label="Net margin" current={pnl.totals.netMarginPct} prior={priorPnl.totals.netMarginPct} biggerIsBetter unit="pct" />
-      </div>
-
-      {/* Detail statement */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-10">
-        <StatementSection
-          title="Revenue"
-          totalCents={pnl.totals.revenueCents}
-          totalLabel="Total revenue"
-          lines={pnl.sections.revenue.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-            detail: `${l.itemCount} record${l.itemCount !== 1 ? "s" : ""}`,
-          }))}
-          emphasized
-        />
-        <StatementSection
-          title="Cost of goods & services"
-          totalCents={pnl.sections.cogs.totalCents}
-          totalLabel="Total COGS"
-          lines={pnl.sections.cogs.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-            detail: `${l.itemCount} expense${l.itemCount !== 1 ? "s" : ""}`,
-          }))}
-        />
-        <StatementSection
-          title="Operating expenses"
-          totalCents={pnl.sections.operatingExpenses.totalCents}
-          totalLabel="Total operating expenses"
-          lines={pnl.sections.operatingExpenses.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-            detail: `${l.itemCount} entr${l.itemCount !== 1 ? "ies" : "y"}`,
-          }))}
-        />
-        <StatementSection
-          title="Depreciation & amortization"
-          totalCents={pnl.sections.depreciationAmortization.totalCents}
-          totalLabel="Total D&A (non-cash)"
-          lines={pnl.sections.depreciationAmortization.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-          }))}
-        />
-        <StatementSection
-          title="Interest & financing"
-          totalCents={pnl.sections.nonOperating.totalCents}
-          totalLabel="Total non-operating"
-          lines={pnl.sections.nonOperating.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-          }))}
-        />
-        <StatementSection
-          title="Income & excise tax"
-          totalCents={pnl.sections.taxes.totalCents}
-          totalLabel="Total tax"
-          lines={pnl.sections.taxes.lines.map((l) => ({
-            label: l.label,
-            amountCents: l.amountCents,
-          }))}
-        />
-      </div>
+      {/* Headline KPIs — click a tile to drill into its statement breakdown.
+          The detail sections (Revenue / COGS / OpEx / D&A / Interest / Tax)
+          now live inside these popups instead of as standalone cards (EMR-1031). */}
+      <PnlKpiGrid kpis={kpis} />
 
       {/* Side by side: this period vs. prior — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
       <div className="mb-10">
@@ -157,23 +198,22 @@ export default async function PnlPage({ searchParams }: { searchParams?: { perio
   );
 }
 
-function SummaryStat({ label, current, prior, biggerIsBetter, unit = "cents" }: { label: string; current: number; prior: number; biggerIsBetter?: boolean; unit?: "cents" | "pct" }) {
-  const value = unit === "cents" ? fmtMoney(current, { compact: true }) : fmtPct(current);
-  const pct = prior !== 0 ? Math.round(((current - prior) / Math.abs(prior)) * 1000) / 10 : null;
-  const change = changeBadgeText(pct, biggerIsBetter ?? true);
-  return (
-    <Card tone="raised">
-      <CardContent className="pt-5 pb-5">
-        <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">{label}</p>
-        <p className="font-display text-2xl text-text tabular-nums mt-1.5">{value}</p>
-        {pct !== null && (
-          <Badge tone={change.tone === "good" ? "success" : change.tone === "bad" ? "danger" : "neutral"} className="text-[9px] mt-2">
-            {change.text} vs prior
-          </Badge>
-        )}
-      </CardContent>
-    </Card>
-  );
+function kpiChange(
+  current: number,
+  prior: number,
+): { changeText: string | null; badgeTone: "success" | "danger" | "neutral" } {
+  const pct =
+    prior !== 0 ? Math.round(((current - prior) / Math.abs(prior)) * 1000) / 10 : null;
+  const change = changeBadgeText(pct, true);
+  return {
+    changeText: pct !== null ? change.text : null,
+    badgeTone:
+      change.tone === "good"
+        ? "success"
+        : change.tone === "bad"
+          ? "danger"
+          : "neutral",
+  };
 }
 
 function MemoTile({ label, value, hint }: { label: string; value: string; hint: string }) {
