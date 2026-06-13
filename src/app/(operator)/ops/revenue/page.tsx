@@ -250,7 +250,7 @@ export default async function RevenuePage() {
         actions={
           <Link href="/ops/billing">
             <Button variant="secondary" size="sm">
-              Billing workqueue
+              Billing dashboard
             </Button>
           </Link>
         }

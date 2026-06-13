@@ -22,6 +22,7 @@ import type { Agent } from "@/lib/orchestration/types";
 import { writeAgentAudit } from "@/lib/orchestration/context";
 import { startReasoning } from "../memory/agent-reasoning";
 import { build837P, type Claim837Input, type ClaimAdjustment } from "@/lib/billing/edi/edi-837p";
+import { deriveDiagnosisPointers } from "@/lib/billing/edi/build-from-claim";
 import { validateSnip1to5 } from "@/lib/billing/edi/snip-validator";
 import { resolveBillingIdentifiers } from "@/lib/billing/identifiers";
 import { resolvePayerRuleAsync } from "@/lib/billing/payer-rules-db";
@@ -251,8 +252,10 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
       units?: number;
       chargeAmount?: number;
       modifiers?: string[];
+      icd10Codes?: string[];
     }>;
     const icd10 = (claim.icd10Codes ?? []) as Array<{ code: string }>;
+    const claimDiagnoses = icd10.map((d) => d.code);
 
     const lineDetails = parseLineDetails(adjudication.lineDetails);
 
@@ -309,7 +312,7 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
           modifiers: cpt.modifiers ?? [],
           units: cpt.units ?? 1,
           chargeCents: Math.round((cpt.chargeAmount ?? 0) * 100),
-          diagnosisPointers: icd10.length > 0 ? [1] : [],
+          diagnosisPointers: deriveDiagnosisPointers(cpt.icd10Codes, claimDiagnoses),
           serviceDate: claim.serviceDate,
           placeOfService: claim.placeOfService ?? undefined,
           primaryAdjudication: ld
@@ -340,7 +343,14 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
         primaryAllowedCents: adjudication.totalAllowedCents,
         primaryPaidCents: adjudication.totalPaidCents,
         primaryEraDate: adjudication.eraDate,
-        primaryCas: claimCas,
+        // `claimCas` here is the flattened set of LINE-level CAS, which is
+        // already emitted per-line in Loop 2430 below. Re-emitting it as
+        // claim-level CAS in Loop 2320 double-counts every adjustment on the
+        // secondary 837P (wrong COB balance / payer rejection). Loop 2320
+        // carries the claim-level COB summary via AMT (primaryPaid/allowed);
+        // line adjustments belong only in 2430. (Matches build-from-claim.ts,
+        // which passes []. `claimCas` is still used for the metric above.)
+        primaryCas: [],
         primaryClaimControlNumber: adjudication.checkNumber ?? "",
       },
     };

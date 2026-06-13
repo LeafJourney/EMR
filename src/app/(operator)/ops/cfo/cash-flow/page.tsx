@@ -37,7 +37,7 @@ export default async function CashFlowPage({ searchParams }: { searchParams?: { 
         <Tile label="Closing cash" value={fmtMoney(cf.closingCashCents, { compact: true })} accent />
         <Tile label="Net change" value={fmtMoney(cf.netChangeCents, { compact: true })} highlight={cf.netChangeCents >= 0 ? "good" : "bad"} />
         <Tile label="Daily burn" value={fmtMoney(cf.burnRateCentsPerDay)} />
-        <Tile label="Runway" value={cf.runwayDays === null ? "Cash-flow positive" : `${cf.runwayDays} days`} highlight={cf.runwayDays !== null && cf.runwayDays < 90 ? "bad" : undefined} />
+        <Tile label="Runway" value={cf.runwayDays === null ? "😊 + Cash-flow positive" : `😔 − ${cf.runwayDays} days`} highlight={cf.runwayDays === null ? "good" : cf.runwayDays < 90 ? "bad" : undefined} />
       </div>
 
       {/* Activity sections */}

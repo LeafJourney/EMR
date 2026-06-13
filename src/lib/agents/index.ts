@@ -22,6 +22,8 @@ import { prescriptionSafetyAgent } from "./prescription-safety-agent";
 import { diagnosisSafetyAgent } from "./diagnosis-safety-agent";
 import { adherenceDriftDetectorAgent } from "./adherence-drift-detector-agent";
 import { messageUrgencyObserverAgent } from "./message-urgency-observer-agent";
+// EMR-1145 — urgent 911/ED safety auto-reply on inbound messages
+import { safetyAutoResponderAgent } from "./safety-auto-responder-agent";
 import { visitDiscoveryWhispererAgent } from "./visit-discovery-whisperer-agent";
 // Billing agents — Phase 3 of the Revenue Cycle PRD
 import { chargeIntegrityAgent } from "./billing/charge-integrity-agent";
@@ -147,6 +149,7 @@ export const agentRegistry = {
   diagnosisSafety: diagnosisSafetyAgent,
   adherenceDriftDetector: adherenceDriftDetectorAgent,
   messageUrgencyObserver: messageUrgencyObserverAgent,
+  safetyAutoResponder: safetyAutoResponderAgent,
   visitDiscoveryWhisperer: visitDiscoveryWhispererAgent,
   // Billing agents (Phase 3)
   chargeIntegrity: chargeIntegrityAgent,

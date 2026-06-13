@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 export const dynamic = "force-dynamic";
 import { AppShell, type NavSection } from "@/components/shell/AppShell";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { GlobalSearchButton } from "@/components/ui/global-search-button";
 import { SystemBannerRail } from "@/components/ui/system-banner";
 import { homeForRoles } from "@/lib/rbac/roles";
 import { prisma } from "@/lib/db/prisma";
@@ -146,6 +147,8 @@ export default async function OperatorLayout({
       items: [
         { label: "Overview", href: "/ops/billing" },
         { label: "Scrub and Auths", href: "/ops/scrub" },
+        // EMR-1139 — denial-risk gate between scrub and submission.
+        { label: "Pre-Flight", href: "/ops/preflight" },
         { label: "Denials", href: "/ops/denials", badge: denialsBadge },
         { label: "Aging", href: "/ops/aging", badge: agingBadge },
         { label: "Eligibility", href: "/ops/eligibility" },
@@ -263,6 +266,7 @@ export default async function OperatorLayout({
         showNavPrefs={false}
       >
         <CommandPalette role="operator" userId={user.id} />
+        <GlobalSearchButton />
         {children}
       </AppShell>
     </>

@@ -114,8 +114,12 @@ export function buildClaimEdi(ctx: ClaimContext): {
     units?: number;
     chargeAmount?: number;
     modifiers?: string[];
+    /** Diagnoses linked to THIS line (preserved from the Charge), used to
+     *  derive real SV107 pointers instead of always pointing at dx #1. */
+    icd10Codes?: string[];
   }>;
   const icd10 = (ctx.claim.icd10Codes ?? []) as Array<{ code: string }>;
+  const claimDiagnoses = icd10.map((dx) => dx.code);
 
   const serviceLines: ServiceLine[] = cptCodes.map((cpt, idx) => {
     const line: ServiceLine = {
@@ -124,7 +128,7 @@ export function buildClaimEdi(ctx: ClaimContext): {
       modifiers: cpt.modifiers ?? [],
       units: cpt.units ?? 1,
       chargeCents: Math.round((cpt.chargeAmount ?? 0) * 100),
-      diagnosisPointers: icd10.length > 0 ? [1] : [],
+      diagnosisPointers: deriveDiagnosisPointers(cpt.icd10Codes, claimDiagnoses),
       serviceDate: ctx.claim.serviceDate,
       placeOfService: ctx.claim.placeOfService ?? undefined,
     };
@@ -213,6 +217,30 @@ export function buildClaimEdi(ctx: ClaimContext): {
 
   const snip = validateSnip1to5(built.payload);
   return { built, snip, identifiers };
+}
+
+/**
+ * Map a service line's linked ICD-10 codes to 1-based SV107 diagnosis
+ * pointers against the claim's ordered diagnosis list. Codes the claim
+ * doesn't carry are dropped; the composite is capped at 4 (X12 limit).
+ * Falls back to pointer [1] when the line has no resolvable linkage (legacy
+ * claims built before per-line dx was preserved) — never an empty pointer on
+ * a claim that has diagnoses, which would fail 837P validation.
+ */
+export function deriveDiagnosisPointers(
+  lineIcd10: string[] | undefined,
+  claimDiagnoses: string[],
+): number[] {
+  const pointerByDx = new Map<string, number>();
+  claimDiagnoses.forEach((code, i) => {
+    if (!pointerByDx.has(code)) pointerByDx.set(code, i + 1);
+  });
+  const pointers = (lineIcd10 ?? [])
+    .map((code) => pointerByDx.get(code))
+    .filter((p): p is number => p != null)
+    .slice(0, 4);
+  if (pointers.length > 0) return pointers;
+  return claimDiagnoses.length > 0 ? [1] : [];
 }
 
 /** Map our payer-name guess to the X12 insurance type code. Conservative —

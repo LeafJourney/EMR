@@ -3048,6 +3048,77 @@ model CaregiverInvite {
 }
 
 // --------------------------------------------------------------
+// Record Release (EMR-082) — patient-authorized record sharing.
+// Standalone table with a plain-string patientId (no FK), matching the recent
+// TreatmentGoal / CannabisRecommendation pattern, so it applies cleanly over a
+// db-push-drifted database.
+// --------------------------------------------------------------
+
+model RecordReleaseRequest {
+  id     String @id @default(cuid())
+  patientId String
+  status String @default("submitted") // draft, submitted, approved, sent, declined, revoked
+
+  recipientName     String
+  recipientPractice String?
+  recipientEmail    String?
+  recipientFax      String?
+  recipientAddress  String?
+
+  scope      String // everything, date_range, encounter_types
+  categories String[]
+  dateFrom   DateTime?
+  dateTo     DateTime?
+
+  patientSignatureName String
+  patientSignedAt      DateTime @default(now())
+  expiresAt            DateTime
+  reason               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId, status])
+}
+
+// --------------------------------------------------------------
+// Wearable / health-app device connections (EMR-054)
+//
+// Persists a patient's connected wearables & health apps (Garmin, Apple
+// Health, Fitbit, Oura, etc.) so the connect/disconnect/last-sync state on
+// the patient portal Integrations page survives a reload instead of living
+// in client-only React state. Garmin specifically drives a real ingestion
+// pass (GarminVitalsClient -> OutcomeLog) on connect/sync.
+//
+// Standalone + additive: plain-string patientId with NO @relation, same
+// pattern as RecordReleaseRequest / TreatmentGoal, so it applies cleanly
+// over a db-push-drifted database and touches no existing model.
+// --------------------------------------------------------------
+model DeviceConnection {
+  id        String  @id @default(cuid())
+  patientId String
+  // Stable provider slug matching the portal UI ids: "garmin",
+  // "apple-health", "fitbit", "oura", "dexcom", "libre", "whoop",
+  // "medtronic", "eversense".
+  provider  String
+  connected Boolean @default(false)
+
+  // Opaque access token from the device OAuth handshake. Mock for now —
+  // the live OAuth flow lands with the provider SDK work. Cleared on
+  // disconnect so a stale token never drives a background sync.
+  accessToken  String?
+  lastSyncedAt DateTime?
+  // Last sync failure message, surfaced in the UI and cleared on success.
+  lastError    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([patientId, provider])
+  @@index([patientId])
+}
+
+// --------------------------------------------------------------
 // Team / staff invitations (practice lifecycle)
 // Standalone + additive: plain-string ids (organizationId, invitedById,
 // acceptedByUserId) with NO @relation, so this touches no existing model.

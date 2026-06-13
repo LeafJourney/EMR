@@ -13,6 +13,7 @@ import {
   updateBankBalanceAction,
   recordCashEntryAction,
 } from "../actions";
+import { CashEntriesTable, type CashEntryRow } from "./cash-entries-table";
 import type { BankAccountType } from "@prisma/client";
 
 export const metadata = { title: "Cash · CFO" };
@@ -51,6 +52,18 @@ export default async function CashPage() {
   const liabilityTotal = accounts
     .filter((a) => ["credit_card", "line_of_credit"].includes(a.type))
     .reduce((a, b) => a + b.currentBalanceCents, 0);
+
+  const entryRows: CashEntryRow[] = recentEntries.map((e) => ({
+    id: e.id,
+    dateDisplay: e.occurredOn.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    dateMs: e.occurredOn.getTime(),
+    description: e.description,
+    activity: e.activity,
+    accountName: e.bankAccount?.name ?? "—",
+    amountDisplay: `${e.direction === "in" ? "+" : "−"}${fmtMoney(e.amountCents)}`,
+    amountSignedCents: e.direction === "in" ? e.amountCents : -e.amountCents,
+    direction: e.direction as "in" | "out",
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -112,7 +125,7 @@ export default async function CashPage() {
                         {a.last4 && <span className="text-[11px] text-text-subtle">···{a.last4}</span>}
                       </div>
                       <p className="text-[11px] text-text-subtle mt-0.5">
-                        {a.institution ?? "—"} · last synced {a.asOfDate.toLocaleString("en-US", { month: "short", day: "numeric" })}
+                        {a.institution ?? "—"} · last reconciled {a.asOfDate.toLocaleString("en-US", { month: "short", day: "numeric" })}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -221,48 +234,10 @@ export default async function CashPage() {
         </Card>
       </div>
 
-      {/* Recent cash flow entries */}
+      {/* Recent cash flow entries — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
       <div>
         <Eyebrow className="mb-4">Recent cash movements</Eyebrow>
-        <Card tone="raised">
-          <CardContent className="pt-3 pb-3 px-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-text-subtle border-b border-border/60">
-                  <th className="text-left py-2 px-4 font-medium">Date</th>
-                  <th className="text-left py-2 px-4 font-medium">Description</th>
-                  <th className="text-left py-2 px-4 font-medium">Activity</th>
-                  <th className="text-left py-2 px-4 font-medium">Account</th>
-                  <th className="text-right py-2 px-4 font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {recentEntries.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-text-subtle italic">
-                      No cash movements logged yet.
-                    </td>
-                  </tr>
-                )}
-                {recentEntries.map((e) => (
-                  <tr key={e.id} className="hover:bg-surface-muted/50">
-                    <td className="py-2 px-4 text-text-muted tabular-nums whitespace-nowrap">
-                      {e.occurredOn.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </td>
-                    <td className="py-2 px-4 text-text truncate max-w-md">{e.description}</td>
-                    <td className="py-2 px-4">
-                      <Badge tone="neutral" className="text-[10px]">{e.activity}</Badge>
-                    </td>
-                    <td className="py-2 px-4 text-text-muted">{e.bankAccount?.name ?? "—"}</td>
-                    <td className={`py-2 px-4 text-right tabular-nums ${e.direction === "in" ? "text-success" : "text-danger"}`}>
-                      {e.direction === "in" ? "+" : "−"}{fmtMoney(e.amountCents)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        <CashEntriesTable rows={entryRows} />
       </div>
     </PageShell>
   );

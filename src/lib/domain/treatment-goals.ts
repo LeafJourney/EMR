@@ -38,9 +38,12 @@ export const GOAL_METRIC_LABELS: Record<GoalMetric, { label: string; emoji: stri
  * Calculate progress toward a goal.
  */
 export function calculateGoalProgress(goal: TreatmentGoal, currentValue: number): GoalProgress {
-  const range = Math.abs(goal.target - goal.baseline);
-  const progress = Math.abs(currentValue - goal.baseline);
-  const percentComplete = range === 0 ? 100 : Math.min(100, Math.round((progress / range) * 100));
+  // Signed, so moving the WRONG way from baseline counts as 0% — not progress.
+  // (e.g. a "less pain" goal of 7→3 with a current of 9 is 0%, not |9-7|/|3-7|=50%.)
+  const range = goal.target - goal.baseline;
+  const moved = currentValue - goal.baseline;
+  const percentComplete =
+    range === 0 ? 100 : Math.min(100, Math.max(0, Math.round((moved / range) * 100)));
 
   let trend: GoalProgress["trend"] = "steady";
   if (goal.direction === "decrease") {

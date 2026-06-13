@@ -20,7 +20,7 @@ services:
     plan: starter
     branch: main
     buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npx prisma migrate resolve --rolled-back 20260509000000_chart_tab_indexes; npx prisma migrate deploy && npm run start
+    startCommand: npx prisma migrate deploy && npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NPM_CONFIG_PRODUCTION
@@ -141,8 +141,3 @@ services:
       - key: RESEND_API_KEY
         sync: false
 
-databases:
-  - name: emr-postgres-staging
-    plan: basic-256mb
-    databaseName: emr
-    user: emr

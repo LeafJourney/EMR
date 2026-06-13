@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { PatientSectionNav } from "@/components/shell/PatientSectionNav";
 import { JournalView } from "./journal-view";
+import { SampleBadge } from "@/components/patient/sample-badge";
 import type { JournalEntry } from "@/lib/domain/journal-community";
 
 export const metadata = { title: "Wellness Journal" };
@@ -74,6 +75,12 @@ export default async function JournalPage() {
         description="A quiet, private space to reflect on how cannabis is fitting into your life."
       />
       <PatientSectionNav section="journey" />
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+        <SampleBadge />
+        <p className="text-xs text-text-muted">
+          These example entries show how journaling works — they aren&apos;t saved yet.
+        </p>
+      </div>
       <JournalView initialEntries={entries} patientId={patient.id} />
     </PageShell>
   );

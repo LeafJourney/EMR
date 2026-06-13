@@ -285,33 +285,36 @@ export function scrubClaim(input: ScrubInput): ScrubIssue[] {
   }
 
   // ── Rule: NCCI procedure-to-procedure edit pairs ─────────────
+  // Some payers (e.g. UnitedHealthcare) do NOT honor modifier-25 to unbundle
+  // counseling / HRA codes from a same-day E/M. Gate on the payer-registry
+  // flag rather than a hardcoded payer name so the rule fires for every
+  // registered alias ("United Healthcare", "uhc", ...) — resolvePayerRule
+  // already normalized the payer above.
+  const payerHonorsMod25 = payerRule.honorsMod25OnZ71;
   const cptCodeSet = new Set(input.cptCodes.map((c) => c.code));
   for (const pair of NCCI_PAIRS) {
     if (!cptCodeSet.has(pair.componentCode) || !cptCodeSet.has(pair.comprehensiveCode)) continue;
     const comprehensiveLine = input.cptCodes.find((c) => c.code === pair.comprehensiveCode);
-    let hasAllowedModifier =
+    // A mod-25 pair can only be rescued by the modifier if the payer honors
+    // mod-25 on these counseling/HRA bundles; otherwise the modifier is
+    // ignored and the bundle is a hard edit (drop the component line).
+    const modifierCanRescue =
       pair.allowedModifier != null &&
-      (comprehensiveLine?.modifiers ?? []).includes(pair.allowedModifier);
-    
-    // UnitedHealthcare ignores mod-25 on Z71 counseling
-    if (
-      pair.allowedModifier === "25" && 
-      input.payerName === "UnitedHealthcare" && 
-      pair.componentCode.startsWith("9940")
-    ) {
-      hasAllowedModifier = false;
-    }
+      !(pair.allowedModifier === "25" && !payerHonorsMod25);
+    let hasAllowedModifier =
+      modifierCanRescue &&
+      (comprehensiveLine?.modifiers ?? []).includes(pair.allowedModifier!);
 
     if (!hasAllowedModifier) {
       issues.push({
         ruleCode: "NCCI_BUNDLED_PAIR",
-        severity: pair.allowedModifier && input.payerName !== "UnitedHealthcare" ? "warning" : "error",
+        severity: modifierCanRescue ? "warning" : "error",
         message: `NCCI bundling: ${pair.componentCode} billed with ${pair.comprehensiveCode}. ${pair.description}`,
-        suggestion: pair.allowedModifier && input.payerName !== "UnitedHealthcare"
+        suggestion: modifierCanRescue
           ? `Attach modifier ${pair.allowedModifier} to ${pair.comprehensiveCode} if the service is truly separately identifiable, or drop the line.`
           : "Drop the component line — it is incidental to the comprehensive service.",
         relatedCode: pair.componentCode,
-        blocksSubmission: !pair.allowedModifier || input.payerName === "UnitedHealthcare",
+        blocksSubmission: !modifierCanRescue,
       });
     }
   }

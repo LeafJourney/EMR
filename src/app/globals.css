@@ -115,6 +115,20 @@
   --danger: #B83B2E;
   --info: #2E5B8C;
 
+  /* Status accents — Fleet Command Directive (EMR-1160).
+     Soft pastel fill/text pairs for clinical status communication:
+     approvals (sage), gaps/alerts (soft terracotta), interactive links
+     (muted slate blue). Pastel fills sit comfortably next to the existing
+     shelf pastels; text values pass WCAG AA on their fills. Use for status
+     chips, highlighted rows, and inline insight cards — keep --success /
+     --warning / --danger for hard semantic states. */
+  --status-positive-bg: #E2F0D9;
+  --status-positive-fg: #385723;
+  --status-alert-bg: #FCE4D6;
+  --status-alert-fg: #C65911;
+  --status-link-bg: #DDEBF7;
+  --status-link-fg: #1F4E78;
+
   /* Typography stacks — Fraunces for display, Instrument Serif italic
      accent, Inter for body, JetBrains Mono for data callouts */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
@@ -657,6 +671,15 @@
   --warning: #FBBF24;
   --danger: #F87171;
   --info: #60A5FA;
+
+  /* Status accents — dark variants follow the shelf-pastel approach:
+     preserve hue, drop fill value, brighten text to read on dim fills. */
+  --status-positive-bg: #1E2A18;
+  --status-positive-fg: #AECB95;
+  --status-alert-bg: #2E1E12;
+  --status-alert-fg: #E8A06A;
+  --status-link-bg: #16222E;
+  --status-link-fg: #93BBDF;
 }
 
 .theme-leafmart.dark,

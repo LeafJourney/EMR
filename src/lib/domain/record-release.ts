@@ -130,6 +130,56 @@ export function buildReleaseRequest(
   };
 }
 
+/** Shape of a persisted RecordReleaseRequest row (matches the Prisma model
+ *  structurally so it can be mapped without importing Prisma here). */
+export interface RecordReleaseRow {
+  id: string;
+  patientId: string;
+  status: string;
+  recipientName: string;
+  recipientPractice: string | null;
+  recipientEmail: string | null;
+  recipientFax: string | null;
+  recipientAddress: string | null;
+  scope: string;
+  categories: string[];
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  patientSignatureName: string;
+  patientSignedAt: Date;
+  expiresAt: Date;
+  reason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Map a persisted row to the UI-facing RecordReleaseRequest (ISO dates, nested
+ *  recipient). */
+export function recordReleaseFromRow(r: RecordReleaseRow): RecordReleaseRequest {
+  return {
+    id: r.id,
+    patientId: r.patientId,
+    status: r.status as RecordReleaseStatus,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+    recipient: {
+      fullName: r.recipientName,
+      practice: r.recipientPractice ?? undefined,
+      email: r.recipientEmail ?? undefined,
+      fax: r.recipientFax ?? undefined,
+      address: r.recipientAddress ?? undefined,
+    },
+    scope: r.scope as RecordReleaseScope,
+    categories: r.categories as RecordCategory[],
+    dateFrom: r.dateFrom?.toISOString(),
+    dateTo: r.dateTo?.toISOString(),
+    patientSignatureName: r.patientSignatureName,
+    patientSignedAt: r.patientSignedAt.toISOString(),
+    expiresAt: r.expiresAt.toISOString(),
+    reason: r.reason ?? undefined,
+  };
+}
+
 function cryptoRandomId(): string {
   // crypto.randomUUID is available in modern browsers and Node ≥ 18.
   if (typeof globalThis.crypto?.randomUUID === "function") {

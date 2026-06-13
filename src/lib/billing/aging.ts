@@ -155,13 +155,15 @@ export function recoverabilityScore(claim: AgedClaim): number {
   return Math.max(0, score);
 }
 
-export function daysInAR(claims: Array<{ serviceDate: Date; status: string; patientRespCents: number }>): number {
-  // Simplified DAR: average age of all open claims
+export function daysInAR(claims: Array<{ serviceDate: Date; status: string }>): number {
+  // Simplified DAR: average age of claims still in A/R (non-terminal status).
+  // NB: this is status-based, not balance-based — a claim that's been paid to
+  // a $0 balance but not yet marked "paid" still counts. (The prior
+  // `patientRespCents >= 0` guard was a no-op — cents are never negative — so
+  // it filtered nothing; dropped it rather than imply a balance check that
+  // isn't possible without payment data on the input.)
   const open = claims.filter(
-    (c) =>
-      c.status !== "paid" &&
-      c.status !== "written_off" &&
-      c.patientRespCents >= 0,
+    (c) => c.status !== "paid" && c.status !== "written_off",
   );
   if (open.length === 0) return 0;
   const totalDays = open.reduce((acc, c) => acc + computeAge(c.serviceDate), 0);

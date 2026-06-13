@@ -28,6 +28,9 @@ export type AuditActionType =
   | "patient.chart_exported"
   | "patient.phi_accessed"
   | "patient.engagement_tracked"
+  | "patient.device_connected"
+  | "patient.device_disconnected"
+  | "patient.device_synced"
   | "prescription.issued"
   | "prescription.voided";
 

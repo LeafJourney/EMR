@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
+import { AllocationRosterTable, type AllocationRosterRow } from "./allocation-roster-table";
 import {
   allocate,
   balanceChiSquare,
@@ -74,6 +75,14 @@ export default function StudiesPage({
   const spec: StudySpec = { studyId, arms, seed, stratifyBy };
   const plan = allocate(DEMO_SUBJECTS, spec);
   const chi2 = balanceChiSquare(plan);
+
+  const rosterRows: AllocationRosterRow[] = plan.allocations.map((a) => ({
+    patientId: a.patientId,
+    stratum: a.blockId.split("#")[0],
+    block: a.blockId.split("#")[1],
+    blindingCode: a.blindingCode,
+    arm: a.arm,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -220,38 +229,7 @@ export default function StudiesPage({
             Blinding codes are HMAC(seed, studyId|patientId). Reveal at the end of the trial only.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="py-2 pr-3 text-text-subtle">Patient</th>
-                  <th className="py-2 pr-3 text-text-subtle">Stratum</th>
-                  <th className="py-2 pr-3 text-text-subtle">Block</th>
-                  <th className="py-2 pr-3 text-text-subtle">Blinding code</th>
-                  <th className="py-2 text-text-subtle">Arm</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {plan.allocations.map((a) => (
-                  <tr key={a.patientId}>
-                    <td className="py-2 pr-3 font-mono text-[11px]">{a.patientId}</td>
-                    <td className="py-2 pr-3 font-mono text-[11px] text-text-subtle">
-                      {a.blockId.split("#")[0]}
-                    </td>
-                    <td className="py-2 pr-3 tabular-nums text-text-subtle">
-                      {a.blockId.split("#")[1]}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-[11px]">{a.blindingCode}</td>
-                    <td className="py-2">
-                      <Badge tone="accent">{a.arm}</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
+        <AllocationRosterTable rows={rosterRows} />
       </Card>
     </PageShell>
   );

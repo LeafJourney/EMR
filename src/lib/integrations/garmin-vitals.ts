@@ -6,6 +6,7 @@
  * into Verdant's OutcomeLog schema.
  */
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
 export interface GarminDailySummary {
@@ -67,16 +68,21 @@ export class GarminVitalsClient {
 
   /**
    * Syncs a patient's Garmin payload into the database.
+   *
+   * Idempotent over the [startDate, endDate] window: prior Garmin-sourced
+   * OutcomeLogs in that range are cleared before re-inserting, so repeated
+   * connect/sync presses don't pile up duplicate rows. Returns the number
+   * of OutcomeLogs written.
    */
   async syncPatientData(
     patientId: string,
     accessToken: string,
     startDate: string,
     endDate: string,
-  ): Promise<void> {
+  ): Promise<number> {
     const payload = await this.fetchVitals(accessToken, startDate, endDate);
 
-    const logsToCreate = [];
+    const logsToCreate: Prisma.OutcomeLogCreateManyInput[] = [];
 
     // 1. Process Body Battery -> OutcomeLog (energy)
     for (const daily of payload.dailies) {
@@ -109,13 +115,28 @@ export class GarminVitalsClient {
       });
     }
 
-    // 4. Batch DB insertions
-    if (logsToCreate.length > 0) {
-      await prisma.outcomeLog.createMany({ data: logsToCreate });
-      console.log(
-        `[GarminVitals] Inserted ${logsToCreate.length} OutcomeLogs`,
-      );
-    }
+    if (logsToCreate.length === 0) return 0;
+
+    // 4. Idempotent write: clear prior Garmin logs in this window, then
+    // re-insert. Garmin logs are identified by the "Garmin " note prefix
+    // (no source column on OutcomeLog), scoped to the synced day range so
+    // we never touch a patient's manual check-ins or other integrations.
+    const windowStart = new Date(`${startDate}T00:00:00.000Z`);
+    const windowEnd = new Date(`${endDate}T23:59:59.999Z`);
+    const written = await prisma.$transaction(async (tx) => {
+      await tx.outcomeLog.deleteMany({
+        where: {
+          patientId,
+          note: { startsWith: "Garmin " },
+          loggedAt: { gte: windowStart, lte: windowEnd },
+        },
+      });
+      const result = await tx.outcomeLog.createMany({ data: logsToCreate });
+      return result.count;
+    });
+
+    console.log(`[GarminVitals] Inserted ${written} OutcomeLogs`);
+    return written;
   }
 }
 

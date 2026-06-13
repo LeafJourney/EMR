@@ -54,12 +54,56 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
     }
   };
 
+  // MASTER-prompt G2 — when the viewport is narrowed / split to half-screen the
+  // sidebar must OVERLAY content (float above it) instead of squeezing it into
+  // a column, regardless of the pin preference. Below `lg` we force the
+  // drawer's existing unpinned/overlay mode; at `lg`+ the stored pin choice is
+  // respected, so wide-screen layout is byte-for-byte unchanged.
+  const [narrow, setNarrow] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 768px) and (max-width: 1023.98px)");
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const effectivePinned = pinned && !narrow;
+
+  // Wide + pinned: follow the route — open the drawer for the pillar you
+  // navigated into, but ONLY when the route's pillar actually CHANGES (a real
+  // navigation). A same-route re-render — e.g. a server action revalidating the
+  // page, which hands PillarNav a fresh `sections` array reference — must NOT
+  // re-open a drawer the user just collapsed. That was the "sidebar pops back
+  // open when I click Log / Add / Delete / Generate" bug (MASTER prompt G2, PR #648).
+  const prevPathPillar = React.useRef<string | null>(pathPillar);
+  React.useEffect(() => {
+    if (effectivePinned && pathPillar && pathPillar !== prevPathPillar.current) {
+      setActivePillar(pathPillar);
+    }
+    prevPathPillar.current = pathPillar;
+  }, [pathPillar, effectivePinned]);
+
+  // Overlay mode (narrow or unpinned): autohide on EVERY navigation, including
+  // browser back/forward (both surface as a pathname change). Keyed on
+  // `pathname`, not `pathPillar`, so even same-pillar navigation collapses the
+  // floating drawer. A same-route revalidation leaves `pathname` unchanged, so
+  // this never fires spuriously — PR #648 stays fixed in overlay mode too.
+  const prevPathname = React.useRef<string>(pathname);
+  React.useEffect(() => {
+    if (!effectivePinned && pathname !== prevPathname.current) {
+      setActivePillar(null);
+    }
+    prevPathname.current = pathname;
+  }, [pathname, effectivePinned]);
+
+  // On mount only: if the current route isn't under any pillar, restore the
+  // last-used pillar so the drawer isn't empty on a neutral landing page.
+  // Deliberately mount-only — re-running on every `sections` change would
+  // re-open a dismissed drawer (the bug guarded against above).
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    if (pathPillar) {
-      setActivePillar(pathPillar);
-      return;
-    }
+    if (pathPillar) return;
     try {
       const stored = window.localStorage.getItem(LAST_PILLAR_KEY);
       if (!stored) return;
@@ -70,7 +114,8 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
     } catch {
       /* private mode — non-fatal */
     }
-  }, [pathPillar, sections]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -116,7 +161,8 @@ export function PillarNav({ sections, header, footer }: PillarNavProps) {
         section={activeSection}
         pathname={pathname}
         onClose={() => setActivePillar(null)}
-        pinned={pinned}
+        pinned={effectivePinned}
+        narrow={narrow}
         onTogglePin={handleTogglePin}
       />
     </div>

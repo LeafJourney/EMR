@@ -94,6 +94,48 @@ export const adjudicationInterpretationAgent: Agent<
     });
     if (!claim) throw new Error(`Claim ${claimId} not found`);
 
+    // ── Idempotency guard ───────────────────────────────────────
+    // This agent may be retried/replayed for the same AdjudicationResult.
+    // Every money-moving posting below tags its FinancialEvent with
+    // metadata.adjudicationResultId; if one already exists, this remit has
+    // already been posted — return a no-op so we never double-post a payment
+    // or contractual adjustment. (Denial-only remits that move no money are
+    // additionally guarded per-DenialEvent below.)
+    const alreadyPosted = await prisma.financialEvent.findFirst({
+      where: {
+        claimId,
+        metadata: { path: ["adjudicationResultId"], equals: adjudicationResultId },
+      },
+      select: { id: true },
+    });
+    if (alreadyPosted) {
+      trace.conclude({
+        confidence: 1,
+        summary: `Adjudication ${adjudicationResultId} already posted — no-op (idempotent).`,
+      });
+      await trace.persist();
+      return {
+        claimId,
+        claimStatus: claim.status,
+        totalPaidCents: adjResult.totalPaidCents,
+        totalDeniedCents: 0,
+        totalAdjustedCents: adjResult.totalAdjustedCents,
+        totalPatientRespCents: adjResult.totalPatientRespCents,
+        denialEventsCreated: 0,
+        paymentsCreated: 0,
+        patientRespSplit: {
+          deductibleCents: 0,
+          coinsuranceCents: 0,
+          copayCents: 0,
+          nonCoveredCents: 0,
+          otherPrCents: 0,
+        },
+        takebackCents: 0,
+        balanced: true,
+        balanceVarianceCents: 0,
+      };
+    }
+
     trace.step("loaded adjudication + claim", {
       claimStatus: adjResult.claimStatus,
       totalPaidCents: adjResult.totalPaidCents,
@@ -174,13 +216,31 @@ export const adjudicationInterpretationAgent: Agent<
         amountCents: adj.amountCents,
       });
       // Skip PR lines — they go on the patient statement, not a
-      // denial event. Skip pure contractual CO-45 — it's booked
-      // as an Adjustment below, not a "denial".
+      // denial event. Skip any NON-recoverable non-PR adjustment: pure
+      // contractual CO-45, sequestration, AND informational OA/PI codes
+      // like OA-23 (prior-payer impact on a secondary claim) or OA-94.
+      // The old guard only skipped non-recoverable CO, so every OA/PI line
+      // spawned a spurious DenialEvent + denial.detected (kicking off the
+      // appeals workflow for normal COB).
       if (cls.group === "PR") continue;
-      if (cls.group === "CO" && !cls.recoverable) continue;
+      if (!cls.recoverable) continue;
       if (cls.isTakeback) continue; // takebacks are handled separately
       if (adj.amountCents <= 0) continue;
       if (!adj.carcCode) continue; // can't classify without a CARC
+
+      // Idempotent for denial-only remits (which write no money-tagged
+      // FinancialEvent for the top-level guard to catch): don't re-book a
+      // denial we already recorded for this line+CARC.
+      const existingDenial = await prisma.denialEvent.findFirst({
+        where: {
+          claimId,
+          carcCode: adj.carcCode,
+          claimLineSequence: adj.sequence,
+          amountDeniedCents: adj.amountCents,
+        },
+        select: { id: true },
+      });
+      if (existingDenial) continue;
 
       const denialEvent = await prisma.denialEvent.create({
         data: {
@@ -253,6 +313,26 @@ export const adjudicationInterpretationAgent: Agent<
       });
       paymentsCreated++;
 
+      // RECON-3: write the ledger event the reconciliation agent matches on
+      // (it looks up FinancialEvent{ paymentId, type: "insurance_paid" }).
+      // Without this every ERA payment showed as "unmatched" and the
+      // FinancialEvent ledger — declared the source of truth for balances —
+      // omitted insurance cash entirely. Money in = positive. The
+      // adjudicationResultId tag also arms the idempotency guard above.
+      await prisma.financialEvent.create({
+        data: {
+          organizationId,
+          patientId: claim.patientId,
+          claimId,
+          paymentId: payment.id,
+          type: "insurance_paid",
+          amountCents: adjResult.totalPaidCents,
+          description: `Insurance payment — ERA ${adjResult.checkNumber ?? ""}`.trim(),
+          metadata: { source: "era", adjudicationResultId },
+          createdByAgent: "adjudicationInterpretation@1.0.0",
+        },
+      });
+
       await ctx.emit({
         name: "payment.received",
         paymentId: payment.id,
@@ -277,6 +357,22 @@ export const adjudicationInterpretationAgent: Agent<
           postedAt: new Date(),
         },
       });
+      // Mirror the write-off into the FinancialEvent ledger (stored positive
+      // to match the statement aggregator's subtract convention). Also tags
+      // the adjudicationResultId so a contractual-only remit (paid = 0) is
+      // covered by the idempotency guard.
+      await prisma.financialEvent.create({
+        data: {
+          organizationId,
+          patientId: claim.patientId,
+          claimId,
+          type: "contractual_adjustment",
+          amountCents: adjResult.totalAdjustedCents,
+          description: "Contractual adjustment per payer agreement",
+          metadata: { source: "era", adjudicationResultId },
+          createdByAgent: "adjudicationInterpretation@1.0.0",
+        },
+      });
       trace.step("created contractual adjustment", {
         amountCents: adjResult.totalAdjustedCents,
       });
@@ -298,7 +394,11 @@ export const adjudicationInterpretationAgent: Agent<
       where: { id: claimId },
       data: {
         status: finalStatus as any,
-        paidAmountCents: adjResult.totalPaidCents,
+        // INCREMENT, not set: a claim can receive multiple ERAs (partial pay
+        // then the balance, or primary then secondary). Setting clobbered any
+        // prior payment. The idempotency guard above prevents the same ERA
+        // from being counted twice.
+        paidAmountCents: { increment: adjResult.totalPaidCents },
         allowedAmountCents: adjResult.totalAllowedCents,
         patientRespCents: adjResult.totalPatientRespCents,
         paidAt: adjResult.totalPaidCents > 0 ? new Date() : undefined,
@@ -311,7 +411,13 @@ export const adjudicationInterpretationAgent: Agent<
     // ── Check for underpayment ──────────────────────────────────
     // Compare paid amount against the fee schedule expected amount
     if (adjResult.totalPaidCents > 0 && claim.billedAmountCents > 0) {
-      const varianceCents = claim.billedAmountCents - adjResult.totalPaidCents - adjResult.totalAdjustedCents;
+      // Expected PAYER payment = billed − contractual write-off − patient
+      // responsibility. The old formula omitted patient responsibility, so a
+      // claim with a copay/deductible looked underpaid by exactly that amount
+      // (a false-positive on every cost-share claim).
+      const expectedPayerPaymentCents =
+        claim.billedAmountCents - adjResult.totalAdjustedCents - adjResult.totalPatientRespCents;
+      const varianceCents = expectedPayerPaymentCents - adjResult.totalPaidCents;
       const variancePct = varianceCents / claim.billedAmountCents;
 
       if (varianceCents > 500 && variancePct > 0.05) {
@@ -319,13 +425,13 @@ export const adjudicationInterpretationAgent: Agent<
         await ctx.emit({
           name: "underpayment.detected",
           claimId,
-          expectedCents: claim.billedAmountCents - adjResult.totalAdjustedCents,
+          expectedCents: expectedPayerPaymentCents,
           actualCents: adjResult.totalPaidCents,
           varianceCents,
           organizationId,
         });
         trace.step("underpayment detected", {
-          expectedCents: claim.billedAmountCents - adjResult.totalAdjustedCents,
+          expectedCents: expectedPayerPaymentCents,
           actualCents: adjResult.totalPaidCents,
           varianceCents,
         });
@@ -364,10 +470,12 @@ export const adjudicationInterpretationAgent: Agent<
     // An ERA should satisfy billed = paid + adjustments. If it doesn't,
     // something is misposted or the parser dropped a line — flag it for
     // human review rather than silently accept the mismatch.
-    const totalAdjCents =
-      adjResult.totalAdjustedCents +
-      prSplit.totalPrCents +
-      totalDeniedCents;
+    // billed = paid + all-adjustments, where all-adjustments = contractual
+    // (non-PR, in totalAdjustedCents) + patient responsibility. We do NOT add
+    // totalDeniedCents: a denied line is itself a non-PR adjustment already
+    // included in totalAdjustedCents, so adding it again double-counted and
+    // flagged every cost-share remit as unbalanced.
+    const totalAdjCents = adjResult.totalAdjustedCents + adjResult.totalPatientRespCents;
     const balance = reconcileClaimTotals({
       billedCents: claim.billedAmountCents,
       paidCents: adjResult.totalPaidCents,

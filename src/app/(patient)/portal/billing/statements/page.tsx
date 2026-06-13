@@ -18,7 +18,7 @@ import { Eyebrow, LeafSprig, EditorialRule } from "@/components/ui/ornament";
 import { formatDate } from "@/lib/utils/format";
 import { formatMoney } from "@/lib/domain/billing";
 import { buildPatientView } from "@/lib/billing/eob-display";
-import { parseEra835 } from "@/lib/billing/eob";
+import { buildEobFromEra835 } from "@/lib/billing/eob";
 
 export const metadata = { title: "Your statements" };
 
@@ -158,7 +158,8 @@ export default async function PatientStatementsPage() {
         ) : (
           <Card tone="raised">
             <CardContent className="py-4">
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-sm min-w-[26rem]">
                 <thead>
                   <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wider border-b border-border/60">
                     <th className="py-2">Date</th>
@@ -191,6 +192,7 @@ export default async function PatientStatementsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -442,7 +444,7 @@ function synthesizeParsedEob(
     periodEnd: Date;
   },
   lineItems: StatementLineItem[],
-): ReturnType<typeof parseEra835> {
+): ReturnType<typeof buildEobFromEra835> {
   // Build an internal ParsedEob shape from the statement so the
   // eob-display layer can produce the patient view. Patient resp is
   // attributed to a single CARC-1 (deductible-style) row when the
@@ -466,7 +468,7 @@ function synthesizeParsedEob(
       ],
     };
   });
-  return parseEra835(
+  return buildEobFromEra835(
     {
       payerName: "Your insurance",
       paidDate: statement.periodEnd.toISOString().slice(0, 10),

@@ -14,6 +14,11 @@ import {
   type ActiveChip,
 } from "@/components/ui/filter-bar";
 import {
+  SectionSearchBar,
+  applySectionQuery,
+  type SectionQuery,
+} from "@/components/ops/master";
+import {
   INCIDENT_CATEGORY_LABELS,
   type IncidentCategory,
   type IncidentReport,
@@ -21,11 +26,18 @@ import {
 } from "@/lib/domain/overnight-batch";
 import { cn } from "@/lib/utils/cn";
 
-const SEVERITY_TONES: Record<IncidentSeverity, "neutral" | "warning" | "highlight" | "danger"> = {
-  low: "neutral",
+const SEVERITY_TONES: Record<IncidentSeverity, "info" | "warning" | "danger"> = {
+  low: "info",
   medium: "warning",
-  high: "highlight",
+  high: "danger",
   critical: "danger",
+};
+
+const SEVERITY_BADGE_CLASS: Record<IncidentSeverity, string> = {
+  low: "",
+  medium: "",
+  high: "bg-orange-50 text-orange-700 border-orange-200",
+  critical: "",
 };
 
 const SEVERITY_LABELS: Record<IncidentSeverity, string> = {
@@ -76,6 +88,8 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
   const [formOpen, setFormOpen] = useState(false);
   const [resolving, setResolving] = useState<IncidentReport | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
+  // MASTER-prompt G8 — per-section date/param/keyword filter for the log below.
+  const [sectionQuery, setSectionQuery] = useState<SectionQuery | null>(null);
   const [draft, setDraft] = useState({
     severity: "low" as IncidentSeverity,
     category: "safety" as IncidentCategory,
@@ -99,7 +113,14 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
       if (state.patientAffectedOnly && !i.patientAffected) return false;
       return true;
     });
-    return list.sort((a, b) => {
+    const searched = sectionQuery
+      ? applySectionQuery(list, sectionQuery, {
+          getDate: (i) => i.reportedAt,
+          getText: (i) =>
+            `${i.title} ${i.description} ${INCIDENT_CATEGORY_LABELS[i.category]} ${SEVERITY_LABELS[i.severity]}`,
+        })
+      : list;
+    return searched.sort((a, b) => {
       switch (state.sort) {
         case "newest":
           return b.reportedAt.localeCompare(a.reportedAt);
@@ -111,7 +132,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
           return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
       }
     });
-  }, [incidents, state]);
+  }, [incidents, state, sectionQuery]);
 
   const chips: ActiveChip[] = [];
   if (state.severities.length > 0) {
@@ -275,6 +296,15 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
 
       <FilterChips chips={chips} onRemove={removeChip} onClearAll={clearAll} />
 
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-sm font-semibold text-text">Incident log</h2>
+        <SectionSearchBar
+          onChange={setSectionQuery}
+          placeholder="Filter log — “last 30 days”, “critical”…"
+          aria-label="Filter incident log by date or keyword"
+        />
+      </div>
+
       <Card tone="raised">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -292,7 +322,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
               {filtered.map((i) => (
                 <tr key={i.id} className="border-b border-border/40 hover:bg-surface-muted/40">
                   <td className="px-5 py-3.5">
-                    <Badge tone={SEVERITY_TONES[i.severity]}>{SEVERITY_LABELS[i.severity]}</Badge>
+                    <Badge tone={SEVERITY_TONES[i.severity]} className={SEVERITY_BADGE_CLASS[i.severity]}>{SEVERITY_LABELS[i.severity]}</Badge>
                   </td>
                   <td className="px-5 py-3.5 text-text-muted text-xs">
                     {INCIDENT_CATEGORY_LABELS[i.category]}
@@ -368,7 +398,12 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
                       className={cn(
                         "py-2 rounded-md border text-xs font-medium transition-colors",
                         draft.severity === s
-                          ? "border-emerald-700 bg-emerald-700 text-white"
+                          ? {
+                              low: "border-blue-600 bg-blue-600 text-white",
+                              medium: "border-yellow-500 bg-yellow-500 text-white",
+                              high: "border-orange-600 bg-orange-600 text-white",
+                              critical: "border-red-600 bg-red-600 text-white",
+                            }[s]
                           : "border-border bg-surface text-text-muted hover:bg-surface-muted",
                       )}
                     >
@@ -394,7 +429,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
                 <Input
                   value={draft.title}
                   onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                  placeholder="Short summary"
+                  placeholder=""
                 />
               </FieldGroup>
 

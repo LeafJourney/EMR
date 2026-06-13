@@ -5,7 +5,7 @@ import { MailFaxClient } from "./mail-fax-client";
 import { type DocumentSource } from "@/lib/billing/mail-fax-ocr";
 import { SAMPLE_DOCS } from "./sample-docs";
 
-export const metadata = { title: "Documents Processing Center" };
+export const metadata = { title: "Documents Inbox and Outbox" };
 
 interface ScanRow {
   id: string;

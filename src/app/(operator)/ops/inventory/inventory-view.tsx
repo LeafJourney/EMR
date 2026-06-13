@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, FieldGroup, Textarea } from "@/components/ui/input";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { AutocompleteInput, type AutocompleteOption } from "@/components/ops/master";
 import {
   classifyStatus,
   STATUS_STYLES,
@@ -57,6 +58,20 @@ export function InventoryView({ initialItems }: { initialItems: InventoryItem[] 
         );
       });
   }, [items, filter, query]);
+
+  // MASTER-prompt G3 — the directive's "AI SKU search": top-7 matches on
+  // product name (label) plus brand / SKU / UPC (keywords), mirroring the
+  // filter above.
+  const productOptions: AutocompleteOption[] = useMemo(
+    () =>
+      items.map((i) => ({
+        value: i.productName,
+        label: i.productName,
+        sublabel: [i.brand, i.sku].filter(Boolean).join(" · "),
+        keywords: [i.brand, i.sku, i.upc].filter((s): s is string => !!s),
+      })),
+    [items],
+  );
 
   function applyRestock() {
     if (!restockTarget || restockQty <= 0) return;
@@ -162,11 +177,14 @@ export function InventoryView({ initialItems }: { initialItems: InventoryItem[] 
           })}
         </div>
         <div className="flex items-center gap-2">
-          <Input
-            type="search"
-            placeholder="Search product, SKU, UPC…"
+          <AutocompleteInput
+            options={productOptions}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onValueChange={setQuery}
+            onSelect={(opt) => setQuery(opt.value)}
+            placeholder="Search product, SKU, UPC…"
+            emptyMessage="No products match"
+            aria-label="Search products by name, SKU, or UPC"
             className="md:w-64"
           />
           <Button onClick={() => setShowAdd((v) => !v)} size="sm">

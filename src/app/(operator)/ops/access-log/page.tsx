@@ -4,13 +4,13 @@ import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
-import { EmptyState } from "@/components/ui/empty-state";
 import {
   reconstructSessions,
   aggregateByRole,
   buildHipaaExport,
   type AccessRole,
 } from "@/lib/billing/access-log";
+import { RoleAnalyticsTable, type RoleAnalyticsRow } from "./role-analytics-table";
 
 export const metadata = { title: "Master Access Log" };
 
@@ -73,6 +73,17 @@ export default async function AccessLogPage({
 
   const sessions = reconstructSessions(normalized);
   const byRole = aggregateByRole(sessions);
+
+  const roleRows: RoleAnalyticsRow[] = byRole.map((r) => ({
+    role: r.role,
+    sessionCount: r.sessionCount,
+    avgClicksDisplay: r.avgClicksPerSession.toFixed(1),
+    avgClicks: r.avgClicksPerSession,
+    avgSessionDisplay: formatSeconds(r.avgSessionSeconds),
+    avgSessionSeconds: r.avgSessionSeconds,
+    topDestinationsDisplay:
+      r.topDestinations.map((d) => `${d.section} (${d.count})`).join(" · "),
+  }));
   const hipaaExport = searchParams.patient
     ? buildHipaaExport(searchParams.patient, normalized)
     : [];
@@ -126,55 +137,13 @@ export default async function AccessLogPage({
         </button>
       </form>
 
-      <Card tone="raised" className="mb-6">
-        <CardHeader>
-          <CardTitle>Click analytics by role</CardTitle>
-          <CardDescription>
-            Mean session length and click counts per role across the selected window.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {byRole.length === 0 ? (
-            <EmptyState
-              title="No sessions in this window"
-              description="Adjust the days filter or wait for activity."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left">
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Role</th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Sessions</th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Avg clicks</th>
-                    <th className="py-2 pr-4 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Avg session</th>
-                    <th className="py-2 font-medium text-text-subtle text-[10px] uppercase tracking-wider">Top destinations</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {byRole.map((r) => (
-                    <tr key={r.role}>
-                      <td className="py-3 pr-4">
-                        <Badge tone={ROLE_TONE[r.role]}>{r.role}</Badge>
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums text-text">{r.sessionCount}</td>
-                      <td className="py-3 pr-4 tabular-nums text-text">
-                        {r.avgClicksPerSession.toFixed(1)}
-                      </td>
-                      <td className="py-3 pr-4 tabular-nums text-text">
-                        {formatSeconds(r.avgSessionSeconds)}
-                      </td>
-                      <td className="py-3 text-text-muted text-xs">
-                        {r.topDestinations.map((d) => `${d.section} (${d.count})`).join(" · ") || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Click analytics by role — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <div className="mb-6">
+        <p className="text-sm text-text-muted mb-3">
+          Mean session length and click counts per role across the selected window.
+        </p>
+        <RoleAnalyticsTable rows={roleRows} />
+      </div>
 
       {searchParams.patient && (
         <Card tone="raised">

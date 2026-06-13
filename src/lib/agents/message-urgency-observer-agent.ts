@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import type { Agent } from "@/lib/orchestration/types";
 import { triageThread } from "@/lib/domain/smart-inbox";
+import { deriveVulnerabilityFlags } from "@/lib/triage/upi";
 import { recordObservation } from "@/lib/agents/memory/clinical-observation";
 
 // ---------------------------------------------------------------------------
@@ -64,16 +65,35 @@ export const messageUrgencyObserverAgent: Agent<
   async run({ messageId, threadId, patientId }, ctx) {
     ctx.assertCan("read.patient");
 
-    const thread = await prisma.messageThread.findUnique({
-      where: { id: threadId },
-      include: {
-        patient: { select: { userId: true } },
-        messages: {
-          orderBy: { createdAt: "desc" },
-          take: 10,
+    // EMR-1147 — chart context feeds the UPI vulnerability multiplier
+    // (V_patient): severe cardiovascular disease, advanced metabolic
+    // instability, 30-day post-op window.
+    const [thread, chart] = await Promise.all([
+      prisma.messageThread.findUnique({
+        where: { id: threadId },
+        include: {
+          patient: { select: { userId: true } },
+          messages: {
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          },
         },
-      },
-    });
+      }),
+      prisma.patient.findUnique({
+        where: { id: patientId },
+        select: {
+          contraindications: true,
+          pastMedicalConditions: {
+            where: { deletedAt: null },
+            select: { condition: true },
+          },
+          pastSurgeries: {
+            where: { deletedAt: null },
+            select: { createdAt: true },
+          },
+        },
+      }),
+    ]);
     if (!thread) {
       ctx.log("info", "Thread not found — skipping triage", { threadId });
       return {
@@ -84,6 +104,15 @@ export const messageUrgencyObserverAgent: Agent<
       };
     }
 
+    const vulnerability = deriveVulnerabilityFlags({
+      conditions: chart?.pastMedicalConditions ?? [],
+      contraindications: chart?.contraindications ?? [],
+      surgeries: chart?.pastSurgeries ?? [],
+    });
+
+    // EMR-1146 — the deterministic UPI engine inside triageThread is the
+    // primary signal (negation/subject-attribution aware); the keyword
+    // heuristic is advisory only. Fixes both EMR-1090 failure modes.
     const result = triageThread(
       thread.messages.map((m) => ({
         body: m.body,
@@ -92,6 +121,7 @@ export const messageUrgencyObserverAgent: Agent<
         createdAt: m.createdAt.toISOString(),
       })),
       thread.patient.userId,
+      { vulnerability },
     );
 
     // Only durable-record the two signal classes a physician actually
@@ -150,6 +180,16 @@ export const messageUrgencyObserverAgent: Agent<
         triagePriority: result.priority,
         triageCategory: result.category,
         triageReason: result.triageReason,
+        // EMR-1146 — UPI score + factor breakdown for clinician transparency.
+        upiScore: result.upi?.upi ?? null,
+        upiRoute: result.upi?.route ?? null,
+        upiFactors: result.upi ? JSON.parse(JSON.stringify(result.upi.factors)) : null,
+        // TODO(EMR-1147): the pre-configured 911/ED auto-reply
+        // (result.upi.autoReply) should be dispatched on the patient's
+        // channel by the inbound-message webhook / correspondence workflow.
+        // This observer only has read.patient + write.outcome.reminder
+        // permissions, so it records the decision but cannot send messages.
+        upiAutoReply: result.upi?.autoReply ?? null,
       },
     });
 

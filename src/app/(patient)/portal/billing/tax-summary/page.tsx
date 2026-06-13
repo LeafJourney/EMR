@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
 import { formatMoney } from "@/lib/domain/billing";
+import { PrintButton } from "./print-button";
 
 export const metadata = { title: "Year-End Tax Summary" };
 
@@ -35,8 +36,8 @@ export default async function TaxSummaryPage() {
       where: {
         claim: { patientId: patient.id },
         paymentDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
+          gte: new Date(`${selectedYear}-01-01T00:00:00.000Z`),
+          lte: new Date(`${selectedYear}-12-31T23:59:59.999Z`),
         },
         source: "patient",
       },
@@ -56,8 +57,8 @@ export default async function TaxSummaryPage() {
       where: {
         patientId: patient.id,
         serviceDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
+          gte: new Date(`${selectedYear}-01-01T00:00:00.000Z`),
+          lte: new Date(`${selectedYear}-12-31T23:59:59.999Z`),
         },
       },
       orderBy: { serviceDate: "asc" },
@@ -108,16 +109,9 @@ export default async function TaxSummaryPage() {
           <Badge tone="accent">{selectedYear}</Badge>
           <span className="text-sm text-text-muted">Tax year</span>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={undefined}
-          className="print:hidden"
-        >
-          <span className="print:hidden" suppressHydrationWarning>
-            Print summary
-          </span>
-        </Button>
+        <PrintButton variant="primary" size="sm" className="print:hidden">
+          Print summary
+        </PrintButton>
       </div>
 
       {totalPatientPaid === 0 && visitCount === 0 ? (
@@ -140,7 +134,7 @@ export default async function TaxSummaryPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 pt-6 border-t border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 border-t border-border">
                 <div className="text-center">
                   <p className="text-xs text-text-subtle uppercase tracking-wider mb-1">Total billed</p>
                   <p className="text-lg font-semibold text-text">{formatMoney(totalCharged)}</p>
@@ -257,24 +251,12 @@ export default async function TaxSummaryPage() {
 
           {/* Print button (bottom) */}
           <div className="text-center print:hidden">
-            <PrintButton />
+            <PrintButton variant="ghost" size="sm">
+              Print or save as PDF
+            </PrintButton>
           </div>
         </div>
       )}
     </PageShell>
-  );
-}
-
-function PrintButton() {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (typeof window !== "undefined") window.print();
-      }}
-      className="inline-flex items-center gap-2 text-sm text-accent hover:text-accent/80 transition-colors font-medium"
-    >
-      Print or save as PDF
-    </button>
   );
 }

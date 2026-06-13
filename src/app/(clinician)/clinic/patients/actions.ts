@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
 import { ForbiddenError, requirePermission } from "@/lib/rbac/permissions";
 import { patientMatchesQuery } from "@/lib/search/patient-search";
+import { EXCLUDE_SYSTEM_PATIENT } from "@/lib/domain/system-patient";
 
 const emergencyContactSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -120,7 +121,7 @@ export async function searchPatientsAction(query: string) {
       deletedAt: null,
       // Exclude the reserved internal record that anchors calendar blocks —
       // it is not a real patient and must never be selectable in patient search.
-      NOT: { firstName: "System", lastName: "CalendarBlock" },
+      ...EXCLUDE_SYSTEM_PATIENT,
     },
     include: {
       appointments: {

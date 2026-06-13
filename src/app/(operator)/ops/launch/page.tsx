@@ -334,7 +334,7 @@ export default async function LaunchPage() {
                           </div>
                           <p className="text-[12px] text-text-muted leading-relaxed">{d.theme}</p>
                           <p className="text-[11px] text-text-subtle mt-2 italic leading-relaxed">
-                            Exit: {d.exitCriteria}
+                            Goal: {d.exitCriteria}
                           </p>
                           <ul className="mt-3 space-y-1">
                             {d.tasks.map((t) => {
@@ -371,7 +371,7 @@ export default async function LaunchPage() {
                                     {t.title}
                                     {t.blocker && !done && (
                                       <span className="ml-1 text-[10px] uppercase tracking-wider text-danger font-medium">
-                                        blocker
+                                        blocked
                                       </span>
                                     )}
                                   </span>

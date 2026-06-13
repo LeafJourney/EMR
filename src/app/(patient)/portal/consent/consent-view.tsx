@@ -401,10 +401,14 @@ export function ConsentView({
                           Completed
                         </p>
                         <p className="text-[10px] text-text-subtle">
-                          {new Date(
-                            signedConsents.find((s) => s.templateId === template.id)
-                              ?.signedAt ?? ""
-                          ).toLocaleDateString()}
+                          {(() => {
+                            const signedAt = signedConsents.find(
+                              (s) => s.templateId === template.id,
+                            )?.signedAt;
+                            return signedAt
+                              ? new Date(signedAt).toLocaleDateString()
+                              : "";
+                          })()}
                         </p>
                       </div>
                     </div>

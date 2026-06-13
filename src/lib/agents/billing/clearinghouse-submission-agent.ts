@@ -436,6 +436,24 @@ export const clearinghouseSubmissionAgent: Agent<
               secondary: null,
             };
             const builtResult = buildClaimEdi(buildCtx);
+            // Dependability gate: never persist/submit a claim that fails our
+            // own SNIP 1-5 validation or carries a missing/placeholder billing
+            // EIN — both are guaranteed payer rejections. Throw so the
+            // surrounding catch records the failure instead of shipping a
+            // malformed 837P. (Tax ID resolved from env is valid; only a truly
+            // missing EIN — which build-from-claim masks as all-zeros — is
+            // blocked here, not the env-provided case.)
+            if (!builtResult.snip.passed) {
+              const detail = builtResult.snip.findings
+                .map((f) => `L${f.level}: ${f.message}`)
+                .join("; ");
+              throw new Error(`SNIP 1-5 validation failed — refusing to submit malformed 837P: ${detail}`);
+            }
+            if (builtResult.identifiers.source.taxId === "missing") {
+              throw new Error(
+                "Billing Tax ID (EIN) is missing — refusing to submit a claim with a placeholder all-zero EIN. Set the organization tax ID or BILLING_TAX_ID.",
+              );
+            }
             ediPayload = builtResult.built.payload;
           } else {
             ediPayload = buildEdi837Stub(claim);

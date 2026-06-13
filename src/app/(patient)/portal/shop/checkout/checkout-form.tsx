@@ -209,7 +209,7 @@ export function CheckoutForm({ items, subtotal, tax, total, onSuccess }: Checkou
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label htmlFor="city" className="block text-xs font-semibold text-text-muted mb-1">
                 City

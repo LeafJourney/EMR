@@ -30,6 +30,10 @@ export interface CloseInputs {
   claims: Array<{
     id: string;
     status: string;
+    /** When the claim row was created (= when it was billed). Drives the
+     *  "created"/"billed" metrics — NOT serviceDate, which can be weeks
+     *  earlier and would land the dollars on a day whose close already ran. */
+    createdAt: Date;
     serviceDate: Date;
     submittedAt: Date | null;
     paidAt: Date | null;
@@ -42,6 +46,11 @@ export interface CloseInputs {
     patientRespCents: number;
     timelyFilingDeadline: Date | null;
   }>;
+  /** Actual payments posted, used for same-day cash attribution. The daily
+   *  "collected" figure is the sum of these by paymentDate — NOT the claim's
+   *  cumulative paidAmountCents gated on paidAt, which mis-dates partial pays
+   *  and drops earlier payments when paidAt is overwritten. */
+  payments: Array<{ amountCents: number; source: string; paymentDate: Date }>;
   /** Adjustments posted during the window (signed cents). */
   adjustments: Array<{ type: string; amountCents: number; createdAt: Date; postedAt: Date | null }>;
   /** AR snapshot at close. */
@@ -103,7 +112,9 @@ const OVERDUE_APPEAL_THRESHOLD_DAYS = 45;
  *  `[organizationId, closeDate]`). */
 export function aggregateClose(input: CloseInputs): CloseRow {
   const onDay = (d: Date | null) => d != null && sameUtcDay(d, input.closeDate);
-  const created = input.claims.filter((c) => onDay(c.serviceDate)).length;
+  // "created"/"billed" key off createdAt (when the claim was billed), not
+  // serviceDate (the date of care, which may be weeks earlier).
+  const created = input.claims.filter((c) => onDay(c.createdAt)).length;
   const submitted = input.claims.filter((c) => onDay(c.submittedAt)).length;
   const paid = input.claims.filter((c) => onDay(c.paidAt)).length;
   const denied = input.claims.filter((c) => onDay(c.deniedAt)).length;
@@ -117,15 +128,18 @@ export function aggregateClose(input: CloseInputs): CloseRow {
   const appealed = input.claims.filter((c) => c.status === "appealed").length;
 
   const billedCents = input.claims.reduce(
-    (a, c) => a + (onDay(c.serviceDate) ? c.billedAmountCents : 0),
+    (a, c) => a + (onDay(c.createdAt) ? c.billedAmountCents : 0),
     0,
   );
   const allowedCents = input.claims.reduce(
     (a, c) => a + (onDay(c.paidAt) ? c.allowedAmountCents ?? 0 : 0),
     0,
   );
-  const paidCents = input.claims.reduce(
-    (a, c) => a + (onDay(c.paidAt) ? c.paidAmountCents : 0),
+  // Cash collected = actual payments by paymentDate (insurance + patient),
+  // excluding non-cash "adjustment" source. This reconciles to the bank,
+  // unlike the claim's cumulative paidAmountCents gated on paidAt.
+  const paidCents = input.payments.reduce(
+    (a, p) => a + (p.source !== "adjustment" && onDay(p.paymentDate) ? p.amountCents : 0),
     0,
   );
   const patientRespCents = input.claims.reduce(

@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useCallback } from "react";
 import {
-  generateDemoMonth,
+  buildMonthEntries,
   getAdherenceLevel,
   ADHERENCE_COLORS,
   type DoseCalendarEntry,
+  type DoseLogLite,
 } from "@/lib/domain/dose-calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,18 +14,24 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
 
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const REGIMEN_NAME = "Charlotte's Web 1:1 Tincture";
-const DOSES_PER_DAY = 3;
 
-export function CalendarView() {
-  const today = new Date();
+export function CalendarView({
+  logs,
+  scheduledPerDay,
+  regimenName,
+}: {
+  logs: DoseLogLite[];
+  scheduledPerDay: number;
+  regimenName: string;
+}) {
+  const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const entries = useMemo(
-    () => generateDemoMonth(year, month, REGIMEN_NAME, DOSES_PER_DAY),
-    [year, month],
+    () => buildMonthEntries(logs, scheduledPerDay, regimenName, year, month),
+    [logs, scheduledPerDay, regimenName, year, month],
   );
 
   const entryMap = useMemo(() => {
@@ -72,6 +79,11 @@ export function CalendarView() {
     return total > 0 ? Math.round((taken / total) * 100) : 0;
   }, [entries]);
 
+  const totalTaken = useMemo(
+    () => entries.reduce((sum, e) => sum + e.takenDoses, 0),
+    [entries],
+  );
+
   const isFutureDay = useCallback(
     (day: number) => {
       const date = new Date(year, month, day);
@@ -90,13 +102,15 @@ export function CalendarView() {
         <CardContent className="py-4 px-6 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-text-subtle">
-              Current regimen
+              {scheduledPerDay > 0 ? "Current regimen" : "Tracking"}
             </p>
             <p className="text-sm font-medium text-text mt-0.5">
-              {REGIMEN_NAME}
+              {scheduledPerDay > 0 ? regimenName : "Your logged doses"}
             </p>
           </div>
-          <Badge tone="accent">{DOSES_PER_DAY}x daily</Badge>
+          {scheduledPerDay > 0 && (
+            <Badge tone="accent">{scheduledPerDay}x daily</Badge>
+          )}
         </CardContent>
       </Card>
 
@@ -212,42 +226,58 @@ export function CalendarView() {
 
         {/* Right panel: detail or monthly summary */}
         <div className="space-y-6">
-          {/* Monthly adherence ring */}
+          {/* Monthly summary — real adherence when scheduled, else a logged count */}
           <Card>
             <CardContent className="py-6 flex flex-col items-center">
-              <div className="relative h-28 w-28 mb-4">
-                <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="42"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    className="text-surface-muted"
-                  />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="42"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    strokeDasharray={`${(adherencePercent / 100) * 264} 264`}
-                    className="text-emerald-600 transition-all duration-700"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="font-display text-2xl text-text tabular-nums">
-                    {adherencePercent}%
+              {scheduledPerDay > 0 ? (
+                <>
+                  <div className="relative h-28 w-28 mb-4">
+                    <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="8"
+                        className="text-surface-muted"
+                      />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(adherencePercent / 100) * 264} 264`}
+                        className="text-emerald-600 transition-all duration-700"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="font-display text-2xl text-text tabular-nums">
+                        {adherencePercent}%
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-text-muted text-center leading-relaxed">
+                    You took{" "}
+                    <span className="font-medium text-text">{adherencePercent}%</span> of your
+                    scheduled doses this month
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className="font-display text-4xl text-text tabular-nums mb-1">
+                    {totalTaken}
                   </span>
-                </div>
-              </div>
-              <p className="text-sm text-text-muted text-center leading-relaxed">
-                You took <span className="font-medium text-text">{adherencePercent}%</span> of
-                your doses this month
-              </p>
+                  <p className="text-sm text-text-muted text-center leading-relaxed">
+                    {totalTaken === 0
+                      ? "No doses logged this month yet."
+                      : `dose${totalTaken === 1 ? "" : "s"} logged this month`}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
 

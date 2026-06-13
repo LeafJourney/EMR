@@ -318,6 +318,10 @@ export function NotificationCenter({
                     {/* Enabled toggle */}
                     <div className="flex justify-center w-16">
                       <button
+                        type="button"
+                        role="switch"
+                        aria-checked={pref.enabled}
+                        aria-label={`Enable ${config.label} notifications`}
                         onClick={() => toggleEnabled(pref.type)}
                         className={cn(
                           "h-5 w-9 rounded-full transition-colors duration-200 relative",
@@ -338,6 +342,10 @@ export function NotificationCenter({
                       (channel) => (
                         <div key={channel} className="flex justify-center w-16">
                           <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked={pref.channels.includes(channel)}
+                            aria-label={`${config.label} via ${channel.replace("_", " ")}`}
                             disabled={!pref.enabled}
                             onClick={() => toggleChannel(pref.type, channel)}
                             className={cn(

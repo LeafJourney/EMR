@@ -47,6 +47,23 @@ const MODALITY_TONE: Record<string, "accent" | "info" | "neutral"> = {
 // EMR-919 — stable display order for the clickable modality KPI chips.
 const MODALITY_ORDER = ["in_person", "video", "phone"];
 
+// EMR-921 — clickable stat-ribbon scopes. Clicking a box retitles the Week View
+// and filters the grid to that scope ("today" = appts dated today; the rest
+// match appointment status). "In range" clears the scope.
+type ScopeKey = "today" | "confirmed" | "requested" | "completed";
+const SCOPES: { key: ScopeKey; label: string; tone: "accent" | "success" | "warning" | "neutral" }[] = [
+  { key: "today", label: "Today", tone: "accent" },
+  { key: "confirmed", label: "Confirmed", tone: "success" },
+  { key: "requested", label: "Requested", tone: "warning" },
+  { key: "completed", label: "Completed", tone: "neutral" },
+];
+const SCOPE_DOT: Record<ScopeKey, string> = {
+  today: "bg-accent",
+  confirmed: "bg-[color:var(--success,theme(colors.emerald.500))]",
+  requested: "bg-highlight",
+  completed: "bg-border-strong",
+};
+
 const STATUS_TONE: Record<
   string,
   "success" | "warning" | "danger" | "neutral" | "accent"
@@ -119,6 +136,8 @@ export function ScheduleClient({
   );
   // EMR-919 / EMR-930 — modality filter driven by the clickable KPI chips.
   const [selectedModality, setSelectedModality] = useState<string | null>(null);
+  // EMR-921 — stat-ribbon scope filter (Today / Confirmed / Requested / Completed).
+  const [selectedScope, setSelectedScope] = useState<ScopeKey | null>(null);
 
   const selectedProvider = useMemo(
     () => providers.find((p) => p.id === selectedProviderId) ?? null,
@@ -134,19 +153,37 @@ export function ScheduleClient({
     return counts;
   }, [appointments]);
 
+  // EMR-921 — scope counts for the clickable stat ribbon.
+  const scopeCounts = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return {
+      today: appointments.filter(
+        (a) => new Date(a.startAt).toDateString() === todayStr,
+      ).length,
+      confirmed: appointments.filter((a) => a.status === "confirmed").length,
+      requested: appointments.filter((a) => a.status === "requested").length,
+      completed: appointments.filter((a) => a.status === "completed").length,
+    };
+  }, [appointments]);
+
   // Restrict the day buckets by the active provider + modality filters so the
   // Week View grid reflects only the matching schedule.
   const visibleDays = useMemo(() => {
-    if (!selectedProviderId && !selectedModality) return days;
+    if (!selectedProviderId && !selectedModality && !selectedScope) return days;
+    const todayStr = new Date().toDateString();
     return days.map((d) => ({
       ...d,
       appointments: d.appointments.filter(
         (a) =>
           (!selectedProviderId || a.providerId === selectedProviderId) &&
-          (!selectedModality || a.modality === selectedModality),
+          (!selectedModality || a.modality === selectedModality) &&
+          (!selectedScope ||
+            (selectedScope === "today"
+              ? new Date(a.startAt).toDateString() === todayStr
+              : a.status === selectedScope)),
       ),
     }));
-  }, [days, selectedProviderId, selectedModality]);
+  }, [days, selectedProviderId, selectedModality, selectedScope]);
 
   // Snapshot stats for the selected provider, computed from loaded data.
   const snapshot = useMemo(() => {
@@ -166,12 +203,64 @@ export function ScheduleClient({
     };
   }, [appointments, selectedProviderId]);
 
+  const scopeLabel = selectedScope
+    ? SCOPES.find((s) => s.key === selectedScope)!.label
+    : null;
   const boxTitle = selectedProvider
     ? `${selectedProvider.user.firstName} ${selectedProvider.user.lastName}`
-    : "Week view";
+    : scopeLabel ?? "Week view";
 
   return (
     <>
+      {/* EMR-921 — clickable stat ribbon: a click retitles the Week View below
+          and filters its grid to that scope; "In range" clears the filter. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+        {[
+          { key: null as ScopeKey | null, label: "In range", value: totalThisWeek, dotClass: "" },
+          ...SCOPES.map((s) => ({
+            key: s.key as ScopeKey | null,
+            label: s.label,
+            value: scopeCounts[s.key],
+            dotClass: SCOPE_DOT[s.key],
+          })),
+        ].map((box) => {
+          const active =
+            box.key === null ? !selectedScope : selectedScope === box.key;
+          return (
+            <button
+              key={box.label}
+              type="button"
+              aria-pressed={active}
+              onClick={() =>
+                setSelectedScope(
+                  box.key === null || selectedScope === box.key ? null : box.key,
+                )
+              }
+              className={cn(
+                "rounded-2xl border bg-surface-raised px-4 py-3 text-left shadow-sm transition-all",
+                "hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                active
+                  ? "border-accent/60 ring-1 ring-accent/40"
+                  : "border-border/80 hover:border-border-strong",
+              )}
+            >
+              <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.1em] text-text-subtle">
+                {box.dotClass && (
+                  <span
+                    className={cn("h-1.5 w-1.5 rounded-full", box.dotClass)}
+                    aria-hidden
+                  />
+                )}
+                {box.label}
+              </span>
+              <span className="mt-1 block font-display text-2xl text-text tabular-nums">
+                {box.value}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Week view header — title (swaps to provider name) + range filter */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-baseline gap-3 min-w-0">
@@ -183,6 +272,15 @@ export function ScheduleClient({
             <button
               type="button"
               onClick={() => setSelectedProviderId(null)}
+              className="text-[11px] font-medium text-accent hover:underline shrink-0"
+            >
+              Back to all
+            </button>
+          )}
+          {!selectedProvider && selectedScope && (
+            <button
+              type="button"
+              onClick={() => setSelectedScope(null)}
               className="text-[11px] font-medium text-accent hover:underline shrink-0"
             >
               Back to all

@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "leafjourney-cookie-consent";
 
+// Authenticated app surfaces + the full-bleed Leafnerd SPA. The cookie-consent
+// banner is a public-visitor compliance element; inside the logged-in EMR it
+// just overlays clinical/ops/patient work and looks unprofessional in a live
+// demo. It still shows on public marketing / storefront / education pages.
+const SUPPRESS_PREFIXES = ["/clinic", "/ops", "/portal", "/kiosk", "/leafnerd"];
+
 export function CookieConsent() {
   const [show, setShow] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     // SSR safety: localStorage is only on the client.
@@ -36,6 +44,10 @@ export function CookieConsent() {
     }
     setShow(false);
   };
+
+  if (pathname && SUPPRESS_PREFIXES.some((p) => pathname.startsWith(p))) {
+    return null;
+  }
 
   if (!show) return null;
 

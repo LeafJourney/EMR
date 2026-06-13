@@ -286,7 +286,7 @@ export default function EligibilityPage() {
     <PageShell maxWidth="max-w-[960px]">
       <PageHeader
         eyebrow="Insurance & Eligibility"
-        title="Cannabis Eligibility Checker"
+        title="Eligibility Checker"
         description="Determine if a patient qualifies for medical cannabis, state card programs, and insurance-reimbursed CBD products."
       />
 
@@ -298,7 +298,7 @@ export default function EligibilityPage() {
             Patient Eligibility Check
           </CardTitle>
           <CardDescription>
-            Enter patient details to check qualification status.
+            Enter patient details to check insurance activity.
           </CardDescription>
         </CardHeader>
         <CardContent>

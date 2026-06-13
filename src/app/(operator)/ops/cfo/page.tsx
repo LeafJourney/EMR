@@ -12,7 +12,7 @@ import { MetricBoxGroup } from "@/components/ops/master";
 import { CfoKpiGrid, type CfoKpiView } from "./cfo-kpi-grid";
 import type { KpiCard } from "@/lib/finance/kpis";
 
-export const metadata = { title: "CFO · Leafjourney" };
+export const metadata = { title: "CFO" };
 export const dynamic = "force-dynamic";
 
 export default async function CfoOverviewPage({
@@ -146,8 +146,7 @@ export default async function CfoOverviewPage({
                   day: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
-                })}{" "}
-                by {latestBriefing.generatedBy}.
+                })}.
               </p>
             )}
           </CardContent>

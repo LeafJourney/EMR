@@ -2,14 +2,14 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eyebrow } from "@/components/ui/ornament";
 import { fmtMoney } from "@/lib/finance/formatting";
 import { CfoTabs } from "../components";
-import { upsertGoalAction, deactivateGoalAction } from "../actions";
-import type { FinancialGoalKind } from "@prisma/client";
+import { upsertGoalAction } from "../actions";
+import { GoalsSection, type GoalView } from "./goals-section";
+import type { FinancialGoal, FinancialGoalKind } from "@prisma/client";
 
 export const metadata = { title: "Goals · CFO" };
 export const dynamic = "force-dynamic";
@@ -24,13 +24,40 @@ const KINDS: { value: FinancialGoalKind; label: string; field: "amount" | "pct" 
   { value: "custom", label: "Custom", field: "amount", placeholder: "$ amount" },
 ];
 
+function goalValueLabel(g: FinancialGoal): string {
+  return g.targetCents !== null
+    ? fmtMoney(g.targetCents)
+    : g.targetPct !== null
+      ? `${g.targetPct}%`
+      : g.targetDays !== null
+        ? `${g.targetDays} days`
+        : "—";
+}
+
+function toGoalView(g: FinancialGoal): GoalView {
+  return {
+    id: g.id,
+    label: g.label,
+    kindLabel: g.kind.replace(/_/g, " "),
+    period: g.period,
+    notes: g.notes,
+    valueLabel: goalValueLabel(g),
+  };
+}
+
 export default async function GoalsPage() {
   const user = await requireUser();
   const orgId = user.organizationId!;
-  const goals = await prisma.financialGoal.findMany({
-    where: { organizationId: orgId, active: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const [activeGoals, archivedGoals] = await Promise.all([
+    prisma.financialGoal.findMany({
+      where: { organizationId: orgId, active: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.financialGoal.findMany({
+      where: { organizationId: orgId, active: false },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -92,49 +119,11 @@ export default async function GoalsPage() {
         </Card>
       </div>
 
-      {/* Active goals */}
-      <div>
-        <Eyebrow className="mb-4">Active goals</Eyebrow>
-        <div className="space-y-2">
-          {goals.length === 0 && (
-            <Card>
-              <CardContent className="pt-6 pb-6 text-center text-text-subtle italic text-sm">
-                No active goals. The CFO agent uses industry benchmarks until you set your own.
-              </CardContent>
-            </Card>
-          )}
-          {goals.map((g) => {
-            const valueLabel = g.targetCents !== null
-              ? fmtMoney(g.targetCents)
-              : g.targetPct !== null
-                ? `${g.targetPct}%`
-                : g.targetDays !== null
-                  ? `${g.targetDays} days`
-                  : "—";
-            return (
-              <Card key={g.id} tone="raised">
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-text">{g.label}</span>
-                        <Badge tone="neutral" className="text-[10px]">{g.kind.replace(/_/g, " ")}</Badge>
-                        <Badge tone="accent" className="text-[10px]">{g.period}</Badge>
-                      </div>
-                      {g.notes && <p className="text-[11px] text-text-subtle mt-1">{g.notes}</p>}
-                    </div>
-                    <span className="font-display text-lg text-text tabular-nums shrink-0">{valueLabel}</span>
-                    <form action={deactivateGoalAction}>
-                      <input type="hidden" name="id" value={g.id} />
-                      <button type="submit" className="text-[11px] text-danger hover:underline">Archive</button>
-                    </form>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
+      {/* Active goals (cap 5 + show more) + archived-goals popup — EMR-1066 */}
+      <GoalsSection
+        active={activeGoals.map(toGoalView)}
+        archived={archivedGoals.map(toGoalView)}
+      />
     </PageShell>
   );
 }

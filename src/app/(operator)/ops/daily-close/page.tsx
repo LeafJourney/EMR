@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/ornament";
 import { formatMoney } from "@/lib/domain/billing";
 import { formatDate } from "@/lib/utils/format";
+import { DailyCloseTable, type DailyCloseRow } from "./daily-close-table";
 
 export const metadata = { title: "RCM daily close" };
 
@@ -102,41 +103,29 @@ export default async function DailyClosePage() {
             </CardContent>
           </Card>
 
-          {recent.length > 1 && (
-            <>
-              <div className="mt-10 mb-4">
-                <Eyebrow>Last 30 days</Eyebrow>
-              </div>
-              <Card tone="raised">
-                <CardContent className="py-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wider border-b border-border/60">
-                        <th className="py-2">Date</th>
-                        <th className="py-2 text-right">Billed</th>
-                        <th className="py-2 text-right">Paid</th>
-                        <th className="py-2 text-right">AR</th>
-                        <th className="py-2 text-right">Stale</th>
-                        <th className="py-2 text-right">Overdue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recent.map((r) => (
-                        <tr key={r.id} className="border-b border-border/30 last:border-0">
-                          <td className="py-2 text-text">{formatDate(r.closeDate)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatMoney(r.billedCents)}</td>
-                          <td className="py-2 text-right tabular-nums text-success">{formatMoney(r.paidCents)}</td>
-                          <td className="py-2 text-right tabular-nums">{formatMoney(r.outstandingArCents)}</td>
-                          <td className="py-2 text-right tabular-nums">{r.staleClaims}</td>
-                          <td className="py-2 text-right tabular-nums">{r.overdueAppeals}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
-            </>
-          )}
+          {recent.length > 1 && (() => {
+            const historyRows: DailyCloseRow[] = recent.map((r) => ({
+              id: r.id,
+              dateDisplay: formatDate(r.closeDate),
+              dateMs: r.closeDate.getTime(),
+              billedDisplay: formatMoney(r.billedCents),
+              billedCents: r.billedCents,
+              paidDisplay: formatMoney(r.paidCents),
+              paidCents: r.paidCents,
+              arDisplay: formatMoney(r.outstandingArCents),
+              arCents: r.outstandingArCents,
+              stale: r.staleClaims,
+              overdue: r.overdueAppeals,
+            }));
+            return (
+              <>
+                <div className="mt-10 mb-4">
+                  <Eyebrow>Last 30 days</Eyebrow>
+                </div>
+                <DailyCloseTable rows={historyRows} />
+              </>
+            );
+          })()}
         </>
       )}
     </PageShell>

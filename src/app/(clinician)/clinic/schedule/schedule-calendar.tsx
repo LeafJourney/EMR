@@ -52,6 +52,7 @@ type Props = {
   initialView?: View;
   timeZone: string;
   patients: PatientDTO[];
+  patientId?: string;
 };
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
@@ -68,6 +69,7 @@ export function ScheduleCalendar({
   initialView = "week",
   timeZone,
   patients,
+  patientId,
 }: Props) {
   const router = useRouter();
   const [view, setView] = React.useState<View>(initialView);
@@ -95,6 +97,15 @@ export function ScheduleCalendar({
     if (today >= weekStart && today < addDays(weekStart, 7)) return today;
     return weekStart;
   }, [weekStart]);
+
+  const handleSlotClick = (dayIdx: number, slotIdx: number) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + dayIdx);
+    d.setMinutes(FIRST_HOUR * 60 + slotIdx * SLOT_MIN);
+    d.setSeconds(0);
+    d.setMilliseconds(0);
+    setShowScheduleModal(d);
+  };
 
   // Click handler to dismiss context menus
   React.useEffect(() => {
@@ -313,6 +324,7 @@ export function ScheduleCalendar({
           appointments={appointments}
           onDrop={onDrop}
           onContextMenu={handleSlotContextMenu}
+          onSlotClick={handleSlotClick}
           onApptContextMenu={handleApptContextMenu}
           pending={pending}
         />
@@ -334,6 +346,12 @@ export function ScheduleCalendar({
               (dayStart.getTime() - weekStart.getTime()) / 86_400_000,
             );
             return handleSlotContextMenu(e, dayIdx, slotIdx);
+          }}
+          onSlotClick={(slotIdx) => {
+            const dayIdx = Math.round(
+              (dayStart.getTime() - weekStart.getTime()) / 86_400_000,
+            );
+            return handleSlotClick(dayIdx, slotIdx);
           }}
           onApptContextMenu={handleApptContextMenu}
           pending={pending}
@@ -444,6 +462,7 @@ export function ScheduleCalendar({
           appointments={appointments}
           timeZone={timeZone}
           onClose={() => setShowScheduleModal(null)}
+          initialPatient={patients.find((p) => p.id === patientId) || null}
           onSave={async (patientId, duration, modality, notes, force) => {
             setShowScheduleModal(null);
             setPending(true);
@@ -477,6 +496,7 @@ function WeekGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onSlotClick,
   onApptContextMenu,
   pending,
 }: {
@@ -484,6 +504,7 @@ function WeekGrid({
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, dayIdx: number, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, dayIdx: number, slotIdx: number) => void;
+  onSlotClick: (dayIdx: number, slotIdx: number) => void;
   onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
 }) {
@@ -536,6 +557,7 @@ function WeekGrid({
                     appointment={findAppt(appointments, weekStart, dayIdx, slotIdx)}
                     onDrop={(apptId) => onDrop(apptId, dayIdx, slotIdx)}
                     onContextMenu={(e) => onContextMenu(e, dayIdx, slotIdx)}
+                    onClick={() => onSlotClick(dayIdx, slotIdx)}
                     onApptContextMenu={onApptContextMenu}
                     pending={pending}
                     hourMark={isHourMark}
@@ -556,6 +578,7 @@ function Slot({
   appointment,
   onDrop,
   onContextMenu,
+  onClick,
   onApptContextMenu,
   pending,
   hourMark,
@@ -565,6 +588,7 @@ function Slot({
   appointment: AppointmentDTO | null;
   onDrop: (apptId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  onClick: () => void;
   onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
   hourMark: boolean;
@@ -584,8 +608,14 @@ function Slot({
         if (apptId) onDrop(apptId);
       }}
       onContextMenu={onContextMenu}
+      onClick={() => {
+        if (!appointment) {
+          onClick();
+        }
+      }}
       className={cn(
-        "border-r border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
+        "border-r border-border/40 hover:bg-surface-muted transition-colors",
+        appointment ? "cursor-context-menu" : "cursor-pointer",
         hourMark && "border-t border-border/60",
         isOver && "bg-accent-soft/50",
         pending && "opacity-70",
@@ -606,6 +636,7 @@ function DayGrid({
   appointments,
   onDrop,
   onContextMenu,
+  onSlotClick,
   onApptContextMenu,
   pending,
 }: {
@@ -613,6 +644,7 @@ function DayGrid({
   appointments: AppointmentDTO[];
   onDrop: (apptId: string, slotIdx: number) => void;
   onContextMenu: (e: React.MouseEvent, slotIdx: number) => void;
+  onSlotClick: (slotIdx: number) => void;
   onApptContextMenu: (e: React.MouseEvent, appt: AppointmentDTO) => void;
   pending: boolean;
 }) {
@@ -656,8 +688,14 @@ function DayGrid({
                     if (apptId) onDrop(apptId, slotIdx);
                   }}
                   onContextMenu={(e) => onContextMenu(e, slotIdx)}
+                  onClick={() => {
+                    if (!inSlot) {
+                      onSlotClick(slotIdx);
+                    }
+                  }}
                   className={cn(
-                    "border-l border-border/40 hover:bg-surface-muted transition-colors cursor-context-menu",
+                    "border-l border-border/40 hover:bg-surface-muted transition-colors",
+                    inSlot ? "cursor-context-menu" : "cursor-pointer",
                     isHourMark && "border-t border-border/60",
                     pending && "opacity-70",
                   )}
@@ -1106,6 +1144,7 @@ function ScheduleModal({
   timeZone,
   onClose,
   onSave,
+  initialPatient,
 }: {
   startDate: Date;
   patients: PatientDTO[];
@@ -1113,9 +1152,10 @@ function ScheduleModal({
   timeZone: string;
   onClose: () => void;
   onSave: (patientId: string, duration: number, modality: string, notes: string, force: boolean) => void;
+  initialPatient?: PatientDTO | null;
 }) {
   const [search, setSearch] = React.useState("");
-  const [selectedPatient, setSelectedPatient] = React.useState<PatientDTO | null>(null);
+  const [selectedPatient, setSelectedPatient] = React.useState<PatientDTO | null>(initialPatient || null);
   const [duration, setDuration] = React.useState<number>(30);
   const [modality, setModality] = React.useState<string>("in_person");
   const [notes, setNotes] = React.useState<string>("");

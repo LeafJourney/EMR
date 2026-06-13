@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Button } from "@/components/ui/button";
 import { prisma } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/session";
+import { recordReleaseFromRow } from "@/lib/domain/record-release";
 import { RecordReleaseForm } from "@/components/portal/record-release-form";
 
 export const metadata = { title: "Release records" };
@@ -36,6 +37,12 @@ export default async function ReleaseRecordsPage() {
     .join(" ")
     .trim();
 
+  const releaseRows = await prisma.recordReleaseRequest.findMany({
+    where: { patientId: patient.id },
+    orderBy: { createdAt: "desc" },
+  });
+  const initialHistory = releaseRows.map(recordReleaseFromRow);
+
   return (
     <PageShell maxWidth="max-w-[960px]">
       <PatientSectionNav section="health" />
@@ -50,8 +57,8 @@ export default async function ReleaseRecordsPage() {
         }
       />
       <RecordReleaseForm
-        patientId={patient.id}
         patientLegalName={legalName || null}
+        initialHistory={initialHistory}
       />
     </PageShell>
   );
