@@ -7,6 +7,7 @@ import { NewPatientModal } from "@/components/clinic/NewPatientModal";
 import { RosterExportMenu } from "./roster-export-menu";
 import { RouterRefreshFreshness } from "@/components/ui/freshness-indicator.client";
 import { logger } from "@/lib/observability/log";
+import { EXCLUDE_SYSTEM_PATIENT } from "@/lib/domain/system-patient";
 
 export const metadata = { title: "Patient Roster" };
 
@@ -26,7 +27,11 @@ export default async function PatientsPage({
   // pagination + filter UI.
   const PATIENT_ROSTER_CAP = 500;
   const patients = await prisma.patient.findMany({
-    where: { organizationId: orgId, deletedAt: null },
+    // The reserved "System CalendarBlock" record is not a real patient and must
+    // not appear in the roster. searchPatientsAction already excludes it; this
+    // keeps the initial server render consistent so it can't flash in then
+    // vanish on refresh. See @/lib/domain/system-patient.
+    where: { organizationId: orgId, deletedAt: null, ...EXCLUDE_SYSTEM_PATIENT },
     include: { chartSummary: true },
     orderBy: { lastName: "asc" },
     take: PATIENT_ROSTER_CAP,

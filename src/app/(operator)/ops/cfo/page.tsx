@@ -3,12 +3,12 @@ import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eyebrow, EditorialRule } from "@/components/ui/ornament";
-import { Sparkline } from "@/components/ui/sparkline";
 import { rangeForPeriod } from "@/lib/finance/period";
 import { buildCfoReport, getLatestCfoBriefing } from "@/lib/finance/report";
 import { fmtMoney, fmtPct } from "@/lib/finance/formatting";
-import { CfoTabs, KpiTile, AnomaliesPanel, MiniBarChart, GenerateReportButton } from "./components";
+import { CfoTabs, KpiTile, AnomaliesPanel, GenerateReportButton } from "./components";
 import { TrendLine } from "@/components/charts";
+import { MetricBoxGroup } from "@/components/ops/master";
 
 export const metadata = { title: "CFO · Leafjourney" };
 export const dynamic = "force-dynamic";
@@ -33,15 +33,20 @@ export default async function CfoOverviewPage({
     latestBriefing.periodStart.getTime() === range.start.getTime() &&
     latestBriefing.periodEnd.getTime() === range.end.getTime();
 
-  const weeklyRevenueSeries = report.weeklySeries.map((p) => p.revenueCents / 100);
-  const weeklyEbitdaSeries = report.weeklySeries.map((p) => p.ebitdaCents / 100);
-  const monthlySeries = report.monthlySeries.map((p) => ({ label: p.label.slice(0, 3), value: p.netIncomeCents }));
   // Branded TrendLine: revenue vs EBITDA over the same weekly window. Cents → dollars
   // so the y-axis ticks read as small integers, and so the tooltip stays compact.
   const weeklyTrendData = report.weeklySeries.map((p) => ({
     label: p.label,
     revenue: Math.round(p.revenueCents / 100),
     ebitda: Math.round(p.ebitdaCents / 100),
+  }));
+  // History series (whole dollars) powering the MetricBox drill-in popups —
+  // real per-week / per-month figures, never fabricated.
+  const weeklyRevenueHistory = weeklyTrendData.map((p) => ({ label: p.label, value: p.revenue }));
+  const weeklyEbitdaHistory = weeklyTrendData.map((p) => ({ label: p.label, value: p.ebitda }));
+  const monthlyNetHistory = report.monthlySeries.map((p) => ({
+    label: p.label.slice(0, 3),
+    value: Math.round(p.netIncomeCents / 100),
   }));
 
   return (
@@ -113,42 +118,57 @@ export default async function CfoOverviewPage({
 
       <EditorialRule className="my-10" />
 
-      {/* Trend visuals */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10">
-        <Card tone="raised">
-          <CardContent className="pt-5 pb-5">
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-              Weekly revenue (last 13 weeks)
-            </p>
-            <p className="font-display text-2xl text-text tabular-nums mt-1">
-              {fmtMoney(report.pnl.totals.revenueCents, { compact: true })}
-            </p>
-            <Sparkline data={weeklyRevenueSeries.length >= 2 ? weeklyRevenueSeries : [0, 0]} width={300} height={56} />
-          </CardContent>
-        </Card>
-        <Card tone="raised">
-          <CardContent className="pt-5 pb-5">
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-              Weekly EBITDA (last 13 weeks)
-            </p>
-            <p className="font-display text-2xl text-text tabular-nums mt-1">
-              {fmtMoney(report.pnl.totals.ebitdaCents, { compact: true })}
-            </p>
-            <Sparkline data={weeklyEbitdaSeries.length >= 2 ? weeklyEbitdaSeries : [0, 0]} width={300} height={56} />
-          </CardContent>
-        </Card>
-        <Card tone="raised">
-          <CardContent className="pt-5 pb-5">
-            <p className="text-[10px] uppercase tracking-[0.12em] text-text-subtle">
-              Monthly net income (last 12 months)
-            </p>
-            <p className="font-display text-2xl text-text tabular-nums mt-1">
-              {fmtMoney(report.pnl.totals.netIncomeCents, { compact: true })}
-            </p>
-            <MiniBarChart data={monthlySeries} width={300} height={56} />
-          </CardContent>
-        </Card>
-      </div>
+      {/* Trend visuals — each tile drills into a popup with the full history,
+          Google-Finance-style hover tooltips, and a "feather" button that
+          cycles line / area / bar (G10 + G11). Tick the compare boxes on ≥2
+          same-period tiles to overlay them on one chart (G9). */}
+      <MetricBoxGroup
+        className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10"
+        compareTitle="Compare financial trends"
+        valueFormat="money"
+        metrics={[
+          {
+            id: "weekly-revenue",
+            eyebrow: "Weekly revenue · last 13 weeks",
+            headline: fmtMoney(report.pnl.totals.revenueCents, { compact: true }),
+            history: weeklyRevenueHistory,
+            valueFormat: "money",
+            goodWhen: "up",
+            initialChartType: "line",
+            popupTitle: "Weekly revenue",
+            popupDescription: "Revenue posted per week over the last 13 weeks.",
+            detailHref: "/ops/cfo/pnl",
+            detailLabel: "Open P&L",
+          },
+          {
+            id: "weekly-ebitda",
+            eyebrow: "Weekly EBITDA · last 13 weeks",
+            headline: fmtMoney(report.pnl.totals.ebitdaCents, { compact: true }),
+            history: weeklyEbitdaHistory,
+            valueFormat: "money",
+            goodWhen: "up",
+            initialChartType: "area",
+            popupTitle: "Weekly EBITDA",
+            popupDescription:
+              "Earnings before interest, taxes, depreciation & amortization, per week.",
+            detailHref: "/ops/cfo/pnl",
+            detailLabel: "Open P&L",
+          },
+          {
+            id: "monthly-net",
+            eyebrow: "Monthly net income · last 12 months",
+            headline: fmtMoney(report.pnl.totals.netIncomeCents, { compact: true }),
+            history: monthlyNetHistory,
+            valueFormat: "money",
+            goodWhen: "up",
+            initialChartType: "bar",
+            popupTitle: "Monthly net income",
+            popupDescription: "Net income per month over the last 12 months.",
+            detailHref: "/ops/cfo/pnl",
+            detailLabel: "Open P&L",
+          },
+        ]}
+      />
 
       {/* Deep-look: revenue vs EBITDA — branded TrendLine wrapper */}
       <div className="mb-10">
