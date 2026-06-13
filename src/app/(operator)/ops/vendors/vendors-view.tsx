@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FieldGroup, Input } from "@/components/ui/input";
+import { AutocompleteInput, type AutocompleteOption } from "@/components/ops/master";
 import {
   EmptyFilterState,
   FilterChips,
@@ -130,6 +131,22 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
     [vendors],
   );
 
+  // MASTER-prompt G3 — the search field's own page-specific options: every
+  // vendor, matchable by name (label) plus contact / email / category
+  // (keywords). rankAutocomplete surfaces the top 7 as you type.
+  const vendorOptions: AutocompleteOption[] = useMemo(
+    () =>
+      vendors.map((v) => ({
+        value: v.name,
+        label: v.name,
+        sublabel: [v.category, v.contactName].filter(Boolean).join(" · "),
+        keywords: [v.contactName, v.email, v.category].filter(
+          (s): s is string => !!s,
+        ),
+      })),
+    [vendors],
+  );
+
   const chips: ActiveChip[] = [];
   if (state.query.trim()) {
     chips.push({ id: "query", label: "Search", value: state.query.trim() });
@@ -230,12 +247,16 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <Input
-            type="search"
-            placeholder="Search vendors…"
+          <AutocompleteInput
+            options={vendorOptions}
             value={state.query}
-            onChange={(e) => setState((s) => ({ ...s, query: e.target.value }))}
-            className="md:w-64 h-9"
+            onValueChange={(text) => setState((s) => ({ ...s, query: text }))}
+            onSelect={(opt) => setState((s) => ({ ...s, query: opt.value }))}
+            placeholder="Search vendors…"
+            emptyMessage="No vendors match"
+            aria-label="Search vendors"
+            className="md:w-64"
+            inputClassName="h-9"
           />
           <MultiSelectFilter
             label="Category"

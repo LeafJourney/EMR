@@ -30,6 +30,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { Input } from "@/components/ui/input";
+import { AutocompleteInput, type AutocompleteOption } from "@/components/ops/master";
 import { cn } from "@/lib/utils/cn";
 import {
   crossCheckCoverage,
@@ -317,6 +318,17 @@ export function MailFaxClient({
   const [editDob, setEditDob] = useState("");
   const [editCategory, setEditCategory] = useState<string>(CHART_DOC_CATEGORIES[0]);
   const [editDocDate, setEditDocDate] = useState("");
+
+  // MASTER-prompt G3 — turn the blind "search patient by name" field into a
+  // top-7 autocomplete over the practice's own patients.
+  const patientOptions: AutocompleteOption[] = useMemo(
+    () =>
+      dbPatients.map((p) => ({
+        value: `${p.firstName} ${p.lastName}`,
+        label: `${p.firstName} ${p.lastName}`,
+      })),
+    [dbPatients],
+  );
 
   // Resolve a DB patient id from a scanned patient name. Returns null when there
   // is no CONFIDENT match (EMR-983: do NOT fall back to dbPatients[0]).
@@ -1365,10 +1377,14 @@ export function MailFaxClient({
         <form onSubmit={handleRouteEdit} className="space-y-4 px-6 py-5">
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-text-subtle uppercase">Patient name or DOB</label>
-            <Input
+            <AutocompleteInput
+              options={patientOptions}
               value={editPatientQuery}
-              onChange={(e) => setEditPatientQuery(e.target.value)}
+              onValueChange={setEditPatientQuery}
+              onSelect={(opt) => setEditPatientQuery(opt.value)}
               placeholder="Search patient by name"
+              emptyMessage="No matching patients"
+              aria-label="Search patient by name"
             />
             <Input
               value={editDob}
