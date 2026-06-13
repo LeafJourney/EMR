@@ -1,20 +1,17 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/ornament";
 import { isStaleRule, PAYER_RULE_STALE_MS } from "@/lib/billing/payer-rules-db";
 import { loadPayerRulesForOrg } from "./actions";
+import { PayerRulesTable, type PayerRuleRow } from "./payer-rules-table";
 
 export const metadata = { title: "Payer rules — admin" };
 
 // EMR-218 admin editor — shows the merged set of global + org-override
 // payer rules with a staleness banner on any rule reviewed > 6 months ago.
 
-function formatDays(n: number): string {
-  return `${n}d`;
-}
 
 export default async function PayerRulesPage() {
   const user = await requireUser();
@@ -23,6 +20,25 @@ export default async function PayerRulesPage() {
   }
   const rules = await loadPayerRulesForOrg(user.organizationId);
   const staleCount = rules.filter((r) => isStaleRule(r.lastReviewedAt)).length;
+
+  const rows: PayerRuleRow[] = rules.map((r) => ({
+    id: r.id,
+    displayName: r.displayName,
+    class: r.class,
+    timelyFilingDisplay: `${r.timelyFilingDays}d / ${r.correctedTimelyFilingDays}d`,
+    timelyFilingDays: r.timelyFilingDays,
+    correctedTimelyFilingDays: r.correctedTimelyFilingDays,
+    ackSlaDays: r.ackSlaDays,
+    cannabisLabel: r.excludesCannabis
+      ? "Excluded"
+      : r.requiresPriorAuthForCannabis
+      ? "Prior auth"
+      : "Covered",
+    lastReviewedDisplay: r.lastReviewedAt.toISOString().slice(0, 10),
+    lastReviewedMs: r.lastReviewedAt.getTime(),
+    isStale: isStaleRule(r.lastReviewedAt),
+    isOrgOverride: r.isOrgOverride,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -52,65 +68,13 @@ export default async function PayerRulesPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <Eyebrow>Active rules</Eyebrow>
-          <CardTitle>{rules.length} payer{rules.length === 1 ? "" : "s"}</CardTitle>
-          <CardDescription>Org-specific overrides win over the in-code defaults shown in muted rows.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-text-muted border-b">
-                  <th className="py-2 pr-4">Payer</th>
-                  <th className="py-2 pr-4">Class</th>
-                  <th className="py-2 pr-4">Timely filing</th>
-                  <th className="py-2 pr-4">Ack SLA</th>
-                  <th className="py-2 pr-4">Cannabis</th>
-                  <th className="py-2 pr-4">Last reviewed</th>
-                  <th className="py-2 pr-4">Source</th>
-                  <th className="py-2 pr-4"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.map((r) => (
-                  <tr key={r.id} className="border-b last:border-b-0">
-                    <td className="py-2 pr-4 font-medium">{r.displayName}</td>
-                    <td className="py-2 pr-4">{r.class}</td>
-                    <td className="py-2 pr-4">{formatDays(r.timelyFilingDays)} / {formatDays(r.correctedTimelyFilingDays)}</td>
-                    <td className="py-2 pr-4">{formatDays(r.ackSlaDays)}</td>
-                    <td className="py-2 pr-4">
-                      {r.excludesCannabis ? (
-                        <Badge tone="danger">Excluded</Badge>
-                      ) : r.requiresPriorAuthForCannabis ? (
-                        <Badge tone="warning">Prior auth</Badge>
-                      ) : (
-                        <Badge tone="success">Covered</Badge>
-                      )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {isStaleRule(r.lastReviewedAt) ? (
-                        <Badge tone="warning">{r.lastReviewedAt.toISOString().slice(0, 10)} · stale</Badge>
-                      ) : (
-                        r.lastReviewedAt.toISOString().slice(0, 10)
-                      )}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {r.isOrgOverride ? <Badge tone="accent">Org override</Badge> : <span className="text-text-muted">Global</span>}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <Link href={`/ops/billing/payer-rules/editor?id=${encodeURIComponent(r.id)}`} className="text-accent hover:underline text-xs">
-                        edit →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-2">
+        <Eyebrow>Active rules</Eyebrow>
+        <p className="text-sm text-text-muted mt-1">
+          {rules.length} payer{rules.length === 1 ? "" : "s"} — org-specific overrides win over the in-code defaults.
+        </p>
+      </div>
+      <PayerRulesTable rows={rows} />
     </PageShell>
   );
 }

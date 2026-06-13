@@ -2,7 +2,6 @@ import { requireUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { PageShell, PageHeader } from "@/components/shell/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Eyebrow } from "@/components/ui/ornament";
@@ -10,6 +9,7 @@ import { fmtMoney } from "@/lib/finance/formatting";
 import { LIABILITY_MAP } from "@/lib/finance/chart-of-accounts";
 import { CfoTabs } from "../components";
 import { createLiabilityAction } from "../actions";
+import { LiabilitiesTable, type LiabilityRow } from "./liabilities-table";
 import type { LiabilityType } from "@prisma/client";
 
 export const metadata = { title: "Liabilities · CFO" };
@@ -39,6 +39,22 @@ export default async function LiabilitiesPage() {
   const totalPrincipal = liabilities.reduce((a, b) => a + b.principalCents, 0);
   const totalBalance = liabilities.reduce((a, b) => a + b.balanceCents, 0);
   const monthlyDebtService = liabilities.reduce((a, b) => a + (b.monthlyPaymentCents ?? 0), 0);
+
+  const rows: LiabilityRow[] = liabilities.map((l) => ({
+    id: l.id,
+    name: l.name,
+    typeLabel: LIABILITY_MAP[l.type].label,
+    balanceDisplay: fmtMoney(l.balanceCents),
+    balanceCents: l.balanceCents,
+    rateDisplay: l.interestRate ? `${(l.interestRate * 100).toFixed(2)}%` : "—",
+    rate: l.interestRate ?? null,
+    monthlyDisplay: l.monthlyPaymentCents ? fmtMoney(l.monthlyPaymentCents) : "—",
+    monthlyCents: l.monthlyPaymentCents ?? null,
+    maturityDisplay: l.maturityDate
+      ? l.maturityDate.toLocaleDateString("en-US")
+      : "—",
+    maturityMs: l.maturityDate ? l.maturityDate.getTime() : null,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -103,40 +119,9 @@ export default async function LiabilitiesPage() {
         </Card>
       </div>
 
-      {/* Liability list */}
-      <Card tone="raised">
-        <CardContent className="pt-3 pb-3 px-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-text-subtle border-b border-border/60">
-                <th className="text-left py-2 px-4 font-medium">Name</th>
-                <th className="text-left py-2 px-4 font-medium">Type</th>
-                <th className="text-right py-2 px-4 font-medium">Balance</th>
-                <th className="text-right py-2 px-4 font-medium">Rate</th>
-                <th className="text-right py-2 px-4 font-medium">Monthly pmt</th>
-                <th className="text-left py-2 px-4 font-medium">Maturity</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {liabilities.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-text-subtle italic">No outstanding liabilities — nice.</td></tr>
-              )}
-              {liabilities.map((l) => (
-                <tr key={l.id} className="hover:bg-surface-muted/50">
-                  <td className="py-2 px-4 text-text">{l.name}</td>
-                  <td className="py-2 px-4">
-                    <Badge tone="neutral" className="text-[10px]">{LIABILITY_MAP[l.type].label}</Badge>
-                  </td>
-                  <td className="py-2 px-4 text-right tabular-nums text-text">{fmtMoney(l.balanceCents)}</td>
-                  <td className="py-2 px-4 text-right tabular-nums text-text-muted">{l.interestRate ? `${(l.interestRate * 100).toFixed(2)}%` : "—"}</td>
-                  <td className="py-2 px-4 text-right tabular-nums text-text-muted">{l.monthlyPaymentCents ? fmtMoney(l.monthlyPaymentCents) : "—"}</td>
-                  <td className="py-2 px-4 text-text-subtle">{l.maturityDate ? l.maturityDate.toLocaleDateString("en-US") : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      {/* Liability list — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <Eyebrow className="mb-4">Liabilities</Eyebrow>
+      <LiabilitiesTable rows={rows} />
     </PageShell>
   );
 }

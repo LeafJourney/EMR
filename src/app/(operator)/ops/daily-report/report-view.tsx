@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils/cn";
 import type { DailyReportData, DemoAppointment } from "./page";
+import { AppointmentsTable, type AppointmentRow } from "./appointments-table";
 
 function fmtMoney(cents: number) {
   return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -142,46 +143,25 @@ export function ReportView({ data }: { data: DailyReportData }) {
         </Card>
       </div>
 
-      {/* Appointments table */}
-      <Card tone="raised">
-        <CardHeader>
-          <CardTitle className="text-base">Appointments</CardTitle>
-          <CardDescription>{data.appointments.length} on the schedule.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-text-subtle border-b border-border">
-                  <th className="py-2 font-medium">Time</th>
-                  <th className="py-2 font-medium">Patient</th>
-                  <th className="py-2 font-medium">Provider</th>
-                  <th className="py-2 font-medium">Status</th>
-                  <th className="py-2 font-medium">Modality</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.appointments.map((a) => {
-                  const tone = STATUS_TONE[a.status];
-                  return (
-                    <tr key={a.id} className="border-b border-border/40">
-                      <td className="py-2.5 font-mono text-xs">{a.time}</td>
-                      <td className="py-2.5">{a.patient}</td>
-                      <td className="py-2.5 text-text-muted">{a.provider}</td>
-                      <td className="py-2.5">
-                        <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium", tone.bg, tone.text)}>
-                          {tone.label}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-text-muted capitalize">{a.modality.replace("_", "-")}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Appointments table — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <div>
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-text">Appointments</h2>
+          <p className="text-sm text-text-muted">{data.appointments.length} on the schedule.</p>
+        </div>
+        <AppointmentsTable
+          rows={data.appointments.map((a): AppointmentRow => ({
+            id: a.id,
+            time: a.time,
+            patient: a.patient,
+            provider: a.provider,
+            statusKey: a.status,
+            statusLabel: STATUS_TONE[a.status]?.label ?? a.status,
+            modalityDisplay: a.modality.replace("_", "-"),
+            modalityKey: a.modality,
+          }))}
+        />
+      </div>
     </div>
   );
 }

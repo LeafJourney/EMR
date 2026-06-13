@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { PageHeader, PageShell } from "@/components/shell/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { FhirResourcesTable, type FhirResourceRow } from "./fhir-resources-table";
 
 export const metadata = { title: "FHIR bridge" };
 
@@ -37,6 +37,15 @@ const RESOURCES = [
 
 export default async function FhirBridgePage() {
   await requireUser();
+
+  const rows: FhirResourceRow[] = RESOURCES.map((r) => ({
+    id: r.name,
+    resource: r.name,
+    description: r.description,
+    operationsDisplay: r.coverage.join(", "),
+    operations: r.coverage,
+  }));
+
   return (
     <PageShell maxWidth="max-w-[960px]">
       <PageHeader
@@ -81,42 +90,10 @@ export default async function FhirBridgePage() {
         </Card>
       </div>
 
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Resource coverage</CardTitle>
-          <CardDescription>Each row maps a Leafjourney concept to a FHIR R4 resource.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wide">
-                  <th className="py-2 pr-4">Resource</th>
-                  <th className="py-2 pr-4">Description</th>
-                  <th className="py-2">Operations</th>
-                </tr>
-              </thead>
-              <tbody>
-                {RESOURCES.map((r) => (
-                  <tr key={r.name} className="border-t border-border/60 align-top">
-                    <td className="py-3 pr-4 font-mono">{r.name}</td>
-                    <td className="py-3 pr-4 text-text-muted">{r.description}</td>
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {r.coverage.map((op) => (
-                          <Badge key={op} tone="success">
-                            {op}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Resource coverage — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
+      <div className="mb-8">
+        <FhirResourcesTable rows={rows} />
+      </div>
 
       <Card>
         <CardHeader>

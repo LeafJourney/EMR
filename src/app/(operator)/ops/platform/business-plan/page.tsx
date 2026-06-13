@@ -11,6 +11,7 @@ import {
   fundingSanityCheck,
   totalQuarterlySpend,
 } from "@/lib/platform/business-plan";
+import { FundingTable, type FundingUseRow } from "./funding-table";
 
 export const metadata = { title: "Business plan" };
 
@@ -33,6 +34,14 @@ export default async function BusinessPlanPage() {
   const sanity = fundingSanityCheck();
   const totalSpend = totalQuarterlySpend();
   const expectedCloses = expectedQuarterlyCloses();
+
+  const fundingRows: FundingUseRow[] = FUNDING.use.map((u, i) => ({
+    id: String(i),
+    category: u.category,
+    allocationDisplay: fmtUsd(u.allocationUsd),
+    allocationUsd: u.allocationUsd,
+    rationale: u.rationale,
+  }));
 
   return (
     <PageShell maxWidth="max-w-[1100px]">
@@ -210,28 +219,7 @@ export default async function BusinessPlanPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wide">
-                    <th className="py-2 pr-4">Use of proceeds</th>
-                    <th className="py-2 pr-4 text-right">Allocation</th>
-                    <th className="py-2">Rationale</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {FUNDING.use.map((u) => (
-                    <tr key={u.category} className="border-t border-border/60 align-top">
-                      <td className="py-3 pr-4 font-medium">{u.category}</td>
-                      <td className="py-3 pr-4 text-right font-mono">
-                        {fmtUsd(u.allocationUsd)}
-                      </td>
-                      <td className="py-3 text-text-muted">{u.rationale}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <FundingTable rows={fundingRows} />
             <p
               className={`text-[11px] mt-4 ${
                 sanity.matchesRaise ? "text-text-subtle" : "text-danger"

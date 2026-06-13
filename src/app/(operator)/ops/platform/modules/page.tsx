@@ -10,6 +10,7 @@ import {
   type ModulePillar,
   type ModuleStatus,
 } from "@/lib/platform/modules";
+import { ModulesTierTable, type TierRow } from "./modules-tier-table";
 
 export const metadata = { title: "Platform modules" };
 
@@ -49,6 +50,15 @@ export default async function PlatformModulesPage() {
     ([, a], [, b]) => a.ordering - b.ordering,
   );
 
+  const tierRows: TierRow[] = tierEntries.map(([id, t]) => ({
+    id,
+    label: t.label,
+    monthlyLabel: t.monthlyLabel,
+    monthlyList: t.monthlyList,
+    bestFor: t.bestFor,
+    blurb: t.blurb,
+  }));
+
   return (
     <PageShell maxWidth="max-w-[1200px]">
       <PageHeader
@@ -87,38 +97,15 @@ export default async function PlatformModulesPage() {
         </Card>
       </div>
 
-      <Card className="mb-10">
-        <CardHeader>
+      <div className="mb-10">
+        <CardHeader className="px-0 pt-0">
           <CardTitle>Tier reference</CardTitle>
           <CardDescription>
             Each tier bundles a default module mix; à la carte add-ons available.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-text-subtle text-[11px] uppercase tracking-wide">
-                  <th className="py-2 pr-4">Tier</th>
-                  <th className="py-2 pr-4">Monthly</th>
-                  <th className="py-2 pr-4">Best for</th>
-                  <th className="py-2">Pitch</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tierEntries.map(([id, t]) => (
-                  <tr key={id} className="border-t border-border/60 align-top">
-                    <td className="py-3 pr-4 font-medium">{t.label}</td>
-                    <td className="py-3 pr-4 font-mono text-[12px]">{t.monthlyLabel}</td>
-                    <td className="py-3 pr-4 text-text-muted">{t.bestFor}</td>
-                    <td className="py-3 text-text-muted">{t.blurb}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+        <ModulesTierTable rows={tierRows} />
+      </div>
 
       {orderedPillars.map((pillar) => (
         <section key={pillar} className="mb-10">

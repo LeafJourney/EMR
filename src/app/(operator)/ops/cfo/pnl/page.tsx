@@ -7,6 +7,7 @@ import { rangeForPeriod, priorRange } from "@/lib/finance/period";
 import { buildPnl } from "@/lib/finance/pnl";
 import { fmtMoney, fmtPct, changeBadgeText } from "@/lib/finance/formatting";
 import { CfoTabs, GenerateReportButton, StatementSection } from "../components";
+import { PnlTable, type PnlRow } from "./pnl-table";
 
 export const metadata = { title: "P&L · CFO" };
 export const dynamic = "force-dynamic";
@@ -34,6 +35,26 @@ export default async function PnlPage({ searchParams }: { searchParams?: { perio
     { label: "Income & excise tax", current: pnl.totals.taxesCents, prior: priorPnl.totals.taxesCents, sign: -1 },
     { label: "Net income", current: pnl.totals.netIncomeCents, prior: priorPnl.totals.netIncomeCents, sign: 1 },
   ];
+
+  const pnlRows: PnlRow[] = lines.map((row) => {
+    const delta = row.current - row.prior;
+    const pct = row.prior !== 0 ? (delta / Math.abs(row.prior)) * 100 : null;
+    const change = changeBadgeText(pct, row.sign === 1);
+    return {
+      id: row.label,
+      line: row.label,
+      currentDisplay: fmtMoney(row.current),
+      currentCents: row.current,
+      priorDisplay: fmtMoney(row.prior),
+      priorCents: row.prior,
+      deltaDisplay: change.text,
+      deltaCents: delta,
+      badgeTone: change.tone === "good" ? "success" : change.tone === "bad" ? "danger" : "neutral",
+      badgeText: change.text,
+      periodLabel: range.period,
+      priorPeriodLabel: prior.period,
+    };
+  });
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -116,42 +137,10 @@ export default async function PnlPage({ searchParams }: { searchParams?: { perio
         />
       </div>
 
-      {/* Side by side: this period vs. prior */}
+      {/* Side by side: this period vs. prior — sortable columns + CSV/print export (MASTER prompt G5/G6) */}
       <div className="mb-10">
         <Eyebrow className="mb-4">This period vs. prior</Eyebrow>
-        <Card tone="raised">
-          <CardContent className="pt-5 pb-5">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-text-subtle border-b border-border/60">
-                  <th className="text-left py-2 font-medium">Line</th>
-                  <th className="text-right py-2 font-medium">This {range.period}</th>
-                  <th className="text-right py-2 font-medium">Prior {prior.period}</th>
-                  <th className="text-right py-2 font-medium">Δ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {lines.map((row) => {
-                  const delta = row.current - row.prior;
-                  const pct = row.prior !== 0 ? (delta / Math.abs(row.prior)) * 100 : null;
-                  const change = changeBadgeText(pct, row.sign === 1);
-                  return (
-                    <tr key={row.label}>
-                      <td className="py-2 text-text">{row.label}</td>
-                      <td className="py-2 text-right tabular-nums text-text">{fmtMoney(row.current)}</td>
-                      <td className="py-2 text-right tabular-nums text-text-muted">{fmtMoney(row.prior)}</td>
-                      <td className="py-2 text-right">
-                        <Badge tone={change.tone === "good" ? "success" : change.tone === "bad" ? "danger" : "neutral"} className="text-[10px]">
-                          {change.text}
-                        </Badge>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        <PnlTable rows={pnlRows} periodLabel={range.period} priorPeriodLabel={prior.period} />
       </div>
 
       {/* Memo lines */}
