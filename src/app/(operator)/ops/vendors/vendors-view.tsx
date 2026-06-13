@@ -36,6 +36,12 @@ function daysUntil(end?: string): number | null {
   return Math.round((d.getTime() - TODAY.getTime()) / 86_400_000);
 }
 
+/** Format an ISO date string (YYYY-MM-DD) as dd-mm-yyyy */
+function fmtDMY(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
+
 type SortKey = "name-asc" | "ends-asc" | "ends-desc" | "cost-desc" | "cost-asc";
 
 type ViewState = {
@@ -72,6 +78,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
     phone: "",
     contractEnds: "",
     monthlyCost: 0,
+    description: "",
   });
 
   const filtered = useMemo(() => {
@@ -82,7 +89,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
       }
       if (state.expiringOnly) {
         const d = daysUntil(v.contractEnds);
-        if (d === null || d < 0 || d > 30) return false;
+        if (d === null || d < 0 || d > 60) return false;
       }
       if (!q) return true;
       return (
@@ -118,7 +125,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
     () =>
       vendors.filter((v) => {
         const d = daysUntil(v.contractEnds);
-        return d !== null && d >= 0 && d <= 30;
+        return d !== null && d >= 0 && d <= 60;
       }),
     [vendors],
   );
@@ -135,7 +142,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
     });
   }
   if (state.expiringOnly) {
-    chips.push({ id: "expiring", label: "Status", value: "Expiring ≤ 30 days" });
+    chips.push({ id: "expiring", label: "Status", value: "Expiring ≤ 60 days" });
   }
 
   function removeChip(id: string) {
@@ -183,6 +190,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
       phone: "",
       contractEnds: "",
       monthlyCost: 0,
+      description: "",
     });
   }
 
@@ -193,7 +201,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
           <CardContent className="py-4 flex items-center justify-between gap-3 flex-wrap">
             <div>
               <p className="text-sm font-medium text-amber-900">
-                {expiring.length} {expiring.length === 1 ? "contract" : "contracts"} expiring in 30 days
+                {expiring.length} {expiring.length === 1 ? "contract" : "contracts"} expiring in 60 days
               </p>
               <p className="text-xs text-amber-800/80 mt-1">
                 {expiring.map((v) => `${v.name} (${v.contractEnds})`).join(" · ")}
@@ -248,7 +256,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
                 : "border-border-strong bg-surface text-text-muted hover:bg-surface-muted/60",
             )}
           >
-            Expiring ≤ 30d
+            Expiring ≤ 60d
           </button>
           <SortMenu
             options={[...SORT_OPTIONS]}
@@ -278,7 +286,7 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
             <tbody>
               {filtered.map((v) => {
                 const d = daysUntil(v.contractEnds);
-                const isExpiring = d !== null && d >= 0 && d <= 30;
+                const isExpiring = d !== null && d >= 0 && d <= 60;
                 return (
                   <tr key={v.id} className="border-b border-border/40 hover:bg-surface-muted/40">
                     <td className="px-5 py-3.5">
@@ -296,12 +304,12 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
                     <td className="px-5 py-3.5 text-right tabular-nums">
                       {v.monthlyCost ? `$${v.monthlyCost.toLocaleString()}` : "—"}
                     </td>
-                    <td className={cn("px-5 py-3.5 text-xs", isExpiring ? "text-[color:var(--highlight-hover)]" : "text-text-muted")}>
+                    <td className={cn("px-5 py-3.5 text-xs", isExpiring ? "text-red-600" : "text-text-muted")}>
                       {v.contractEnds ? (
                         <>
-                          <div>{v.contractEnds}</div>
+                          <div>{fmtDMY(v.contractEnds)}</div>
                           {d !== null && (
-                            <div className="text-[10px] text-text-subtle">
+                            <div className={cn("text-[10px]", isExpiring ? "text-red-600 font-semibold" : "text-text-subtle")}>
                               {d < 0 ? "expired" : `${d} days`}
                               {isExpiring && " — renew soon"}
                             </div>
@@ -389,6 +397,15 @@ export function VendorsView({ initialVendors }: { initialVendors: Vendor[] }) {
                     onChange={(e) => setDraft({ ...draft, monthlyCost: Number(e.target.value) || 0 })}
                   />
                 </FieldGroup>
+                <div className="md:col-span-2">
+                  <FieldGroup label="Description (Optional)">
+                    <Input
+                      value={draft.description}
+                      onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                      placeholder="Notes about this vendor…"
+                    />
+                  </FieldGroup>
+                </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)}>

@@ -76,8 +76,13 @@ export function KpiTile({ kpi }: { kpi: KpiCard }) {
             </Badge>
           ) : null}
           {kpi.goalValue !== undefined && kpi.goalValue !== null ? (
-            <Badge tone={kpi.goalMet ? "success" : "warning"} className="text-[9px]">
-              {kpi.goalMet ? "goal met" : "off goal"}
+            <Badge
+              tone="neutral"
+              className={kpi.goalMet
+                ? "text-[9px] bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300"
+                : "text-[9px] bg-highlight-soft text-[color:var(--highlight-hover)] border-highlight/25"}
+            >
+              {kpi.goalMet ? "on goal" : "off goal"}
             </Badge>
           ) : null}
         </div>

@@ -42,6 +42,26 @@ const ROLE_TONES: Record<StaffRole, "accent" | "info" | "warning" | "highlight">
   billing: "highlight",
 };
 
+// Distinct, stable per-employee colors for shift blocks. Localized to this
+// page (inline styles) so the global theme tokens are untouched. The block
+// background is a soft tint and the dot/text uses the saturated ink so the
+// green shift blocks stay legible both on-screen and in print.
+const EMPLOYEE_COLORS: { soft: string; ink: string }[] = [
+  { soft: "#D8F0DE", ink: "#157347" }, // green
+  { soft: "#DCE8FB", ink: "#1D4ED8" }, // blue
+  { soft: "#F3E0F7", ink: "#9333EA" }, // purple
+  { soft: "#FCE4D6", ink: "#C2410C" }, // orange
+  { soft: "#FFF1C2", ink: "#A16207" }, // amber
+  { soft: "#D7F1EE", ink: "#0F766E" }, // teal
+  { soft: "#FBD9E3", ink: "#BE185D" }, // pink
+  { soft: "#E2E8D5", ink: "#4D7C0F" }, // olive
+];
+
+function employeeColor(staff: StaffMember[], staffId: string) {
+  const idx = staff.findIndex((s) => s.id === staffId);
+  return EMPLOYEE_COLORS[(idx < 0 ? 0 : idx) % EMPLOYEE_COLORS.length];
+}
+
 function startOfWeek(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -126,6 +146,36 @@ export function ScheduleView({ staff }: { staff: StaffMember[] }) {
 
   return (
     <div className="space-y-5">
+      {/*
+        Page-scoped print fix. The global print stylesheet (src/app/globals.css)
+        hides every <button> with `display: none !important` and strips
+        background colors for ink economy. The scheduled shift blocks on this
+        page ARE buttons with inline background colors, so without this override
+        the printout renders a blank grid. We re-show the shift-block buttons
+        (only the ones flagged with data-shift-block) and force their colored
+        background + the column headers to print.
+      */}
+      <style>{`
+        @media print {
+          /* Re-show the scheduled (colored) shift blocks the global rule hides. */
+          .staff-schedule-print button[data-shift-block] {
+            display: flex !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Keep the empty hour cells from cluttering the printout. */
+          .staff-schedule-print button.shift-cell:not([data-shift-block]) {
+            visibility: hidden !important;
+          }
+          /* Ensure the grid + header keep their structure on paper. */
+          .staff-schedule-print table,
+          .staff-schedule-print th,
+          .staff-schedule-print td {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setWeekStart(addDays(weekStart, -7))}>
@@ -163,18 +213,18 @@ export function ScheduleView({ staff }: { staff: StaffMember[] }) {
         </div>
       </div>
 
-      <Card tone="raised">
+      <Card tone="raised" className="staff-schedule-print">
         <CardContent className="p-0 overflow-x-auto">
           <table className="min-w-[1000px] w-full text-xs">
             <thead>
               <tr className="border-b border-border">
-                <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium text-text-subtle w-40">
+                <th className="sticky left-0 bg-surface px-3 py-3 text-left text-base font-semibold text-text w-40">
                   Staff
                 </th>
                 {weekDates.map((d, i) => (
-                  <th key={i} className="px-2 py-2 font-medium text-text">
+                  <th key={i} className="px-2 py-3 text-base font-semibold text-text">
                     <div>{DAYS[i]}</div>
-                    <div className="text-[10px] text-text-subtle font-normal">{fmtDate(d)}</div>
+                    <div className="text-sm text-text-subtle font-normal">{fmtDate(d)}</div>
                   </th>
                 ))}
               </tr>
@@ -197,17 +247,24 @@ export function ScheduleView({ staff }: { staff: StaffMember[] }) {
                           const key = `${s.id}:${dayIdx}:${h}`;
                           const cellShifts = shiftsByCell.get(key) ?? [];
                           const primary = cellShifts[0];
+                          const color = primary ? employeeColor(staff, s.id) : null;
                           return (
                             <button
                               key={h}
                               type="button"
                               onClick={() => openEditor(dayIdx, h)}
+                              data-shift-block={primary ? "true" : undefined}
                               className={cn(
-                                "h-5 rounded text-[9px] flex items-center justify-center transition-colors",
+                                "shift-cell h-5 rounded text-[9px] flex items-center justify-center transition-colors",
                                 primary
-                                  ? "bg-accent-soft text-accent hover:brightness-105"
+                                  ? "hover:brightness-105"
                                   : "bg-surface-muted/60 text-text-subtle hover:bg-accent-soft/60",
                               )}
+                              style={
+                                color
+                                  ? { backgroundColor: color.soft, color: color.ink }
+                                  : undefined
+                              }
                               title={`${hourLabel(h)} – ${hourLabel(h + 1)}`}
                             >
                               {primary ? "●" : hourLabel(h)}

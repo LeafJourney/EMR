@@ -26,7 +26,7 @@ export default function BillingError({
             Something went wrong
           </Eyebrow>
           <h1 className="font-display text-2xl text-text tracking-tight">
-            Billing workqueue couldn&apos;t load
+            Billing Dashboard couldn&apos;t load
           </h1>
           <p className="text-sm text-text-muted mt-3 max-w-md mx-auto leading-relaxed">
             {error.message || "An unexpected error occurred."}

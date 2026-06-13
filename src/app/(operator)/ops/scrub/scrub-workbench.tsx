@@ -462,7 +462,7 @@ function WarningsTile({
       <CardContent className="pt-5 pb-5">
         <p className="text-xs text-text-subtle uppercase tracking-wider">{label}</p>
         <p
-          className="font-display tabular-nums mt-1 text-3xl text-amber-400"
+          className="font-display tabular-nums mt-1 text-3xl text-amber-300"
         >
           {value}
         </p>

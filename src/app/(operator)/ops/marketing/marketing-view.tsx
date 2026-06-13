@@ -33,6 +33,9 @@ export function MarketingView({
 }) {
   const [roiChannel, setRoiChannel] = useState(channels[0]?.channel ?? "");
   const [roiRevenuePerPatient, setRoiRevenuePerPatient] = useState<number>(1200);
+  // Spend seeds from the selected channel but is editable so the operator can
+  // model "what if we spent $X" scenarios. null = follow the channel's spend.
+  const [roiSpendOverride, setRoiSpendOverride] = useState<number | null>(null);
 
   const maxBar = Math.max(...channels.map((c) => c.newPatients), 1);
   const maxTrend = Math.max(...monthlyTrend.map((p) => p.value), 1);
@@ -45,12 +48,13 @@ export function MarketingView({
   const roi = useMemo(() => {
     const c = channels.find((x) => x.channel === roiChannel);
     if (!c) return null;
+    const spend = roiSpendOverride ?? c.spend;
     const revenue = c.newPatients * roiRevenuePerPatient;
-    const net = revenue - c.spend;
-    const cac = c.newPatients > 0 ? c.spend / c.newPatients : 0;
-    const multiple = c.spend > 0 ? revenue / c.spend : Infinity;
-    return { channel: c.channel, spend: c.spend, revenue, net, cac, multiple };
-  }, [channels, roiChannel, roiRevenuePerPatient]);
+    const net = revenue - spend;
+    const cac = c.newPatients > 0 ? spend / c.newPatients : 0;
+    const multiple = spend > 0 ? revenue / spend : Infinity;
+    return { channel: c.channel, spend, revenue, net, cac, multiple };
+  }, [channels, roiChannel, roiRevenuePerPatient, roiSpendOverride]);
 
   return (
     <div className="space-y-6">
@@ -90,7 +94,6 @@ export function MarketingView({
           <div className="space-y-3">
             {channels.map((c) => {
               const pct = (c.newPatients / maxBar) * 100;
-              const cac = c.newPatients > 0 ? c.spend / c.newPatients : 0;
               return (
                 <div key={c.channel} className="flex items-center gap-3">
                   <span className="w-44 text-xs text-text-muted shrink-0">{c.channel}</span>
@@ -103,9 +106,24 @@ export function MarketingView({
                       {c.newPatients}
                     </span>
                   </div>
-                  <span className="w-28 text-right text-[11px] text-text-subtle tabular-nums">
-                    CAC ${cac.toFixed(0)}
-                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card tone="raised">
+        <CardContent className="py-5">
+          <p className="text-sm font-medium text-text mb-1">Acquisition cost (CAC) by source</p>
+          <p className="text-xs text-text-muted mb-4">Customer acquisition cost = spend ÷ new patients.</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {channels.map((c) => {
+              const cac = c.newPatients > 0 ? c.spend / c.newPatients : 0;
+              return (
+                <div key={c.channel} className="p-3 rounded-md bg-surface-muted/60">
+                  <p className="text-[11px] text-text-muted truncate">{c.channel}</p>
+                  <p className="font-display text-lg tabular-nums text-text mt-1">${cac.toFixed(0)}</p>
                 </div>
               );
             })}
@@ -130,10 +148,12 @@ export function MarketingView({
             {monthlyTrend.map((p) => {
               const pct = (p.value / maxTrend) * 100;
               return (
-                <div key={p.month} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="flex-1 w-full flex items-end">
+                <div key={p.month} className="flex-1 flex flex-col items-center gap-2 h-full">
+                  {/* definite-height, relative wrapper so the bar's % height
+                      resolves (a % height inside a flex-1 item collapses to 0) */}
+                  <div className="relative flex-1 min-h-0 w-full">
                     <div
-                      className="w-full bg-gradient-to-t from-accent to-accent-strong rounded-t"
+                      className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-accent to-accent-strong rounded-t"
                       style={{ height: `${pct}%` }}
                     />
                   </div>
@@ -149,17 +169,29 @@ export function MarketingView({
       <Card tone="raised">
         <CardContent className="py-5">
           <p className="text-sm font-medium text-text mb-4">ROI calculator</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FieldGroup label="Channel">
               <select
                 value={roiChannel}
-                onChange={(e) => setRoiChannel(e.target.value)}
+                onChange={(e) => {
+                  setRoiChannel(e.target.value);
+                  // re-seed Spend from the newly selected channel
+                  setRoiSpendOverride(null);
+                }}
                 className="flex w-full rounded-md border border-border-strong bg-surface px-3 h-10 text-sm text-text"
               >
                 {channels.map((c) => (
                   <option key={c.channel} value={c.channel}>{c.channel}</option>
                 ))}
               </select>
+            </FieldGroup>
+            <FieldGroup label="Spend ($)">
+              <Input
+                type="number"
+                min={0}
+                value={roi?.spend ?? 0}
+                onChange={(e) => setRoiSpendOverride(Number(e.target.value) || 0)}
+              />
             </FieldGroup>
             <FieldGroup label="Lifetime revenue per patient ($)">
               <Input

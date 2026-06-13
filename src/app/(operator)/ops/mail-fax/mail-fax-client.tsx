@@ -663,7 +663,7 @@ export function MailFaxClient({
       {/* Header and top commands */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Processing Center</h1>
+          <h1 className="text-2xl font-semibold text-text tracking-tight">Documents Inbox and Outbox</h1>
           <p className="text-sm text-text-subtle mt-1">
             Inbound mail packets, faxes, and portal uploads are OCR'd, parsed, and cross-checked.
           </p>
