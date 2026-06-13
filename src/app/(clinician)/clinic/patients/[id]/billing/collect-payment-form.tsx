@@ -86,7 +86,7 @@ export function CollectPaymentForm({
   }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form action={formAction} className="space-y-3 @container">
       <input type="hidden" name="patientId" value={patientId} />
       <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
 
@@ -120,7 +120,7 @@ export function CollectPaymentForm({
         <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1.5">
           Method
         </label>
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-3 @xs:grid-cols-5 gap-1">
           {(["card", "ach", "cash", "check", "bitcoin"] as Method[]).map((m) => (
             <button
               key={m}

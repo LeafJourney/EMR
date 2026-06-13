@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import containerQueries from "@tailwindcss/container-queries";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
@@ -106,6 +107,11 @@ const config: Config = {
         },
       });
     },
+    // Container queries — lets content laid out inside the resizable
+    // SplitWorkspace pane respond to its *own* width rather than the
+    // viewport (which lies about available space once the ContextPane
+    // rail is open). Enables `@container` + `@md:`/`@lg:` variants.
+    containerQueries,
   ],
 };
 
