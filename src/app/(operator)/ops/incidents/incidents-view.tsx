@@ -14,6 +14,11 @@ import {
   type ActiveChip,
 } from "@/components/ui/filter-bar";
 import {
+  SectionSearchBar,
+  applySectionQuery,
+  type SectionQuery,
+} from "@/components/ops/master";
+import {
   INCIDENT_CATEGORY_LABELS,
   type IncidentCategory,
   type IncidentReport,
@@ -83,6 +88,8 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
   const [formOpen, setFormOpen] = useState(false);
   const [resolving, setResolving] = useState<IncidentReport | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
+  // MASTER-prompt G8 — per-section date/param/keyword filter for the log below.
+  const [sectionQuery, setSectionQuery] = useState<SectionQuery | null>(null);
   const [draft, setDraft] = useState({
     severity: "low" as IncidentSeverity,
     category: "safety" as IncidentCategory,
@@ -106,7 +113,14 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
       if (state.patientAffectedOnly && !i.patientAffected) return false;
       return true;
     });
-    return list.sort((a, b) => {
+    const searched = sectionQuery
+      ? applySectionQuery(list, sectionQuery, {
+          getDate: (i) => i.reportedAt,
+          getText: (i) =>
+            `${i.title} ${i.description} ${INCIDENT_CATEGORY_LABELS[i.category]} ${SEVERITY_LABELS[i.severity]}`,
+        })
+      : list;
+    return searched.sort((a, b) => {
       switch (state.sort) {
         case "newest":
           return b.reportedAt.localeCompare(a.reportedAt);
@@ -118,7 +132,7 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
           return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
       }
     });
-  }, [incidents, state]);
+  }, [incidents, state, sectionQuery]);
 
   const chips: ActiveChip[] = [];
   if (state.severities.length > 0) {
@@ -281,6 +295,15 @@ export function IncidentsView({ initialIncidents }: { initialIncidents: Incident
       </div>
 
       <FilterChips chips={chips} onRemove={removeChip} onClearAll={clearAll} />
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-sm font-semibold text-text">Incident log</h2>
+        <SectionSearchBar
+          onChange={setSectionQuery}
+          placeholder="Filter log — “last 30 days”, “critical”…"
+          aria-label="Filter incident log by date or keyword"
+        />
+      </div>
 
       <Card tone="raised">
         <div className="overflow-x-auto">
