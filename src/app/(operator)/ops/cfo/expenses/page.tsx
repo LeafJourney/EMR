@@ -10,7 +10,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { fmtMoney } from "@/lib/finance/formatting";
 import { classifyExpense } from "@/lib/finance/chart-of-accounts";
 import { CfoTabs } from "../components";
-import { createExpenseAction, deleteExpenseAction } from "../actions";
+import { createExpenseAction } from "../actions";
+import { DeleteExpenseButton } from "./delete-expense-button";
 import type { ExpenseCategory } from "@prisma/client";
 
 export const metadata = { title: "Expenses · CFO" };
@@ -223,10 +224,7 @@ export default async function ExpensesPage() {
                       </td>
                       <td className="py-2 px-4 text-right tabular-nums text-text">{fmtMoney(e.totalCents)}</td>
                       <td className="py-2 px-4 text-right">
-                        <form action={deleteExpenseAction}>
-                          <input type="hidden" name="id" value={e.id} />
-                          <button type="submit" className="text-[11px] text-danger hover:underline">Delete</button>
-                        </form>
+                        <DeleteExpenseButton id={e.id} label={e.vendor} />
                       </td>
                     </tr>
                   );

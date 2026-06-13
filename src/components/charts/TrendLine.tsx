@@ -21,6 +21,18 @@ import {
   chartColor,
 } from "./theme";
 
+/**
+ * Compact Y-axis tick label so wide values like -90000 aren't clipped to
+ * ",000" by the narrow axis (matches <TrendArea>). Abbreviates thousands /
+ * millions; leaves sub-thousand values as-is.
+ */
+function formatCompactTick(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return v.toLocaleString();
+}
+
 export interface TrendLineSeries {
   /** Key in each row that holds this series' numeric value. */
   dataKey: string;
@@ -42,6 +54,12 @@ export interface TrendLineProps<T extends object> {
   xLabel?: string;
   /** Optional unit suffix shown in tooltip values (e.g. "%"). */
   unit?: string;
+  /**
+   * Optional custom formatter for tooltip values (overrides `unit`). Lets
+   * callers render currency / compact / domain-specific values on hover —
+   * e.g. "$1,234" instead of the raw "1234".
+   */
+  formatValue?: (value: number | string, name?: string) => React.ReactNode;
   /** Container height. Default 240. */
   height?: number;
   /** Show loading skeleton. */
@@ -68,6 +86,7 @@ export function TrendLine<T extends object>({
   yLabel,
   xLabel,
   unit,
+  formatValue,
   height = 240,
   loading,
   emptyTitle = "No data yet",
@@ -117,6 +136,7 @@ export function TrendLine<T extends object>({
           />
           <YAxis
             {...Y_AXIS_DEFAULTS}
+            width={48}
             label={
               yLabel
                 ? {
@@ -129,12 +149,12 @@ export function TrendLine<T extends object>({
                 : undefined
             }
             tickFormatter={(v: number) =>
-              unit ? `${v}${unit}` : v.toLocaleString()
+              unit ? `${v}${unit}` : formatCompactTick(v)
             }
           />
           <Tooltip
             cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
-            content={<ChartTooltip unit={unit} />}
+            content={<ChartTooltip unit={unit} formatValue={formatValue} />}
           />
           {lines.map((s, i) => {
             const color = s.color ?? chartColor(i);
