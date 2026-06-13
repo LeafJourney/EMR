@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { NavSections } from "./NavSections";
 import type { NavItem, NavSection } from "./nav-sections";
@@ -17,6 +18,7 @@ interface MobileNavProps {
 
 export function MobileNav({ sections, nav }: MobileNavProps) {
   const [open, setOpen] = React.useState(false);
+  const pathname = usePathname();
 
   const resolved: NavSection[] = React.useMemo(() => {
     if (sections && sections.length > 0) return sections;
@@ -26,6 +28,18 @@ export function MobileNav({ sections, nav }: MobileNavProps) {
 
   // Close drawer on route change (link click)
   const closeDrawer = () => setOpen(false);
+
+  // MASTER-prompt G2 — autohide on EVERY navigation, including browser
+  // back/forward, which a link-click handler alone wouldn't catch. usePathname
+  // updates on all of them, so collapse whenever the route changes.
+  const firstPath = React.useRef(true);
+  React.useEffect(() => {
+    if (firstPath.current) {
+      firstPath.current = false;
+      return;
+    }
+    setOpen(false);
+  }, [pathname]);
 
   // Lock body scroll when drawer is open
   React.useEffect(() => {
