@@ -9,6 +9,21 @@ import { StreaksView, type StreaksData } from "./streaks-view";
 
 export const metadata = { title: "Your Streak" };
 
+/** Longest run of consecutive calendar days in a set of "YYYY-MM-DD" keys. */
+function longestRun(dayKeys: Set<string>): number {
+  const sorted = [...dayKeys].sort();
+  let longest = 0;
+  let run = 0;
+  let prev: number | null = null;
+  for (const key of sorted) {
+    const t = new Date(`${key}T00:00:00`).getTime();
+    run = prev !== null && t - prev === 86_400_000 ? run + 1 : 1;
+    if (run > longest) longest = run;
+    prev = t;
+  }
+  return longest;
+}
+
 export default async function StreaksPage() {
   const user = await requireRole("patient");
   const patient = await prisma.patient.findUnique({
@@ -42,7 +57,8 @@ export default async function StreaksPage() {
 
   const data: StreaksData = {
     currentStreak: showDemo ? 12 : realCurrent,
-    longestStreak: showDemo ? 23 : Math.max(realCurrent, 23),
+    // Real longest run of consecutive logged days — not a fabricated floor of 23.
+    longestStreak: showDemo ? 23 : longestRun(loggedKeys),
     totalDaysLogged: showDemo ? 47 : loggedKeys.size,
     last30: days,
   };

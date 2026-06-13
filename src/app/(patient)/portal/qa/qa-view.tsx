@@ -34,10 +34,12 @@ function QACard({
   entry,
   isOpen,
   onToggle,
+  onOpen,
 }: {
   entry: QAEntry;
   isOpen: boolean;
   onToggle: () => void;
+  onOpen: (id: string) => void;
 }) {
   const tone = CATEGORY_TONES[entry.category] || "neutral";
 
@@ -128,7 +130,8 @@ function QACard({
                       key={related.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Scroll to and open the related question
+                        // Open the related question's accordion, then scroll to it.
+                        onOpen(related.id);
                         const el = document.getElementById(`qa-${related.id}`);
                         if (el) {
                           el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -178,6 +181,8 @@ export function QAView() {
     }
     return groups;
   }, [query, activeCategory, results]);
+
+  const openOne = (id: string) => setOpenIds((prev) => new Set(prev).add(id));
 
   function toggleOpen(id: string) {
     setOpenIds((prev) => {
@@ -317,6 +322,7 @@ export function QAView() {
                       entry={entry}
                       isOpen={openIds.has(entry.id)}
                       onToggle={() => toggleOpen(entry.id)}
+                      onOpen={openOne}
                     />
                   </div>
                 ))}
@@ -335,6 +341,7 @@ export function QAView() {
                 entry={entry}
                 isOpen={openIds.has(entry.id)}
                 onToggle={() => toggleOpen(entry.id)}
+                onOpen={openOne}
               />
             </div>
           ))}

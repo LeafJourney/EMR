@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import { ExternalLink, Tag, ShoppingBag } from "lucide-react";
 import { LeafIcon } from "@/components/leafmart/LeafIcon";

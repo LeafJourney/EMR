@@ -101,7 +101,7 @@ export function NutritionLogger() {
   function handleBarcodeLookup() {
     const found = resolveBarcode(barcode.trim());
     if (!found) {
-      setPhotoStatus(null);
+      setPhotoStatus("No match for that barcode — type the food name below.");
       setDraft((d) => ({ ...d, source: "barcode", name: "" }));
       return;
     }
@@ -370,6 +370,7 @@ function MacroRing({
             stroke="var(--accent)"
             strokeWidth="3"
             strokeLinecap="round"
+            pathLength={100}
             strokeDasharray={`${pct} 100`}
             transform="rotate(-90 18 18)"
           />

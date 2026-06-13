@@ -169,7 +169,7 @@ export default async function OutcomesPage() {
                   )}
                 </div>
                 <Sparkline
-                  data={series.length > 1 ? series : [0, 0]}
+                  data={series}
                   width={200}
                   height={40}
                 />

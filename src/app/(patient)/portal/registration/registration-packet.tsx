@@ -273,14 +273,17 @@ function Field({
   required?: boolean;
   children: React.ReactNode;
 }) {
+  // Wrap the control inside the <label> so it's programmatically associated
+  // (clicking the label focuses the field; screen readers announce it) without
+  // threading ids through every call site.
   return (
-    <div>
-      <label className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
+    <label className="block">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-text-subtle block mb-1">
         {label}
         {required && <span className="text-danger"> *</span>}
-      </label>
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 
