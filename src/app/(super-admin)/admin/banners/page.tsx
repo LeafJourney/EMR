@@ -13,7 +13,10 @@ import { PageShell } from "@/components/shell/PageHeader";
 import { Eyebrow } from "@/components/ui/ornament";
 import { Breadcrumbs } from "@/components/super-admin/breadcrumbs";
 import { SYSTEM_BANNERS } from "@/lib/banners/config";
-import { getActiveSystemBanners } from "@/lib/banners/system-banner-source";
+// Server-safe module (NOT the "use client" hook file) — a Server Component
+// calling a fn exported from a "use client" module gets a client-reference
+// proxy and 500s. See ./active-banners.
+import { getActiveSystemBanners } from "@/lib/banners/active-banners";
 
 export const metadata: Metadata = {
   title: "System banners — LeafJourney",
