@@ -129,6 +129,11 @@ interface PageProps {
    Page component — server-side data fetch + render
    ═══════════════════════════════════════════════════════════════════ */
 
+// PHI-free tab title — deliberately generic so a patient's name never lands in
+// the browser tab or history. Replaces the default marketing title
+// ("Leafjourney — Modern cannabis care") this route was inheriting.
+export const metadata = { title: "Patient Chart" };
+
 export default async function PatientChartPage({ params, searchParams }: PageProps) {
   const user = await requireUser();
   const tab = (searchParams.tab as TabKey) || "demographics";

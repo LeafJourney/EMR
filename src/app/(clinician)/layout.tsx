@@ -101,11 +101,12 @@ export default async function ClinicianLayout({
     labsPendingCount,
     labsAbnormalCount,
     refillsPendingCount,
+    notesPendingCount,
   ] = await (async () => {
     const orgId = user.organizationId;
     // The sign-off badge counts are clinical workload signals — skip the
     // queries entirely for roles that can't see the sign-off queue.
-    if (!orgId || !canReadNotes) return [0, 0, 0, 0, 0] as const;
+    if (!orgId || !canReadNotes) return [0, 0, 0, 0, 0, 0] as const;
     return Promise.all([
       safeCount(() =>
         prisma.message.count({
@@ -147,8 +148,25 @@ export default async function ClinicianLayout({
           },
         })
       ),
+      // Notes awaiting signature — completes the sign-off rollup so the
+      // Inbox-rail badge matches the /clinic/sign-off hub total. Query must
+      // mirror sign-off/layout.tsx (noteTotal).
+      safeCount(() =>
+        prisma.note.count({
+          where: {
+            status: "needs_review",
+            encounter: { patient: { organizationId: orgId } },
+          },
+        })
+      ),
     ]);
   })();
+
+  // Unified sign-off rollup (AI-drafted messages + labs + refills + notes) so
+  // the Inbox-rail "Sign-off" badge matches the /clinic/sign-off hub's "All
+  // items" total. Passing pendingCount (messages only) under-counted it.
+  const signOffPending =
+    pendingCount + labsPendingCount + refillsPendingCount + notesPendingCount;
 
   const sections: NavSection[] = [
     {
@@ -193,7 +211,7 @@ export default async function ClinicianLayout({
               {
                 label: "Sign-off",
                 href: "/clinic/sign-off",
-                badge: computeApprovalsBadge({ pendingCount, emergencyCount }), // Or a combined badge
+                badge: computeApprovalsBadge({ pendingCount: signOffPending, emergencyCount }),
               },
               // EMR-915: kiosk→phone lobby intake/consent waiting to be accepted into the chart.
               { label: "Lobby submissions", href: "/clinic/lobby-submissions" },
