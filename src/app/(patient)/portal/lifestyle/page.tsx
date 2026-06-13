@@ -16,6 +16,7 @@ import {
 } from "@/lib/domain/achievements";
 import { computePlantHealth } from "@/lib/domain/plant-health";
 import { WearableRings } from "@/components/gamification/wearable-rings";
+import { SampleBadge } from "@/components/patient/sample-badge";
 import { MindfulnessCheckIn } from "@/components/portal/mindfulness-check-in";
 import { LifestyleToolkit } from "./lifestyle-toolkit";
 import { LifestyleTrends, type LifestyleTrendPoint } from "./lifestyle-trends";
@@ -186,9 +187,12 @@ export default async function LifestylePage() {
         <Card tone="raised">
           <CardContent className="py-6">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-accent">
-                Today from {DEMO_WEARABLE_SUMMARY.source}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-accent">
+                  Wearable snapshot
+                </p>
+                <SampleBadge />
+              </div>
               <span className="text-2xl" aria-hidden="true">
                 {DEMO_WEARABLE_SUMMARY.emoji}
               </span>
