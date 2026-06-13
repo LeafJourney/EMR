@@ -47,6 +47,13 @@ import {
   type ContextMenuItem,
 } from "@/components/ui/context-menu";
 import { useDensity } from "@/lib/ui/density";
+import {
+  buildCsv,
+  downloadCsv,
+  printTable,
+  type CellValue,
+} from "@/lib/ui/table-export";
+import { Download, Printer } from "lucide-react";
 
 // ----------------------------------------------------------------- types
 
@@ -77,6 +84,11 @@ export interface ColumnDef<Row> {
   headerCell?: () => React.ReactNode;
   /** Hide on mobile (<= sm). Useful for secondary numeric columns. */
   hideOnMobile?: boolean;
+  /** Plain value for CSV/print export. Defaults to the row's `key` field.
+   *  Set this on columns whose `cell` renders rich JSX so exports stay clean. */
+  exportValue?: (row: Row) => CellValue;
+  /** Exclude this column from exports (e.g. a checkbox / actions column). */
+  exportable?: boolean;
 }
 
 export interface DataTableSelection<Row> {
@@ -121,6 +133,12 @@ export interface DataTableProps<Row> {
   /** Per-row right-click / long-press menu items (Monday/Linear-tier).
    *  Return `null` or an empty array to skip the menu on a given row. */
   contextMenuItems?: (row: Row, index: number) => ContextMenuItem[] | null;
+  /** Show a Download-CSV + Print control in the table toolbar (MASTER prompt G6).
+   *  Exports the currently-sorted rows, including column + row titles. Columns
+   *  use `exportValue` (or fall back to the raw `key` field). */
+  exportable?: boolean;
+  /** Base filename / print title for exports. Defaults to `ariaLabel` or "table". */
+  exportName?: string;
 }
 
 interface SortState {
@@ -252,6 +270,8 @@ export function DataTable<Row>({
   className,
   rowClassName,
   contextMenuItems,
+  exportable = false,
+  exportName,
 }: DataTableProps<Row>) {
   // Density precedence (highest → lowest):
   //   1. Explicit `density` prop (controlled by caller).
@@ -298,6 +318,33 @@ export function DataTable<Row>({
     copy.sort((a, b) => (sort.dir === "asc" ? cmp(a, b) : -cmp(a, b)));
     return copy;
   }, [rows, columns, sort]);
+
+  // ---- Export (CSV download / print) — MASTER prompt G6 -------------------
+  // Exports the currently-sorted rows so what you download matches what you see.
+  const exportColumns = React.useMemo(
+    () => columns.filter((c) => c.exportable !== false),
+    [columns],
+  );
+  const exportTitle = exportName ?? ariaLabel ?? "table";
+  const buildExportData = React.useCallback(() => {
+    const headers = exportColumns.map((c) => c.label);
+    const exportRows: CellValue[][] = sortedRows.map((row) =>
+      exportColumns.map((c) =>
+        c.exportValue
+          ? c.exportValue(row)
+          : ((row as Record<string, unknown>)[c.key] as CellValue),
+      ),
+    );
+    return { headers, exportRows };
+  }, [exportColumns, sortedRows]);
+  const handleDownloadCsv = React.useCallback(() => {
+    const { headers, exportRows } = buildExportData();
+    downloadCsv(exportTitle, buildCsv(headers, exportRows));
+  }, [buildExportData, exportTitle]);
+  const handlePrint = React.useCallback(() => {
+    const { headers, exportRows } = buildExportData();
+    printTable(exportTitle, headers, exportRows);
+  }, [buildExportData, exportTitle]);
 
   // ---- Selection helpers --------------------------------------------------
   const selectionCtx: SelectionContext | null = React.useMemo(() => {
@@ -380,7 +427,7 @@ export function DataTable<Row>({
         className,
       )}
     >
-      {(toolbar || showDensityToggle) && (
+      {(toolbar || showDensityToggle || exportable) && (
         <div
           className={cn(
             "flex items-center gap-3 border-b border-border/60",
@@ -388,6 +435,9 @@ export function DataTable<Row>({
           )}
         >
           <div className="flex-1 min-w-0">{toolbar}</div>
+          {exportable && (
+            <ExportControls onCsv={handleDownloadCsv} onPrint={handlePrint} />
+          )}
           {showDensityToggle && (
             <DensityToggle
               value={density}
@@ -705,6 +755,39 @@ function SkeletonRows<Row>({
         </tr>
       ))}
     </>
+  );
+}
+
+// ----------------------------------------------------------- export controls
+
+function ExportControls({
+  onCsv,
+  onPrint,
+}: {
+  onCsv: () => void;
+  onPrint: () => void;
+}) {
+  const btn = cn(
+    "inline-flex items-center gap-1 h-7 px-2.5 rounded-full",
+    "border border-border bg-surface text-[11px] font-medium",
+    "text-text-muted hover:text-text transition-colors",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+  );
+  return (
+    <div
+      role="group"
+      aria-label="Export table"
+      className="inline-flex items-center gap-1"
+    >
+      <button type="button" onClick={onCsv} className={btn}>
+        <Download aria-hidden="true" className="h-3.5 w-3.5" />
+        CSV
+      </button>
+      <button type="button" onClick={onPrint} className={btn}>
+        <Printer aria-hidden="true" className="h-3.5 w-3.5" />
+        Print
+      </button>
+    </div>
   );
 }
 

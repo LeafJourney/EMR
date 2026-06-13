@@ -46,6 +46,8 @@ export interface TrendAreaProps<T extends object> {
   yLabel?: string;
   xLabel?: string;
   unit?: string;
+  /** Optional custom tooltip value formatter (overrides `unit`). */
+  formatValue?: (value: number | string, name?: string) => React.ReactNode;
   height?: number;
   loading?: boolean;
   emptyTitle?: string;
@@ -70,6 +72,7 @@ export function TrendArea<T extends object>({
   yLabel,
   xLabel,
   unit,
+  formatValue,
   height = 240,
   loading,
   stacked,
@@ -151,7 +154,7 @@ export function TrendArea<T extends object>({
           />
           <Tooltip
             cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
-            content={<ChartTooltip unit={unit} />}
+            content={<ChartTooltip unit={unit} formatValue={formatValue} />}
           />
           {lines.map((s, i) => {
             const color = s.color ?? chartColor(i);

@@ -36,6 +36,8 @@ export interface DistributionBarProps {
   yLabel?: string;
   xLabel?: string;
   unit?: string;
+  /** Optional custom tooltip value formatter (overrides `unit`). */
+  formatValue?: (value: number | string, name?: string) => React.ReactNode;
   height?: number;
   loading?: boolean;
   emptyTitle?: string;
@@ -59,6 +61,7 @@ export function DistributionBar({
   yLabel,
   xLabel,
   unit,
+  formatValue,
   height = 240,
   loading,
   rainbow,
@@ -127,7 +130,7 @@ export function DistributionBar({
           />
           <Tooltip
             cursor={{ fill: "var(--surface-muted)", opacity: 0.5 }}
-            content={<ChartTooltip unit={unit} />}
+            content={<ChartTooltip unit={unit} formatValue={formatValue} />}
           />
           <Bar
             dataKey="value"
