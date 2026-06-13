@@ -12,6 +12,7 @@ import { WellnessTipWidget } from "@/components/ui/wellness-tip-widget";
 import { QuickSymptomFab } from "@/components/ui/quick-symptom-fab";
 import { VitalsCard } from "@/components/patient/vitals-card";
 import { HealthRoadmap } from "@/components/patient/health-roadmap";
+import { SampleBadge } from "@/components/patient/sample-badge";
 import { PositiveInputPrompt } from "@/components/patient/positive-input-prompt";
 import { DicomViewer } from "@/components/dicom/dicom-viewer";
 import { ContinuePanel } from "@/components/portal/continue-panel";
@@ -216,9 +217,13 @@ export default async function PatientHome() {
         <SparklinesWidget userId={user.id} />
       </Suspense>
 
-      {/* ── Daily Vitals ── */}
+      {/* ── Daily Vitals (illustrative — no vitals capture model yet) ── */}
       <div className="mb-6 md:mb-8">
-        <VitalsCard vitals={{ heartRate: 72, bloodPressureSys: 120, bloodPressureDia: 80, respiratoryRate: 16, oxygenSaturation: 98, temperature: 98.6, lastUpdated: "Today at 9:00 AM" }} />
+        <div className="mb-2 flex items-center gap-2">
+          <Eyebrow>Daily Vitals</Eyebrow>
+          <SampleBadge />
+        </div>
+        <VitalsCard vitals={{ heartRate: 72, bloodPressureSys: 120, bloodPressureDia: 80, respiratoryRate: 16, oxygenSaturation: 98, temperature: 98.6, lastUpdated: "Sample data" }} />
       </div>
 
       {/* ── Top row: Health grade + Lifestyle bars + AI tips ── */}
@@ -241,15 +246,22 @@ export default async function PatientHome() {
         <PlantTasksWidget userId={user.id} />
       </Suspense>
 
-      {/* ── High-Level Health Roadmap ── */}
+      {/* ── High-Level Health Roadmap (illustrative until care-plan milestones exist) ── */}
       <div className="mb-6 md:mb-8">
+        <div className="mb-2 flex items-center gap-2">
+          <Eyebrow>Health Roadmap</Eyebrow>
+          <SampleBadge />
+        </div>
         <HealthRoadmap />
       </div>
 
-      {/* ── Recent Imaging (DICOM Viewer) ── */}
+      {/* ── Recent Imaging (DICOM Viewer) — illustrative sample study ── */}
       <div className="mb-6 md:mb-8">
-        <Eyebrow className="mb-3">Recent Scan</Eyebrow>
-        <DicomViewer 
+        <div className="mb-3 flex items-center gap-2">
+          <Eyebrow>Recent Scan</Eyebrow>
+          <SampleBadge />
+        </div>
+        <DicomViewer
           image={{
             id: "scan-123",
             name: "LUMBAR SPINE MRI",

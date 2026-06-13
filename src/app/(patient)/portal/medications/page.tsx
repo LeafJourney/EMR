@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
 import { formatDate } from "@/lib/utils/format";
 import { DosingDisplay } from "@/components/prescription/dosing-display";
+import { SampleBadge } from "@/components/patient/sample-badge";
 import { detectSubstitution } from "@/lib/domain/medication-substitution";
 import {
   RefillRequestPanel,
@@ -486,9 +487,12 @@ export default async function MedicationsPage() {
 
       {/* ==================== Dosing plan (merged from /portal/dosing) ==================== */}
       <section id="dosing-plan" className="mb-10 scroll-mt-24">
-        <h2 className="font-display text-2xl text-text tracking-tight mb-6">
-          Your dosing plan
-        </h2>
+        <div className="mb-6 flex items-center gap-2">
+          <h2 className="font-display text-2xl text-text tracking-tight">
+            Your dosing plan
+          </h2>
+          <SampleBadge />
+        </div>
         <p className="text-sm text-text-muted mb-6 max-w-xl leading-relaxed">
           A personalized dosing recommendation built from your health profile,
           current medications, and outcome trends. Your care team will review

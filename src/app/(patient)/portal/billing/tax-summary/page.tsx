@@ -134,7 +134,7 @@ export default async function TaxSummaryPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 pt-6 border-t border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 border-t border-border">
                 <div className="text-center">
                   <p className="text-xs text-text-subtle uppercase tracking-wider mb-1">Total billed</p>
                   <p className="text-lg font-semibold text-text">{formatMoney(totalCharged)}</p>

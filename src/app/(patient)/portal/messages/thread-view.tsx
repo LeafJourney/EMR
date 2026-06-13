@@ -166,7 +166,7 @@ function ThreadRow({
           <div className="flex items-center justify-between gap-3">
             <p
               className={cn(
-                "text-sm truncate",
+                "text-sm line-clamp-2 break-words",
                 isOpen ? "font-semibold text-text" : "font-medium text-text",
               )}
             >

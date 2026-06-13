@@ -32,43 +32,79 @@ export const ADHERENCE_COLORS: Record<AdherenceLevel, { bg: string; text: string
   missed: { bg: "bg-red-100", text: "text-red-700", ring: "ring-red-200" },
 };
 
+/** A patient's real dose-log row, trimmed to what the calendar needs. */
+export interface DoseLogLite {
+  loggedAt: string; // ISO
+  actualVolume: number;
+  volumeUnit: string;
+}
+
+function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 /**
- * Generate a month of demo calendar data.
+ * Build a month of REAL calendar entries from the patient's dose logs.
+ *
+ * `scheduledPerDay` is the active regimen's frequency (0 when there's no active
+ * regimen). With a schedule, adherence = logged ÷ scheduled and past days with
+ * no logs show as "missed". Without a schedule we can't define adherence, so we
+ * only surface the days the patient actually logged (no fabricated baseline).
  */
-export function generateDemoMonth(year: number, month: number, regimenName: string, dosesPerDay: number): DoseCalendarEntry[] {
-  const entries: DoseCalendarEntry[] = [];
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+export function buildMonthEntries(
+  logs: DoseLogLite[],
+  scheduledPerDay: number,
+  regimenName: string,
+  year: number,
+  month: number,
+): DoseCalendarEntry[] {
+  const byDay = new Map<string, DoseLogLite[]>();
+  for (const log of logs) {
+    const key = localDayKey(new Date(log.loggedAt));
+    const bucket = byDay.get(key);
+    if (bucket) bucket.push(log);
+    else byDay.set(key, [log]);
+  }
+
   const today = new Date();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const entries: DoseCalendarEntry[] = [];
 
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month, day);
-    if (date > today) break; // Don't generate future entries
+    if (date > today) break;
 
-    const dateStr = date.toISOString().slice(0, 10);
-    // Simulate realistic adherence (85% overall, some missed days)
-    const rand = Math.random();
-    let takenDoses: number;
-    if (rand > 0.85) takenDoses = 0; // 15% chance fully missed
-    else if (rand > 0.70) takenDoses = Math.max(1, dosesPerDay - 1); // partial
-    else takenDoses = dosesPerDay; // taken all
+    const key = localDayKey(date);
+    const dayLogs = byDay.get(key) ?? [];
+    // No schedule and nothing logged → leave the day blank rather than invent one.
+    if (scheduledPerDay === 0 && dayLogs.length === 0) continue;
 
-    const times = Array.from({ length: dosesPerDay }, (_, i) => {
-      const hour = 8 + Math.floor((12 / dosesPerDay) * i);
-      return `${hour.toString().padStart(2, "0")}:00`;
-    });
+    const takenDoses = dayLogs.length;
+    const scheduledDoses = scheduledPerDay > 0 ? scheduledPerDay : takenDoses;
 
     entries.push({
-      date: dateStr,
+      date: key,
       regimen: regimenName,
-      scheduledDoses: dosesPerDay,
+      scheduledDoses,
       takenDoses,
-      adherencePercent: Math.round((takenDoses / dosesPerDay) * 100),
-      doses: times.map((time, i) => ({
-        time,
-        taken: i < takenDoses,
-        amount: 10,
-        unit: "mg",
-      })),
+      adherencePercent:
+        scheduledDoses > 0
+          ? Math.min(100, Math.round((takenDoses / scheduledDoses) * 100))
+          : 0,
+      doses: dayLogs
+        .slice()
+        .sort((a, b) => new Date(a.loggedAt).getTime() - new Date(b.loggedAt).getTime())
+        .map((log) => ({
+          time: new Date(log.loggedAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          taken: true,
+          amount: log.actualVolume,
+          unit: log.volumeUnit,
+        })),
     });
   }
 

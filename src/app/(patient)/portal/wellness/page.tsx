@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Eyebrow, EditorialRule, LeafSprig } from "@/components/ui/ornament";
+import { SampleBadge } from "@/components/patient/sample-badge";
 import {
   buildAchievements,
   consecutiveDayStreak,
@@ -186,7 +187,7 @@ export default async function WellnessHubPage() {
       {/* Today from your devices */}
       <section className="mb-10">
         <div className="flex items-baseline justify-between mb-3">
-          <Eyebrow>Today from your devices</Eyebrow>
+          <Eyebrow>From your devices</Eyebrow>
           <Link
             href="/portal/integrations"
             className="text-xs text-accent hover:underline"
@@ -208,7 +209,7 @@ export default async function WellnessHubPage() {
                     </p>
                   </div>
                   {src.summary ? (
-                    <Badge tone="success">Connected</Badge>
+                    <SampleBadge />
                   ) : (
                     <Badge tone="neutral">Not connected</Badge>
                   )}

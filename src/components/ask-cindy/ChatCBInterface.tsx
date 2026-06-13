@@ -76,7 +76,7 @@ export function ChatCBInterface() {
             exit={{ scale: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-[88px] right-6 z-[85] h-14 w-14 rounded-full bg-accent text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+            className="fixed bottom-[120px] right-6 sm:bottom-[88px] z-[85] h-14 w-14 rounded-full bg-accent text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
             aria-label="Open ChatCB"
           >
             <Bot size={24} />

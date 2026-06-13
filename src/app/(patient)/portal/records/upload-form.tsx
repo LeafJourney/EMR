@@ -9,7 +9,7 @@
  * aborts the rest.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   FileUpload,
@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 
 export function UploadForm({ onClose }: { onClose?: () => void }) {
   const router = useRouter();
-  const [completedCount, setCompletedCount] = useState(0);
 
   const handler: FileUploadHandler = useCallback(async (file): Promise<UploadedFile> => {
     const fd = new FormData();
@@ -32,12 +31,6 @@ export function UploadForm({ onClose }: { onClose?: () => void }) {
     }
     return { id: result.documentId, name: file.name };
   }, []);
-
-  if (completedCount > 0 && !onClose) {
-    // Page-mounted variant — refresh in place so the records list picks
-    // up the new entries.
-    router.refresh();
-  }
 
   return (
     <div className="space-y-4">
@@ -51,7 +44,6 @@ export function UploadForm({ onClose }: { onClose?: () => void }) {
         onUpload={handler}
         onComplete={(items) => {
           const ok = items.filter((i) => i.status === "uploaded").length;
-          setCompletedCount(ok);
           if (ok > 0) router.refresh();
         }}
       />
