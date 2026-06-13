@@ -5,6 +5,7 @@
 //
 // Coverage of the MASTER-prompt "layout law":
 //   G1 Collapsible sections        → <Collapsible>
+//   G3 7-result page autocomplete  → <AutocompleteInput> (+ rankAutocomplete core)
 //   G5 Sortable table columns      → <DataTable> (tri-state header sort, built-in)
 //   G6 Table send/print/download   → <DataTable exportable> + table-export utils
 //   G7 Movable / rearrangeable     → <SortableList> / <KanbanBoard> / reorder()
@@ -17,6 +18,18 @@
 // and the per-section AI search bar (G8).
 
 export { Collapsible } from "@/components/ui/collapsible";
+
+export {
+  AutocompleteInput,
+  type AutocompleteInputProps,
+} from "@/components/ui/autocomplete-input";
+
+export {
+  rankAutocomplete,
+  scoreOption,
+  AUTOCOMPLETE_DEFAULT_LIMIT,
+  type AutocompleteOption,
+} from "@/lib/ui/autocomplete-match";
 
 export {
   MetricBox,

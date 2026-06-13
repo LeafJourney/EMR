@@ -13,6 +13,7 @@ import {
   SortMenu,
   type ActiveChip,
 } from "@/components/ui/filter-bar";
+import { AutocompleteInput, type AutocompleteOption } from "@/components/ops/master";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils/cn";
 
@@ -131,6 +132,20 @@ export function FeedbackView({ initialFeedback }: { initialFeedback: FeedbackIte
       }
     });
   }, [items, state]);
+
+  // MASTER-prompt G3 — top-7 page-specific matches: patient name (label),
+  // also searchable by the feedback excerpt (keyword), mirroring the
+  // name-or-excerpt filter above.
+  const feedbackOptions: AutocompleteOption[] = useMemo(
+    () =>
+      items.map((i) => ({
+        value: i.patientName,
+        label: i.patientName,
+        sublabel: i.excerpt,
+        keywords: [i.excerpt],
+      })),
+    [items],
+  );
 
   const chips: ActiveChip[] = [];
   if (state.tab !== "all") {
@@ -261,12 +276,16 @@ export function FeedbackView({ initialFeedback }: { initialFeedback: FeedbackIte
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          placeholder="Search by name or excerpt…"
+        <AutocompleteInput
+          options={feedbackOptions}
           value={state.query}
-          onChange={(e) => setState((s) => ({ ...s, query: e.target.value }))}
-          className="md:w-64 h-9"
+          onValueChange={(text) => setState((s) => ({ ...s, query: text }))}
+          onSelect={(opt) => setState((s) => ({ ...s, query: opt.value }))}
+          placeholder="Search by name or excerpt…"
+          emptyMessage="No feedback matches"
+          aria-label="Search feedback by name or excerpt"
+          className="md:w-64"
+          inputClassName="h-9"
         />
         <MultiSelectFilter
           label="NPS (Net Promoter Score) band"
