@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { connectDevice, disconnectDevice, syncDevice } from "./actions";
+import type { DeviceConnectionState } from "./providers";
 
 interface Integration {
   id: string;
@@ -89,38 +91,66 @@ const INTEGRATIONS: Integration[] = [
   },
 ];
 
-interface ConnectionState {
-  connected: boolean;
-  lastSync: string | null;
+const DISCONNECTED: DeviceConnectionState = {
+  connected: false,
+  lastSync: null,
+  error: null,
+};
+
+function formatSync(iso: string | null): string {
+  if (!iso) return "Never synced";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Never synced";
+  return `Last sync: ${d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
 }
 
-export function IntegrationsView() {
-  const [states, setStates] = useState<Record<string, ConnectionState>>({
-    "apple-health": { connected: true, lastSync: "2026-04-16 08:15" },
-    fitbit: { connected: false, lastSync: null },
-    oura: { connected: false, lastSync: null },
-    garmin: { connected: false, lastSync: null },
-    dexcom: { connected: false, lastSync: null },
-    libre: { connected: false, lastSync: null },
-    whoop: { connected: false, lastSync: null },
-    medtronic: { connected: false, lastSync: null },
-    eversense: { connected: false, lastSync: null },
-  });
+interface IntegrationsViewProps {
+  initialStates: Record<string, DeviceConnectionState>;
+}
 
-  const toggle = (id: string) => {
-    setStates((prev) => ({
-      ...prev,
-      [id]: {
-        connected: !prev[id].connected,
-        lastSync: !prev[id].connected ? new Date().toISOString().replace("T", " ").slice(0, 16) : null,
-      },
-    }));
+export function IntegrationsView({ initialStates }: IntegrationsViewProps) {
+  const [states, setStates] = useState<Record<string, DeviceConnectionState>>(
+    initialStates ?? {},
+  );
+  // Per-card pending flag so one card's spinner doesn't block the others.
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [, startTransition] = useTransition();
+
+  const stateFor = (id: string) => states[id] ?? DISCONNECTED;
+
+  const run = (
+    id: string,
+    action: (provider: string) => Promise<
+      | { ok: true; state: DeviceConnectionState }
+      | { ok: false; error: string }
+    >,
+  ) => {
+    setPending((p) => ({ ...p, [id]: true }));
+    startTransition(async () => {
+      try {
+        const result = await action(id);
+        setStates((prev) => ({
+          ...prev,
+          [id]: result.ok
+            ? result.state
+            : { ...stateFor(id), error: result.error },
+        }));
+      } finally {
+        setPending((p) => ({ ...p, [id]: false }));
+      }
+    });
   };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       {INTEGRATIONS.map((integration) => {
-        const state = states[integration.id];
+        const state = stateFor(integration.id);
+        const busy = !!pending[integration.id];
         return (
           <Card key={integration.id} tone="raised">
             <CardHeader>
@@ -157,18 +187,46 @@ export function IntegrationsView() {
                 </div>
               </div>
 
+              {state.error ? (
+                <div className="text-xs text-danger">{state.error}</div>
+              ) : null}
+
               <div className="flex items-center justify-between pt-2 border-t border-border">
                 <div className="text-xs text-text-subtle">
-                  {state.lastSync ? `Last sync: ${state.lastSync}` : "Never synced"}
+                  {busy ? "Syncing…" : formatSync(state.lastSync)}
                 </div>
                 {integration.available ? (
-                  <Button
-                    variant={state.connected ? "secondary" : "primary"}
-                    size="sm"
-                    onClick={() => toggle(integration.id)}
-                  >
-                    {state.connected ? "Disconnect" : `Connect ${integration.name}`}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {state.connected ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => run(integration.id, syncDevice)}
+                        >
+                          Sync now
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => run(integration.id, disconnectDevice)}
+                        >
+                          Disconnect
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => run(integration.id, connectDevice)}
+                      >
+                        Connect {integration.name}
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   <Button variant="secondary" size="sm" disabled>
                     Coming soon
