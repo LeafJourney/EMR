@@ -5,10 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { Eyebrow, EditorialRule } from "@/components/ui/ornament";
 import { rangeForPeriod } from "@/lib/finance/period";
 import { buildCfoReport, getLatestCfoBriefing } from "@/lib/finance/report";
-import { fmtMoney, fmtPct } from "@/lib/finance/formatting";
-import { CfoTabs, KpiTile, AnomaliesPanel, GenerateReportButton } from "./components";
+import { fmtMoney, fmtPct, changeBadgeText } from "@/lib/finance/formatting";
+import { CfoTabs, AnomaliesPanel, GenerateReportButton } from "./components";
 import { TrendLine } from "@/components/charts";
 import { MetricBoxGroup } from "@/components/ops/master";
+import { CfoKpiGrid, type CfoKpiView } from "./cfo-kpi-grid";
+import type { KpiCard } from "@/lib/finance/kpis";
 
 export const metadata = { title: "CFO" };
 export const dynamic = "force-dynamic";
@@ -48,6 +50,57 @@ export default async function CfoOverviewPage({
     label: p.label.slice(0, 3),
     value: Math.round(p.netIncomeCents / 100),
   }));
+
+  // EMR-1064 — headline-KPI drill-in views. The 4 P&L KPIs get their real
+  // weekly series (Gross margin derived from revenue/COGS); the balance/cash
+  // snapshots have no per-period series, so their popups show a current value
+  // with an honest "history accrues over time" note (never a fabricated chart).
+  const ws = report.weeklySeries;
+  const cfoKpiViews: CfoKpiView[] = report.kpis.map((kpi): CfoKpiView => {
+    const change = changeBadgeText(kpi.changePct ?? null);
+    const hasChange = kpi.changePct !== undefined && kpi.changePct !== null;
+    const hasGoal = kpi.goalValue !== undefined && kpi.goalValue !== null;
+    let history: { label: string; value: number }[] = [];
+    let valueFormat: CfoKpiView["valueFormat"] =
+      kpi.unit === "cents" ? "money" : kpi.unit === "pct" ? "percent" : "number";
+    let compareEligible = false;
+    if (kpi.id === "revenue") {
+      history = ws.map((p) => ({ label: p.label, value: Math.round(p.revenueCents / 100) }));
+      valueFormat = "money";
+      compareEligible = true;
+    } else if (kpi.id === "ebitda") {
+      history = ws.map((p) => ({ label: p.label, value: Math.round(p.ebitdaCents / 100) }));
+      valueFormat = "money";
+      compareEligible = true;
+    } else if (kpi.id === "net_income") {
+      history = ws.map((p) => ({ label: p.label, value: Math.round(p.netIncomeCents / 100) }));
+      valueFormat = "money";
+      compareEligible = true;
+    } else if (kpi.id === "gross_margin") {
+      history = ws.map((p) => ({
+        label: p.label,
+        value:
+          p.revenueCents > 0
+            ? Math.round(((p.revenueCents - p.cogsCents) / p.revenueCents) * 1000) / 10
+            : 0,
+      }));
+      valueFormat = "percent";
+    }
+    return {
+      id: kpi.id,
+      label: kpi.label,
+      valueDisplay: cfoKpiValueDisplay(kpi),
+      changeText: hasChange ? change.text : null,
+      badgeTone:
+        change.tone === "good" ? "success" : change.tone === "bad" ? "danger" : "neutral",
+      goalLabel: hasGoal ? (kpi.goalMet ? "on goal" : "off goal") : null,
+      goalMet: !!kpi.goalMet,
+      description: kpi.description,
+      history,
+      valueFormat,
+      compareEligible,
+    };
+  });
 
   return (
     <PageShell maxWidth="max-w-[1320px]">
@@ -100,14 +153,12 @@ export default async function CfoOverviewPage({
         </Card>
       </div>
 
-      {/* KPI grid */}
+      {/* KPI grid — each compact tile drills into a popup (history chart +
+          Google-Finance hover + feather cycle); the $-tiles can be
+          compare-selected to overlay on one chart (EMR-1064). */}
       <div className="mb-10">
         <Eyebrow className="mb-4">Headline KPIs (Key Performance Indicators)</Eyebrow>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {report.kpis.map((kpi) => (
-            <KpiTile key={kpi.id} kpi={kpi} />
-          ))}
-        </div>
+        <CfoKpiGrid kpis={cfoKpiViews} />
       </div>
 
       {/* Anomalies */}
@@ -231,6 +282,18 @@ export default async function CfoOverviewPage({
       </div>
     </PageShell>
   );
+}
+
+function cfoKpiValueDisplay(kpi: KpiCard): string {
+  return kpi.unit === "cents"
+    ? fmtMoney(kpi.valueCents ?? 0, { compact: true })
+    : kpi.unit === "pct"
+      ? fmtPct(kpi.valueNumber ?? 0)
+      : kpi.unit === "days"
+        ? `${kpi.valueNumber ?? 0}d`
+        : kpi.unit === "ratio"
+          ? (kpi.valueNumber ?? 0).toFixed(2)
+          : `${kpi.valueNumber ?? 0}`;
 }
 
 function SummaryCard({
