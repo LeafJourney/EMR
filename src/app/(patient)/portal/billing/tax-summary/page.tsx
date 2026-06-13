@@ -36,8 +36,8 @@ export default async function TaxSummaryPage() {
       where: {
         claim: { patientId: patient.id },
         paymentDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
+          gte: new Date(`${selectedYear}-01-01T00:00:00.000Z`),
+          lte: new Date(`${selectedYear}-12-31T23:59:59.999Z`),
         },
         source: "patient",
       },
@@ -57,8 +57,8 @@ export default async function TaxSummaryPage() {
       where: {
         patientId: patient.id,
         serviceDate: {
-          gte: new Date(`${selectedYear}-01-01`),
-          lte: new Date(`${selectedYear}-12-31T23:59:59`),
+          gte: new Date(`${selectedYear}-01-01T00:00:00.000Z`),
+          lte: new Date(`${selectedYear}-12-31T23:59:59.999Z`),
         },
       },
       orderBy: { serviceDate: "asc" },
