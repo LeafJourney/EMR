@@ -111,6 +111,46 @@ describe("scrubClaim — NCCI severity escalation by payer (regression for C-4)"
     expect(ncci!.severity).toBe("warning");
     expect(ncci!.blocksSubmission).toBe(false);
   });
+
+  it("escalates for a UHC ALIAS ('United Healthcare', no payerId) — was a warning pre-fix", () => {
+    // The pre-fix code matched the literal string "UnitedHealthcare"; an
+    // alias like "United Healthcare" (with a space) slipped through and was
+    // wrongly downgraded to a warning. resolvePayerRule maps the alias to
+    // UHC (honorsMod25OnZ71 = false), so it must escalate to a blocking error.
+    const issues = scrubClaim(
+      baseInput({
+        payerName: "United Healthcare",
+        payerId: null,
+        cptCodes: [
+          { code: "99213", label: "Office visit", units: 1, chargeAmount: 185, modifiers: [] },
+          { code: "99406", label: "Tobacco cessation", units: 1, chargeAmount: 24, modifiers: [] },
+        ],
+      }),
+    );
+    const ncci = issues.find((i) => i.ruleCode === "NCCI_BUNDLED_PAIR");
+    expect(ncci).toBeDefined();
+    expect(ncci!.severity).toBe("error");
+    expect(ncci!.blocksSubmission).toBe(true);
+  });
+
+  it("applies the UHC mod-25 policy to HRA pairs (96160), not just 9940x", () => {
+    // Pre-fix the escalation was narrowed to componentCode.startsWith("9940"),
+    // so the health-risk-assessment bundle 96160+E/M was missed for UHC.
+    const issues = scrubClaim(
+      baseInput({
+        payerName: "UnitedHealthcare",
+        payerId: "uhc",
+        cptCodes: [
+          { code: "99213", label: "Office visit", units: 1, chargeAmount: 185, modifiers: [] },
+          { code: "96160", label: "Health risk assessment", units: 1, chargeAmount: 20, modifiers: [] },
+        ],
+      }),
+    );
+    const ncci = issues.find((i) => i.ruleCode === "NCCI_BUNDLED_PAIR");
+    expect(ncci).toBeDefined();
+    expect(ncci!.severity).toBe("error");
+    expect(ncci!.blocksSubmission).toBe(true);
+  });
 });
 
 describe("scrubClaim — self-pay short-circuit (regression for C-2)", () => {

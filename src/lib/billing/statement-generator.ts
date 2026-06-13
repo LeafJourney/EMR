@@ -196,12 +196,17 @@ async function issueStatement(args: IssueArgs): Promise<void> {
   const adjustments = await sumByType(args.patientId, "contractual_adjustment", periodStart, periodEnd);
   const paidToDate = await sumByType(args.patientId, "patient_payment", periodStart, periodEnd);
 
+  // FinancialEvent stores money-in (insurance_paid, patient_payment) as a
+  // positive amount, and aggregateStatement SUBTRACTS insurancePaidCents and
+  // paidToDateCents to compute amount-due. So they must be passed positive —
+  // negating them flipped the math, ADDING payments to the patient's balance
+  // and persisting negative paid columns on the statement.
   const agg = aggregateStatement({
     lineItems,
-    insurancePaidCents: -insurancePaid, // FinancialEvent stores money-in as positive
+    insurancePaidCents: insurancePaid,
     adjustmentsCents: adjustments,
     priorBalanceCents: priorBalance,
-    paidToDateCents: -paidToDate,
+    paidToDateCents: paidToDate,
   });
 
   const channel = await preferredChannel(args.patientId);

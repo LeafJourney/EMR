@@ -340,7 +340,14 @@ export const secondaryClaimAgent: Agent<z.infer<typeof input>, z.infer<typeof ou
         primaryAllowedCents: adjudication.totalAllowedCents,
         primaryPaidCents: adjudication.totalPaidCents,
         primaryEraDate: adjudication.eraDate,
-        primaryCas: claimCas,
+        // `claimCas` here is the flattened set of LINE-level CAS, which is
+        // already emitted per-line in Loop 2430 below. Re-emitting it as
+        // claim-level CAS in Loop 2320 double-counts every adjustment on the
+        // secondary 837P (wrong COB balance / payer rejection). Loop 2320
+        // carries the claim-level COB summary via AMT (primaryPaid/allowed);
+        // line adjustments belong only in 2430. (Matches build-from-claim.ts,
+        // which passes []. `claimCas` is still used for the metric above.)
+        primaryCas: [],
         primaryClaimControlNumber: adjudication.checkNumber ?? "",
       },
     };

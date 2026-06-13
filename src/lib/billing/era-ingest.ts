@@ -145,8 +145,8 @@ export async function ingestEra(input: IngestEraInput): Promise<IngestOutcome> {
           eraDate: parsed.checkDate,
           checkNumber: parsed.checkNumber,
           totalPaidCents: claim.totalPaidCents,
-          totalAllowedCents: computeAllowed(claim),
-          totalAdjustedCents: sumAdjustments(claim),
+          totalAllowedCents: computeAllowedCents(claim),
+          totalAdjustedCents: sumContractualAdjustmentsCents(claim),
           totalPatientRespCents: claim.patientRespCents,
           claimStatus: mapClpStatus(claim.claimStatusCode),
           lineDetails: claim.serviceLines as unknown as Prisma.InputJsonValue,
@@ -247,16 +247,34 @@ async function resolveClaim(
   return null;
 }
 
-function computeAllowed(c: Era835ClaimPayment): number {
-  const adj = sumAdjustments(c);
-  return Math.max(0, c.totalPaidCents + c.patientRespCents + adj);
+/** Allowed amount = the contracted rate the payer recognized = what the
+ *  payer paid + what they assigned to the patient (PR). The rest of the
+ *  billed charge is the contractual write-off (CO/OA/PI), which is NOT part
+ *  of "allowed". (Previously this added the full adjustment sum on top of
+ *  paid+PR, overstating allowed above the billed charge.) */
+export function computeAllowedCents(c: Era835ClaimPayment): number {
+  return Math.max(0, c.totalPaidCents + c.patientRespCents);
 }
 
-function sumAdjustments(c: Era835ClaimPayment): number {
+/** Sum of provider-side adjustments only — the contractual write-off the
+ *  practice absorbs (CO/OA/PI/CR/WO). Patient-responsibility (PR) CAS rows
+ *  are deliberately excluded: PR is the patient's balance, tracked on
+ *  `totalPatientRespCents`. Folding PR in here (the prior behavior, which
+ *  also abs()'d every group) silently wrote patient balances off as
+ *  contractual and broke the claim's balancing equation
+ *  (charge = paid + PR + contractual). Amounts are signed so a reversal's
+ *  negative CAS correctly backs out a prior write-off. */
+export function sumContractualAdjustmentsCents(c: Era835ClaimPayment): number {
   let total = 0;
-  for (const a of c.claimAdjustments) total += Math.abs(a.amountCents);
+  for (const a of c.claimAdjustments) {
+    if (a.groupCode === "PR") continue;
+    total += a.amountCents;
+  }
   for (const line of c.serviceLines) {
-    for (const a of line.adjustments) total += Math.abs(a.amountCents);
+    for (const a of line.adjustments) {
+      if (a.groupCode === "PR") continue;
+      total += a.amountCents;
+    }
   }
   return total;
 }

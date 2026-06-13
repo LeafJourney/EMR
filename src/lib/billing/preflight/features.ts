@@ -387,7 +387,11 @@ function detectNcci(
     const componentCode = issue.relatedCode ?? "";
     if (!componentCode || seen.has(componentCode)) continue;
     seen.add(componentCode);
-    const comprehensiveCode = /billed with (\S+)/.exec(issue.message)?.[1] ?? "";
+    // Stop at the sentence-ending period: the message is
+    // "... billed with 99213. <description>". A greedy \S+ would capture
+    // "99213." (with the period), which then fails to match any claim line
+    // in remediate.appendModifier, silently no-op'ing the one-click fix.
+    const comprehensiveCode = /billed with ([^\s.]+)/.exec(issue.message)?.[1] ?? "";
     const hit: NcciHit = {
       componentCode,
       comprehensiveCode,
