@@ -10,6 +10,7 @@ import { QuoteWelcomeModal } from "@/components/ui/quote-of-the-day";
 import { BreathingBreak } from "@/components/clinical/BreathingBreak";
 import { KeyboardShortcuts } from "@/components/ui/keyboard-shortcuts";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { GlobalSearchButton } from "@/components/ui/global-search-button";
 import { ConsciousnessOverlay } from "@/components/ui/consciousness-overlay";
 import { ClinicianTour } from "@/components/onboarding/clinician-tour";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
@@ -205,6 +206,7 @@ export default async function ClinicianLayout({
       <BreathingBreak />
       <KeyboardShortcuts />
       <CommandPalette role="clinician" userId={user.id} />
+      <GlobalSearchButton />
       <ConsciousnessOverlay />
       <ClinicianTour autoStart={!isDemoSurface} />
       <InstallPrompt />
