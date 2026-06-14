@@ -71,6 +71,22 @@ export const workflows: WorkflowDefinition[] = [
       },
     ],
   },
+  // EMR-1149 — generate the plain-language after-visit summary draft the moment
+  // the chart is signed. Deterministic + read-only to the chart, so no approval.
+  {
+    name: "avs-generation",
+    on: ["note.finalized"],
+    steps: [
+      {
+        agent: "avsGenerator",
+        input: (e) => ({
+          noteId: (e as any).noteId,
+          encounterId: (e as any).encounterId,
+        }),
+        requiresApproval: false,
+      },
+    ],
+  },
   {
     name: "research-synth",
     on: ["research.query.submitted"],

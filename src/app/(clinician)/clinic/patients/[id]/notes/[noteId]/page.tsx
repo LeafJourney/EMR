@@ -15,6 +15,7 @@ import { hasPermission, canDocumentObjective } from "@/lib/rbac/permissions";
 import { coerceVitals } from "@/lib/clinical/objective-vitals";
 import { buildVisitCompletionBundle } from "@/lib/domain/visit-completion";
 import { VisitCompletionPanel } from "./visit-completion-panel";
+import { AvsReviewPanel } from "./avs-review-panel";
 import { noteStatusBadge } from "./note-status";
 import { AgentJobStrip, type AgentJobLite } from "./agent-job-strip";
 
@@ -289,6 +290,11 @@ export default async function NoteDetailPage({ params }: PageProps) {
           releasedPayload={releasedPayload}
           noteId={note.id}
         />
+      )}
+
+      {/* EMR-1152 — plain-language after-visit summary: verify + one-click release */}
+      {(note.status === "finalized" || note.status === "amended") && (
+        <AvsReviewPanel noteId={note.id} />
       )}
 
       {/* Post-finalize downstream-agent status (audit minor #6) */}

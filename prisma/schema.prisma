@@ -6055,3 +6055,48 @@ model MigrationJob {
   @@index([organizationId, status])
   @@index([migrationProfileId])
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// After-Visit Summary (AVS) — Workflows Revisions EMR-1149..1152
+// ───────────────────────────────────────────────────────────────────────────
+// The plain-language, literacy- and language-matched after-visit summary the
+// AVS generation job (EMR-1149) compiles on chart-sign and the provider
+// releases to the patient portal (EMR-1152). One row per signed note
+// (`noteId @unique`) makes generation idempotent. Relation-less by design —
+// same pattern as AgentJob/AuditLog — so it adds zero back-relations to the
+// hot Patient/Encounter/Note/User models. `payload` holds the structured,
+// research-queryable document: decomposed care plan (EMR-1150), titration
+// calendar + lifestyle roadmap (EMR-1152), localized rendering + the
+// source-note text used for the side-by-side verification panel.
+enum AfterVisitSummaryStatus {
+  draft
+  released
+}
+
+model AfterVisitSummary {
+  id               String                  @id @default(cuid())
+  organizationId   String
+  encounterId      String
+  noteId           String                  @unique
+  patientId        String
+  /// ISO 639-1 language the summary was rendered in (defaults to "en").
+  language         String                  @default("en")
+  /// 6th–8th grade readability target band the generator drove toward.
+  targetGradeMin   Float                   @default(6)
+  targetGradeMax   Float                   @default(8)
+  /// Flesch–Kincaid grade actually achieved by the generated prose.
+  readabilityGrade Float?
+  status           AfterVisitSummaryStatus @default(draft)
+  /// Structured AVS document (decomposed plan, calendar, roadmap, localized
+  /// copy, source-note text). Zod-validated by the AVS domain layer.
+  payload          Json
+  generatedAt      DateTime                @default(now())
+  releasedAt       DateTime?
+  releasedById     String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([patientId, status])
+  @@index([organizationId, status])
+  @@index([encounterId])
+}

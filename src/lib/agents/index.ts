@@ -25,6 +25,8 @@ import { messageUrgencyObserverAgent } from "./message-urgency-observer-agent";
 // EMR-1145 — urgent 911/ED safety auto-reply on inbound messages
 import { safetyAutoResponderAgent } from "./safety-auto-responder-agent";
 import { visitDiscoveryWhispererAgent } from "./visit-discovery-whisperer-agent";
+// EMR-1149 — plain-language after-visit summary generation on chart-sign
+import { avsGeneratorAgent } from "./avs-generator-agent";
 // Billing agents — Phase 3 of the Revenue Cycle PRD
 import { chargeIntegrityAgent } from "./billing/charge-integrity-agent";
 import { denialTriageAgent } from "./billing/denial-triage-agent";
@@ -151,6 +153,7 @@ export const agentRegistry = {
   messageUrgencyObserver: messageUrgencyObserverAgent,
   safetyAutoResponder: safetyAutoResponderAgent,
   visitDiscoveryWhisperer: visitDiscoveryWhispererAgent,
+  avsGenerator: avsGeneratorAgent,
   // Billing agents (Phase 3)
   chargeIntegrity: chargeIntegrityAgent,
   denialTriage: denialTriageAgent,
