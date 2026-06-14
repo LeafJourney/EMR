@@ -88,6 +88,21 @@ services:
         sync: false
       - key: INTEGRATION_TOKEN_ENCRYPTION_KEY
         sync: false
+      # Oura (OAuth2) + Whoop (OAuth2) + mobile (Apple Health / Android Health
+      # Connect). Each provider's card is gated on its credentials; unset =>
+      # "Coming soon". All dashboard-set.
+      - key: OURA_CLIENT_ID
+        sync: false
+      - key: OURA_CLIENT_SECRET
+        sync: false
+      - key: OURA_WEBHOOK_TOKEN
+        sync: false
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: MOBILE_BIOMETRICS_TOKEN
+        sync: false
 
   # LeafNerd — Dedicated frontend service for the clinical intelligence product.
   # Deploys from the same Next.js monolith but runs in its own isolated container

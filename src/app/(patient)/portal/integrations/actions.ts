@@ -2,20 +2,17 @@
 
 // EMR-054 — patient portal device/wearable connections.
 //
-// Per-patient persistence (DeviceConnection) for the Integrations page, now
-// gated by the Garmin mode guardrail (src/lib/integrations/garmin/config.ts):
+// Per-patient persistence (DeviceConnection) for the Integrations page, gated
+// by the wearable provider registry. A provider is only connectable when it
+// has a real backend:
+//   - Garmin (OAuth 1.0a)  -> redirect to /api/integrations/garmin/connect
+//                             (or an inline simulated ingest in mock mode).
+//   - Oura / Whoop (OAuth2)-> redirect to /api/integrations/oauth2/<p>/connect.
+//   - Apple / Android      -> connect happens in the mobile app (no web OAuth).
+//   - everything else      -> "Coming soon".
 //
-//   - A provider is only connectable when it has a real backend. Today that's
-//     Garmin alone — and only when configured ("live") or explicitly opted
-//     into the non-prod demo ("mock"). Every other card is "Coming soon".
-//   - Live Garmin connects via OAuth redirect (handled by the /connect +
-//     /callback routes); this action returns the redirect URL.
-//   - Mock Garmin runs an inline simulated ingest, tagged "(SIMULATED)", so a
-//     demo never writes fabricated data that looks real.
-//
-// Connecting/syncing Garmin runs an ingestion pass (syncGarminConnection ->
-// OutcomeLog) and evaluates the wearables CDS rules, mirroring the webhook
-// path.
+// Connecting/syncing runs an ingestion pass into OutcomeLog and evaluates the
+// wearables CDS rules, mirroring the webhook + cron paths.
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/session";
@@ -27,6 +24,9 @@ import {
   GarminReconnectError,
 } from "@/lib/integrations/garmin/sync";
 import { garminHealthClient } from "@/lib/integrations/garmin/client";
+import { getOAuth2Module } from "@/lib/integrations/providers/registry";
+import { syncOAuth2Connection } from "@/lib/integrations/providers/sync";
+import { ProviderReconnectError } from "@/lib/integrations/providers/errors";
 import { providerAvailability } from "./availability";
 import {
   isDeviceProvider,
@@ -61,18 +61,13 @@ function toState(row: {
 }
 
 /** Map a sync error to a patient-friendly message. */
-function syncErrorMessage(err: unknown): string {
-  if (err instanceof GarminReconnectError) {
-    return "Your Garmin connection expired. Please reconnect Garmin.";
+function syncErrorMessage(err: unknown, label: string): string {
+  if (err instanceof GarminReconnectError || err instanceof ProviderReconnectError) {
+    return `Your ${label} connection expired. Please reconnect ${label}.`;
   }
-  return "We couldn't reach Garmin Connect. Please try again.";
+  return `We couldn't reach ${label}. Please try again.`;
 }
 
-/**
- * Loads the signed-in patient's saved connections, keyed by provider slug.
- * Providers with no row yet are simply absent (treated as disconnected by
- * the UI), so the page never has to backfill rows just to render.
- */
 export async function getDeviceConnections(): Promise<
   Record<string, DeviceConnectionState>
 > {
@@ -92,12 +87,38 @@ export async function getDeviceConnections(): Promise<
   return out;
 }
 
+/** Runs the appropriate ingestion pass for a connected provider row. */
+async function syncConnectionRow(
+  provider: string,
+  row: {
+    patientId: string;
+    accessToken: string | null;
+    accessTokenSecret: string | null;
+    tokenExpiresAt: Date | null;
+  },
+): Promise<number> {
+  if (provider === "garmin") {
+    return syncGarminConnection({
+      patientId: row.patientId,
+      accessToken: row.accessToken,
+      accessTokenSecret: row.accessTokenSecret,
+    });
+  }
+  const mod = getOAuth2Module(provider);
+  if (!mod) throw new Error(`No sync path for provider ${provider}`);
+  return syncOAuth2Connection(mod, {
+    patientId: row.patientId,
+    provider,
+    accessToken: row.accessToken,
+    accessTokenSecret: row.accessTokenSecret,
+    tokenExpiresAt: row.tokenExpiresAt,
+  });
+}
+
 /**
- * Connects a device for the signed-in patient.
- *
- * - Refuses any provider that isn't actually connectable (guardrail).
- * - Live Garmin returns a redirect to the OAuth start route.
- * - Mock Garmin runs an inline simulated ingest.
+ * Connects a device. Refuses anything without a real backend; live OAuth
+ * providers return a redirect; mobile providers point at the app; mock Garmin
+ * runs an inline simulated ingest.
  */
 export async function connectDevice(
   provider: string,
@@ -111,16 +132,32 @@ export async function connectDevice(
 
   const patient = await requirePatient();
 
-  if (provider === "garmin" && availability.connectKind === "oauth-redirect") {
-    // The real connect happens in the /callback route after Garmin consent.
-    return { ok: true, redirect: "/api/integrations/garmin/connect" };
+  // Live OAuth providers (Garmin 1.0a, Oura/Whoop 2.0).
+  if (availability.connectKind === "oauth-redirect") {
+    const redirect =
+      provider === "garmin"
+        ? "/api/integrations/garmin/connect"
+        : `/api/integrations/oauth2/${provider}/connect`;
+    return { ok: true, redirect };
   }
 
-  // Inline path (mock-mode Garmin demo). Real providers never reach here.
+  // Mobile providers — the connection is established inside the app.
+  if (availability.connectKind === "mobile-app") {
+    return {
+      ok: false,
+      error:
+        "Open the LeafJourney mobile app and enable health sync to connect this.",
+    };
+  }
+
+  // Inline path: mock-mode Garmin demo only.
+  if (provider !== "garmin") {
+    return { ok: false, error: "This integration isn't available to connect yet." };
+  }
+
   let recordsSynced = 0;
   let lastError: string | null = null;
   let lastSyncedAt: Date | null = null;
-
   try {
     recordsSynced = await syncGarminConnection({
       patientId: patient.id,
@@ -130,7 +167,7 @@ export async function connectDevice(
     lastSyncedAt = new Date();
   } catch (err) {
     console.error("[Garmin] connect (mock) sync failed:", err);
-    lastError = syncErrorMessage(err);
+    lastError = syncErrorMessage(err, "Garmin");
   }
 
   const row = await prisma.deviceConnection.upsert({
@@ -163,11 +200,7 @@ export async function connectDevice(
   return { ok: true, state: toState(row), recordsSynced };
 }
 
-/**
- * Disconnects a device and clears its stored credentials. For a live Garmin
- * connection we also best-effort deregister with Garmin so they stop pushing
- * the patient's data to our webhook.
- */
+/** Disconnects a device and clears stored credentials. */
 export async function disconnectDevice(
   provider: string,
 ): Promise<DeviceActionResult> {
@@ -191,6 +224,7 @@ export async function disconnectDevice(
       connected: false,
       accessToken: null,
       accessTokenSecret: null,
+      tokenExpiresAt: null,
       providerUserId: null,
       oauthState: null,
       lastError: null,
@@ -209,10 +243,7 @@ export async function disconnectDevice(
   return { ok: true, state: toState(row) };
 }
 
-/**
- * Re-runs a sync for an already-connected device. Garmin pulls fresh
- * biometrics (live) or re-simulates (mock); other providers have no sync.
- */
+/** Re-runs a sync for an already-connected device (Garmin, Oura, Whoop). */
 export async function syncDevice(
   provider: string,
 ): Promise<DeviceActionResult> {
@@ -225,22 +256,18 @@ export async function syncDevice(
   if (!existing || !existing.connected) {
     return { ok: false, error: "Connect this device before syncing." };
   }
-  if (provider !== "garmin") {
+  if (provider !== "garmin" && !getOAuth2Module(provider)) {
     return { ok: false, error: "This integration doesn't support manual sync yet." };
   }
 
+  const label = provider.charAt(0).toUpperCase() + provider.slice(1);
   let recordsSynced = 0;
   let lastError: string | null = null;
-
   try {
-    recordsSynced = await syncGarminConnection({
-      patientId: patient.id,
-      accessToken: existing.accessToken,
-      accessTokenSecret: existing.accessTokenSecret,
-    });
+    recordsSynced = await syncConnectionRow(provider, existing);
   } catch (err) {
-    console.error("[Garmin] manual sync failed:", err);
-    lastError = syncErrorMessage(err);
+    console.error(`[${provider}] manual sync failed:`, err);
+    lastError = syncErrorMessage(err, label);
   }
 
   const row = await prisma.deviceConnection.update({

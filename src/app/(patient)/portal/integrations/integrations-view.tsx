@@ -29,6 +29,13 @@ const INTEGRATIONS: Integration[] = [
     dataTypes: ["Steps", "Sleep", "Heart rate", "Mindful minutes", "Workouts"],
   },
   {
+    id: "android",
+    name: "Android Health Connect",
+    icon: "🤖",
+    blurb: "Sync steps, sleep, heart rate, and HRV from Android Health Connect.",
+    dataTypes: ["Steps", "Sleep", "Heart rate", "HRV"],
+  },
+  {
     id: "fitbit",
     name: "Fitbit",
     icon: "⌚",
@@ -111,12 +118,26 @@ const DEFAULT_AVAILABILITY: ProviderAvailability = {
   reason: "not_implemented",
 };
 
-/** Banner copy for the ?garmin= status the OAuth routes redirect back with. */
-const GARMIN_BANNER: Record<string, { tone: "success" | "danger"; text: string }> = {
-  connected: { tone: "success", text: "Garmin connected — your recent data is syncing in." },
-  error: { tone: "danger", text: "We couldn't finish connecting Garmin. Please try again." },
-  unavailable: { tone: "danger", text: "Garmin isn't available to connect right now." },
-};
+const NAME_BY_ID: Record<string, string> = Object.fromEntries(
+  INTEGRATIONS.map((i) => [i.id, i.name]),
+);
+
+type Banner = { tone: "success" | "danger"; text: string };
+
+/** Banner copy for the connect-callback status an OAuth route redirects with. */
+function bannerFor(slug: string, status: string): Banner | null {
+  const name = NAME_BY_ID[slug] ?? "Your device";
+  switch (status) {
+    case "connected":
+      return { tone: "success", text: `${name} connected — your recent data is syncing in.` };
+    case "error":
+      return { tone: "danger", text: `We couldn't finish connecting ${name}. Please try again.` };
+    case "unavailable":
+      return { tone: "danger", text: `${name} isn't available to connect right now.` };
+    default:
+      return null;
+  }
+}
 
 interface IntegrationsViewProps {
   initialStates: Record<string, DeviceConnectionState>;
@@ -135,15 +156,25 @@ export function IntegrationsView({
   const [, startTransition] = useTransition();
 
   const searchParams = useSearchParams();
+  // Generic OAuth2 routes redirect with ?integration=<slug>&status=<status>;
+  // Garmin's routes use the legacy ?garmin=<status>.
+  const integrationParam = searchParams.get("integration");
+  const statusParam = searchParams.get("status");
   const garminStatus = searchParams.get("garmin");
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
   useEffect(() => {
-    if (garminStatus && GARMIN_BANNER[garminStatus]) {
-      setBanner(garminStatus);
-      // Strip the query param so a refresh doesn't re-show the banner.
+    const b =
+      integrationParam && statusParam
+        ? bannerFor(integrationParam, statusParam)
+        : garminStatus
+          ? bannerFor("garmin", garminStatus)
+          : null;
+    if (b) {
+      setBanner(b);
+      // Strip the query params so a refresh doesn't re-show the banner.
       window.history.replaceState(null, "", window.location.pathname);
     }
-  }, [garminStatus]);
+  }, [integrationParam, statusParam, garminStatus]);
 
   const stateFor = (id: string) => states[id] ?? DISCONNECTED;
   const availFor = (id: string) => availability[id] ?? DEFAULT_AVAILABILITY;
@@ -176,16 +207,16 @@ export function IntegrationsView({
 
   return (
     <div className="space-y-5">
-      {banner && GARMIN_BANNER[banner] ? (
+      {banner ? (
         <div
           className={`rounded-xl border px-4 py-3 text-sm ${
-            GARMIN_BANNER[banner].tone === "success"
+            banner.tone === "success"
               ? "border-success/30 bg-success/10 text-success"
               : "border-danger/30 bg-danger/10 text-danger"
           }`}
           role="status"
         >
-          {GARMIN_BANNER[banner].text}
+          {banner.text}
         </div>
       ) : null}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -194,6 +225,9 @@ export function IntegrationsView({
         const avail = availFor(integration.id);
         const available = avail.available;
         const isSimulated = avail.mode === "mock";
+        // Apple Health / Android Health Connect: on-device, connected from the
+        // mobile app — no web "Connect" handshake exists.
+        const isMobile = avail.connectKind === "mobile-app";
         const busy = !!pending[integration.id];
         return (
           <Card key={integration.id} tone="raised">
@@ -216,6 +250,8 @@ export function IntegrationsView({
                     <Badge tone="neutral">Coming soon</Badge>
                   ) : state.connected ? (
                     <Badge tone="success">Connected</Badge>
+                  ) : isMobile ? (
+                    <Badge tone="info">In the app</Badge>
                   ) : (
                     <Badge tone="neutral">Not connected</Badge>
                   )}
@@ -244,7 +280,27 @@ export function IntegrationsView({
                 <div className="text-xs text-text-subtle">
                   {busy ? "Syncing…" : formatSync(state.lastSync)}
                 </div>
-                {available ? (
+                {!available ? (
+                  <Button variant="secondary" size="sm" disabled>
+                    Coming soon
+                  </Button>
+                ) : isMobile ? (
+                  // On-device providers connect from the mobile app.
+                  state.connected ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => run(integration.id, disconnectDevice)}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-text-subtle">
+                      Set up in the LeafJourney app
+                    </span>
+                  )
+                ) : (
                   <div className="flex items-center gap-2">
                     {state.connected ? (
                       <>
@@ -276,10 +332,6 @@ export function IntegrationsView({
                       </Button>
                     )}
                   </div>
-                ) : (
-                  <Button variant="secondary" size="sm" disabled>
-                    Coming soon
-                  </Button>
                 )}
               </div>
             </CardContent>
