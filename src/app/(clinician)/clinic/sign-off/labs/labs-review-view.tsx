@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,11 @@ import {
   signLabResultAction,
   batchSignLabResultsAction,
 } from "./actions";
+import { assessIrRiskAction } from "./ir-risk-actions";
+import { AmbientIrPanel } from "./ambient-ir-panel";
+import { metabolicMarkerNames } from "@/lib/clinical/ambient-cds/lab-profile";
+import type { IrRiskResult } from "@/lib/clinical/ambient-cds/types";
+import type { AssembledBiomarkers } from "@/lib/clinical/ambient-cds/lab-profile";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the server page's LabRow shape
@@ -398,6 +403,47 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // ── Ambient Clinical Intelligence (EMR-1128) ──────────────────────────
+  // When the open panel carries any metabolic marker, ask the engine for the
+  // patient's insulin-resistance index (assembled across all recent panels).
+  // The soft inline tint + the ambient panel surface only when the result
+  // warrants it — no pop-ups, context-aware.
+  const metabolic = metabolicMarkerNames(current);
+  const isMetabolic = Boolean(
+    metabolic.fastingGlucose || metabolic.fastingInsulin || metabolic.hba1c
+  );
+  const [ir, setIr] = useState<IrRiskResult | null>(null);
+  const [irSources, setIrSources] = useState<AssembledBiomarkers["sources"]>({});
+  const [irLoading, setIrLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isMetabolic) return;
+    let cancelled = false;
+    setIrLoading(true);
+    assessIrRiskAction(row.patientId)
+      .then((res) => {
+        if (cancelled || !res.ok) return;
+        setIr(res.result);
+        setIrSources(res.sources);
+      })
+      .finally(() => {
+        if (!cancelled) setIrLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [row.patientId, isMetabolic]);
+
+  // Which open-panel rows are the IR drivers worth tinting (glucose/insulin).
+  const irDriverNames = new Set(
+    [metabolic.fastingGlucose, metabolic.fastingInsulin].filter(Boolean) as string[]
+  );
+  const irActive = Boolean(ir);
+  const irTooltip = ir
+    ? `Insulin-resistance signal · IR_risk ${ir.score.toFixed(2)} (${ir.band})` +
+      (ir.factors[0] ? ` · top driver: ${ir.factors[0].label}` : "")
+    : "";
+
   const runLooksGood = () => {
     setError(null);
     startTransition(async () => {
@@ -453,6 +499,11 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
       }
     >
       <div className="px-6 py-5 space-y-6">
+        {/* Ambient insulin-resistance analysis (EMR-1128) — inline, no popup */}
+        {isMetabolic && (
+          <AmbientIrPanel result={ir} loading={irLoading} sources={irSources} />
+        )}
+
         {/* Values table */}
           <section>
             <h3 className="text-sm font-semibold text-text mb-3">Results</h3>
@@ -474,12 +525,19 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
                     const delta =
                       c && p ? c.value - p.value : null;
                     const isPriority = PRIORITY.has(name);
+                    // EMR-1128: soft tint beneath the raw glucose/insulin
+                    // values driving the insulin-resistance signal.
+                    const isIrDriver = irActive && irDriverNames.has(name);
                     return (
                       <tr
                         key={name}
                         className={cn(
                           "border-t border-border",
-                          isPriority && "bg-accent/5"
+                          isPriority && !isIrDriver && "bg-accent/5",
+                          isIrDriver &&
+                            (ir!.warn
+                              ? "bg-status-alert-bg/40"
+                              : "bg-status-link-bg/35")
                         )}
                       >
                         <td className="px-4 py-2.5">
@@ -508,16 +566,30 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
                             c.abnormal ? "text-danger" : "text-text"
                           )}
                         >
-                          <LabValue
-                            value={c.value}
-                            unit={c.unit}
-                            refLow={c.refLow}
-                            refHigh={c.refHigh}
-                            // Row-level abnormal styling already conveys the
-                            // out-of-range signal; hide the chip to avoid
-                            // duplicate visual flags in the same cell.
-                            hideFlag
-                          />
+                          {isIrDriver ? (
+                            <Tooltip content={irTooltip}>
+                              <span className="underline decoration-dotted decoration-status-alert-fg/50 underline-offset-4">
+                                <LabValue
+                                  value={c.value}
+                                  unit={c.unit}
+                                  refLow={c.refLow}
+                                  refHigh={c.refHigh}
+                                  hideFlag
+                                />
+                              </span>
+                            </Tooltip>
+                          ) : (
+                            <LabValue
+                              value={c.value}
+                              unit={c.unit}
+                              refLow={c.refLow}
+                              refHigh={c.refHigh}
+                              // Row-level abnormal styling already conveys the
+                              // out-of-range signal; hide the chip to avoid
+                              // duplicate visual flags in the same cell.
+                              hideFlag
+                            />
+                          )}
                         </td>
                         <td className="text-right px-4 py-2.5 tabular-nums text-text-muted">
                           {p

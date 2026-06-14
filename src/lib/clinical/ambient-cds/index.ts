@@ -11,3 +11,4 @@ export * from "./types";
 export * from "./normalize";
 export * from "./ir-risk";
 export * from "./fhir";
+export * from "./lab-profile";
