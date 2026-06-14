@@ -5,6 +5,7 @@
 /** Provider slugs that match the Integrations UI card ids. */
 export const DEVICE_PROVIDERS = [
   "apple-health",
+  "android",
   "fitbit",
   "oura",
   "garmin",
@@ -34,9 +35,9 @@ export interface DeviceConnectionState {
  */
 export interface ProviderAvailability {
   available: boolean;
-  mode: "live" | "mock" | null;
-  connectKind: "oauth-redirect" | "inline" | null;
-  reason?: "not_configured" | "not_implemented";
+  mode: "live" | "mock" | "mobile" | null;
+  connectKind: "oauth-redirect" | "inline" | "mobile-app" | null;
+  reason?: "not_configured" | "not_implemented" | "mobile_only";
 }
 
 export type DeviceActionResult =

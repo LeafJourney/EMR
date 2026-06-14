@@ -26,6 +26,8 @@ const hoisted = vi.hoisted(() => ({
   loadLiveTokenMock: vi.fn(),
   deregisterMock: vi.fn(),
   availabilityMock: vi.fn(),
+  syncOAuth2Mock: vi.fn(),
+  getOAuth2ModuleMock: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -44,6 +46,15 @@ vi.mock("@/lib/integrations/garmin/sync", () => ({
 vi.mock("@/lib/integrations/garmin/client", () => ({
   garminHealthClient: { deregister: (...a: unknown[]) => hoisted.deregisterMock(...a) },
 }));
+vi.mock("@/lib/integrations/providers/sync", () => ({
+  syncOAuth2Connection: (...a: unknown[]) => hoisted.syncOAuth2Mock(...a),
+}));
+vi.mock("@/lib/integrations/providers/registry", () => ({
+  getOAuth2Module: (...a: unknown[]) => hoisted.getOAuth2ModuleMock(...a),
+}));
+vi.mock("@/lib/integrations/providers/errors", () => ({
+  ProviderReconnectError: class ProviderReconnectError extends Error {},
+}));
 vi.mock("./availability", () => ({
   providerAvailability: (...a: unknown[]) => hoisted.availabilityMock(...a),
 }));
@@ -61,10 +72,13 @@ const {
   createAuditLogMock,
   syncGarminMock,
   availabilityMock,
+  syncOAuth2Mock,
+  getOAuth2ModuleMock,
 } = hoisted;
 
 const MOCK_AVAIL = { available: true, mode: "mock", connectKind: "inline" };
 const LIVE_AVAIL = { available: true, mode: "live", connectKind: "oauth-redirect" };
+const MOBILE_AVAIL = { available: true, mode: "mobile", connectKind: "mobile-app" };
 const UNAVAILABLE = { available: false, mode: null, connectKind: null, reason: "not_implemented" };
 
 beforeEach(() => {
@@ -85,6 +99,10 @@ beforeEach(() => {
     lastError: data?.lastError ?? null,
   }));
   syncGarminMock.mockResolvedValue(3);
+  syncOAuth2Mock.mockResolvedValue(4);
+  getOAuth2ModuleMock.mockImplementation((slug: string) =>
+    slug === "oura" || slug === "whoop" ? { slug } : null,
+  );
   availabilityMock.mockReturnValue(MOCK_AVAIL);
 });
 
@@ -114,6 +132,25 @@ describe("connectDevice", () => {
     expect(syncGarminMock).not.toHaveBeenCalled();
   });
 
+  it("returns the generic OAuth2 redirect for live Oura", async () => {
+    availabilityMock.mockReturnValue(LIVE_AVAIL);
+    const res = await connectDevice("oura");
+    expect(res).toEqual({
+      ok: true,
+      redirect: "/api/integrations/oauth2/oura/connect",
+    });
+    expect(mockPrisma.deviceConnection.upsert).not.toHaveBeenCalled();
+  });
+
+  it("points mobile providers at the app instead of connecting on the web", async () => {
+    availabilityMock.mockReturnValue(MOBILE_AVAIL);
+    const res = await connectDevice("apple-health");
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected failure");
+    expect(res.error).toMatch(/mobile app/i);
+    expect(mockPrisma.deviceConnection.upsert).not.toHaveBeenCalled();
+  });
+
   it("runs the simulated ingest for mock Garmin and records the mode", async () => {
     availabilityMock.mockReturnValue(MOCK_AVAIL);
     const res = await connectDevice("garmin");
@@ -139,6 +176,7 @@ describe("disconnectDevice", () => {
       connected: false,
       accessToken: null,
       accessTokenSecret: null,
+      tokenExpiresAt: null,
       providerUserId: null,
       oauthState: null,
       lastError: null,
@@ -167,6 +205,21 @@ describe("syncDevice", () => {
     expect(res.ok).toBe(true);
     expect(syncGarminMock).toHaveBeenCalledTimes(1);
     expect(createAuditLogMock.mock.calls[0][0].action).toBe("patient.device_synced");
+  });
+
+  it("re-runs the OAuth2 ingestion for a connected Oura device", async () => {
+    mockPrisma.deviceConnection.findUnique.mockResolvedValue({
+      connected: true,
+      accessToken: "enc-token",
+      accessTokenSecret: "enc-refresh",
+      tokenExpiresAt: null,
+    });
+    const res = await syncDevice("oura");
+    expect(res.ok).toBe(true);
+    if (!res.ok || !("recordsSynced" in res)) throw new Error("expected sync state");
+    expect(res.recordsSynced).toBe(4);
+    expect(syncOAuth2Mock).toHaveBeenCalledTimes(1);
+    expect(syncGarminMock).not.toHaveBeenCalled();
   });
 
   it("surfaces a reconnect prompt when the token expired", async () => {

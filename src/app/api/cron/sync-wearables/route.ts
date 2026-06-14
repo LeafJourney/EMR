@@ -1,8 +1,17 @@
+// Periodic wearable pull. Previously this wrote MOCK Whoop data (a dummy
+// token) into the first 10 patients' charts every run — the same fabricated-
+// data hazard the Garmin work fixed. It now syncs only REAL, connected
+// DeviceConnections through the guardrailed clients (Garmin OAuth1, Oura/Whoop
+// OAuth2). Mock/mobile connections are skipped — mobile data arrives by push,
+// and mock data must never reach a real chart from a cron.
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { evaluatePatientCDS } from "@/lib/cds/engine";
-import { routeCDSTriggers } from "@/lib/cds/alerts";
-import { whoopClient } from "@/lib/integrations/whoop-mapper";
+import { syncGarminConnection } from "@/lib/integrations/garmin/sync";
+import { getOAuth2Module } from "@/lib/integrations/providers/registry";
+import { syncOAuth2Connection } from "@/lib/integrations/providers/sync";
+
+const PULL_PROVIDERS = ["garmin", "oura", "whoop"];
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -10,38 +19,42 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const patients = await prisma.patient.findMany({
-    take: 10,
-    select: { id: true, organizationId: true },
+  // Only real, live connections get pulled. Mode "mock"/"mobile" are excluded.
+  const connections = await prisma.deviceConnection.findMany({
+    where: { connected: true, mode: "live", provider: { in: PULL_PROVIDERS } },
+    take: 200,
   });
 
-  const today = new Date().toISOString().split("T")[0];
-
-  for (const patient of patients) {
+  let synced = 0;
+  let failed = 0;
+  for (const conn of connections) {
     try {
-      await whoopClient.syncPatientData(patient.id, "dummy_token", today);
-
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const recentLogs = await prisma.outcomeLog.findMany({
-        where: { patientId: patient.id, loggedAt: { gte: twentyFourHoursAgo } },
-      });
-      const recentObservations = await prisma.clinicalObservation.findMany({
-        where: { patientId: patient.id, createdAt: { gte: twentyFourHoursAgo } },
-      });
-
-      const triggers = evaluatePatientCDS(
-        patient.id,
-        recentLogs,
-        recentObservations,
-      );
-
-      if (triggers.length > 0) {
-        await routeCDSTriggers(triggers);
+      if (conn.provider === "garmin") {
+        await syncGarminConnection({
+          patientId: conn.patientId,
+          accessToken: conn.accessToken,
+          accessTokenSecret: conn.accessTokenSecret,
+        });
+      } else {
+        const mod = getOAuth2Module(conn.provider);
+        if (!mod) continue;
+        await syncOAuth2Connection(mod, {
+          patientId: conn.patientId,
+          provider: conn.provider,
+          accessToken: conn.accessToken,
+          accessTokenSecret: conn.accessTokenSecret,
+          tokenExpiresAt: conn.tokenExpiresAt,
+        });
       }
-    } catch (error) {
-      console.error(`[SyncDaemon] Failed to sync patient ${patient.id}:`, error);
+      synced++;
+    } catch (err) {
+      failed++;
+      console.error(
+        `[SyncWearables] ${conn.provider} sync failed for patient ${conn.patientId}:`,
+        err,
+      );
     }
   }
 
-  return NextResponse.json({ success: true, processed: patients.length });
+  return NextResponse.json({ success: true, processed: connections.length, synced, failed });
 }
