@@ -15,7 +15,7 @@
  * plainly ("labs-only estimate") rather than implying a richer signal.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -25,6 +25,10 @@ import {
 } from "@/lib/clinical/ambient-cds/types";
 import type { AssembledBiomarkers } from "@/lib/clinical/ambient-cds/lab-profile";
 import { recommendIrInterventions } from "@/lib/clinical/ambient-cds/interventions";
+import {
+  stageIrInterventionsAction,
+  type StagedHandout,
+} from "./ir-risk-actions";
 
 type Tone = "positive" | "link" | "alert";
 
@@ -46,12 +50,14 @@ const FACTOR_LABEL: Record<string, string> = {
 };
 
 export interface AmbientIrPanelProps {
+  patientId: string;
   result: IrRiskResult | null;
   loading: boolean;
   sources: AssembledBiomarkers["sources"];
 }
 
 export function AmbientIrPanel({
+  patientId,
   result,
   loading,
   sources,
@@ -72,7 +78,9 @@ export function AmbientIrPanel({
     >
       <div className="min-h-0 overflow-hidden">
         {loading && <LoadingCard />}
-        {!loading && result && <ResultCard result={result} sources={sources} />}
+        {!loading && result && (
+          <ResultCard patientId={patientId} result={result} sources={sources} />
+        )}
         {!loading && !result && hint && <HintCard text={hint} />}
       </div>
     </div>
@@ -140,9 +148,11 @@ function HintCard({ text }: { text: string }) {
 }
 
 function ResultCard({
+  patientId,
   result,
   sources,
 }: {
+  patientId: string;
   result: IrRiskResult;
   sources: AssembledBiomarkers["sources"];
 }) {
@@ -152,6 +162,39 @@ function ResultCard({
     () => recommendIrInterventions(result),
     [result]
   );
+
+  // Selection defaults to everything checked; the provider unchecks what they
+  // don't want before staging. One click drafts orders + a handout.
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(interventions.map((i) => i.id))
+  );
+  const [staging, startStaging] = useTransition();
+  const [staged, setStaged] = useState<{
+    summary: string;
+    handout: StagedHandout | null;
+  } | null>(null);
+  const [stageError, setStageError] = useState<string | null>(null);
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const stage = () => {
+    setStageError(null);
+    const ids = [...selected];
+    startStaging(async () => {
+      const res = await stageIrInterventionsAction(patientId, ids);
+      if (!res.ok) {
+        setStageError(res.error);
+        return;
+      }
+      setStaged({ summary: res.summary, handout: res.handout });
+    });
+  };
 
   // Scale factor bars against the largest absolute contribution.
   const maxContribution = useMemo(
@@ -236,25 +279,82 @@ function ResultCard({
         ))}
       </ul>
 
-      {/* Philosophy-aligned suggestions (lifestyle/metabolic before pharma). */}
-      {interventions.length > 0 && (
+      {/* Philosophy-aligned suggestions (lifestyle/metabolic before pharma).
+          Check the ones to act on; one click drafts orders + a handout — the
+          draft orders land in the Orders tab, nothing is signed. */}
+      {interventions.length > 0 && !staged && (
         <div className="mt-3 border-t border-border/60 pt-2.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle">
-            Suggested next steps · review with patient
+            Suggested next steps · select to draft
           </p>
-          <ul className="mt-1.5 space-y-1.5">
+          <ul className="mt-1.5 space-y-1">
             {interventions.map((iv) => (
-              <li key={iv.title} className="flex items-start gap-2 text-sm">
-                <span aria-hidden="true" className="mt-1.5 h-1 w-1 rounded-full bg-text-subtle shrink-0" />
-                <span className="text-text">
-                  <span className="font-medium">{iv.title}</span>
-                  {iv.detail && (
-                    <span className="text-text-muted"> — {iv.detail}</span>
-                  )}
-                </span>
+              <li key={iv.id}>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg px-1.5 py-1 -mx-1.5 hover:bg-black/[0.02]">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(iv.id)}
+                    onChange={() => toggle(iv.id)}
+                    disabled={staging}
+                    className="mt-1 h-3.5 w-3.5 rounded border-border-strong text-accent focus:ring-accent/30"
+                  />
+                  <span className="text-text">
+                    <span className="font-medium">{iv.title}</span>
+                    {iv.labOrder && (
+                      <Badge tone="info" className="ml-1.5 text-[9px] uppercase">
+                        drafts order
+                      </Badge>
+                    )}
+                    {iv.detail && (
+                      <span className="block text-text-muted text-[13px] leading-snug">
+                        {iv.detail}
+                      </span>
+                    )}
+                  </span>
+                </label>
               </li>
             ))}
           </ul>
+
+          <div className="mt-2.5 flex items-center justify-between gap-3">
+            <p className="text-[11px] text-text-subtle">
+              Draft orders are staged for your review — not signed or sent.
+            </p>
+            <button
+              type="button"
+              onClick={stage}
+              disabled={staging || selected.size === 0}
+              className={cn(
+                "shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-colors",
+                "bg-status-positive-bg text-status-positive-fg border border-[color:var(--status-positive-fg)]/25 hover:brightness-[0.97]",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {staging ? "Drafting…" : "Draft to Orders"}
+            </button>
+          </div>
+          {stageError && (
+            <p className="mt-1.5 text-[11px] text-status-alert-fg">{stageError}</p>
+          )}
+        </div>
+      )}
+
+      {/* Post-stage confirmation — honest about what was (and wasn't) done. */}
+      {staged && (
+        <div className="mt-3 border-t border-border/60 pt-2.5 space-y-2">
+          <p className="text-sm font-medium text-status-positive-fg">
+            ✓ {staged.summary}
+          </p>
+          {staged.handout && (
+            <div className="rounded-xl border border-border/70 bg-white/70 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle">
+                {staged.handout.title} · draft handout
+              </p>
+              <p className="mt-1 text-sm text-text whitespace-pre-line leading-relaxed">
+                {staged.handout.body}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

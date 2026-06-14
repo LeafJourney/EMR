@@ -501,7 +501,12 @@ function LabOverlay({ row, onClose }: { row: LabRow; onClose: () => void }) {
       <div className="px-6 py-5 space-y-6">
         {/* Ambient insulin-resistance analysis (EMR-1128) — inline, no popup */}
         {isMetabolic && (
-          <AmbientIrPanel result={ir} loading={irLoading} sources={irSources} />
+          <AmbientIrPanel
+            patientId={row.patientId}
+            result={ir}
+            loading={irLoading}
+            sources={irSources}
+          />
         )}
 
         {/* Values table */}

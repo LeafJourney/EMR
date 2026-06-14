@@ -52,6 +52,18 @@ describe("recommendIrInterventions", () => {
     // First substantive suggestion is non-pharmacological.
     expect(["diet", "lifestyle"]).toContain(recs[0].category);
     expect(recs.some((i) => i.category === "pharmacological")).toBe(false);
+    // Every recommendation carries a stable selection id.
+    expect(recs.every((i) => typeof i.id === "string" && i.id.length > 0)).toBe(
+      true
+    );
+  });
+
+  it("attaches a draftable HOMA-IR recheck order to the 12-week follow-up", () => {
+    const recs = recommendIrInterventions(score(105, 12, 5.9));
+    const recheck = recs.find((i) => i.id === "recheck-12w");
+    expect(recheck?.labOrder).toBeDefined();
+    expect(recheck!.labOrder!.fasting).toBe(true);
+    expect(recheck!.labOrder!.diagnosisCodes).toContain("E88.810");
   });
 
   it("adds a CGM review only when glycemic variability is a live driver", () => {
@@ -83,5 +95,8 @@ describe("recommendIrInterventions", () => {
     expect(stale.lowConfidence).toBe(true);
     const recs = recommendIrInterventions(stale);
     expect(recs[0].title).toMatch(/re-draw/i);
+    // The re-draw-now order replaces the 12-week recheck (no double order).
+    expect(recs[0].labOrder).toBeDefined();
+    expect(recs.some((i) => i.id === "recheck-12w")).toBe(false);
   });
 });
