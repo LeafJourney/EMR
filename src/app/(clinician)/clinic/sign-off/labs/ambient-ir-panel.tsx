@@ -24,6 +24,7 @@ import {
   type IrRiskResult,
 } from "@/lib/clinical/ambient-cds/types";
 import type { AssembledBiomarkers } from "@/lib/clinical/ambient-cds/lab-profile";
+import { recommendIrInterventions } from "@/lib/clinical/ambient-cds/interventions";
 
 type Tone = "positive" | "link" | "alert";
 
@@ -147,6 +148,10 @@ function ResultCard({
 }) {
   const meta = BAND_META[result.band];
   const pct = Math.round(result.score * 100);
+  const interventions = useMemo(
+    () => recommendIrInterventions(result),
+    [result]
+  );
 
   // Scale factor bars against the largest absolute contribution.
   const maxContribution = useMemo(
@@ -230,6 +235,28 @@ function ResultCard({
           </li>
         ))}
       </ul>
+
+      {/* Philosophy-aligned suggestions (lifestyle/metabolic before pharma). */}
+      {interventions.length > 0 && (
+        <div className="mt-3 border-t border-border/60 pt-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-text-subtle">
+            Suggested next steps · review with patient
+          </p>
+          <ul className="mt-1.5 space-y-1.5">
+            {interventions.map((iv) => (
+              <li key={iv.title} className="flex items-start gap-2 text-sm">
+                <span aria-hidden="true" className="mt-1.5 h-1 w-1 rounded-full bg-text-subtle shrink-0" />
+                <span className="text-text">
+                  <span className="font-medium">{iv.title}</span>
+                  {iv.detail && (
+                    <span className="text-text-muted"> — {iv.detail}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Provenance + honesty footer. */}
       <div className="mt-3 space-y-1 border-t border-border/60 pt-2.5">
