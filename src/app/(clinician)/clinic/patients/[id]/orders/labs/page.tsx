@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/ornament";
 import { LabOrderForm } from "./lab-order-form";
 import { OrderHistory } from "../order-history";
+import { SpokenIntentCheckout } from "../spoken-intent-checkout";
 
 interface PageProps {
   params: { id: string };
@@ -55,6 +56,8 @@ export default async function LabOrdersPage({ params }: PageProps) {
       </div>
 
       <div className="space-y-6">
+        <SpokenIntentCheckout patientId={patient.id} />
+
         <LabOrderForm
           patientId={patient.id}
           patientName={`${patient.firstName} ${patient.lastName}`}
