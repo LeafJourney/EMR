@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * EMR-054 — patient portal device connections.
+ * EMR-054 — patient portal device connections (live-gated).
  *
- * Pins the connect/disconnect/sync server actions: provider validation,
- * patient scoping, that Garmin (and only Garmin) drives a real ingestion
- * pass, token clearing on disconnect, and audit coverage.
+ * Pins connect/disconnect/sync after the guardrail rewrite: provider
+ * availability gating, that live Garmin returns an OAuth redirect (and never
+ * writes inline), that mock Garmin runs the simulated ingest, token clearing
+ * on disconnect, and audit coverage.
  */
 
 const hoisted = vi.hoisted(() => ({
+  GarminReconnectError: class GarminReconnectError extends Error {},
   mockPrisma: {
     patient: { findUnique: vi.fn() },
     deviceConnection: {
@@ -17,14 +19,13 @@ const hoisted = vi.hoisted(() => ({
       upsert: vi.fn(),
       update: vi.fn(),
     },
-    outcomeLog: { findMany: vi.fn() },
-    clinicalObservation: { findMany: vi.fn() },
   },
   requireRoleMock: vi.fn(),
-  garminSyncMock: vi.fn(),
   createAuditLogMock: vi.fn(),
-  evaluateCDSMock: vi.fn(),
-  routeCDSMock: vi.fn(),
+  syncGarminMock: vi.fn(),
+  loadLiveTokenMock: vi.fn(),
+  deregisterMock: vi.fn(),
+  availabilityMock: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -35,26 +36,36 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/domain/audit-logger", () => ({
   createAuditLog: (p: unknown) => hoisted.createAuditLogMock(p),
 }));
-vi.mock("@/lib/integrations/garmin-vitals", () => ({
-  garminClient: { syncPatientData: (...a: unknown[]) => hoisted.garminSyncMock(...a) },
+vi.mock("@/lib/integrations/garmin/sync", () => ({
+  syncGarminConnection: (...a: unknown[]) => hoisted.syncGarminMock(...a),
+  loadLiveToken: (...a: unknown[]) => hoisted.loadLiveTokenMock(...a),
+  GarminReconnectError: hoisted.GarminReconnectError,
 }));
-vi.mock("@/lib/cds/engine", () => ({
-  evaluatePatientCDS: (...a: unknown[]) => hoisted.evaluateCDSMock(...a),
+vi.mock("@/lib/integrations/garmin/client", () => ({
+  garminHealthClient: { deregister: (...a: unknown[]) => hoisted.deregisterMock(...a) },
 }));
-vi.mock("@/lib/cds/alerts", () => ({
-  routeCDSTriggers: (...a: unknown[]) => hoisted.routeCDSMock(...a),
+vi.mock("./availability", () => ({
+  providerAvailability: (...a: unknown[]) => hoisted.availabilityMock(...a),
 }));
 
-import { connectDevice, disconnectDevice, syncDevice, getDeviceConnections } from "./actions";
+import {
+  connectDevice,
+  disconnectDevice,
+  syncDevice,
+  getDeviceConnections,
+} from "./actions";
 
 const {
   mockPrisma,
   requireRoleMock,
-  garminSyncMock,
   createAuditLogMock,
-  evaluateCDSMock,
-  routeCDSMock,
+  syncGarminMock,
+  availabilityMock,
 } = hoisted;
+
+const MOCK_AVAIL = { available: true, mode: "mock", connectKind: "inline" };
+const LIVE_AVAIL = { available: true, mode: "live", connectKind: "oauth-redirect" };
+const UNAVAILABLE = { available: false, mode: null, connectKind: null, reason: "not_implemented" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -73,10 +84,8 @@ beforeEach(() => {
     lastSyncedAt: data?.lastSyncedAt ?? null,
     lastError: data?.lastError ?? null,
   }));
-  mockPrisma.outcomeLog.findMany.mockResolvedValue([]);
-  mockPrisma.clinicalObservation.findMany.mockResolvedValue([]);
-  garminSyncMock.mockResolvedValue(3);
-  evaluateCDSMock.mockReturnValue([]);
+  syncGarminMock.mockResolvedValue(3);
+  availabilityMock.mockReturnValue(MOCK_AVAIL);
 });
 
 describe("connectDevice", () => {
@@ -86,41 +95,52 @@ describe("connectDevice", () => {
     expect(mockPrisma.deviceConnection.upsert).not.toHaveBeenCalled();
   });
 
-  it("runs the Garmin ingestion pass and records how many logs synced", async () => {
+  it("refuses a provider with no real backend (guardrail)", async () => {
+    availabilityMock.mockReturnValue(UNAVAILABLE);
+    const res = await connectDevice("fitbit");
+    expect(res.ok).toBe(false);
+    expect(mockPrisma.deviceConnection.upsert).not.toHaveBeenCalled();
+    expect(syncGarminMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an OAuth redirect for live Garmin and never writes inline", async () => {
+    availabilityMock.mockReturnValue(LIVE_AVAIL);
+    const res = await connectDevice("garmin");
+    expect(res).toEqual({
+      ok: true,
+      redirect: "/api/integrations/garmin/connect",
+    });
+    expect(mockPrisma.deviceConnection.upsert).not.toHaveBeenCalled();
+    expect(syncGarminMock).not.toHaveBeenCalled();
+  });
+
+  it("runs the simulated ingest for mock Garmin and records the mode", async () => {
+    availabilityMock.mockReturnValue(MOCK_AVAIL);
     const res = await connectDevice("garmin");
     expect(res.ok).toBe(true);
-    if (!res.ok) throw new Error("expected ok");
+    if (!res.ok || !("state" in res)) throw new Error("expected inline state");
     expect(res.recordsSynced).toBe(3);
     expect(res.state.connected).toBe(true);
-
-    expect(garminSyncMock).toHaveBeenCalledTimes(1);
-    const upsertArgs = mockPrisma.deviceConnection.upsert.mock.calls[0][0];
-    expect(upsertArgs.where.patientId_provider).toEqual({
-      patientId: "patient_1",
-      provider: "garmin",
-    });
-    expect(upsertArgs.update.connected).toBe(true);
+    expect(syncGarminMock).toHaveBeenCalledTimes(1);
 
     const audit = createAuditLogMock.mock.calls[0][0];
     expect(audit.action).toBe("patient.device_connected");
-    expect(audit.metadata).toMatchObject({ provider: "garmin", recordsSynced: 3 });
-  });
-
-  it("connects a non-Garmin provider without an ingestion pass", async () => {
-    const res = await connectDevice("fitbit");
-    expect(res.ok).toBe(true);
-    expect(garminSyncMock).not.toHaveBeenCalled();
+    expect(audit.metadata).toMatchObject({ provider: "garmin", mode: "mock", recordsSynced: 3 });
   });
 });
 
 describe("disconnectDevice", () => {
-  it("marks disconnected and clears the stored token", async () => {
+  it("marks disconnected and clears stored credentials", async () => {
+    mockPrisma.deviceConnection.findUnique.mockResolvedValue({ mode: "mock" });
     const res = await disconnectDevice("garmin");
     expect(res.ok).toBe(true);
     const upsertArgs = mockPrisma.deviceConnection.upsert.mock.calls[0][0];
     expect(upsertArgs.update).toEqual({
       connected: false,
       accessToken: null,
+      accessTokenSecret: null,
+      providerUserId: null,
+      oauthState: null,
       lastError: null,
     });
     expect(createAuditLogMock.mock.calls[0][0].action).toBe(
@@ -134,18 +154,32 @@ describe("syncDevice", () => {
     mockPrisma.deviceConnection.findUnique.mockResolvedValue(null);
     const res = await syncDevice("garmin");
     expect(res).toEqual({ ok: false, error: "Connect this device before syncing." });
-    expect(garminSyncMock).not.toHaveBeenCalled();
+    expect(syncGarminMock).not.toHaveBeenCalled();
   });
 
   it("re-runs the Garmin ingestion when connected", async () => {
     mockPrisma.deviceConnection.findUnique.mockResolvedValue({
       connected: true,
-      accessToken: "mock-garmin-token",
+      accessToken: "enc-token",
+      accessTokenSecret: "enc-secret",
     });
     const res = await syncDevice("garmin");
     expect(res.ok).toBe(true);
-    expect(garminSyncMock).toHaveBeenCalledTimes(1);
+    expect(syncGarminMock).toHaveBeenCalledTimes(1);
     expect(createAuditLogMock.mock.calls[0][0].action).toBe("patient.device_synced");
+  });
+
+  it("surfaces a reconnect prompt when the token expired", async () => {
+    mockPrisma.deviceConnection.findUnique.mockResolvedValue({
+      connected: true,
+      accessToken: "enc-token",
+      accessTokenSecret: "enc-secret",
+    });
+    syncGarminMock.mockRejectedValueOnce(new hoisted.GarminReconnectError());
+    const res = await syncDevice("garmin");
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("expected failure");
+    expect(res.error).toMatch(/reconnect/i);
   });
 });
 

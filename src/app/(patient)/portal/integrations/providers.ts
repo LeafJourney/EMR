@@ -27,6 +27,22 @@ export interface DeviceConnectionState {
   error: string | null;
 }
 
+/**
+ * Whether/how a provider can be connected right now. Computed server-side
+ * (it reads env) but the shape lives here so the client view can import the
+ * type without pulling in the server-only module that produces it.
+ */
+export interface ProviderAvailability {
+  available: boolean;
+  mode: "live" | "mock" | null;
+  connectKind: "oauth-redirect" | "inline" | null;
+  reason?: "not_configured" | "not_implemented";
+}
+
 export type DeviceActionResult =
   | { ok: true; state: DeviceConnectionState; recordsSynced?: number }
+  // Live OAuth providers can't connect in a single round-trip — the action
+  // hands the client a URL to navigate the browser to (the provider's consent
+  // screen) instead of a final state.
+  | { ok: true; redirect: string }
   | { ok: false; error: string };

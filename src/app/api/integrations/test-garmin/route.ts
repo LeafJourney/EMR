@@ -1,25 +1,38 @@
+// Garmin ingestion smoke-test (debug only).
+//
+// This endpoint writes biometric OutcomeLogs to a real patient, so it is
+// gated HARD behind mock mode: it does nothing unless resolveGarminMode()
+// === "mock" (an explicit, non-production opt-in). In production or live mode
+// it 404s, so it can never fabricate data on a real chart.
+
 import { NextResponse } from "next/server";
-import { garminClient } from "@/lib/integrations/garmin-vitals";
 import { prisma } from "@/lib/db/prisma";
+import { resolveGarminMode } from "@/lib/integrations/garmin/config";
+import { mockGarminPayload } from "@/lib/integrations/garmin/client";
+import { ingestGarminPayload } from "@/lib/integrations/garmin-vitals";
 
 export async function GET() {
+  if (resolveGarminMode() !== "mock") {
+    // Not found unless the simulated demo mode is explicitly enabled.
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
-    // 1. Get an existing patient to attach the data to
     const patient = await prisma.patient.findFirst();
     if (!patient) {
       return NextResponse.json(
         { error: "No patients found in the database to test against. Please seed." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const accessToken = "mock-garmin-token-staging";
+    const written = await ingestGarminPayload(
+      patient.id,
+      mockGarminPayload(today, today),
+      { simulated: true },
+    );
 
-    // 2. Trigger the Garmin sync
-    await garminClient.syncPatientData(patient.id, accessToken, today, today);
-
-    // 3. Verify the records were created
     const logs = await prisma.outcomeLog.findMany({
       where: { patientId: patient.id },
       orderBy: { loggedAt: "desc" },
@@ -28,18 +41,12 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      message: `Garmin Vitals successfully ingested for patient ${patient.id}`,
-      logs: logs.map(l => ({
-        metric: l.metric,
-        value: l.value,
-        note: l.note,
-      })),
+      mode: "mock",
+      message: `Simulated Garmin Vitals ingested for patient ${patient.id} (${written} logs)`,
+      logs: logs.map((l) => ({ metric: l.metric, value: l.value, note: l.note })),
     });
   } catch (error) {
-    console.error("Failed to test Garmin integration on staging:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    console.error("Failed to run Garmin mock ingestion:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

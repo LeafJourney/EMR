@@ -3103,10 +3103,29 @@ model DeviceConnection {
   provider  String
   connected Boolean @default(false)
 
-  // Opaque access token from the device OAuth handshake. Mock for now —
-  // the live OAuth flow lands with the provider SDK work. Cleared on
+  // OAuth access token from the device handshake, ENCRYPTED at rest
+  // (AES-256-GCM envelope, see integrations/token-crypto.ts). Cleared on
   // disconnect so a stale token never drives a background sync.
   accessToken  String?
+  // OAuth 1.0a access-token SECRET, also encrypted at rest. Required to
+  // sign Garmin Health API requests; null for OAuth2 providers.
+  accessTokenSecret String?
+  // When the access token expires (OAuth2 / refreshable providers). Garmin
+  // 1.0a tokens are long-lived, so this is typically null for Garmin.
+  tokenExpiresAt    DateTime?
+  // Provider-side user id (Garmin "User API id"). The webhook ingest maps an
+  // inbound Garmin userId back to this connection -> patient.
+  providerUserId    String?
+  // OAuth scopes granted at connect time, comma-separated.
+  scopes            String?
+  // How this connection was established: "live" (real provider) or "mock"
+  // (simulated demo data). Lets exports exclude simulated connections.
+  mode              String?
+  // Transient OAuth handshake state, ENCRYPTED. For OAuth 1.0a this holds
+  // the request-token secret between /connect and /callback; cleared once
+  // the access token is exchanged.
+  oauthState        String?
+
   lastSyncedAt DateTime?
   // Last sync failure message, surfaced in the UI and cleared on success.
   lastError    String?
@@ -3116,6 +3135,8 @@ model DeviceConnection {
 
   @@unique([patientId, provider])
   @@index([patientId])
+  // Webhook lookups resolve an inbound Garmin userId to its connection.
+  @@index([provider, providerUserId])
 }
 
 // --------------------------------------------------------------
