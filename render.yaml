@@ -74,6 +74,20 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
+      # Garmin Health API (EMR-054). The patient portal Garmin connection is
+      # gated on these: with both consumer key+secret set it runs LIVE; unset,
+      # the card is "Coming soon" and cannot write to a chart. All dashboard-set.
+      #   GARMIN_CONSUMER_KEY/SECRET: from the Garmin Developer Portal.
+      #   GARMIN_WEBHOOK_TOKEN: shared secret on the push/ping webhook URL.
+      #   INTEGRATION_TOKEN_ENCRYPTION_KEY: 32-byte hex; `openssl rand -hex 32`.
+      - key: GARMIN_CONSUMER_KEY
+        sync: false
+      - key: GARMIN_CONSUMER_SECRET
+        sync: false
+      - key: GARMIN_WEBHOOK_TOKEN
+        sync: false
+      - key: INTEGRATION_TOKEN_ENCRYPTION_KEY
+        sync: false
 
   # LeafNerd — Dedicated frontend service for the clinical intelligence product.
   # Deploys from the same Next.js monolith but runs in its own isolated container
