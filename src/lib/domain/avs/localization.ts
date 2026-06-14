@@ -233,3 +233,35 @@ export function assertDosesUnchanged(before: AvsDocument, after: AvsDocument): b
     return cal.steps.every((s, j) => s.instruction === n.steps[j].instruction);
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* Patient language preference (EMR-1149 context compilation)                  */
+/* -------------------------------------------------------------------------- */
+
+const LANGUAGE_HINTS: Array<[RegExp, SupportedLanguage]> = [
+  [/(^|\b)(es|spa|spanish|espanol|español|castellano)(\b|$)/i, "es"],
+  [/(^|\b)(vi|vie|vietnamese|tieng viet|tiếng việt)(\b|$)/i, "vi"],
+];
+
+/**
+ * Resolve a patient's preferred AVS language from their intake answers JSON.
+ * Defaults safely to English when nothing recognizable is present (EMR-1149:
+ * "Missing preferences default safely — English, 6th–8th grade").
+ */
+export function resolvePatientLanguage(intakeAnswers: unknown): SupportedLanguage {
+  if (!intakeAnswers || typeof intakeAnswers !== "object") return "en";
+  const obj = intakeAnswers as Record<string, unknown>;
+  const candidates = [
+    obj.language,
+    obj.preferredLanguage,
+    obj.preferred_language,
+    obj.locale,
+    obj.lang,
+  ];
+  for (const c of candidates) {
+    if (typeof c !== "string" || !c.trim()) continue;
+    for (const [re, lang] of LANGUAGE_HINTS) if (re.test(c)) return lang;
+    if (/^en/i.test(c.trim())) return "en";
+  }
+  return "en";
+}

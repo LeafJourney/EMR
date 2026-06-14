@@ -12,6 +12,7 @@ import {
   localizeAvsDocument,
   localizeText,
   numericTokens,
+  resolvePatientLanguage,
 } from "./localization";
 import type { AvsDocument } from "./types";
 
@@ -138,5 +139,22 @@ describe("localization — AVS document structured-field safety", () => {
     const localized = localizeAvsDocument(doc, "vi");
     expect(localized.nextSteps[0]).toContain("500 mg");
     expect(assertDosesUnchanged(doc, localized)).toBe(true);
+  });
+});
+
+describe("resolvePatientLanguage", () => {
+  it("defaults to English when nothing recognizable", () => {
+    expect(resolvePatientLanguage(null)).toBe("en");
+    expect(resolvePatientLanguage({})).toBe("en");
+    expect(resolvePatientLanguage({ language: "Klingon" })).toBe("en");
+  });
+
+  it("reads common intake keys and spellings", () => {
+    expect(resolvePatientLanguage({ language: "es" })).toBe("es");
+    expect(resolvePatientLanguage({ preferredLanguage: "Spanish" })).toBe("es");
+    expect(resolvePatientLanguage({ locale: "español" })).toBe("es");
+    expect(resolvePatientLanguage({ preferred_language: "Vietnamese" })).toBe("vi");
+    expect(resolvePatientLanguage({ lang: "vi" })).toBe("vi");
+    expect(resolvePatientLanguage({ language: "English" })).toBe("en");
   });
 });

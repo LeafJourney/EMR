@@ -48,6 +48,7 @@ const SECTIONS: Record<string, SectionDef> = {
       { label: "Labs", href: "/portal/labs" },
     ],
     secondary: [
+      { label: "Visit summaries", href: "/portal/visit-summary" },
       { label: "Assessments", href: "/portal/assessments" },
       { label: "Check-in history", href: "/portal/outcomes" },
       { label: "Dose history", href: "/portal/dose-history" },
